@@ -1,0 +1,28 @@
+# gh-runners configuration
+# Edit this file, then run: ./scripts/runner up
+#
+# Each runner entry defines a group of identical runners for a repo.
+# Linux runners run as Docker containers (built from official actions/runner releases).
+# Windows runners run as native processes on Windows.
+
+github:
+  pat_env_var: GITHUB_PAT
+
+runners:
+  # Example Linux runner:
+  #
+  # - name: my-project-ci
+  #   repo: owner/repo
+  #   os: linux
+  #   count: 2
+  #   labels: [self-hosted, linux, ci]
+  #
+  # Example Windows runner:
+  #
+  # - name: my-project-win
+  #   repo: owner/repo
+  #   os: windows
+  #   count: 1
+  #   labels: [self-hosted, windows, x64]
+
+  []

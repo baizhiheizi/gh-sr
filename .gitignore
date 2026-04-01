@@ -1,0 +1,4 @@
+.env
+docker-compose.yml
+windows/runners/
+data/

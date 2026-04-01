@@ -1,0 +1,307 @@
+#!/usr/bin/env bash
+# gh-runners CLI — manage self-hosted GitHub Actions runners
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/lib/common.sh"
+
+usage() {
+  cat <<EOF
+Usage: $(basename "$0") <command> [args]
+
+Linux runner commands (Docker):
+  generate          Regenerate docker-compose.yml from config/runners.yml
+  build             Build the runner Docker image
+  up                Generate, build (if needed), and start all Linux runners
+  down              Stop all Linux runners
+  status            Show status of all runners
+  logs [service]    Tail logs (all services or a specific one)
+  restart [service] Restart services
+  update            Rebuild image from latest runner release and recreate containers
+  cleanup           Remove offline runners from GitHub
+
+Windows runner commands (native):
+  win-install       Download and configure Windows runners
+  win-up            Start Windows runners
+  win-down          Stop Windows runners
+  win-remove        Deregister and remove Windows runners
+
+Maintenance:
+  rotate-token      Restart all runners with updated PAT from .env
+
+EOF
+}
+
+cmd_generate() {
+  "$SCRIPT_DIR/generate-compose.sh"
+}
+
+cmd_build() {
+  cmd_generate
+  load_env
+  echo "Building runner image..."
+  docker compose -f "$COMPOSE_FILE" build
+}
+
+cmd_up() {
+  cmd_generate
+  load_env
+  echo "Starting Linux runners..."
+  docker compose -f "$COMPOSE_FILE" up -d --build
+  echo ""
+  docker compose -f "$COMPOSE_FILE" ps
+}
+
+cmd_down() {
+  if [[ ! -f "$COMPOSE_FILE" ]]; then
+    echo "No docker-compose.yml found. Nothing to stop."
+    exit 0
+  fi
+  echo "Stopping Linux runners..."
+  docker compose -f "$COMPOSE_FILE" down
+}
+
+cmd_status() {
+  echo "=== Linux Runners (Docker) ==="
+  if [[ -f "$COMPOSE_FILE" ]]; then
+    docker compose -f "$COMPOSE_FILE" ps
+  else
+    echo "  No docker-compose.yml found. Run './scripts/runner up' first."
+  fi
+
+  echo ""
+  echo "=== Windows Runners (Native) ==="
+  local win_count
+  win_count="$(yq '[.runners[] | select(.os == "windows")] | length' "$CONFIG")"
+  if [[ "$win_count" -eq 0 ]]; then
+    echo "  No Windows runners configured."
+  else
+    local win_dir="$ROOT/windows/runners"
+    if [[ ! -d "$win_dir" ]] || [[ -z "$(ls -A "$win_dir" 2>/dev/null)" ]]; then
+      echo "  Windows runners configured but not installed. Run './scripts/runner win-install'."
+    else
+      # Check via PowerShell if runners are running
+      if command -v powershell.exe &>/dev/null; then
+        for dir in "$win_dir"/*/; do
+          local name
+          name="$(basename "$dir")"
+          local win_path
+          win_path="$(wslpath -w "$dir")"
+          local running
+          running="$(powershell.exe -NoProfile -Command "
+            \$pidFile = Join-Path '$win_path' '.runner_pid'
+            if (Test-Path \$pidFile) {
+              \$pid = Get-Content \$pidFile
+              try { Get-Process -Id \$pid -ErrorAction Stop | Out-Null; 'running' } catch { 'stopped' }
+            } else { 'stopped' }
+          " 2>/dev/null | tr -d '\r')"
+          echo "  $name: $running"
+        done
+      else
+        echo "  powershell.exe not available — cannot check Windows runner status"
+      fi
+    fi
+  fi
+
+  echo ""
+  echo "=== GitHub API Status ==="
+  load_env
+  local repos
+  repos="$(yq -r '.runners[].repo' "$CONFIG" | sort -u)"
+  local pat_var
+  pat_var="$(yq '.github.pat_env_var' "$CONFIG")"
+  local pat="${!pat_var}"
+
+  for repo in $repos; do
+    echo "  $repo:"
+    local result
+    result="$(curl -s \
+      -H "Authorization: Bearer $pat" \
+      -H "Accept: application/vnd.github+json" \
+      "https://api.github.com/repos/${repo}/actions/runners" 2>/dev/null)"
+
+    local total
+    total="$(echo "$result" | jq -r '.total_count // 0')"
+    if [[ "$total" -eq 0 ]]; then
+      echo "    No runners registered"
+    else
+      echo "$result" | jq -r '.runners[] | "    \(.name): \(.status)"'
+    fi
+  done
+}
+
+cmd_logs() {
+  local service="${1:-}"
+  if [[ -n "$service" ]]; then
+    docker compose -f "$COMPOSE_FILE" logs -f "$service"
+  else
+    docker compose -f "$COMPOSE_FILE" logs -f
+  fi
+}
+
+cmd_restart() {
+  local service="${1:-}"
+  if [[ -n "$service" ]]; then
+    docker compose -f "$COMPOSE_FILE" restart "$service"
+  else
+    docker compose -f "$COMPOSE_FILE" restart
+  fi
+}
+
+cmd_update() {
+  cmd_generate
+  load_env
+  echo "Rebuilding runner image from latest release..."
+  docker compose -f "$COMPOSE_FILE" build --pull --no-cache
+  echo "Recreating containers..."
+  docker compose -f "$COMPOSE_FILE" up -d --force-recreate
+  echo ""
+  docker compose -f "$COMPOSE_FILE" ps
+}
+
+cmd_cleanup() {
+  check_deps
+  load_env
+  local repos
+  repos="$(yq -r '.runners[].repo' "$CONFIG" | sort -u)"
+  echo "Cleaning up offline runners..."
+  for repo in $repos; do
+    echo "Repo: $repo"
+    cleanup_offline_runners "$repo"
+  done
+}
+
+cmd_rotate_token() {
+  load_env
+  echo "Rotating token — restarting all runners with current PAT from .env..."
+
+  # Linux runners
+  if [[ -f "$COMPOSE_FILE" ]]; then
+    echo ""
+    echo "Restarting Linux runners..."
+    docker compose -f "$COMPOSE_FILE" down
+    docker compose -f "$COMPOSE_FILE" up -d
+  fi
+
+  # Windows runners
+  local win_count
+  win_count="$(yq '[.runners[] | select(.os == "windows")] | length' "$CONFIG")"
+  if [[ "$win_count" -gt 0 ]]; then
+    echo ""
+    echo "Windows runners need to be re-registered manually:"
+    echo "  ./scripts/runner win-remove"
+    echo "  ./scripts/runner win-install"
+    echo "  ./scripts/runner win-up"
+  fi
+}
+
+# --- Windows runner commands ---
+
+win_check() {
+  if ! command -v powershell.exe &>/dev/null; then
+    echo "Error: powershell.exe not found. Windows runner commands require WSL2 with Windows interop." >&2
+    exit 1
+  fi
+}
+
+cmd_win_install() {
+  win_check
+  check_deps
+  load_env
+
+  local win_count
+  win_count="$(yq '[.runners[] | select(.os == "windows")] | length' "$CONFIG")"
+
+  if [[ "$win_count" -eq 0 ]]; then
+    echo "No Windows runners defined in $CONFIG"
+    exit 0
+  fi
+
+  local ps_script
+  ps_script="$(wslpath -w "$SCRIPT_DIR/manage-windows.ps1")"
+  local config_path
+  config_path="$(wslpath -w "$CONFIG")"
+  local runners_dir
+  runners_dir="$(wslpath -w "$ROOT/windows/runners")"
+
+  local pat_var
+  pat_var="$(yq '.github.pat_env_var' "$CONFIG")"
+  local pat="${!pat_var}"
+
+  powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$ps_script" \
+    -Action install \
+    -ConfigFile "$config_path" \
+    -RunnersDir "$runners_dir" \
+    -Pat "$pat"
+}
+
+cmd_win_up() {
+  win_check
+  local ps_script
+  ps_script="$(wslpath -w "$SCRIPT_DIR/manage-windows.ps1")"
+  local runners_dir
+  runners_dir="$(wslpath -w "$ROOT/windows/runners")"
+
+  powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$ps_script" \
+    -Action start \
+    -RunnersDir "$runners_dir"
+}
+
+cmd_win_down() {
+  win_check
+  local ps_script
+  ps_script="$(wslpath -w "$SCRIPT_DIR/manage-windows.ps1")"
+  local runners_dir
+  runners_dir="$(wslpath -w "$ROOT/windows/runners")"
+
+  powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$ps_script" \
+    -Action stop \
+    -RunnersDir "$runners_dir"
+}
+
+cmd_win_remove() {
+  win_check
+  check_deps
+  load_env
+
+  local ps_script
+  ps_script="$(wslpath -w "$SCRIPT_DIR/manage-windows.ps1")"
+  local config_path
+  config_path="$(wslpath -w "$CONFIG")"
+  local runners_dir
+  runners_dir="$(wslpath -w "$ROOT/windows/runners")"
+
+  local pat_var
+  pat_var="$(yq '.github.pat_env_var' "$CONFIG")"
+  local pat="${!pat_var}"
+
+  powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$ps_script" \
+    -Action remove \
+    -ConfigFile "$config_path" \
+    -RunnersDir "$runners_dir" \
+    -Pat "$pat"
+}
+
+# --- Dispatch ---
+
+case "${1:-}" in
+  generate)       cmd_generate ;;
+  build)          cmd_build ;;
+  up)             cmd_up ;;
+  down)           cmd_down ;;
+  status)         cmd_status ;;
+  logs)           shift; cmd_logs "${1:-}" ;;
+  restart)        shift; cmd_restart "${1:-}" ;;
+  update)         cmd_update ;;
+  cleanup)        cmd_cleanup ;;
+  rotate-token)   cmd_rotate_token ;;
+  win-install)    cmd_win_install ;;
+  win-up)         cmd_win_up ;;
+  win-down)       cmd_win_down ;;
+  win-remove)     cmd_win_remove ;;
+  -h|--help|help) usage ;;
+  *)
+    usage
+    exit 1
+    ;;
+esac
