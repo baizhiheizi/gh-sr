@@ -101,9 +101,9 @@ func (h *Host) wrapCommand(cmd string) string {
 
 func (h *Host) RunnerBaseDir() string {
 	if h.OS == "windows" {
-		return `C:\actions-runner`
+		return `$env:USERPROFILE\.ghr\runners`
 	}
-	return "$HOME/actions-runner"
+	return "$HOME/.ghr/runners"
 }
 
 func (h *Host) RunnerDir(instanceName string) string {

@@ -57,6 +57,12 @@ func (m *Manager) setupDockerWindows(h *host.Host) error {
 func (m *Manager) setupDockerUnix(h *host.Host) error {
 	out, err := h.Run("docker info --format '{{.ServerVersion}}' 2>/dev/null || echo 'not found'")
 	if err != nil || strings.Contains(out, "not found") {
+		if h.OS == "darwin" {
+			return fmt.Errorf(
+				"docker not available on host %s: install Docker Desktop, OrbStack, or Colima and ensure the Docker CLI works in your SSH session",
+				h.Name,
+			)
+		}
 		fmt.Printf("  %s: Docker not found, attempting to install...\n", h.Name)
 		installCmd := `
 			SUDO=''; if command -v sudo >/dev/null 2>&1 && [ "$(id -u)" -ne 0 ]; then SUDO=sudo; fi;

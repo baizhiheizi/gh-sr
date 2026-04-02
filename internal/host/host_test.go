@@ -122,10 +122,10 @@ func TestHost_wrapCommand_localWindows(t *testing.T) {
 func TestHost_paths(t *testing.T) {
 	t.Parallel()
 	win := NewHost("w", config.HostConfig{Addr: "u@h", OS: "windows", Arch: "amd64"})
-	if win.RunnerBaseDir() != `C:\actions-runner` {
+	if win.RunnerBaseDir() != `$env:USERPROFILE\.ghr\runners` {
 		t.Errorf("windows base: %q", win.RunnerBaseDir())
 	}
-	if win.RunnerDir("r1") != `C:\actions-runner\r1` {
+	if win.RunnerDir("r1") != `$env:USERPROFILE\.ghr\runners\r1` {
 		t.Errorf("windows runner dir: %q", win.RunnerDir("r1"))
 	}
 	if win.TempDir() != "$env:TEMP" {
@@ -136,10 +136,10 @@ func TestHost_paths(t *testing.T) {
 	}
 
 	ln := NewHost("l", config.HostConfig{Addr: "u@h", OS: "linux", Arch: "arm64"})
-	if ln.RunnerBaseDir() != "$HOME/actions-runner" {
+	if ln.RunnerBaseDir() != "$HOME/.ghr/runners" {
 		t.Errorf("linux base: %q", ln.RunnerBaseDir())
 	}
-	if ln.RunnerDir("r1") != "$HOME/actions-runner/r1" {
+	if ln.RunnerDir("r1") != "$HOME/.ghr/runners/r1" {
 		t.Errorf("linux runner dir: %q", ln.RunnerDir("r1"))
 	}
 	if ln.TempDir() != "/tmp" {

@@ -6,7 +6,7 @@ A CLI tool to manage self-hosted GitHub Actions runners across multiple hosts �
 - **SSH & local** — manage remote hosts over SSH, or run runners on the local machine with `addr: local`
 - **Declarative config** — one YAML file defines your hosts and runners
 - **Multi-host** — manage runners on any number of machines (local PCs, Mac Minis, VPS)
-- **Docker & native** — Linux runners use Docker containers (including on Windows via Docker Desktop); macOS and Windows run natively
+- **Docker & native** — Linux defaults to Docker; macOS and Windows default to native, but you can use `mode: docker` on any host that has Docker (Linux, macOS with Docker Desktop / OrbStack / Colima, or Windows with Docker Desktop)
 - **Interactive dashboard** — TUI with live status updates
 
 ---
@@ -17,7 +17,7 @@ A CLI tool to manage self-hosted GitHub Actions runners across multiple hosts �
 Your Laptop (control plane)
   └── ghr CLI
         ├── local  → This machine (native/Docker runners)
-        ├── SSH → Mac Mini (native runners)
+        ├── SSH → Mac Mini (native and/or Docker runners)
         ├── SSH → Windows PC (native + Docker runners)
         └── SSH → VPS (Docker runners)
 ```
@@ -56,10 +56,11 @@ flowchart LR
 | Host OS | Default mode | Where the workload runs |
 |--------|--------------|-------------------------|
 | Linux | `docker` | Docker on that host: container name `gh-runner-<instance>`, image `ghcr.io/actions/actions-runner:latest`. On non-Windows hosts the container typically mounts the Docker socket for workflow `docker` steps. |
-| Linux | `native` (if set) | Files under `$HOME/actions-runner/<instance>`; process via `run.sh` and a PID file. |
-| Windows | `native` | `C:\actions-runner\<instance>`; process via `run.cmd` and a PID file. |
+| Linux | `native` (if set) | Files under `~/.ghr/runners/<instance>`; process via `run.sh` and a PID file. |
+| Windows | `native` | `%USERPROFILE%\.ghr\runners\<instance>`; process via `run.cmd` and a PID file. |
 | Windows | `docker` (if set) | Same Docker image on Docker Desktop over the same SSH connection as native Windows runners. |
-| macOS | `native` | `$HOME/actions-runner/<instance>`. |
+| macOS | `native` | `~/.ghr/runners/<instance>`. |
+| macOS | `docker` (if set) | Same Linux runner image as on Linux; requires Docker Desktop, OrbStack, or Colima with a working `docker` CLI. |
 
 **Instances:** `count` creates separate runners named `<name>-1`, `<name>-2`, … on the same host, each with its own directory (native) or container (docker).
 
@@ -69,17 +70,19 @@ flowchart TB
     ld[Default_docker]
     ln[Explicit_native]
     ld --> c1[Container_gh_runner_name_1]
-    ln --> d1[Dir_HOME_actions_runner_name_1]
+    ln --> d1[Dir_HOME_ghr_runners_name_1]
   end
   subgraph winHost [Windows_host]
     wn[Default_native]
     wd[Explicit_docker]
-    wn --> wd1[Dir_C_actions_runner_name_1]
+    wn --> wd1[Dir_USERPROFILE_ghr_runners_name_1]
     wd --> wc1[Docker_Desktop_container]
   end
   subgraph macHost [macOS_host]
     mn[Default_native]
-    mn --> md1[Dir_HOME_actions_runner_name_1]
+    md[Explicit_docker]
+    mn --> md1[Dir_HOME_ghr_runners_name_1]
+    md --> mc1[Docker_Linux_container]
   end
 ```
 
@@ -133,7 +136,7 @@ flowchart TD
 
 **`ghr logs <name>`** looks up the runner block by **base name** or a full **instance** name (`name-1`, `name-2`, …), connects to the host, then tails logs for that instance:
 
-- **Native** — last lines of `runner.log` under that instance’s directory (`$HOME/actions-runner/<instance>` or `C:\actions-runner\<instance>`).
+- **Native** — last lines of `runner.log` under that instance’s directory (`~/.ghr/runners/<instance>` on Linux/macOS, or `%USERPROFILE%\.ghr\runners\<instance>` on Windows).
 - **Docker** — last lines from `docker logs` for container `gh-runner-<instance>`.
 
 If `count` is greater than 1, pass the specific instance (for example `myapp-1`) so logs match the right directory or container.
@@ -203,13 +206,13 @@ To use the checked-in example at `config/runners.yml` while hacking on this repo
 
 **On runner hosts:**
 - **Linux** — Docker installed (for `mode: docker`) or just a shell (for `mode: native`)
-- **macOS** — `curl` available (pre-installed)
+- **macOS** — `curl` available (pre-installed). For `mode: docker`, install Docker Desktop, OrbStack, or Colima and ensure `docker` works in the same environment as your SSH session (ghr does not auto-install Docker on macOS).
 
 #### Linux SSH user and privileges
 
-`ghr setup` and `ghr update` run remote commands as the SSH user in `hosts.*.addr`. On Linux, if that user is **not** root and the `sudo` binary is on the remote `PATH`, `ghr` prefixes some steps with `sudo` (package installs, GitHub’s `installdependencies.sh` for native runners, and the Docker install script when Docker is missing). SSH sessions are non-interactive, so **passwordless `sudo`** (or running as **`root@host`**) is the reliable choice for those steps.
+`ghr setup` and `ghr update` run remote commands as the SSH user in `hosts.*.addr`. On **Linux**, if that user is **not** root and the `sudo` binary is on the remote `PATH`, `ghr` prefixes some steps with `sudo` (package installs, GitHub’s `installdependencies.sh` for native runners, and the Docker install script when Docker is missing on Linux). SSH sessions are non-interactive, so **passwordless `sudo`** (or running as **`root@host`**) is the reliable choice for those steps.
 
-- **Docker mode** — If Docker is not already installed, expect a privilege path (root or working `sudo`). If Docker is installed and your user can run `docker` without `sudo` (for example via the `docker` group), routine `ghr` operations do not need `sudo`.
+- **Docker mode on Linux** — If Docker is not already installed, expect a privilege path (root or working `sudo`). If Docker is installed and your user can run `docker` without `sudo` (for example via the `docker` group), routine `ghr` operations do not need `sudo`. On **macOS**, ghr never auto-installs Docker; install Docker Desktop, OrbStack, or Colima first.
 - **Native mode** — You can avoid `sudo` if `curl` and `tar` are present and OS packages the runner needs are already installed; otherwise `ghr` may print warnings and the runner might be incomplete.
 
 `ghr` does not verify sudoers rules; failures show up as remote command errors or warnings.
@@ -344,7 +347,7 @@ runners:
 | `runners[].host` | References a key under `hosts` |
 | `runners[].count` | Number of parallel instances (default: 1) |
 | `runners[].labels` | Labels for workflow `runs-on` matching |
-| `runners[].mode` | `docker` or `native` (default: `docker` for Linux hosts, `native` for others). Set `docker` on a Windows host for Linux container runners via Docker Desktop. |
+| `runners[].mode` | `docker` or `native` (default: `docker` for Linux hosts, `native` for macOS and Windows). Set `docker` for Linux container runners on Windows (Docker Desktop) or macOS (Docker Desktop, OrbStack, or Colima). |
 
 ---
 
@@ -507,6 +510,35 @@ runners:
 ```
 
 Both runners share a single SSH connection to Windows. The native runner starts `run.cmd` via PowerShell; the Docker runner calls `docker run` the same way, which talks to Docker Desktop's Linux engine.
+
+---
+
+## Linux runners on a macOS host
+
+Set `mode: docker` on a runner that targets an `os: darwin` host to run the same Linux container image as on Linux. ghr does **not** run the Linux Docker install script on macOS; install a Docker runtime yourself.
+
+**Requirements on the Mac:**
+- Docker Desktop, OrbStack, or Colima installed, with `docker` working in the environment where `ghr` runs commands (for example the same user over SSH).
+
+```yaml
+hosts:
+  mac-mini:
+    addr: user@192.168.1.50
+    os: darwin
+    arch: arm64
+
+runners:
+  - name: myapp-mac-native
+    repo: owner/repo
+    host: mac-mini
+    labels: [self-hosted, macOS, ARM64]
+
+  - name: myapp-linux-on-mac
+    repo: owner/repo
+    host: mac-mini
+    mode: docker
+    labels: [self-hosted, Linux, ARM64]
+```
 
 ---
 
