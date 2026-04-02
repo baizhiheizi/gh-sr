@@ -287,7 +287,27 @@ func TestApplyEnvFile_missing(t *testing.T) {
 	}
 }
 
-func TestResolveConfigPath(t *testing.T) {
+func TestResolveConfigPath_ghrConfig(t *testing.T) {
+	dir := t.TempDir()
+	other := filepath.Join(dir, "other.yml")
+	if err := os.WriteFile(other, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(dir)
+	t.Setenv(EnvVarConfigPath, other)
+
+	got, err := ResolveConfigPath("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != other {
+		t.Errorf("GHR_CONFIG: want %q got %q", other, got)
+	}
+}
+
+func TestResolveConfigPath_ignoresCwdLocal(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
 	dir := t.TempDir()
 	local := filepath.Join(dir, "config", "runners.yml")
 	if err := os.MkdirAll(filepath.Dir(local), 0o755); err != nil {
@@ -303,20 +323,9 @@ func TestResolveConfigPath(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got != local {
-		t.Errorf("want local %q got %q", local, got)
-	}
-
-	t.Setenv(EnvVarConfigPath, filepath.Join(dir, "other.yml"))
-	if err := os.WriteFile(filepath.Join(dir, "other.yml"), []byte("x"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	got, err = ResolveConfigPath("")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got != filepath.Join(dir, "other.yml") {
-		t.Errorf("GHR_CONFIG: got %q", got)
+	want := filepath.Join(home, ".ghr", "runners.yml")
+	if got != want {
+		t.Errorf("cwd config/runners.yml must not be auto-used: want %q got %q", want, got)
 	}
 }
 
@@ -337,23 +346,6 @@ func TestResolveConfigPath_explicit(t *testing.T) {
 	}
 	if got != p {
 		t.Errorf("explicit flag wins: got %q want %q", got, p)
-	}
-}
-
-func TestResolveConfigPath_homeFallback(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	wd := t.TempDir()
-	t.Chdir(wd)
-	t.Setenv(EnvVarConfigPath, "")
-
-	got, err := ResolveConfigPath("")
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := filepath.Join(home, ".ghr", "runners.yml")
-	if got != want {
-		t.Errorf("want %q got %q", want, got)
 	}
 }
 

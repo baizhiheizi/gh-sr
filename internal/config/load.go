@@ -9,8 +9,8 @@ import (
 func LoadFromPath(path string) (*Config, error) {
 	if _, err := os.Stat(path); err != nil {
 		if os.IsNotExist(err) {
-			return nil, fmt.Errorf("config file not found: %s\n\nRun `ghr init` to create ~/.ghr, or add %s in the current directory, or set %s or use --config",
-				path, LocalConfigRelative(), EnvVarConfigPath)
+			return nil, fmt.Errorf("config file not found: %s\n\nRun `ghr init` to create ~/.ghr/runners.yml, or set %s to a YAML file, or use --config",
+				path, EnvVarConfigPath)
 		}
 		return nil, fmt.Errorf("config file: %w", err)
 	}

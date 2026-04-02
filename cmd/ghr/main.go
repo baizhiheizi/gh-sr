@@ -27,8 +27,8 @@ func main() {
 		Long: `ghr manages self-hosted GitHub Actions runners on any combination
 of Linux, macOS, and Windows hosts — all from your laptop over SSH.
 
-Define your hosts and runners in ~/.ghr/runners.yml (or ./config/runners.yml
-when present), then use unified commands to setup, start, stop, and monitor everything.`,
+Define your hosts and runners in ~/.ghr/runners.yml (or set GHR_CONFIG / --config),
+then use unified commands to setup, start, stop, and monitor everything.`,
 		SilenceUsage: true,
 	}
 

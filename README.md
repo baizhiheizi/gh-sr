@@ -47,7 +47,7 @@ cd ghr
 go build -o ghr ./cmd/ghr/
 ```
 
-When developing in this repository, `./config/runners.yml` is used automatically if that file exists (see precedence below).
+To use the checked-in example at `config/runners.yml` while hacking on this repo, point the CLI at it explicitly, for example `export GHR_CONFIG="$PWD/config/runners.yml"` or `ghr -c config/runners.yml status`.
 
 ---
 
@@ -74,8 +74,9 @@ When developing in this repository, `./config/runners.yml` is used automatically
 When you do **not** pass `--config` / `-c`, the config file is chosen in this order:
 
 1. **`GHR_CONFIG`** — path to a YAML file (absolute or relative to the current working directory).
-2. **`./config/runners.yml`** — if this file exists in the current working directory, it is used (handy for this repo or a project-local checkout).
-3. **`~/.ghr/runners.yml`** — used after `ghr init` when no project-local file exists.
+2. **`~/.ghr/runners.yml`** — default after `ghr init`.
+
+There is no automatic discovery of `./config/runners.yml` in the current directory; use `GHR_CONFIG` or `-c` if your file lives elsewhere.
 
 If you pass `-c /path/to/runners.yml`, that path is always used (and `GHR_CONFIG` is ignored).
 
@@ -113,7 +114,7 @@ export GITHUB_PAT=github_pat_...
 
 ### 3. Edit config
 
-Edit `~/.ghr/runners.yml` (after `ghr init`) or `./config/runners.yml` for a project-local file. You can open the resolved file in `$VISUAL` or `$EDITOR` with `ghr config edit`.
+Edit `~/.ghr/runners.yml` (after `ghr init`), or set `GHR_CONFIG` / `-c` to another YAML file. You can open the resolved file in `$VISUAL` or `$EDITOR` with `ghr config edit`.
 
 ```yaml
 github:
@@ -247,14 +248,14 @@ jobs:
 
 ### Add a new host
 
-1. Add an entry under `hosts` in `config/runners.yml`
+1. Add an entry under `hosts` in your resolved config file (`~/.ghr/runners.yml` by default)
 2. Ensure SSH key-based access works: `ssh user@host true`
 3. Add runner entries referencing the new host
 4. Run `ghr setup && ghr up`
 
 ### Scale up
 
-Change `count` in `runners.yml`, then:
+Change `count` in your runners YAML, then:
 
 ```bash
 ghr setup   # configures new instances
@@ -307,7 +308,7 @@ ghr/
       status.go             # Status table rendering
       styles.go             # Lipgloss styles
   config/
-    runners.yml             # Example / dev runner configuration (optional)
+    runners.yml             # Example YAML (not auto-loaded; use GHR_CONFIG or -c)
   go.mod
   go.sum
 ```
