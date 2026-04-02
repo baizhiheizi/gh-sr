@@ -16,6 +16,7 @@ hosts:
   #   addr: user@192.168.1.51   # SSH target (enable OpenSSH Server on Windows)
   #   os: windows
   #   arch: amd64
+  #   # windows_ps: pwsh   # optional: use pwsh.exe instead of powershell.exe for remote scripts
   #
   # vps-1:
   #   # Linux: non-root SSH users often need passwordless sudo for ghr setup, or pre-install Docker (docker mode).

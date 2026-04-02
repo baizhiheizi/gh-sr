@@ -1,8 +1,10 @@
 package host
 
 import (
+	"encoding/base64"
 	"strings"
 	"testing"
+	"unicode/utf16"
 
 	"github.com/an-lee/ghr/internal/config"
 )
@@ -19,13 +21,47 @@ func Test_parseAddr(t *testing.T) {
 	}
 }
 
+func TestEncodePowerShellScript_roundTrip(t *testing.T) {
+	t.Parallel()
+	script := "Write-Host \"a\"'\nline2"
+	enc := encodePowerShellScript(script)
+	raw, err := base64.StdEncoding.DecodeString(enc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(raw)%2 != 0 {
+		t.Fatalf("UTF-16LE byte length should be even, got %d", len(raw))
+	}
+	u16 := make([]uint16, len(raw)/2)
+	for i := range u16 {
+		u16[i] = uint16(raw[i*2]) | uint16(raw[i*2+1])<<8
+	}
+	got := string(utf16.Decode(u16))
+	if got != script {
+		t.Errorf("round-trip: got %q want %q", got, script)
+	}
+}
+
 func TestHost_wrapCommand(t *testing.T) {
 	t.Parallel()
 	h := NewHost("w", config.HostConfig{Addr: "u@h", OS: "windows", Arch: "amd64"})
 	got := h.wrapCommand(`Write-Host "ok"`)
-	if !strings.Contains(got, "powershell") {
-		t.Fatalf("windows should wrap powershell: %q", got)
+	if !strings.Contains(got, "powershell.exe") {
+		t.Fatalf("windows default exe: %q", got)
 	}
+	if !strings.Contains(got, "-EncodedCommand") {
+		t.Fatalf("should use EncodedCommand: %q", got)
+	}
+	if strings.Contains(got, "-Command") {
+		t.Fatalf("should not use -Command (quoting): %q", got)
+	}
+
+	hPW := NewHost("w", config.HostConfig{Addr: "u@h", OS: "windows", Arch: "amd64", WindowsPS: "pwsh"})
+	gotPW := hPW.wrapCommand(`1`)
+	if !strings.Contains(gotPW, "pwsh.exe") {
+		t.Fatalf("windows_ps pwsh: %q", gotPW)
+	}
+
 	ln := NewHost("l", config.HostConfig{Addr: "u@h", OS: "linux", Arch: "amd64"})
 	if ln.wrapCommand("echo hi") != "echo hi" {
 		t.Fatalf("linux should pass through")

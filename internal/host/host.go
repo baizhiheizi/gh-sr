@@ -1,8 +1,10 @@
 package host
 
 import (
+	"encoding/base64"
 	"fmt"
 	"strings"
+	"unicode/utf16"
 
 	"github.com/an-lee/ghr/internal/config"
 )
@@ -60,9 +62,31 @@ func (h *Host) Upload(localPath, remotePath string) error {
 	return h.conn.Upload(localPath, remotePath)
 }
 
+// encodePowerShellScript returns the base64 payload required by powershell.exe / pwsh -EncodedCommand (UTF-16LE).
+func encodePowerShellScript(script string) string {
+	u16 := utf16.Encode([]rune(script))
+	b := make([]byte, len(u16)*2)
+	for i, v := range u16 {
+		b[i*2] = byte(v)
+		b[i*2+1] = byte(v >> 8)
+	}
+	return base64.StdEncoding.EncodeToString(b)
+}
+
+func (h *Host) windowsPowerShellExe() string {
+	switch strings.ToLower(strings.TrimSpace(h.WindowsPS)) {
+	case "pwsh":
+		return "pwsh.exe"
+	default:
+		return "powershell.exe"
+	}
+}
+
 func (h *Host) wrapCommand(cmd string) string {
 	if h.OS == "windows" {
-		return fmt.Sprintf("powershell -NoProfile -NonInteractive -Command %q", cmd)
+		enc := encodePowerShellScript(cmd)
+		exe := h.windowsPowerShellExe()
+		return fmt.Sprintf("%s -NoProfile -NonInteractive -EncodedCommand %s", exe, enc)
 	}
 	return cmd
 }

@@ -58,7 +58,16 @@ func (m *Manager) setupNative(h *host.Host, rc config.RunnerConfig) error {
 	for _, name := range rc.InstanceNames() {
 		dir := h.RunnerDir(name)
 
-		installed, _ := h.Run(fmt.Sprintf("test -f %s/.runner && echo yes || echo no", dir))
+		var installed string
+		if h.OS == "windows" {
+			safeDir := strings.ReplaceAll(dir, "'", "''")
+			installed, _ = h.RunShell(fmt.Sprintf(
+				"if (Test-Path (Join-Path '%s' '.runner')) { Write-Output 'yes' } else { Write-Output 'no' }",
+				safeDir,
+			))
+		} else {
+			installed, _ = h.Run(fmt.Sprintf("test -f %s/.runner && echo yes || echo no", dir))
+		}
 		if strings.TrimSpace(installed) == "yes" {
 			fmt.Printf("  %s: already installed, skipping\n", name)
 			continue

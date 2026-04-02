@@ -19,9 +19,10 @@ type GitHubConfig struct {
 }
 
 type HostConfig struct {
-	Addr string `yaml:"addr"`
-	OS   string `yaml:"os"`
-	Arch string `yaml:"arch"`
+	Addr      string `yaml:"addr"`
+	OS        string `yaml:"os"`
+	Arch      string `yaml:"arch"`
+	WindowsPS string `yaml:"windows_ps"` // powershell (default) or pwsh — which exe runs encoded remote scripts on Windows
 }
 
 type RunnerConfig struct {
@@ -118,6 +119,16 @@ func (c *Config) Validate() error {
 		case "amd64", "arm64":
 		default:
 			return fmt.Errorf("host %q: arch must be amd64 or arm64 (got %q)", name, h.Arch)
+		}
+		if h.WindowsPS != "" {
+			if h.OS != "windows" {
+				return fmt.Errorf("host %q: windows_ps is only valid when os is windows", name)
+			}
+			switch strings.ToLower(strings.TrimSpace(h.WindowsPS)) {
+			case "powershell", "pwsh":
+			default:
+				return fmt.Errorf("host %q: windows_ps must be powershell or pwsh (got %q)", name, h.WindowsPS)
+			}
 		}
 	}
 
