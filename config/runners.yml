@@ -21,6 +21,12 @@ hosts:
   #   addr: root@203.0.113.10
   #   os: linux
   #   arch: amd64
+  #
+  # Local host (the machine running ghr):
+  #
+  # my-laptop:
+  #   addr: local              # runs commands locally instead of over SSH
+  #   # os and arch are auto-detected; override if needed
 
 runners:
   # Example runners:
@@ -43,6 +49,15 @@ runners:
   #   count: 2
   #   labels: [self-hosted, Linux, X64]
   #   mode: docker  # "docker" (default on linux) or "native"
+  #
+  # Runner on the local machine:
+  #
+  # - name: my-project-local
+  #   repo: owner/repo
+  #   host: my-laptop
+  #   count: 1
+  #   labels: [self-hosted, Linux, X64]
+  #   mode: native
   #
   # Linux runner on a Windows host (requires Docker Desktop):
   #

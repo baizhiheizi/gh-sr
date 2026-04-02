@@ -12,7 +12,11 @@ import (
 type Host struct {
 	Name string
 	config.HostConfig
-	conn *Connection
+	conn Executor
+}
+
+func IsLocal(addr string) bool {
+	return config.IsLocalAddr(addr)
 }
 
 func NewHost(name string, cfg config.HostConfig) *Host {
@@ -23,6 +27,10 @@ func NewHost(name string, cfg config.HostConfig) *Host {
 }
 
 func (h *Host) Connect() error {
+	if IsLocal(h.Addr) {
+		h.conn = NewLocalConnection()
+		return nil
+	}
 	user, addr := parseAddr(h.Addr)
 	conn, err := NewConnection(user, addr)
 	if err != nil {
@@ -83,7 +91,7 @@ func (h *Host) windowsPowerShellExe() string {
 }
 
 func (h *Host) wrapCommand(cmd string) string {
-	if h.OS == "windows" {
+	if h.OS == "windows" && !IsLocal(h.Addr) {
 		enc := encodePowerShellScript(cmd)
 		exe := h.windowsPowerShellExe()
 		return fmt.Sprintf("%s -NoProfile -NonInteractive -EncodedCommand %s", exe, enc)

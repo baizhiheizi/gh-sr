@@ -14,6 +14,14 @@ import (
 	"golang.org/x/crypto/ssh/knownhosts"
 )
 
+// Executor abstracts command execution on a host. SSHConnection and
+// LocalConnection both implement this interface.
+type Executor interface {
+	Run(cmd string) (string, error)
+	Upload(localPath, remotePath string) error
+	Close() error
+}
+
 type Connection struct {
 	client *ssh.Client
 }

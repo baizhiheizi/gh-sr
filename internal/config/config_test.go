@@ -270,6 +270,86 @@ func TestValidate_windows_ps_pwsh(t *testing.T) {
 	}
 }
 
+func TestIsLocalAddr(t *testing.T) {
+	t.Parallel()
+	if !IsLocalAddr("local") {
+		t.Error("\"local\" should be local")
+	}
+	if !IsLocalAddr("Local") {
+		t.Error("\"Local\" should be local (case-insensitive)")
+	}
+	if IsLocalAddr("user@host") {
+		t.Error("\"user@host\" should not be local")
+	}
+	if IsLocalAddr("") {
+		t.Error("empty string should not be local")
+	}
+}
+
+func TestValidate_localHost(t *testing.T) {
+	t.Parallel()
+	cfg := Config{
+		GitHub: GitHubConfig{PAT: "x"},
+		Hosts:  map[string]HostConfig{"laptop": {Addr: "local", OS: "linux", Arch: "amd64"}},
+		Runners: []RunnerConfig{
+			{Name: "r", Repo: "o/r", Host: "laptop"},
+		},
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("local host should be valid: %v", err)
+	}
+}
+
+func TestApplyDefaults_localHostAutoDetect(t *testing.T) {
+	t.Parallel()
+	cfg := Config{
+		GitHub: GitHubConfig{PAT: "x"},
+		Hosts:  map[string]HostConfig{"laptop": {Addr: "local"}},
+		Runners: []RunnerConfig{
+			{Name: "r", Repo: "o/r", Host: "laptop"},
+		},
+	}
+	cfg.applyDefaults()
+
+	h := cfg.Hosts["laptop"]
+	if h.OS == "" {
+		t.Error("OS should be auto-detected for local host")
+	}
+	if h.Arch == "" {
+		t.Error("Arch should be auto-detected for local host")
+	}
+}
+
+func TestLoad_localHost(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "runners.yml")
+	content := `
+github:
+  pat: tok
+hosts:
+  laptop:
+    addr: local
+runners:
+  - name: r1
+    repo: o/r
+    host: laptop
+`
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := cfg.Hosts["laptop"]
+	if h.OS == "" {
+		t.Error("OS should be auto-detected")
+	}
+	if h.Arch == "" {
+		t.Error("Arch should be auto-detected")
+	}
+}
+
 func TestConfig_queries(t *testing.T) {
 	cfg := &Config{
 		GitHub: GitHubConfig{PAT: "x"},

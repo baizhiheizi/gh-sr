@@ -68,6 +68,57 @@ func TestHost_wrapCommand(t *testing.T) {
 	}
 }
 
+func TestIsLocal(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		addr string
+		want bool
+	}{
+		{"local", true},
+		{"Local", true},
+		{"LOCAL", true},
+		{" local ", true},
+		{"user@host", false},
+		{"", false},
+		{"localhost", false},
+	}
+	for _, tc := range cases {
+		if got := IsLocal(tc.addr); got != tc.want {
+			t.Errorf("IsLocal(%q) = %v, want %v", tc.addr, got, tc.want)
+		}
+	}
+}
+
+func TestHost_ConnectLocal(t *testing.T) {
+	t.Parallel()
+	h := NewHost("local-box", config.HostConfig{Addr: "local", OS: "linux", Arch: "amd64"})
+	if err := h.Connect(); err != nil {
+		t.Fatalf("Connect local: %v", err)
+	}
+	defer h.Close()
+
+	if _, ok := h.conn.(*LocalConnection); !ok {
+		t.Fatalf("expected *LocalConnection, got %T", h.conn)
+	}
+
+	out, err := h.Run("echo works")
+	if err != nil {
+		t.Fatalf("Run on local: %v", err)
+	}
+	if out != "works" {
+		t.Errorf("got %q, want %q", out, "works")
+	}
+}
+
+func TestHost_wrapCommand_localWindows(t *testing.T) {
+	t.Parallel()
+	h := NewHost("local-win", config.HostConfig{Addr: "local", OS: "windows", Arch: "amd64"})
+	got := h.wrapCommand("Get-Date")
+	if got != "Get-Date" {
+		t.Errorf("local windows should pass through, got %q", got)
+	}
+}
+
 func TestHost_paths(t *testing.T) {
 	t.Parallel()
 	win := NewHost("w", config.HostConfig{Addr: "u@h", OS: "windows", Arch: "amd64"})

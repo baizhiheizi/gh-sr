@@ -277,7 +277,11 @@ func setupCmd() *cobra.Command {
 					continue
 				}
 
-				fmt.Printf("Setting up on %s (%s)...\n", rc.Host, hcfg.Addr)
+				if config.IsLocalAddr(hcfg.Addr) {
+					fmt.Printf("Setting up on %s (local)...\n", rc.Host)
+				} else {
+					fmt.Printf("Setting up on %s (%s)...\n", rc.Host, hcfg.Addr)
+				}
 				h, err := connectHost(rc.Host, hcfg)
 				if err != nil {
 					return err

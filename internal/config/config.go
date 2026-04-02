@@ -3,10 +3,17 @@ package config
 import (
 	"fmt"
 	"os"
+	"runtime"
 	"strings"
 
 	"gopkg.in/yaml.v3"
 )
+
+const LocalAddr = "local"
+
+func IsLocalAddr(addr string) bool {
+	return strings.EqualFold(strings.TrimSpace(addr), LocalAddr)
+}
 
 type Config struct {
 	GitHub  GitHubConfig          `yaml:"github"`
@@ -89,7 +96,27 @@ func resolveEnv(val string) string {
 	return val
 }
 
+func normalizeArch(goarch string) string {
+	switch goarch {
+	case "amd64", "arm64":
+		return goarch
+	default:
+		return goarch
+	}
+}
+
 func (c *Config) applyDefaults() {
+	for name, h := range c.Hosts {
+		if IsLocalAddr(h.Addr) {
+			if h.OS == "" {
+				h.OS = runtime.GOOS
+			}
+			if h.Arch == "" {
+				h.Arch = normalizeArch(runtime.GOARCH)
+			}
+			c.Hosts[name] = h
+		}
+	}
 	for i := range c.Runners {
 		if c.Runners[i].Count < 1 {
 			c.Runners[i].Count = 1
@@ -108,7 +135,7 @@ func (c *Config) Validate() error {
 
 	for name, h := range c.Hosts {
 		if h.Addr == "" {
-			return fmt.Errorf("host %q: addr is required", name)
+			return fmt.Errorf("host %q: addr is required (use \"local\" for the current machine)", name)
 		}
 		switch h.OS {
 		case "linux", "darwin", "windows":
