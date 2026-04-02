@@ -16,9 +16,16 @@ func TestRunnerConfig_EffectiveMode(t *testing.T) {
 	if got := rc.EffectiveMode("darwin"); got != "native" {
 		t.Errorf("darwin default: got %q want native", got)
 	}
+	if got := rc.EffectiveMode("windows"); got != "native" {
+		t.Errorf("windows default: got %q want native", got)
+	}
 	rc.Mode = "native"
 	if got := rc.EffectiveMode("linux"); got != "native" {
 		t.Errorf("explicit mode: got %q want native", got)
+	}
+	rc.Mode = "docker"
+	if got := rc.EffectiveMode("windows"); got != "docker" {
+		t.Errorf("explicit docker on windows: got %q want docker", got)
 	}
 }
 
@@ -210,6 +217,20 @@ func TestValidate_errors(t *testing.T) {
 				t.Errorf("error %q should contain %q", err.Error(), tc.frag)
 			}
 		})
+	}
+}
+
+func TestValidate_dockerOnWindowsHost(t *testing.T) {
+	t.Parallel()
+	cfg := Config{
+		GitHub: GitHubConfig{PAT: "x"},
+		Hosts:  map[string]HostConfig{"w": {Addr: "a@b", OS: "windows", Arch: "amd64"}},
+		Runners: []RunnerConfig{
+			{Name: "linux-on-win", Repo: "o/r", Host: "w", Mode: "docker"},
+		},
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("mode: docker on windows host should be valid, got: %v", err)
 	}
 }
 

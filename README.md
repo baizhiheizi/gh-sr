@@ -6,7 +6,7 @@ A CLI tool to manage self-hosted GitHub Actions runners across multiple hosts �
 - **SSH-only transport** — no agents or scripts to install on remote hosts
 - **Declarative config** — one YAML file defines your hosts and runners
 - **Multi-host** — manage runners on any number of machines (local PCs, Mac Minis, VPS)
-- **Docker & native** — Linux runners can use Docker containers; macOS and Windows run natively
+- **Docker & native** — Linux runners use Docker containers (including on Windows via Docker Desktop); macOS and Windows run natively
 - **Interactive dashboard** — TUI with live status updates
 
 ---
@@ -17,7 +17,7 @@ A CLI tool to manage self-hosted GitHub Actions runners across multiple hosts �
 Your Laptop (control plane)
   └── ghr CLI
         ├── SSH → Mac Mini (native runners)
-        ├── SSH → Windows PC (native runners)
+        ├── SSH → Windows PC (native + Docker runners)
         └── SSH → VPS (Docker runners)
 ```
 
@@ -60,7 +60,7 @@ To use the checked-in example at `config/runners.yml` while hacking on this repo
 **On runner hosts:**
 - **Linux** — Docker installed (for `mode: docker`) or just a shell (for `mode: native`)
 - **macOS** — `curl` available (pre-installed)
-- **Windows** — OpenSSH Server enabled:
+- **Windows** — OpenSSH Server enabled; Docker Desktop if you want Linux container runners (`mode: docker`):
   ```powershell
   Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0
   Start-Service sshd
@@ -149,6 +149,13 @@ runners:
     count: 1
     labels: [self-hosted, Windows, X64]
 
+  - name: enjoy-linux-on-win
+    repo: an-lee/enjoy
+    host: win-pc
+    mode: docker   # Linux container via Docker Desktop
+    count: 1
+    labels: [self-hosted, Linux, X64]
+
   - name: hangar-ci
     repo: an-lee/hangar
     host: vps-1
@@ -170,7 +177,7 @@ runners:
 | `runners[].host` | References a key under `hosts` |
 | `runners[].count` | Number of parallel instances (default: 1) |
 | `runners[].labels` | Labels for workflow `runs-on` matching |
-| `runners[].mode` | `docker` or `native` (default: `docker` for Linux, `native` for others) |
+| `runners[].mode` | `docker` or `native` (default: `docker` for Linux hosts, `native` for others). Set `docker` on a Windows host for Linux container runners via Docker Desktop. |
 
 ---
 
@@ -275,6 +282,40 @@ This removes existing runners, downloads the latest runner binary, reconfigures,
 ```bash
 ghr cleanup
 ```
+
+---
+
+## Linux runners on a Windows host
+
+You can run Linux container runners on a Windows machine without a separate SSH endpoint into WSL2. Set `mode: docker` on a runner that targets a `os: windows` host and ghr will manage the Docker container through PowerShell over the same SSH connection.
+
+**Requirements on the Windows host:**
+- OpenSSH Server enabled (see [Prerequisites](#prerequisites))
+- Docker Desktop installed and running with the default Linux containers mode
+
+```yaml
+hosts:
+  win-pc:
+    addr: user@192.168.1.51
+    os: windows
+    arch: amd64
+
+runners:
+  # Native Windows runner
+  - name: myapp-win
+    repo: owner/repo
+    host: win-pc
+    labels: [self-hosted, Windows, X64]
+
+  # Linux runner via Docker Desktop on the same Windows host
+  - name: myapp-linux
+    repo: owner/repo
+    host: win-pc
+    mode: docker
+    labels: [self-hosted, Linux, X64]
+```
+
+Both runners share a single SSH connection to Windows. The native runner uses `run.cmd` directly; the Docker runner calls `docker run` through PowerShell which talks to Docker Desktop's Linux engine.
 
 ---
 

@@ -43,3 +43,12 @@ runners:
   #   count: 2
   #   labels: [self-hosted, Linux, X64]
   #   mode: docker  # "docker" (default on linux) or "native"
+  #
+  # Linux runner on a Windows host (requires Docker Desktop):
+  #
+  # - name: my-project-linux-on-win
+  #   repo: owner/repo
+  #   host: win-pc
+  #   mode: docker   # Linux container via Docker Desktop
+  #   count: 1
+  #   labels: [self-hosted, Linux, X64]
