@@ -4,6 +4,7 @@ Manage self-hosted GitHub Actions runners across multiple repos, running on your
 
 - **Linux runners** — Docker containers in WSL2, built from the [official `actions/runner` releases](https://github.com/actions/runner/releases)
 - **Windows runners** — Native processes on Windows, managed via PowerShell from WSL2
+- **Mac runners** — Native processes on a remote Mac, managed via SSH
 - **Single config file** — declare all repos, runner counts, and labels in `config/runners.yml`
 - **Single CLI** — `./scripts/runner` handles everything
 
@@ -50,6 +51,7 @@ This is the only file you edit day-to-day. `docker-compose.yml` is always genera
 ```yaml
 github:
   pat_env_var: GITHUB_PAT      # name of the env var in .env that holds your token
+  mac_host: user@mac-hostname  # SSH target for Mac runners (omit if unused)
 
 runners:
   - name: hangar-ci            # base name; instances become hangar-ci-1, hangar-ci-2, ...
@@ -63,10 +65,17 @@ runners:
     os: windows
     count: 1
     labels: [self-hosted, windows, x64]
+
+  - name: enjoy-mac
+    repo: an-lee/enjoy
+    os: mac
+    count: 1
+    labels: [self-hosted, mac, arm64]
 ```
 
 `os: linux` → Docker container via WSL2  
-`os: windows` → native Windows process
+`os: windows` → native Windows process  
+`os: mac` → native macOS process on the remote `mac_host` via SSH
 
 ### Secrets (`.env`)
 
@@ -89,6 +98,19 @@ Windows container jobs are [not supported by GitHub Actions](https://github.com/
 - Starting runners with `run.cmd` (tracked by PID file)
 - Stopping and deregistering on removal
 
+### Mac runners (`scripts/manage-mac.sh`)
+
+Mac runners run as native processes on a remote Mac. The `manage-mac.sh` script runs on the Mac itself and is invoked via SSH by the `runner` CLI. It handles:
+
+- Auto-detecting architecture (Intel x64 or Apple Silicon arm64) to download the correct tarball
+- Downloading `actions-runner-osx-{arch}` from GitHub releases to `/tmp/` (cached per version)
+- Extracting to `~/gh-runners/runners/<name>-<N>/` on the Mac
+- Calling `config.sh` to register with GitHub
+- Starting runners with `run.sh` in background via `nohup` (tracked by PID file)
+- Stopping and deregistering on removal
+
+SSH key-based authentication must be pre-configured from WSL2 to the Mac. Set `github.mac_host` to the SSH target (e.g., `user@192.168.1.50` or a hostname in your `~/.ssh/config`).
+
 ---
 
 ## Prerequisites
@@ -101,6 +123,11 @@ Windows container jobs are [not supported by GitHub Actions](https://github.com/
 **Windows (for Windows runners):**
 - PowerShell 5.1+ (built into Windows 11)
 - `yq` available in PowerShell path (download from [mikefarah/yq releases](https://github.com/mikefarah/yq/releases))
+
+**Mac (for Mac runners):**
+- macOS 12 (Monterey) or later
+- `jq` — install with `brew install jq`
+- SSH key-based access configured from WSL2 to the Mac (no passphrase prompts)
 
 ---
 
@@ -156,6 +183,15 @@ Check GitHub: **repo → Settings → Actions → Runners** — your runners sho
 ```bash
 ./scripts/runner win-install   # downloads runner, configures it with GitHub
 ./scripts/runner win-up        # starts the runner processes
+```
+
+### 6. Start Mac runners (optional)
+
+Set `github.mac_host` in `config/runners.yml` to the SSH target of your Mac, then:
+
+```bash
+./scripts/runner mac-install   # copies manage-mac.sh to Mac, downloads runner, configures it
+./scripts/runner mac-up        # starts the runner processes on the Mac
 ```
 
 ---
@@ -246,6 +282,13 @@ This calls the GitHub API to delete any offline runner entries for all repos in 
 ./scripts/runner win-remove   # deregister from GitHub and delete local files
 ```
 
+### Remove all Mac runners
+
+```bash
+./scripts/runner mac-down     # stop processes on Mac
+./scripts/runner mac-remove   # deregister from GitHub and delete remote files
+```
+
 ---
 
 ## Using runners in workflows
@@ -279,6 +322,7 @@ gh-runners/
 │   ├── runner                   # Main CLI — run this for everything
 │   ├── generate-compose.sh      # runners.yml → docker-compose.yml (called by runner)
 │   ├── manage-windows.ps1       # Windows runner lifecycle (called by runner)
+│   ├── manage-mac.sh            # Mac runner lifecycle (copied to Mac and invoked via SSH)
 │   └── lib/
 │       └── common.sh            # Shared bash helpers
 ├── windows/
@@ -313,4 +357,22 @@ Install Mike Farah's yq v4+ (not the Python wrapper):
 ```bash
 wget -O ~/.local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
 chmod +x ~/.local/bin/yq
+```
+
+**"Cannot SSH to Mac host" error**  
+Configure SSH key-based auth from WSL2 to the Mac:
+```bash
+ssh-keygen -t ed25519    # if you don't have a key yet
+ssh-copy-id user@mac-hostname
+ssh user@mac-hostname    # verify it works without a password prompt
+```
+
+**Mac runner process dies after mac-up returns**  
+This shouldn't happen — `manage-mac.sh` uses `nohup` to detach the process. If it occurs, SSH into the Mac and check `~/gh-runners/runners/<name>/runner.log` for errors.
+
+**Mac runner appears in GitHub but stays "Offline"**  
+SSH into the Mac and check whether the process is running:
+```bash
+ssh user@mac-hostname "ps aux | grep run.sh"
+cat ~/gh-runners/runners/<runner-name>/runner.log
 ```

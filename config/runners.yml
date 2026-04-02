@@ -4,9 +4,11 @@
 # Each runner entry defines a group of identical runners for a repo.
 # Linux runners run as Docker containers (built from official actions/runner releases).
 # Windows runners run as native processes on Windows.
+# Mac runners run as native processes on a remote Mac, managed via SSH.
 
 github:
   pat_env_var: GITHUB_PAT
+  # mac_host: user@mac-hostname   # SSH target for Mac runners (omit if unused)
 
 runners:
   # Example Linux runner:
@@ -24,5 +26,13 @@ runners:
   #   os: windows
   #   count: 1
   #   labels: [self-hosted, windows, x64]
+  #
+  # Example Mac runner:
+  #
+  # - name: my-project-mac
+  #   repo: owner/repo
+  #   os: mac
+  #   count: 1
+  #   labels: [self-hosted, mac, arm64]
 
   []

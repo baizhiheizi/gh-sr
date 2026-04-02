@@ -92,3 +92,9 @@ cleanup_offline_runners() {
   done
 }
 
+# Get the SSH target for the Mac runner host from config.
+# Outputs the value of github.mac_host, or empty string if unset.
+get_mac_host() {
+  yq '.github.mac_host // ""' "$CONFIG"
+}
+

@@ -26,6 +26,12 @@ Windows runner commands (native):
   win-down          Stop Windows runners
   win-remove        Deregister and remove Windows runners
 
+Mac runner commands (remote via SSH):
+  mac-install       Download and configure Mac runners on the remote host
+  mac-up            Start Mac runners on the remote host
+  mac-down          Stop Mac runners on the remote host
+  mac-remove        Deregister and remove Mac runners from the remote host
+
 Maintenance:
   rotate-token      Restart all runners with updated PAT from .env
 
@@ -100,6 +106,45 @@ cmd_status() {
       else
         echo "  powershell.exe not available — cannot check Windows runner status"
       fi
+    fi
+  fi
+
+  echo ""
+  echo "=== Mac Runners (Remote SSH) ==="
+  local mac_count
+  mac_count="$(yq '[.runners[] | select(.os == "mac")] | length' "$CONFIG")"
+  local mac_host
+  mac_host="$(get_mac_host)"
+
+  if [[ "$mac_count" -eq 0 ]]; then
+    echo "  No Mac runners configured."
+  elif [[ -z "$mac_host" ]]; then
+    echo "  Mac runners configured but github.mac_host is not set in $CONFIG"
+  else
+    if ssh -o ConnectTimeout=5 -o BatchMode=yes "$mac_host" true 2>/dev/null; then
+      local runner_dirs
+      runner_dirs="$(ssh "$mac_host" "ls -d ~/gh-runners/runners/*/ 2>/dev/null || true")"
+      if [[ -z "$runner_dirs" ]]; then
+        echo "  Mac runners configured but not installed. Run './scripts/runner mac-install'."
+      else
+        while IFS= read -r dir; do
+          [[ -z "$dir" ]] && continue
+          local name running
+          name="$(basename "$dir")"
+          running="$(ssh "$mac_host" "
+            pid_file=\"${dir}.runner_pid\"
+            if [[ -f \"\$pid_file\" ]]; then
+              pid=\$(cat \"\$pid_file\")
+              if kill -0 \"\$pid\" 2>/dev/null; then echo running; else echo stopped; fi
+            else
+              echo stopped
+            fi
+          " 2>/dev/null)"
+          echo "  $name: ${running:-unknown}"
+        done <<< "$runner_dirs"
+      fi
+    else
+      echo "  Mac host '$mac_host' is not reachable via SSH."
     fi
   fi
 
@@ -193,6 +238,17 @@ cmd_rotate_token() {
     echo "  ./scripts/runner win-install"
     echo "  ./scripts/runner win-up"
   fi
+
+  # Mac runners
+  local mac_count
+  mac_count="$(yq '[.runners[] | select(.os == "mac")] | length' "$CONFIG")"
+  if [[ "$mac_count" -gt 0 ]]; then
+    echo ""
+    echo "Mac runners need to be re-registered manually:"
+    echo "  ./scripts/runner mac-remove"
+    echo "  ./scripts/runner mac-install"
+    echo "  ./scripts/runner mac-up"
+  fi
 }
 
 # --- Windows runner commands ---
@@ -282,6 +338,100 @@ cmd_win_remove() {
     -Pat "$pat"
 }
 
+# --- Mac runner commands ---
+
+mac_check() {
+  local host
+  host="$(get_mac_host)"
+  if [[ -z "$host" ]]; then
+    echo "Error: github.mac_host is not set in $CONFIG" >&2
+    exit 1
+  fi
+  if ! ssh -o ConnectTimeout=5 -o BatchMode=yes "$host" true 2>/dev/null; then
+    echo "Error: Cannot SSH to Mac host '$host'. Verify key-based auth is configured." >&2
+    exit 1
+  fi
+}
+
+mac_get_config_json() {
+  yq -o=json '[.runners[] | select(.os == "mac")]' "$CONFIG"
+}
+
+cmd_mac_install() {
+  mac_check
+  check_deps
+  load_env
+
+  local mac_count
+  mac_count="$(yq '[.runners[] | select(.os == "mac")] | length' "$CONFIG")"
+  if [[ "$mac_count" -eq 0 ]]; then
+    echo "No Mac runners defined in $CONFIG"
+    exit 0
+  fi
+
+  local host
+  host="$(get_mac_host)"
+  local pat_var
+  pat_var="$(yq '.github.pat_env_var' "$CONFIG")"
+  local pat="${!pat_var}"
+  local config_json
+  config_json="$(mac_get_config_json)"
+
+  echo "Copying manage-mac.sh to $host..."
+  ssh "$host" "mkdir -p ~/gh-runners"
+  scp "$SCRIPT_DIR/manage-mac.sh" "$host:~/gh-runners/manage-mac.sh"
+
+  echo "Installing Mac runners on $host..."
+  ssh "$host" "bash ~/gh-runners/manage-mac.sh \
+    --action install \
+    --runners-dir ~/gh-runners/runners \
+    --pat $(printf '%q' "$pat") \
+    --config $(printf '%q' "$config_json")"
+}
+
+cmd_mac_up() {
+  mac_check
+  local host
+  host="$(get_mac_host)"
+
+  echo "Starting Mac runners on $host..."
+  ssh "$host" "bash ~/gh-runners/manage-mac.sh \
+    --action start \
+    --runners-dir ~/gh-runners/runners"
+}
+
+cmd_mac_down() {
+  mac_check
+  local host
+  host="$(get_mac_host)"
+
+  echo "Stopping Mac runners on $host..."
+  ssh "$host" "bash ~/gh-runners/manage-mac.sh \
+    --action stop \
+    --runners-dir ~/gh-runners/runners"
+}
+
+cmd_mac_remove() {
+  mac_check
+  check_deps
+  load_env
+
+  local host
+  host="$(get_mac_host)"
+  local pat_var
+  pat_var="$(yq '.github.pat_env_var' "$CONFIG")"
+  local pat="${!pat_var}"
+  local config_json
+  config_json="$(mac_get_config_json)"
+
+  echo "Removing Mac runners on $host..."
+  ssh "$host" "bash ~/gh-runners/manage-mac.sh \
+    --action remove \
+    --runners-dir ~/gh-runners/runners \
+    --pat $(printf '%q' "$pat") \
+    --config $(printf '%q' "$config_json")"
+}
+
 # --- Dispatch ---
 
 case "${1:-}" in
@@ -299,6 +449,10 @@ case "${1:-}" in
   win-up)         cmd_win_up ;;
   win-down)       cmd_win_down ;;
   win-remove)     cmd_win_remove ;;
+  mac-install)    cmd_mac_install ;;
+  mac-up)         cmd_mac_up ;;
+  mac-down)       cmd_mac_down ;;
+  mac-remove)     cmd_mac_remove ;;
   -h|--help|help) usage ;;
   *)
     usage
