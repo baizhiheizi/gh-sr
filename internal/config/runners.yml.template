@@ -18,6 +18,7 @@ hosts:
   #   arch: amd64
   #
   # vps-1:
+  #   # Linux: non-root SSH users often need passwordless sudo for ghr setup, or pre-install Docker (docker mode).
   #   addr: root@203.0.113.10
   #   os: linux
   #   arch: amd64

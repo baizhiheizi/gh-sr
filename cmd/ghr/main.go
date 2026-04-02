@@ -20,6 +20,15 @@ var (
 	filterRepo string
 )
 
+// linuxSetupPrivilegesHelp is appended to root/setup/update Long text (non-interactive SSH + sudo behavior on Linux).
+const linuxSetupPrivilegesHelp = `
+
+Linux hosts: ghr setup and update may run package installs and similar steps on the remote host. For a non-root
+SSH user, ghr uses sudo when the sudo binary exists on the remote PATH; SSH is non-interactive, so passwordless
+sudo (or SSH as root) is usually required for those steps to succeed. For docker mode without Docker installed,
+install Docker yourself or ensure sudo works; for native mode, pre-install curl/tar and runner OS dependencies
+if you cannot use sudo. See the README section "Linux SSH user and privileges".`
+
 func main() {
 	root := &cobra.Command{
 		Use:   "ghr",
@@ -28,7 +37,7 @@ func main() {
 of Linux, macOS, and Windows hosts — all from your laptop over SSH.
 
 Define your hosts and runners in ~/.ghr/runners.yml (or set GHR_CONFIG / --config),
-then use unified commands to setup, start, stop, and monitor everything.`,
+then use unified commands to setup, start, stop, and monitor everything.` + linuxSetupPrivilegesHelp,
 		SilenceUsage: true,
 	}
 
@@ -252,6 +261,7 @@ func setupCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "setup [runner-names...]",
 		Short: "Install runner prerequisites and configure runners on hosts",
+		Long:  "Installs and configures runners on remote hosts over SSH." + linuxSetupPrivilegesHelp,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, err := loadConfig()
 			if err != nil {
@@ -490,6 +500,7 @@ func updateCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "update [runner-names...]",
 		Short: "Update runner binary on hosts (remove + setup + start)",
+		Long:  "Removes each runner, runs setup again, then starts it. Re-runs the same remote install paths as ghr setup." + linuxSetupPrivilegesHelp,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, err := loadConfig()
 			if err != nil {

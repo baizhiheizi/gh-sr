@@ -60,6 +60,16 @@ To use the checked-in example at `config/runners.yml` while hacking on this repo
 **On runner hosts:**
 - **Linux** — Docker installed (for `mode: docker`) or just a shell (for `mode: native`)
 - **macOS** — `curl` available (pre-installed)
+
+#### Linux SSH user and privileges
+
+`ghr setup` and `ghr update` run remote commands as the SSH user in `hosts.*.addr`. On Linux, if that user is **not** root and the `sudo` binary is on the remote `PATH`, `ghr` prefixes some steps with `sudo` (package installs, GitHub’s `installdependencies.sh` for native runners, and the Docker install script when Docker is missing). SSH sessions are non-interactive, so **passwordless `sudo`** (or running as **`root@host`**) is the reliable choice for those steps.
+
+- **Docker mode** — If Docker is not already installed, expect a privilege path (root or working `sudo`). If Docker is installed and your user can run `docker` without `sudo` (for example via the `docker` group), routine `ghr` operations do not need `sudo`.
+- **Native mode** — You can avoid `sudo` if `curl` and `tar` are present and OS packages the runner needs are already installed; otherwise `ghr` may print warnings and the runner might be incomplete.
+
+`ghr` does not verify sudoers rules; failures show up as remote command errors or warnings.
+
 - **Windows** — OpenSSH Server enabled; Docker Desktop if you want Linux container runners (`mode: docker`):
   ```powershell
   Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0
@@ -169,7 +179,7 @@ runners:
 | Field | Description |
 |---|---|
 | `github.pat` | GitHub PAT. Use `env:VAR_NAME` to read from environment. |
-| `hosts.<name>.addr` | SSH target (`user@host` or `user@ip`) |
+| `hosts.<name>.addr` | SSH target (`user@host` or `user@ip`). Remote commands run as that user; on Linux, privilege expectations for `setup` / `update` follow the [Linux SSH user and privileges](#linux-ssh-user-and-privileges) section. |
 | `hosts.<name>.os` | `linux`, `darwin`, or `windows` |
 | `hosts.<name>.arch` | `amd64` or `arm64` |
 | `runners[].name` | Base name (instances become `name-1`, `name-2`, ...) |
