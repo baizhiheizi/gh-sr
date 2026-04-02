@@ -47,6 +47,19 @@ cd ghr
 go build -o ghr ./cmd/ghr/
 ```
 
+On Windows without GNU Make, use `go build` as above; Go writes `ghr.exe` when you pass `-o ghr`.
+
+**Makefile (optional):** Requires [GNU Make](https://www.gnu.org/software/make/) and the same Go version as in `go.mod` / CI (see [Prerequisites](#prerequisites)). Works on Linux and macOS, and on Windows in a Unix-like environment (for example WSL2 or MSYS2) where `make`, `rm`, and a POSIX shell are available. The `install` target uses the `install` utility from coreutils and is intended for Unix-like systems only, not plain cmd.exe or PowerShell.
+
+| Target | Description |
+|--------|-------------|
+| `make` / `make build` | Build `./cmd/ghr` into `ghr` (or `ghr.exe` on Windows when `OS` is `Windows_NT`). |
+| `make test` | Run `go test ./... -race -count=1` (same as CI). |
+| `make vet` | Run `go vet ./...`. |
+| `make check` | Run `vet` then `test`. |
+| `make clean` | Remove the built binary in the repo root. |
+| `make install` | Install the binary to `$(PREFIX)/bin` (default `PREFIX=/usr/local`). Set `DESTDIR` for staged installs (packaging). |
+
 To use the checked-in example at `config/runners.yml` while hacking on this repo, point the CLI at it explicitly, for example `export GHR_CONFIG="$PWD/config/runners.yml"` or `ghr -c config/runners.yml status`.
 
 ---
