@@ -3,10 +3,12 @@ package main
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/spf13/cobra"
 
 	"github.com/an-lee/ghr/internal/config"
+	"github.com/an-lee/ghr/internal/editor"
 	"github.com/an-lee/ghr/internal/host"
 	"github.com/an-lee/ghr/internal/runner"
 	"github.com/an-lee/ghr/internal/tui"
@@ -25,16 +27,17 @@ func main() {
 		Long: `ghr manages self-hosted GitHub Actions runners on any combination
 of Linux, macOS, and Windows hosts — all from your laptop over SSH.
 
-Define your hosts and runners in config/runners.yml, then use unified
-commands to setup, start, stop, and monitor everything.`,
+Define your hosts and runners in ~/.ghr/runners.yml (or ./config/runners.yml
+when present), then use unified commands to setup, start, stop, and monitor everything.`,
 		SilenceUsage: true,
 	}
 
-	root.PersistentFlags().StringVarP(&cfgFile, "config", "c", config.DefaultPath(), "config file path")
+	root.PersistentFlags().StringVarP(&cfgFile, "config", "c", "", "config file path (empty = auto; use \"ghr config path\" to print the resolved file)")
 	root.PersistentFlags().StringVar(&filterHost, "host", "", "filter by host name")
 	root.PersistentFlags().StringVar(&filterRepo, "repo", "", "filter by repo (owner/repo)")
 
 	root.AddCommand(
+		initCmd(),
 		setupCmd(),
 		upCmd(),
 		downCmd(),
@@ -53,7 +56,14 @@ commands to setup, start, stop, and monitor everything.`,
 }
 
 func loadConfig() (*config.Config, error) {
-	return config.Load(cfgFile)
+	if err := config.BootstrapEnv(); err != nil {
+		return nil, err
+	}
+	path, err := config.ResolveConfigPath(cfgFile)
+	if err != nil {
+		return nil, err
+	}
+	return config.LoadFromPath(path)
 }
 
 func newManager(cfg *config.Config) *runner.Manager {
@@ -66,6 +76,174 @@ func connectHost(name string, cfg config.HostConfig) (*host.Host, error) {
 		return nil, err
 	}
 	return h, nil
+}
+
+func initCmd() *cobra.Command {
+	var force bool
+	cmd := &cobra.Command{
+		Use:   "init",
+		Short: "Create ~/.ghr with template runners.yml and env file",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			dir, err := config.GhrDir()
+			if err != nil {
+				return err
+			}
+			if err := os.MkdirAll(dir, 0o700); err != nil {
+				return err
+			}
+			runnersPath := filepath.Join(dir, "runners.yml")
+			if _, err := os.Stat(runnersPath); err == nil && !force {
+				fmt.Printf("Already exists (use --force to overwrite): %s\n", runnersPath)
+			} else {
+				if err := os.WriteFile(runnersPath, config.RunnersYMLTemplate, 0o600); err != nil {
+					return err
+				}
+				fmt.Printf("Wrote %s\n", runnersPath)
+			}
+			envPath, err := config.EnvFilePath()
+			if err != nil {
+				return err
+			}
+			if _, err := os.Stat(envPath); os.IsNotExist(err) {
+				if err := os.WriteFile(envPath, []byte(config.EnvFileTemplate), 0o600); err != nil {
+					return err
+				}
+				fmt.Printf("Wrote %s\n", envPath)
+			} else {
+				fmt.Printf("Unchanged (already exists): %s\n", envPath)
+			}
+			fmt.Println("\nNext: edit ~/.ghr/runners.yml, set GITHUB_PAT in ~/.ghr/env, then run `ghr config validate` and `ghr status`.")
+			return nil
+		},
+	}
+	cmd.Flags().BoolVar(&force, "force", false, "overwrite existing ~/.ghr/runners.yml")
+	return cmd
+}
+
+func configCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "config",
+		Short: "Inspect or edit configuration",
+	}
+	cmd.AddCommand(
+		configPathCmd(),
+		configShowCmd(),
+		configEditCmd(),
+		configEditEnvCmd(),
+		configValidateCmd(),
+	)
+	return cmd
+}
+
+func configPathCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "path",
+		Short: "Print resolved config and env file paths",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			path, err := config.ResolveConfigPath(cfgFile)
+			if err != nil {
+				return err
+			}
+			envPath, err := config.EnvFilePath()
+			if err != nil {
+				return err
+			}
+			envStatus := "not present"
+			if _, err := os.Stat(envPath); err == nil {
+				envStatus = "present"
+			}
+			fmt.Printf("Config file: %s\n", path)
+			fmt.Printf("Env file:    %s (%s)\n", envPath, envStatus)
+			return nil
+		},
+	}
+}
+
+func configShowCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "show",
+		Short: "Print resolved configuration (PAT redacted)",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, err := loadConfig()
+			if err != nil {
+				return err
+			}
+			tui.PrintConfig(cfg)
+			return nil
+		},
+	}
+}
+
+func configEditCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "edit",
+		Short: "Open the resolved config file in $VISUAL or $EDITOR",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			path, err := config.ResolveConfigPath(cfgFile)
+			if err != nil {
+				return err
+			}
+			if _, err := os.Stat(path); os.IsNotExist(err) {
+				return fmt.Errorf("config file does not exist: %s\nRun `ghr init` to create it", path)
+			}
+			if err := editor.Open(path); err != nil {
+				return err
+			}
+			if _, err := loadConfig(); err != nil {
+				return fmt.Errorf("config invalid after edit: %w", err)
+			}
+			fmt.Println("Config is valid.")
+			return nil
+		},
+	}
+}
+
+func configEditEnvCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "edit-env",
+		Short: "Open ~/.ghr/env in $VISUAL or $EDITOR",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			dir, err := config.GhrDir()
+			if err != nil {
+				return err
+			}
+			if err := os.MkdirAll(dir, 0o700); err != nil {
+				return err
+			}
+			envPath, err := config.EnvFilePath()
+			if err != nil {
+				return err
+			}
+			if _, err := os.Stat(envPath); os.IsNotExist(err) {
+				if err := os.WriteFile(envPath, []byte(config.EnvFileTemplate), 0o600); err != nil {
+					return err
+				}
+			}
+			if err := editor.Open(envPath); err != nil {
+				return err
+			}
+			if _, err := loadConfig(); err != nil {
+				return fmt.Errorf("config invalid after editing env: %w", err)
+			}
+			fmt.Println("Config is valid.")
+			return nil
+		},
+	}
+}
+
+func configValidateCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "validate",
+		Short: "Validate the resolved config file",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			_, err := loadConfig()
+			if err != nil {
+				return err
+			}
+			fmt.Println("OK")
+			return nil
+		},
+	}
 }
 
 // --- Commands ---
@@ -339,21 +517,6 @@ func updateCmd() *cobra.Command {
 			}
 
 			fmt.Println("\nUpdate complete.")
-			return nil
-		},
-	}
-}
-
-func configCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:   "config",
-		Short: "Print resolved configuration",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, err := loadConfig()
-			if err != nil {
-				return err
-			}
-			tui.PrintConfig(cfg)
 			return nil
 		},
 	}

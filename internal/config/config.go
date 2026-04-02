@@ -3,7 +3,6 @@ package config
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -75,10 +74,6 @@ func Load(path string) (*Config, error) {
 	}
 
 	return &cfg, nil
-}
-
-func DefaultPath() string {
-	return filepath.Join("config", "runners.yml")
 }
 
 func (c *Config) resolveEnvRefs() {

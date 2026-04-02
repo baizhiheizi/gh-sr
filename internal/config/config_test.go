@@ -254,6 +254,109 @@ func TestConfig_queries(t *testing.T) {
 	}
 }
 
+func TestApplyEnvFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "env")
+	content := `
+# comment
+export FOO=bar
+EMPTY=
+SKIP
+BAZ="quoted"
+`
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("FOO", "")
+	t.Setenv("BAZ", "")
+	if err := ApplyEnvFile(path); err != nil {
+		t.Fatal(err)
+	}
+	if os.Getenv("FOO") != "bar" {
+		t.Errorf("FOO: got %q", os.Getenv("FOO"))
+	}
+	if os.Getenv("BAZ") != "quoted" {
+		t.Errorf("BAZ: got %q", os.Getenv("BAZ"))
+	}
+}
+
+func TestApplyEnvFile_missing(t *testing.T) {
+	t.Parallel()
+	if err := ApplyEnvFile(filepath.Join(t.TempDir(), "nope")); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestResolveConfigPath(t *testing.T) {
+	dir := t.TempDir()
+	local := filepath.Join(dir, "config", "runners.yml")
+	if err := os.MkdirAll(filepath.Dir(local), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(local, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(dir)
+	t.Setenv(EnvVarConfigPath, "")
+
+	got, err := ResolveConfigPath("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != local {
+		t.Errorf("want local %q got %q", local, got)
+	}
+
+	t.Setenv(EnvVarConfigPath, filepath.Join(dir, "other.yml"))
+	if err := os.WriteFile(filepath.Join(dir, "other.yml"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got, err = ResolveConfigPath("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != filepath.Join(dir, "other.yml") {
+		t.Errorf("GHR_CONFIG: got %q", got)
+	}
+}
+
+func TestResolveConfigPath_explicit(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "custom.yml")
+	if err := os.WriteFile(p, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(dir)
+	t.Setenv(EnvVarConfigPath, filepath.Join(dir, "ignored.yml"))
+	if err := os.WriteFile(filepath.Join(dir, "ignored.yml"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got, err := ResolveConfigPath("custom.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != p {
+		t.Errorf("explicit flag wins: got %q want %q", got, p)
+	}
+}
+
+func TestResolveConfigPath_homeFallback(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	wd := t.TempDir()
+	t.Chdir(wd)
+	t.Setenv(EnvVarConfigPath, "")
+
+	got, err := ResolveConfigPath("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := filepath.Join(home, ".ghr", "runners.yml")
+	if got != want {
+		t.Errorf("want %q got %q", want, got)
+	}
+}
+
 func TestFilterRunners(t *testing.T) {
 	cfg := &Config{
 		Runners: []RunnerConfig{

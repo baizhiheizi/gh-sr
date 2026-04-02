@@ -1,0 +1,45 @@
+# ghr configuration
+# Edit this file, then run: ghr up
+
+github:
+  pat: env:GITHUB_PAT  # "env:" prefix reads from environment variable
+
+hosts:
+  # Example hosts:
+  #
+  # mac-mini:
+  #   addr: user@192.168.1.50   # SSH target
+  #   os: darwin
+  #   arch: arm64
+  #
+  # win-pc:
+  #   addr: user@192.168.1.51   # SSH target (enable OpenSSH Server on Windows)
+  #   os: windows
+  #   arch: amd64
+  #
+  # vps-1:
+  #   addr: root@203.0.113.10
+  #   os: linux
+  #   arch: amd64
+
+runners:
+  # Example runners:
+  #
+  # - name: my-project-mac
+  #   repo: owner/repo
+  #   host: mac-mini
+  #   count: 1
+  #   labels: [self-hosted, macOS, ARM64]
+  #
+  # - name: my-project-win
+  #   repo: owner/repo
+  #   host: win-pc
+  #   count: 1
+  #   labels: [self-hosted, Windows, X64]
+  #
+  # - name: my-project-ci
+  #   repo: owner/repo
+  #   host: vps-1
+  #   count: 2
+  #   labels: [self-hosted, Linux, X64]
+  #   mode: docker  # "docker" (default on linux) or "native"
