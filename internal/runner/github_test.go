@@ -1,0 +1,159 @@
+package runner
+
+import (
+	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+)
+
+func TestGitHubClient_GetRegistrationToken(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/repos/o/r/actions/runners/registration-token" {
+			http.NotFound(w, r)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(tokenResponse{Token: "regtok"})
+	}))
+	defer ts.Close()
+
+	g := NewGitHubClientWithHTTP("pat", ts.Client(), ts.URL)
+	tok, err := g.GetRegistrationToken("o/r")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tok != "regtok" {
+		t.Errorf("token %q", tok)
+	}
+}
+
+func TestGitHubClient_GetRegistrationToken_errors(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte("fail"))
+	}))
+	defer ts.Close()
+
+	g := NewGitHubClientWithHTTP("pat", ts.Client(), ts.URL)
+	_, err := g.GetRegistrationToken("o/r")
+	if err == nil || !strings.Contains(err.Error(), "HTTP") {
+		t.Fatalf("expected HTTP error: %v", err)
+	}
+
+	ts2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(tokenResponse{Token: ""})
+	}))
+	defer ts2.Close()
+
+	g2 := NewGitHubClientWithHTTP("pat", ts2.Client(), ts2.URL)
+	_, err = g2.GetRegistrationToken("o/r")
+	if err == nil || !strings.Contains(err.Error(), "empty registration token") {
+		t.Fatalf("expected empty token error: %v", err)
+	}
+}
+
+func TestGitHubClient_GetRemovalToken(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/repos/o/r/actions/runners/remove-token" {
+			http.NotFound(w, r)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(tokenResponse{Token: "rem"})
+	}))
+	defer ts.Close()
+
+	g := NewGitHubClientWithHTTP("pat", ts.Client(), ts.URL)
+	tok, err := g.GetRemovalToken("o/r")
+	if err != nil || tok != "rem" {
+		t.Fatalf("got %q %v", tok, err)
+	}
+}
+
+func TestGitHubClient_ListRunners(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/repos/o/r/actions/runners" {
+			http.NotFound(w, r)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(runnersResponse{
+			Runners: []GitHubRunner{{ID: 1, Name: "r-1", Status: "online"}},
+		})
+	}))
+	defer ts.Close()
+
+	g := NewGitHubClientWithHTTP("pat", ts.Client(), ts.URL)
+	runners, err := g.ListRunners("o/r")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(runners) != 1 || runners[0].Name != "r-1" {
+		t.Fatalf("got %+v", runners)
+	}
+}
+
+func TestGitHubClient_DeleteRunner(t *testing.T) {
+	var method string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		method = r.Method
+		if r.URL.Path != "/repos/o/r/actions/runners/42" {
+			http.NotFound(w, r)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer ts.Close()
+
+	g := NewGitHubClientWithHTTP("pat", ts.Client(), ts.URL)
+	if err := g.DeleteRunner("o/r", 42); err != nil {
+		t.Fatal(err)
+	}
+	if method != http.MethodDelete {
+		t.Errorf("method %s", method)
+	}
+}
+
+func TestGitHubClient_DeleteRunner_errorStatus(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = io.WriteString(w, "nope")
+	}))
+	defer ts.Close()
+
+	g := NewGitHubClientWithHTTP("pat", ts.Client(), ts.URL)
+	err := g.DeleteRunner("o/r", 1)
+	if err == nil || !strings.Contains(err.Error(), "HTTP 400") {
+		t.Fatalf("expected 400: %v", err)
+	}
+}
+
+func TestGitHubClient_GetLatestRunnerVersion(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/repos/actions/runner/releases/latest" {
+			http.NotFound(w, r)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(releaseResponse{TagName: "v2.330.0"})
+	}))
+	defer ts.Close()
+
+	g := NewGitHubClientWithHTTP("pat", ts.Client(), ts.URL)
+	v, err := g.GetLatestRunnerVersion()
+	if err != nil || v != "2.330.0" {
+		t.Fatalf("got %q %v", v, err)
+	}
+}
+
+func TestGitHubClient_GetLatestRunnerVersion_emptyTag(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(releaseResponse{TagName: "v"})
+	}))
+	defer ts.Close()
+
+	g := NewGitHubClientWithHTTP("pat", ts.Client(), ts.URL)
+	_, err := g.GetLatestRunnerVersion()
+	if err == nil || !strings.Contains(err.Error(), "empty version") {
+		t.Fatalf("expected empty version err: %v", err)
+	}
+}

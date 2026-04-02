@@ -60,53 +60,6 @@ func newManager(cfg *config.Config) *runner.Manager {
 	return runner.NewManager(cfg.GitHub.PAT)
 }
 
-func filteredRunners(cfg *config.Config, args []string) []config.RunnerConfig {
-	runners := cfg.Runners
-
-	if filterHost != "" {
-		var filtered []config.RunnerConfig
-		for _, r := range runners {
-			if r.Host == filterHost {
-				filtered = append(filtered, r)
-			}
-		}
-		runners = filtered
-	}
-
-	if filterRepo != "" {
-		var filtered []config.RunnerConfig
-		for _, r := range runners {
-			if r.Repo == filterRepo {
-				filtered = append(filtered, r)
-			}
-		}
-		runners = filtered
-	}
-
-	if len(args) > 0 {
-		nameSet := map[string]bool{}
-		for _, a := range args {
-			nameSet[a] = true
-		}
-		var filtered []config.RunnerConfig
-		for _, r := range runners {
-			if nameSet[r.Name] {
-				filtered = append(filtered, r)
-				continue
-			}
-			for _, inst := range r.InstanceNames() {
-				if nameSet[inst] {
-					filtered = append(filtered, r)
-					break
-				}
-			}
-		}
-		runners = filtered
-	}
-
-	return runners
-}
-
 func connectHost(name string, cfg config.HostConfig) (*host.Host, error) {
 	h := host.NewHost(name, cfg)
 	if err := h.Connect(); err != nil {
@@ -127,7 +80,7 @@ func setupCmd() *cobra.Command {
 				return err
 			}
 			mgr := newManager(cfg)
-			runners := filteredRunners(cfg, args)
+			runners := config.FilterRunners(cfg, filterHost, filterRepo, args)
 
 			hostsDone := map[string]bool{}
 			for _, rc := range runners {
@@ -165,7 +118,7 @@ func upCmd() *cobra.Command {
 				return err
 			}
 			mgr := newManager(cfg)
-			runners := filteredRunners(cfg, args)
+			runners := config.FilterRunners(cfg, filterHost, filterRepo, args)
 
 			for _, rc := range runners {
 				hcfg := cfg.Hosts[rc.Host]
@@ -196,7 +149,7 @@ func downCmd() *cobra.Command {
 				return err
 			}
 			mgr := newManager(cfg)
-			runners := filteredRunners(cfg, args)
+			runners := config.FilterRunners(cfg, filterHost, filterRepo, args)
 
 			for _, rc := range runners {
 				hcfg := cfg.Hosts[rc.Host]
@@ -227,7 +180,7 @@ func restartCmd() *cobra.Command {
 				return err
 			}
 			mgr := newManager(cfg)
-			runners := filteredRunners(cfg, args)
+			runners := config.FilterRunners(cfg, filterHost, filterRepo, args)
 
 			for _, rc := range runners {
 				hcfg := cfg.Hosts[rc.Host]
@@ -259,7 +212,7 @@ func statusCmd() *cobra.Command {
 				return err
 			}
 			mgr := newManager(cfg)
-			runners := filteredRunners(cfg, args)
+			runners := config.FilterRunners(cfg, filterHost, filterRepo, args)
 
 			var allStatuses []runner.RunnerStatus
 			for _, rc := range runners {
@@ -365,7 +318,7 @@ func updateCmd() *cobra.Command {
 				return err
 			}
 			mgr := newManager(cfg)
-			runners := filteredRunners(cfg, args)
+			runners := config.FilterRunners(cfg, filterHost, filterRepo, args)
 
 			for _, rc := range runners {
 				hcfg := cfg.Hosts[rc.Host]

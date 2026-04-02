@@ -9,8 +9,9 @@ import (
 )
 
 type GitHubClient struct {
-	pat    string
-	client *http.Client
+	pat     string
+	client  *http.Client
+	apiBase string // e.g. https://api.github.com; no trailing slash
 }
 
 type GitHubRunner struct {
@@ -43,14 +44,30 @@ type releaseResponse struct {
 }
 
 func NewGitHubClient(pat string) *GitHubClient {
+	return NewGitHubClientWithHTTP(pat, nil, "")
+}
+
+// NewGitHubClientWithHTTP builds a client with a custom HTTP client and API base URL (for tests).
+func NewGitHubClientWithHTTP(pat string, client *http.Client, apiBase string) *GitHubClient {
+	if apiBase == "" {
+		apiBase = "https://api.github.com"
+	}
+	if client == nil {
+		client = &http.Client{}
+	}
 	return &GitHubClient{
-		pat:    pat,
-		client: &http.Client{},
+		pat:     pat,
+		client:  client,
+		apiBase: strings.TrimRight(apiBase, "/"),
 	}
 }
 
+func (g *GitHubClient) repoActionsURL(repo, rest string) string {
+	return fmt.Sprintf("%s/repos/%s/actions/%s", g.apiBase, repo, rest)
+}
+
 func (g *GitHubClient) GetRegistrationToken(repo string) (string, error) {
-	url := fmt.Sprintf("https://api.github.com/repos/%s/actions/runners/registration-token", repo)
+	url := g.repoActionsURL(repo, "runners/registration-token")
 	resp, err := g.post(url, nil)
 	if err != nil {
 		return "", fmt.Errorf("getting registration token for %s: %w", repo, err)
@@ -67,7 +84,7 @@ func (g *GitHubClient) GetRegistrationToken(repo string) (string, error) {
 }
 
 func (g *GitHubClient) GetRemovalToken(repo string) (string, error) {
-	url := fmt.Sprintf("https://api.github.com/repos/%s/actions/runners/remove-token", repo)
+	url := g.repoActionsURL(repo, "runners/remove-token")
 	resp, err := g.post(url, nil)
 	if err != nil {
 		return "", fmt.Errorf("getting removal token for %s: %w", repo, err)
@@ -84,7 +101,7 @@ func (g *GitHubClient) GetRemovalToken(repo string) (string, error) {
 }
 
 func (g *GitHubClient) ListRunners(repo string) ([]GitHubRunner, error) {
-	url := fmt.Sprintf("https://api.github.com/repos/%s/actions/runners", repo)
+	url := g.repoActionsURL(repo, "runners")
 	resp, err := g.get(url)
 	if err != nil {
 		return nil, fmt.Errorf("listing runners for %s: %w", repo, err)
@@ -98,7 +115,7 @@ func (g *GitHubClient) ListRunners(repo string) ([]GitHubRunner, error) {
 }
 
 func (g *GitHubClient) DeleteRunner(repo string, runnerID int64) error {
-	url := fmt.Sprintf("https://api.github.com/repos/%s/actions/runners/%d", repo, runnerID)
+	url := fmt.Sprintf("%s/repos/%s/actions/runners/%d", g.apiBase, repo, runnerID)
 	req, err := http.NewRequest("DELETE", url, nil)
 	if err != nil {
 		return err
@@ -119,7 +136,7 @@ func (g *GitHubClient) DeleteRunner(repo string, runnerID int64) error {
 }
 
 func (g *GitHubClient) GetLatestRunnerVersion() (string, error) {
-	url := "https://api.github.com/repos/actions/runner/releases/latest"
+	url := fmt.Sprintf("%s/repos/actions/runner/releases/latest", g.apiBase)
 	resp, err := g.get(url)
 	if err != nil {
 		return "", fmt.Errorf("fetching latest runner version: %w", err)

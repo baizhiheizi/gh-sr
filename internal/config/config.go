@@ -196,3 +196,51 @@ func (c *Config) FindRunner(name string) (*RunnerConfig, bool) {
 	}
 	return nil, false
 }
+
+// FilterRunners returns runners matching optional host, repo, and/or explicit runner/instance names.
+func FilterRunners(cfg *Config, hostFilter, repoFilter string, nameArgs []string) []RunnerConfig {
+	runners := cfg.Runners
+
+	if hostFilter != "" {
+		var filtered []RunnerConfig
+		for _, r := range runners {
+			if r.Host == hostFilter {
+				filtered = append(filtered, r)
+			}
+		}
+		runners = filtered
+	}
+
+	if repoFilter != "" {
+		var filtered []RunnerConfig
+		for _, r := range runners {
+			if r.Repo == repoFilter {
+				filtered = append(filtered, r)
+			}
+		}
+		runners = filtered
+	}
+
+	if len(nameArgs) > 0 {
+		nameSet := map[string]bool{}
+		for _, a := range nameArgs {
+			nameSet[a] = true
+		}
+		var filtered []RunnerConfig
+		for _, r := range runners {
+			if nameSet[r.Name] {
+				filtered = append(filtered, r)
+				continue
+			}
+			for _, inst := range r.InstanceNames() {
+				if nameSet[inst] {
+					filtered = append(filtered, r)
+					break
+				}
+			}
+		}
+		runners = filtered
+	}
+
+	return runners
+}

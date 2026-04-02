@@ -1,0 +1,300 @@
+package config
+
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+func TestRunnerConfig_EffectiveMode(t *testing.T) {
+	t.Parallel()
+	rc := RunnerConfig{}
+	if got := rc.EffectiveMode("linux"); got != "docker" {
+		t.Errorf("linux default: got %q want docker", got)
+	}
+	if got := rc.EffectiveMode("darwin"); got != "native" {
+		t.Errorf("darwin default: got %q want native", got)
+	}
+	rc.Mode = "native"
+	if got := rc.EffectiveMode("linux"); got != "native" {
+		t.Errorf("explicit mode: got %q want native", got)
+	}
+}
+
+func TestRunnerConfig_InstanceNames(t *testing.T) {
+	t.Parallel()
+	rc := RunnerConfig{Name: "ci", Count: 0}
+	names := rc.InstanceNames()
+	if len(names) != 1 || names[0] != "ci-1" {
+		t.Fatalf("count<1: got %v", names)
+	}
+	rc.Count = 3
+	names = rc.InstanceNames()
+	want := []string{"ci-1", "ci-2", "ci-3"}
+	if len(names) != len(want) {
+		t.Fatalf("got %v want %v", names, want)
+	}
+	for i := range want {
+		if names[i] != want[i] {
+			t.Errorf("[%d]: got %q want %q", i, names[i], want[i])
+		}
+	}
+}
+
+func TestLoad_resolveEnv(t *testing.T) {
+	t.Setenv("GHR_TEST_PAT", "secret-from-env")
+	dir := t.TempDir()
+	path := filepath.Join(dir, "runners.yml")
+	content := `
+github:
+  pat: env:GHR_TEST_PAT
+hosts:
+  h1:
+    addr: a@b
+    os: linux
+    arch: amd64
+runners:
+  - name: r1
+    repo: o/r
+    host: h1
+`
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.GitHub.PAT != "secret-from-env" {
+		t.Errorf("PAT: got %q", cfg.GitHub.PAT)
+	}
+}
+
+func TestLoad_applyDefaults(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "runners.yml")
+	content := `
+github:
+  pat: tok
+hosts:
+  h1:
+    addr: a@b
+    os: linux
+    arch: amd64
+runners:
+  - name: r1
+    repo: o/r
+    host: h1
+    count: 0
+`
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Runners[0].Count != 1 {
+		t.Errorf("count default: got %d", cfg.Runners[0].Count)
+	}
+}
+
+func TestValidate_errors(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name string
+		cfg  Config
+		frag string
+	}{
+		{
+			name: "empty_pat",
+			cfg: Config{
+				Hosts: map[string]HostConfig{"h": {Addr: "a@b", OS: "linux", Arch: "amd64"}},
+				Runners: []RunnerConfig{
+					{Name: "r", Repo: "o/r", Host: "h"},
+				},
+			},
+			frag: "github.pat",
+		},
+		{
+			name: "no_hosts",
+			cfg: Config{
+				GitHub:  GitHubConfig{PAT: "x"},
+				Hosts:   map[string]HostConfig{},
+				Runners: []RunnerConfig{{Name: "r", Repo: "o/r", Host: "h"}},
+			},
+			frag: "at least one host",
+		},
+		{
+			name: "host_addr",
+			cfg: Config{
+				GitHub: GitHubConfig{PAT: "x"},
+				Hosts:   map[string]HostConfig{"h": {Addr: "", OS: "linux", Arch: "amd64"}},
+				Runners: []RunnerConfig{{Name: "r", Repo: "o/r", Host: "h"}},
+			},
+			frag: `host "h"`,
+		},
+		{
+			name: "host_os",
+			cfg: Config{
+				GitHub: GitHubConfig{PAT: "x"},
+				Hosts:   map[string]HostConfig{"h": {Addr: "a@b", OS: "freebsd", Arch: "amd64"}},
+				Runners: []RunnerConfig{{Name: "r", Repo: "o/r", Host: "h"}},
+			},
+			frag: "os must be linux",
+		},
+		{
+			name: "host_arch",
+			cfg: Config{
+				GitHub: GitHubConfig{PAT: "x"},
+				Hosts:   map[string]HostConfig{"h": {Addr: "a@b", OS: "linux", Arch: "riscv64"}},
+				Runners: []RunnerConfig{{Name: "r", Repo: "o/r", Host: "h"}},
+			},
+			frag: "arch must be amd64",
+		},
+		{
+			name: "no_runners",
+			cfg: Config{
+				GitHub: GitHubConfig{PAT: "x"},
+				Hosts:   map[string]HostConfig{"h": {Addr: "a@b", OS: "linux", Arch: "amd64"}},
+				Runners: nil,
+			},
+			frag: "at least one runner",
+		},
+		{
+			name: "runner_name",
+			cfg: Config{
+				GitHub: GitHubConfig{PAT: "x"},
+				Hosts:   map[string]HostConfig{"h": {Addr: "a@b", OS: "linux", Arch: "amd64"}},
+				Runners: []RunnerConfig{{Name: "", Repo: "o/r", Host: "h"}},
+			},
+			frag: "runner name is required",
+		},
+		{
+			name: "runner_repo",
+			cfg: Config{
+				GitHub: GitHubConfig{PAT: "x"},
+				Hosts:   map[string]HostConfig{"h": {Addr: "a@b", OS: "linux", Arch: "amd64"}},
+				Runners: []RunnerConfig{{Name: "r", Repo: "", Host: "h"}},
+			},
+			frag: "repo is required",
+		},
+		{
+			name: "runner_host_missing",
+			cfg: Config{
+				GitHub: GitHubConfig{PAT: "x"},
+				Hosts:   map[string]HostConfig{"h": {Addr: "a@b", OS: "linux", Arch: "amd64"}},
+				Runners: []RunnerConfig{{Name: "r", Repo: "o/r", Host: "unknown"}},
+			},
+			frag: "not found in hosts",
+		},
+		{
+			name: "bad_mode",
+			cfg: Config{
+				GitHub: GitHubConfig{PAT: "x"},
+				Hosts:   map[string]HostConfig{"h": {Addr: "a@b", OS: "linux", Arch: "amd64"}},
+				Runners: []RunnerConfig{{Name: "r", Repo: "o/r", Host: "h", Mode: "k8s"}},
+			},
+			frag: "mode must be",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			err := tc.cfg.Validate()
+			if err == nil {
+				t.Fatal("expected error")
+			}
+			if !strings.Contains(err.Error(), tc.frag) {
+				t.Errorf("error %q should contain %q", err.Error(), tc.frag)
+			}
+		})
+	}
+}
+
+func TestConfig_queries(t *testing.T) {
+	cfg := &Config{
+		GitHub: GitHubConfig{PAT: "x"},
+		Hosts: map[string]HostConfig{
+			"h1": {Addr: "a@b", OS: "linux", Arch: "amd64"},
+			"h2": {Addr: "c@d", OS: "darwin", Arch: "arm64"},
+		},
+		Runners: []RunnerConfig{
+			{Name: "alpha", Repo: "o/a", Host: "h1", Count: 2},
+			{Name: "beta", Repo: "o/b", Host: "h2", Count: 1},
+			{Name: "gamma", Repo: "o/a", Host: "h1", Count: 1},
+		},
+	}
+
+	h1 := cfg.RunnersForHost("h1")
+	if len(h1) != 2 {
+		t.Fatalf("RunnersForHost h1: got %d", len(h1))
+	}
+	br := cfg.RunnersForRepo("o/a")
+	if len(br) != 2 {
+		t.Fatalf("RunnersForRepo o/a: got %d", len(br))
+	}
+	repos := cfg.UniqueRepos()
+	if len(repos) != 2 {
+		t.Fatalf("UniqueRepos: got %v", repos)
+	}
+
+	rc, ok := cfg.FindRunner("alpha")
+	if !ok || rc.Name != "alpha" {
+		t.Fatalf("FindRunner alpha: ok=%v", ok)
+	}
+	rc, ok = cfg.FindRunner("alpha-2")
+	if !ok || rc.Name != "alpha" {
+		t.Fatalf("FindRunner alpha-2: ok=%v name=%v", ok, rc)
+	}
+	rc, ok = cfg.FindRunner("nope")
+	if ok {
+		t.Fatal("expected not found")
+	}
+}
+
+func TestFilterRunners(t *testing.T) {
+	cfg := &Config{
+		Runners: []RunnerConfig{
+			{Name: "a", Repo: "o/1", Host: "h1", Count: 2},
+			{Name: "b", Repo: "o/2", Host: "h2", Count: 1},
+			{Name: "c", Repo: "o/1", Host: "h1", Count: 1},
+		},
+	}
+
+	all := FilterRunners(cfg, "", "", nil)
+	if len(all) != 3 {
+		t.Fatalf("no filter: got %d", len(all))
+	}
+
+	byHost := FilterRunners(cfg, "h1", "", nil)
+	if len(byHost) != 2 {
+		t.Fatalf("host h1: got %d", len(byHost))
+	}
+
+	byRepo := FilterRunners(cfg, "", "o/1", nil)
+	if len(byRepo) != 2 {
+		t.Fatalf("repo o/1: got %d", len(byRepo))
+	}
+
+	combo := FilterRunners(cfg, "h1", "o/1", nil)
+	if len(combo) != 2 {
+		t.Fatalf("host+repo: got %d", len(combo))
+	}
+
+	byName := FilterRunners(cfg, "", "", []string{"b"})
+	if len(byName) != 1 || byName[0].Name != "b" {
+		t.Fatalf("name b: got %v", byName)
+	}
+
+	byInst := FilterRunners(cfg, "", "", []string{"a-2"})
+	if len(byInst) != 1 || byInst[0].Name != "a" {
+		t.Fatalf("instance a-2: got %v", byInst)
+	}
+
+	stack := FilterRunners(cfg, "h1", "o/1", []string{"c"})
+	if len(stack) != 1 || stack[0].Name != "c" {
+		t.Fatalf("stacked filters: got %v", stack)
+	}
+}
