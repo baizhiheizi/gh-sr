@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/an-lee/gh-runners/internal/config"
-	"github.com/an-lee/gh-runners/internal/runner"
+	"github.com/an-lee/ghr/internal/config"
+	"github.com/an-lee/ghr/internal/runner"
 )
 
 func PrintStatusTable(statuses []runner.RunnerStatus) {

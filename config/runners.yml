@@ -1,5 +1,5 @@
-# gh-runners configuration
-# Edit this file, then run: gh-runners up
+# ghr configuration
+# Edit this file, then run: ghr up
 
 github:
   pat: env:GITHUB_PAT  # "env:" prefix reads from environment variable

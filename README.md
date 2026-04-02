@@ -1,4 +1,4 @@
-# gh-runners
+# ghr
 
 A CLI tool to manage self-hosted GitHub Actions runners across multiple hosts — all from your laptop over SSH.
 
@@ -15,28 +15,28 @@ A CLI tool to manage self-hosted GitHub Actions runners across multiple hosts �
 
 ```
 Your Laptop (control plane)
-  └── gh-runners CLI
+  └── ghr CLI
         ├── SSH → Mac Mini (native runners)
         ├── SSH → Windows PC (native runners)
         └── SSH → VPS (Docker runners)
 ```
 
-The CLI reads `config/runners.yml`, connects to each host over SSH, and executes the appropriate commands to manage runner processes. Your laptop is the only machine that needs the `gh-runners` binary.
+The CLI reads `config/runners.yml`, connects to each host over SSH, and executes the appropriate commands to manage runner processes. Your laptop is the only machine that needs the `ghr` binary.
 
 ---
 
 ## Install
 
 ```bash
-go install github.com/an-lee/gh-runners/cmd/gh-runners@latest
+go install github.com/an-lee/ghr/cmd/ghr@latest
 ```
 
 Or build from source:
 
 ```bash
-git clone https://github.com/an-lee/gh-runners.git
-cd gh-runners
-go build -o gh-runners ./cmd/gh-runners/
+git clone https://github.com/an-lee/ghr.git
+cd ghr
+go build -o ghr ./cmd/ghr/
 ```
 
 ---
@@ -139,16 +139,16 @@ runners:
 ## Commands
 
 ```bash
-gh-runners setup [names...]     # Install runner binary and configure on hosts
-gh-runners up [names...]        # Start runners
-gh-runners down [names...]      # Stop runners
-gh-runners restart [names...]   # Stop then start
-gh-runners status               # Show status table
-gh-runners logs <name>          # Show recent logs from a runner
-gh-runners cleanup              # Remove offline/ghost runners from GitHub
-gh-runners update [names...]    # Update runner binary (remove + setup + start)
-gh-runners config               # Print resolved configuration
-gh-runners dashboard            # Launch interactive TUI dashboard
+ghr setup [names...]     # Install runner binary and configure on hosts
+ghr up [names...]        # Start runners
+ghr down [names...]      # Stop runners
+ghr restart [names...]   # Stop then start
+ghr status               # Show status table
+ghr logs <name>          # Show recent logs from a runner
+ghr cleanup              # Remove offline/ghost runners from GitHub
+ghr update [names...]    # Update runner binary (remove + setup + start)
+ghr config               # Print resolved configuration
+ghr dashboard            # Launch interactive TUI dashboard
 ```
 
 ### Filters
@@ -156,9 +156,9 @@ gh-runners dashboard            # Launch interactive TUI dashboard
 All commands accept `--host` and `--repo` flags:
 
 ```bash
-gh-runners status --host mac-mini
-gh-runners up --repo an-lee/enjoy
-gh-runners down enjoy-win-1
+ghr status --host mac-mini
+ghr up --repo an-lee/enjoy
+ghr down enjoy-win-1
 ```
 
 ---
@@ -167,16 +167,16 @@ gh-runners down enjoy-win-1
 
 ```bash
 # 1. Set up runners on all hosts
-gh-runners setup
+ghr setup
 
 # 2. Start everything
-gh-runners up
+ghr up
 
 # 3. Check status
-gh-runners status
+ghr status
 
 # 4. Launch dashboard for live monitoring
-gh-runners dashboard
+ghr dashboard
 ```
 
 ---
@@ -206,21 +206,21 @@ jobs:
 1. Add an entry under `hosts` in `config/runners.yml`
 2. Ensure SSH key-based access works: `ssh user@host true`
 3. Add runner entries referencing the new host
-4. Run `gh-runners setup && gh-runners up`
+4. Run `ghr setup && ghr up`
 
 ### Scale up
 
 Change `count` in `runners.yml`, then:
 
 ```bash
-gh-runners setup   # configures new instances
-gh-runners up      # starts them
+ghr setup   # configures new instances
+ghr up      # starts them
 ```
 
 ### Update runner version
 
 ```bash
-gh-runners update
+ghr update
 ```
 
 This removes existing runners, downloads the latest runner binary, reconfigures, and starts them.
@@ -228,7 +228,7 @@ This removes existing runners, downloads the latest runner binary, reconfigures,
 ### Clean up ghost runners
 
 ```bash
-gh-runners cleanup
+ghr cleanup
 ```
 
 ---
@@ -236,9 +236,9 @@ gh-runners cleanup
 ## File structure
 
 ```
-gh-runners/
+ghr/
   cmd/
-    gh-runners/
+    ghr/
       main.go               # CLI entry point
   internal/
     config/

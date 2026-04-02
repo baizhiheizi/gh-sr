@@ -1,4 +1,4 @@
-module github.com/an-lee/gh-runners
+module github.com/an-lee/ghr
 
 go 1.25.0
 

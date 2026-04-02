@@ -8,9 +8,9 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/an-lee/gh-runners/internal/config"
-	"github.com/an-lee/gh-runners/internal/host"
-	"github.com/an-lee/gh-runners/internal/runner"
+	"github.com/an-lee/ghr/internal/config"
+	"github.com/an-lee/ghr/internal/host"
+	"github.com/an-lee/ghr/internal/runner"
 )
 
 type dashboardModel struct {
@@ -96,7 +96,7 @@ func (m dashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m dashboardModel) View() tea.View {
 	var b strings.Builder
 
-	title := titleStyle.Render("gh-runners dashboard")
+	title := titleStyle.Render("ghr dashboard")
 	b.WriteString(title + "\n\n")
 
 	if m.loading && len(m.statuses) == 0 {

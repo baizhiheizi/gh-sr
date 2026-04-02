@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/an-lee/gh-runners/internal/config"
+	"github.com/an-lee/ghr/internal/config"
 )
 
 type Host struct {
