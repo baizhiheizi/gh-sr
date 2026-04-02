@@ -1,5 +1,3 @@
 .env
-docker-compose.yml
-windows/runners/
-mac/runners/
-data/
+gh-runners
+dist/

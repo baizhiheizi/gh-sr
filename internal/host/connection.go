@@ -1,0 +1,165 @@
+package host
+
+import (
+	"bytes"
+	"fmt"
+	"io"
+	"net"
+	"os"
+	"path/filepath"
+	"strings"
+
+	"golang.org/x/crypto/ssh"
+	"golang.org/x/crypto/ssh/agent"
+	"golang.org/x/crypto/ssh/knownhosts"
+)
+
+type Connection struct {
+	client *ssh.Client
+}
+
+func NewConnection(user, addr string) (*Connection, error) {
+	if !strings.Contains(addr, ":") {
+		addr = addr + ":22"
+	}
+
+	authMethods := collectAuthMethods()
+	if len(authMethods) == 0 {
+		return nil, fmt.Errorf("no SSH authentication methods available (no agent, no keys)")
+	}
+
+	hostKeyCallback := ssh.InsecureIgnoreHostKey()
+	if cb, err := knownHostsCallback(); err == nil {
+		hostKeyCallback = cb
+	}
+
+	cfg := &ssh.ClientConfig{
+		User:            user,
+		Auth:            authMethods,
+		HostKeyCallback: hostKeyCallback,
+	}
+
+	client, err := ssh.Dial("tcp", addr, cfg)
+	if err != nil {
+		return nil, fmt.Errorf("SSH dial %s@%s: %w", user, addr, err)
+	}
+
+	return &Connection{client: client}, nil
+}
+
+func (c *Connection) Run(cmd string) (string, error) {
+	session, err := c.client.NewSession()
+	if err != nil {
+		return "", fmt.Errorf("creating SSH session: %w", err)
+	}
+	defer session.Close()
+
+	var stdout, stderr bytes.Buffer
+	session.Stdout = &stdout
+	session.Stderr = &stderr
+
+	if err := session.Run(cmd); err != nil {
+		return stdout.String(), fmt.Errorf("running %q: %w\nstderr: %s", cmd, err, stderr.String())
+	}
+
+	return strings.TrimSpace(stdout.String()), nil
+}
+
+func (c *Connection) Upload(localPath, remotePath string) error {
+	session, err := c.client.NewSession()
+	if err != nil {
+		return fmt.Errorf("creating SSH session for upload: %w", err)
+	}
+	defer session.Close()
+
+	f, err := os.Open(localPath)
+	if err != nil {
+		return fmt.Errorf("opening local file: %w", err)
+	}
+	defer f.Close()
+
+	stat, err := f.Stat()
+	if err != nil {
+		return fmt.Errorf("stat local file: %w", err)
+	}
+
+	go func() {
+		w, _ := session.StdinPipe()
+		defer w.Close()
+		fmt.Fprintf(w, "C0644 %d %s\n", stat.Size(), filepath.Base(remotePath))
+		io.Copy(w, f)
+		fmt.Fprint(w, "\x00")
+	}()
+
+	dir := filepath.Dir(remotePath)
+	return session.Run(fmt.Sprintf("scp -t %s", dir))
+}
+
+func (c *Connection) Close() error {
+	if c.client != nil {
+		return c.client.Close()
+	}
+	return nil
+}
+
+func collectAuthMethods() []ssh.AuthMethod {
+	var methods []ssh.AuthMethod
+
+	if agentAuth := sshAgentAuth(); agentAuth != nil {
+		methods = append(methods, agentAuth)
+	}
+
+	for _, keyPath := range defaultKeyPaths() {
+		if m := keyFileAuth(keyPath); m != nil {
+			methods = append(methods, m)
+		}
+	}
+
+	return methods
+}
+
+func sshAgentAuth() ssh.AuthMethod {
+	sock := os.Getenv("SSH_AUTH_SOCK")
+	if sock == "" {
+		return nil
+	}
+	conn, err := net.Dial("unix", sock)
+	if err != nil {
+		return nil
+	}
+	return ssh.PublicKeysCallback(agent.NewClient(conn).Signers)
+}
+
+func keyFileAuth(path string) ssh.AuthMethod {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	signer, err := ssh.ParsePrivateKey(data)
+	if err != nil {
+		return nil
+	}
+	return ssh.PublicKeys(signer)
+}
+
+func defaultKeyPaths() []string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil
+	}
+	sshDir := filepath.Join(home, ".ssh")
+	return []string{
+		filepath.Join(sshDir, "id_ed25519"),
+		filepath.Join(sshDir, "id_rsa"),
+		filepath.Join(sshDir, "id_ecdsa"),
+	}
+}
+
+func knownHostsCallback() (ssh.HostKeyCallback, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil, err
+	}
+	path := filepath.Join(home, ".ssh", "known_hosts")
+	return knownhosts.New(path)
+}

@@ -1,292 +1,182 @@
 # gh-runners
 
-Manage self-hosted GitHub Actions runners across multiple repos, running on your local Windows 11 machine.
+A CLI tool to manage self-hosted GitHub Actions runners across multiple hosts — all from your laptop over SSH.
 
-- **Linux runners** — Docker containers in WSL2, built from the [official `actions/runner` releases](https://github.com/actions/runner/releases)
-- **Windows runners** — Native processes on Windows, managed via PowerShell from WSL2
-- **Mac runners** — Native processes on a remote Mac, managed via SSH
-- **Single config file** — declare all repos, runner counts, and labels in `config/runners.yml`
-- **Single CLI** — `./scripts/runner` handles everything
+- **Unified commands** — `up`, `down`, `status`, `setup` work for Linux, macOS, and Windows runners
+- **SSH-only transport** — no agents or scripts to install on remote hosts
+- **Declarative config** — one YAML file defines your hosts and runners
+- **Multi-host** — manage runners on any number of machines (local PCs, Mac Minis, VPS)
+- **Docker & native** — Linux runners can use Docker containers; macOS and Windows run natively
+- **Interactive dashboard** — TUI with live status updates
 
 ---
 
-## How it works
-
-### The big picture
+## Architecture
 
 ```
-config/runners.yml
-       │
-       ▼
-scripts/generate-compose.sh   ← reads your config, writes docker-compose.yml
-       │
-       ▼
-docker-compose.yml            ← one service per Linux runner instance
-       │
-       ▼
-docker compose up             ← starts containers; each one self-registers with GitHub
+Your Laptop (control plane)
+  └── gh-runners CLI
+        ├── SSH → Mac Mini (native runners)
+        ├── SSH → Windows PC (native runners)
+        └── SSH → VPS (Docker runners)
 ```
 
-Each Linux runner is an identical Docker container. They differ only in their environment variables (repo URL, unique name, labels). All containers share the same built image.
+The CLI reads `config/runners.yml`, connects to each host over SSH, and executes the appropriate commands to manage runner processes. Your laptop is the only machine that needs the `gh-runners` binary.
 
-### The Docker image (`docker/Dockerfile`)
+---
 
-Built from `ubuntu:22.04`. At build time it downloads the official GitHub Actions runner tarball from `https://github.com/actions/runner/releases` and runs the bundled `installdependencies.sh`. The runner version is controlled by the `RUNNER_VERSION` build arg (defaults to `latest`, resolved at build time against the GitHub API).
+## Install
 
-The image is tagged `gh-runner:local`. All runner containers on your machine share this one image — no redundant downloads.
-
-### Container lifecycle (`docker/entrypoint.sh`)
-
-When a container starts:
-
-1. **Gets a registration token** — calls `POST /repos/{owner}/{repo}/actions/runners/registration-token` using your PAT. This token is short-lived (1 hour) and is only used once.
-2. **Registers the runner** — runs `./config.sh --url ... --token ... --name ... --labels ...`. The `--replace` flag means if a runner with the same name already exists (e.g. after a crash), it gets replaced automatically.
-3. **Starts listening for jobs** — runs `./run.sh` and waits.
-4. **Deregisters on shutdown** — traps `SIGTERM` (sent by `docker stop`). Gets a removal token and calls `./config.sh remove` before exiting. This keeps your GitHub runner list clean.
-
-### Config file (`config/runners.yml`)
-
-This is the only file you edit day-to-day. `docker-compose.yml` is always generated from it and is gitignored.
-
-```yaml
-github:
-  pat_env_var: GITHUB_PAT      # name of the env var in .env that holds your token
-  mac_host: user@mac-hostname  # SSH target for Mac runners (omit if unused)
-
-runners:
-  - name: hangar-ci            # base name; instances become hangar-ci-1, hangar-ci-2, ...
-    repo: an-lee/hangar        # owner/repo
-    os: linux
-    count: 2                   # number of parallel runner instances
-    labels: [self-hosted, linux, ci]
-
-  - name: enjoy-win
-    repo: an-lee/enjoy
-    os: windows
-    count: 1
-    labels: [self-hosted, windows, x64]
-
-  - name: enjoy-mac
-    repo: an-lee/enjoy
-    os: mac
-    count: 1
-    labels: [self-hosted, mac, arm64]
+```bash
+go install github.com/an-lee/gh-runners/cmd/gh-runners@latest
 ```
 
-`os: linux` → Docker container via WSL2  
-`os: windows` → native Windows process  
-`os: mac` → native macOS process on the remote `mac_host` via SSH
+Or build from source:
 
-### Secrets (`.env`)
-
-Never committed. Contains:
-
+```bash
+git clone https://github.com/an-lee/gh-runners.git
+cd gh-runners
+go build -o gh-runners ./cmd/gh-runners/
 ```
-GITHUB_PAT=github_pat_...    # fine-grained PAT
-RUNNER_VERSION=latest         # or e.g. 2.333.1 to pin a version
-```
-
-The `GITHUB_PAT` is passed into each container as `ACCESS_TOKEN`. It's used at container startup to obtain short-lived registration/removal tokens — the PAT itself never touches the runner process.
-
-### Windows runners (`scripts/manage-windows.ps1`)
-
-Windows container jobs are [not supported by GitHub Actions](https://github.com/actions/runner/issues/904), so Windows runners run as native processes. The PowerShell script is called from WSL2 via `powershell.exe` interop and handles:
-
-- Downloading the `actions-runner-win-x64` tarball from GitHub releases
-- Extracting it to `windows/runners/<name>-<N>/`
-- Calling `config.cmd` to register with GitHub
-- Starting runners with `run.cmd` (tracked by PID file)
-- Stopping and deregistering on removal
-
-### Mac runners (`scripts/manage-mac.sh`)
-
-Mac runners run as native processes on a remote Mac. The `manage-mac.sh` script runs on the Mac itself and is invoked via SSH by the `runner` CLI. It handles:
-
-- Auto-detecting architecture (Intel x64 or Apple Silicon arm64) to download the correct tarball
-- Downloading `actions-runner-osx-{arch}` from GitHub releases to `/tmp/` (cached per version)
-- Extracting to `~/gh-runners/runners/<name>-<N>/` on the Mac
-- Calling `config.sh` to register with GitHub
-- Starting runners with `run.sh` in background via `nohup` (tracked by PID file)
-- Stopping and deregistering on removal
-
-SSH key-based authentication must be pre-configured from WSL2 to the Mac. Set `github.mac_host` to the SSH target (e.g., `user@192.168.1.50` or a hostname in your `~/.ssh/config`).
 
 ---
 
 ## Prerequisites
 
-**WSL2 (for Linux runners):**
-- Docker Desktop with WSL2 backend, or Docker Engine in WSL2
-- `yq` v4+ (Go version) — installer: `~/.local/bin/yq` is set up automatically if you ran the setup
-- `jq`, `curl` — standard packages
+**On your laptop:**
+- Go 1.22+ (for building)
+- SSH key-based access to all runner hosts
 
-**Windows (for Windows runners):**
-- PowerShell 5.1+ (built into Windows 11)
-- `yq` available in PowerShell path (download from [mikefarah/yq releases](https://github.com/mikefarah/yq/releases))
-
-**Mac (for Mac runners):**
-- macOS 12 (Monterey) or later
-- `jq` — install with `brew install jq`
-- SSH key-based access configured from WSL2 to the Mac (no passphrase prompts)
+**On runner hosts:**
+- **Linux** — Docker installed (for `mode: docker`) or just a shell (for `mode: native`)
+- **macOS** — `curl` available (pre-installed)
+- **Windows** — OpenSSH Server enabled:
+  ```powershell
+  Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0
+  Start-Service sshd
+  Set-Service -Name sshd -StartupType Automatic
+  ```
 
 ---
 
-## Setup
+## Configuration
 
-### 1. Create your PAT
+### 1. Create a GitHub PAT
 
 Go to **GitHub → Settings → Developer settings → Personal access tokens → Fine-grained tokens**.
 
-- **Resource owner**: your account (or org)
-- **Repository access**: select the specific repos you want runners for
-- **Permissions → Repository permissions → Administration**: Read and write
+- **Repository access**: select repos you want runners for
+- **Permissions → Repository → Administration**: Read and write
 
-### 2. Configure your environment
+### 2. Set up environment
 
 ```bash
-cp .env.example .env
-# Edit .env and paste your PAT
+export GITHUB_PAT=github_pat_...
 ```
 
-### 3. Define your runners
+### 3. Edit config
 
-Edit `config/runners.yml`. Add one entry per runner group:
+Edit `config/runners.yml`:
 
 ```yaml
 github:
-  pat_env_var: GITHUB_PAT
+  pat: env:GITHUB_PAT
+
+hosts:
+  mac-mini:
+    addr: user@192.168.1.50
+    os: darwin
+    arch: arm64
+
+  win-pc:
+    addr: user@192.168.1.51
+    os: windows
+    arch: amd64
+
+  vps-1:
+    addr: root@203.0.113.10
+    os: linux
+    arch: amd64
 
 runners:
-  - name: my-repo-ci
-    repo: myorg/my-repo
-    os: linux
+  - name: enjoy-mac
+    repo: an-lee/enjoy
+    host: mac-mini
+    count: 1
+    labels: [self-hosted, macOS, ARM64]
+
+  - name: enjoy-win
+    repo: an-lee/enjoy
+    host: win-pc
+    count: 1
+    labels: [self-hosted, Windows, X64]
+
+  - name: hangar-ci
+    repo: an-lee/hangar
+    host: vps-1
     count: 2
-    labels: [self-hosted, linux]
+    labels: [self-hosted, Linux, X64]
+    mode: docker
 ```
 
-### 4. Start Linux runners
+### Config reference
+
+| Field | Description |
+|---|---|
+| `github.pat` | GitHub PAT. Use `env:VAR_NAME` to read from environment. |
+| `hosts.<name>.addr` | SSH target (`user@host` or `user@ip`) |
+| `hosts.<name>.os` | `linux`, `darwin`, or `windows` |
+| `hosts.<name>.arch` | `amd64` or `arm64` |
+| `runners[].name` | Base name (instances become `name-1`, `name-2`, ...) |
+| `runners[].repo` | GitHub `owner/repo` |
+| `runners[].host` | References a key under `hosts` |
+| `runners[].count` | Number of parallel instances (default: 1) |
+| `runners[].labels` | Labels for workflow `runs-on` matching |
+| `runners[].mode` | `docker` or `native` (default: `docker` for Linux, `native` for others) |
+
+---
+
+## Commands
 
 ```bash
-./scripts/runner up
+gh-runners setup [names...]     # Install runner binary and configure on hosts
+gh-runners up [names...]        # Start runners
+gh-runners down [names...]      # Stop runners
+gh-runners restart [names...]   # Stop then start
+gh-runners status               # Show status table
+gh-runners logs <name>          # Show recent logs from a runner
+gh-runners cleanup              # Remove offline/ghost runners from GitHub
+gh-runners update [names...]    # Update runner binary (remove + setup + start)
+gh-runners config               # Print resolved configuration
+gh-runners dashboard            # Launch interactive TUI dashboard
 ```
 
-This:
-1. Generates `docker-compose.yml` from your config
-2. Builds the `gh-runner:local` Docker image (downloads runner from GitHub releases)
-3. Starts all Linux runner containers
-4. Each container registers itself with GitHub
+### Filters
 
-Check GitHub: **repo → Settings → Actions → Runners** — your runners should appear as "Idle".
-
-### 5. Start Windows runners (optional)
+All commands accept `--host` and `--repo` flags:
 
 ```bash
-./scripts/runner win-install   # downloads runner, configures it with GitHub
-./scripts/runner win-up        # starts the runner processes
-```
-
-### 6. Start Mac runners (optional)
-
-Set `github.mac_host` in `config/runners.yml` to the SSH target of your Mac, then:
-
-```bash
-./scripts/runner mac-install   # copies manage-mac.sh to Mac, downloads runner, configures it
-./scripts/runner mac-up        # starts the runner processes on the Mac
+gh-runners status --host mac-mini
+gh-runners up --repo an-lee/enjoy
+gh-runners down enjoy-win-1
 ```
 
 ---
 
-## Daily commands
+## Quick start
 
 ```bash
-./scripts/runner status         # show Docker container status + GitHub API status for all runners
-./scripts/runner up             # start (or restart) all Linux runners
-./scripts/runner down           # stop all Linux runners (deregisters from GitHub)
-./scripts/runner logs           # tail all container logs
-./scripts/runner logs hangar-ci-1   # tail a specific runner's logs
-./scripts/runner restart        # restart all containers
-./scripts/runner restart hangar-ci-1  # restart one container
-```
+# 1. Set up runners on all hosts
+gh-runners setup
 
----
+# 2. Start everything
+gh-runners up
 
-## Common tasks
+# 3. Check status
+gh-runners status
 
-### Add a new repo
-
-1. Add an entry to `config/runners.yml`
-2. Make sure your PAT has Administration write on the new repo
-3. Run `./scripts/runner up`
-
-New containers are added; existing ones are left untouched.
-
-### Scale up runners
-
-Change `count: 1` to `count: 3` in `runners.yml`, then:
-
-```bash
-./scripts/runner up
-```
-
-Compose creates the new containers. Existing containers are unaffected.
-
-### Scale down runners
-
-Reduce `count` in `runners.yml`, then:
-
-```bash
-./scripts/runner down && ./scripts/runner up
-```
-
-Stopped containers deregister themselves from GitHub before exiting.
-
-### Update runner version
-
-To get the latest runner release:
-
-```bash
-./scripts/runner update
-```
-
-This rebuilds the image with `--no-cache` (picks up the newest release from GitHub) and recreates all containers.
-
-To pin a specific version, set `RUNNER_VERSION=2.333.1` in `.env` before running `update`.
-
-### Rotate your PAT
-
-1. Create a new PAT on GitHub
-2. Update `GITHUB_PAT` in `.env`
-3. Run:
-
-```bash
-./scripts/runner rotate-token
-```
-
-For Linux: stops and restarts all containers (they re-register on startup with the new token).  
-For Windows: follow the printed instructions to remove and reinstall.
-
-### Clean up ghost runners
-
-If containers were killed without a clean shutdown, they may leave "offline" runners in GitHub:
-
-```bash
-./scripts/runner cleanup
-```
-
-This calls the GitHub API to delete any offline runner entries for all repos in your config.
-
-### Remove all Windows runners
-
-```bash
-./scripts/runner win-down     # stop processes
-./scripts/runner win-remove   # deregister from GitHub and delete local files
-```
-
-### Remove all Mac runners
-
-```bash
-./scripts/runner mac-down     # stop processes on Mac
-./scripts/runner mac-remove   # deregister from GitHub and delete remote files
+# 4. Launch dashboard for live monitoring
+gh-runners dashboard
 ```
 
 ---
@@ -297,82 +187,76 @@ Reference runners by label in your workflow files:
 
 ```yaml
 jobs:
-  build:
-    runs-on: [self-hosted, linux, ci]   # matches runners with all three labels
-```
+  build-linux:
+    runs-on: [self-hosted, Linux, X64]
 
-Or use just `self-hosted` to use any available self-hosted runner:
+  build-mac:
+    runs-on: [self-hosted, macOS, ARM64]
 
-```yaml
-    runs-on: self-hosted
+  build-win:
+    runs-on: [self-hosted, Windows, X64]
 ```
 
 ---
 
-## File reference
+## Common tasks
+
+### Add a new host
+
+1. Add an entry under `hosts` in `config/runners.yml`
+2. Ensure SSH key-based access works: `ssh user@host true`
+3. Add runner entries referencing the new host
+4. Run `gh-runners setup && gh-runners up`
+
+### Scale up
+
+Change `count` in `runners.yml`, then:
+
+```bash
+gh-runners setup   # configures new instances
+gh-runners up      # starts them
+```
+
+### Update runner version
+
+```bash
+gh-runners update
+```
+
+This removes existing runners, downloads the latest runner binary, reconfigures, and starts them.
+
+### Clean up ghost runners
+
+```bash
+gh-runners cleanup
+```
+
+---
+
+## File structure
 
 ```
 gh-runners/
-├── config/
-│   └── runners.yml              # Edit this — source of truth for all runners
-├── docker/
-│   ├── Dockerfile               # Builds runner image from official releases
-│   └── entrypoint.sh            # Registration, run, graceful deregistration
-├── scripts/
-│   ├── runner                   # Main CLI — run this for everything
-│   ├── generate-compose.sh      # runners.yml → docker-compose.yml (called by runner)
-│   ├── manage-windows.ps1       # Windows runner lifecycle (called by runner)
-│   ├── manage-mac.sh            # Mac runner lifecycle (copied to Mac and invoked via SSH)
-│   └── lib/
-│       └── common.sh            # Shared bash helpers
-├── windows/
-│   └── runners/                 # Windows runner installs (gitignored)
-├── docker-compose.yml           # Auto-generated — do not edit (gitignored)
-├── .env                         # Your secrets (gitignored)
-└── .env.example                 # Template — copy to .env and fill in
-```
-
----
-
-## Troubleshooting
-
-**Runner appears in GitHub but stays "Offline"**  
-The container started but the runner process crashed. Check logs:
-```bash
-./scripts/runner logs <runner-name>
-```
-Common causes: wrong repo URL, PAT lacks Administration permission on the repo.
-
-**"Could not get registration token" in container logs**  
-Your `GITHUB_PAT` is expired, revoked, or lacks the right permissions. Create a new PAT and run `./scripts/runner rotate-token`.
-
-**Container keeps restarting**  
-The `restart: unless-stopped` policy means a failing container retries. Check logs to see the error. Once fixed, `docker-compose.yml` will be regenerated on the next `up`.
-
-**Ghost/offline runners accumulating in GitHub**  
-Run `./scripts/runner cleanup`. This is normal after hard crashes or `kill -9`. Clean shutdowns via `docker stop` (or `./scripts/runner down`) deregister automatically.
-
-**`yq: command not found`**  
-Install Mike Farah's yq v4+ (not the Python wrapper):
-```bash
-wget -O ~/.local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
-chmod +x ~/.local/bin/yq
-```
-
-**"Cannot SSH to Mac host" error**  
-Configure SSH key-based auth from WSL2 to the Mac:
-```bash
-ssh-keygen -t ed25519    # if you don't have a key yet
-ssh-copy-id user@mac-hostname
-ssh user@mac-hostname    # verify it works without a password prompt
-```
-
-**Mac runner process dies after mac-up returns**  
-This shouldn't happen — `manage-mac.sh` uses `nohup` to detach the process. If it occurs, SSH into the Mac and check `~/gh-runners/runners/<name>/runner.log` for errors.
-
-**Mac runner appears in GitHub but stays "Offline"**  
-SSH into the Mac and check whether the process is running:
-```bash
-ssh user@mac-hostname "ps aux | grep run.sh"
-cat ~/gh-runners/runners/<runner-name>/runner.log
+  cmd/
+    gh-runners/
+      main.go               # CLI entry point
+  internal/
+    config/
+      config.go             # YAML config parsing and validation
+    host/
+      host.go               # Host abstraction
+      connection.go         # SSH connection management
+    runner/
+      runner.go             # Runner lifecycle orchestration
+      native.go             # Native runner management (mac/win/linux)
+      docker.go             # Docker runner management
+      github.go             # GitHub API client
+    tui/
+      dashboard.go          # Interactive TUI dashboard
+      status.go             # Status table rendering
+      styles.go             # Lipgloss styles
+  config/
+    runners.yml             # Your runner configuration
+  go.mod
+  go.sum
 ```

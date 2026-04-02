@@ -1,0 +1,178 @@
+package runner
+
+import (
+	"fmt"
+	"strings"
+
+	"github.com/an-lee/gh-runners/internal/config"
+	"github.com/an-lee/gh-runners/internal/host"
+)
+
+type Manager struct {
+	GitHub *GitHubClient
+}
+
+func NewManager(pat string) *Manager {
+	return &Manager{
+		GitHub: NewGitHubClient(pat),
+	}
+}
+
+type RunnerStatus struct {
+	Instance string
+	Host     string
+	Repo     string
+	Labels   string
+	Mode     string
+	Local    string // "running", "stopped", "not installed"
+	Remote   string // from GitHub API: "online", "offline", ""
+	Busy     bool
+}
+
+func (m *Manager) Setup(h *host.Host, rc config.RunnerConfig) error {
+	mode := rc.EffectiveMode(h.OS)
+
+	switch mode {
+	case "docker":
+		return m.setupDocker(h)
+	case "native":
+		return m.setupNative(h, rc)
+	default:
+		return fmt.Errorf("unknown mode %q", mode)
+	}
+}
+
+func (m *Manager) Start(h *host.Host, rc config.RunnerConfig) error {
+	mode := rc.EffectiveMode(h.OS)
+
+	for _, name := range rc.InstanceNames() {
+		var err error
+		switch mode {
+		case "docker":
+			err = m.startDocker(h, rc, name)
+		case "native":
+			err = m.startNative(h, name)
+		}
+		if err != nil {
+			return fmt.Errorf("starting %s: %w", name, err)
+		}
+	}
+	return nil
+}
+
+func (m *Manager) Stop(h *host.Host, rc config.RunnerConfig) error {
+	mode := rc.EffectiveMode(h.OS)
+
+	for _, name := range rc.InstanceNames() {
+		var err error
+		switch mode {
+		case "docker":
+			err = m.stopDocker(h, name)
+		case "native":
+			err = m.stopNative(h, name)
+		}
+		if err != nil {
+			return fmt.Errorf("stopping %s: %w", name, err)
+		}
+	}
+	return nil
+}
+
+func (m *Manager) Remove(h *host.Host, rc config.RunnerConfig) error {
+	mode := rc.EffectiveMode(h.OS)
+
+	for _, name := range rc.InstanceNames() {
+		var err error
+		switch mode {
+		case "docker":
+			err = m.removeDocker(h, name)
+		case "native":
+			err = m.removeNative(h, rc, name)
+		}
+		if err != nil {
+			return fmt.Errorf("removing %s: %w", name, err)
+		}
+	}
+	return nil
+}
+
+func (m *Manager) Status(h *host.Host, rc config.RunnerConfig) ([]RunnerStatus, error) {
+	mode := rc.EffectiveMode(h.OS)
+	var statuses []RunnerStatus
+
+	for _, name := range rc.InstanceNames() {
+		s := RunnerStatus{
+			Instance: name,
+			Host:     rc.Host,
+			Repo:     rc.Repo,
+			Labels:   strings.Join(rc.Labels, ", "),
+			Mode:     mode,
+		}
+
+		switch mode {
+		case "docker":
+			s.Local = m.statusDocker(h, name)
+		case "native":
+			s.Local = m.statusNative(h, name)
+		}
+
+		statuses = append(statuses, s)
+	}
+
+	return statuses, nil
+}
+
+func (m *Manager) Logs(h *host.Host, rc config.RunnerConfig, instanceName string) (string, error) {
+	mode := rc.EffectiveMode(h.OS)
+
+	switch mode {
+	case "docker":
+		return m.logsDocker(h, instanceName)
+	case "native":
+		return m.logsNative(h, instanceName)
+	default:
+		return "", fmt.Errorf("unknown mode %q", mode)
+	}
+}
+
+func (m *Manager) EnrichWithGitHubStatus(statuses []RunnerStatus, cfg *config.Config) {
+	repoRunners := map[string][]GitHubRunner{}
+
+	for _, repo := range cfg.UniqueRepos() {
+		runners, err := m.GitHub.ListRunners(repo)
+		if err != nil {
+			continue
+		}
+		repoRunners[repo] = runners
+	}
+
+	for i := range statuses {
+		ghRunners := repoRunners[statuses[i].Repo]
+		for _, gr := range ghRunners {
+			if gr.Name == statuses[i].Instance {
+				statuses[i].Remote = gr.Status
+				statuses[i].Busy = gr.Busy
+				break
+			}
+		}
+	}
+}
+
+func (m *Manager) CleanupOffline(cfg *config.Config) (int, error) {
+	removed := 0
+	for _, repo := range cfg.UniqueRepos() {
+		runners, err := m.GitHub.ListRunners(repo)
+		if err != nil {
+			return removed, fmt.Errorf("listing runners for %s: %w", repo, err)
+		}
+		for _, r := range runners {
+			if r.Status == "offline" {
+				if err := m.GitHub.DeleteRunner(repo, r.ID); err != nil {
+					return removed, fmt.Errorf("deleting runner %s (id=%d): %w", r.Name, r.ID, err)
+				}
+				removed++
+			}
+		}
+	}
+	return removed, nil
+}
