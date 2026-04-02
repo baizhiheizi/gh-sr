@@ -66,6 +66,21 @@ func (m *Manager) setupNative(h *host.Host, rc config.RunnerConfig) error {
 
 		fmt.Printf("  %s: installing runner v%s...\n", name, version)
 
+		if h.OS == "linux" {
+			installDepsCmd := `
+				SUDO=''; if command -v sudo >/dev/null 2>&1 && [ "$(id -u)" -ne 0 ]; then SUDO=sudo; fi;
+				if ! command -v curl >/dev/null 2>&1 || ! command -v tar >/dev/null 2>&1; then
+					if command -v apt-get >/dev/null 2>&1; then $SUDO apt-get update && $SUDO apt-get install -y curl tar;
+					elif command -v yum >/dev/null 2>&1; then $SUDO yum install -y curl tar;
+					elif command -v apk >/dev/null 2>&1; then $SUDO apk add curl tar;
+					fi
+				fi
+			`
+			if _, err := h.Run(installDepsCmd); err != nil {
+				fmt.Printf("  %s: warning: failed to ensure curl/tar are installed: %v\n", name, err)
+			}
+		}
+
 		if h.OS == "windows" {
 			cmds := []string{
 				fmt.Sprintf("New-Item -ItemType Directory -Force -Path '%s' | Out-Null", dir),
@@ -83,6 +98,16 @@ func (m *Manager) setupNative(h *host.Host, rc config.RunnerConfig) error {
 			)
 			if _, err := h.Run(cmds); err != nil {
 				return fmt.Errorf("installing runner: %w", err)
+			}
+		}
+
+		if h.OS == "linux" {
+			depsCmd := fmt.Sprintf(
+				"cd %s && SUDO=''; if command -v sudo >/dev/null 2>&1 && [ \"$(id -u)\" -ne 0 ]; then SUDO=sudo; fi; $SUDO ./bin/installdependencies.sh",
+				dir,
+			)
+			if _, err := h.Run(depsCmd); err != nil {
+				fmt.Printf("  %s: warning: failed to install runner dependencies: %v\n", name, err)
 			}
 		}
 

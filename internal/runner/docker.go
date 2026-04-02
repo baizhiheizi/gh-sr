@@ -17,7 +17,26 @@ func containerName(instanceName string) string {
 func (m *Manager) setupDocker(h *host.Host) error {
 	out, err := h.Run("docker info --format '{{.ServerVersion}}' 2>/dev/null || echo 'not found'")
 	if err != nil || strings.Contains(out, "not found") {
-		return fmt.Errorf("docker is not available on host %s — install Docker first", h.Name)
+		fmt.Printf("  %s: Docker not found, attempting to install...\n", h.Name)
+		installCmd := `
+			SUDO=''; if command -v sudo >/dev/null 2>&1 && [ "$(id -u)" -ne 0 ]; then SUDO=sudo; fi;
+			if ! command -v curl >/dev/null 2>&1; then
+				if command -v apt-get >/dev/null 2>&1; then $SUDO apt-get update && $SUDO apt-get install -y curl;
+				elif command -v yum >/dev/null 2>&1; then $SUDO yum install -y curl;
+				elif command -v apk >/dev/null 2>&1; then $SUDO apk add curl;
+				fi
+			fi &&
+			curl -fsSL https://get.docker.com | $SUDO sh
+		`
+		if _, instErr := h.Run(installCmd); instErr != nil {
+			return fmt.Errorf("failed to install docker on host %s: %w", h.Name, instErr)
+		}
+		
+		// Verify installation
+		out, err = h.Run("docker info --format '{{.ServerVersion}}' 2>/dev/null || echo 'not found'")
+		if err != nil || strings.Contains(out, "not found") {
+			return fmt.Errorf("docker still not available on host %s after installation attempt", h.Name)
+		}
 	}
 	fmt.Printf("  %s: Docker %s available\n", h.Name, strings.TrimSpace(out))
 
