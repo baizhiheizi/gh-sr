@@ -135,6 +135,31 @@ func (m *Manager) Logs(h *host.Host, rc config.RunnerConfig, instanceName string
 	}
 }
 
+// expectedGitHubRunnerOS is the self-hosted runner "os" field from the GitHub API for this ghr row (mode + host OS).
+func expectedGitHubRunnerOS(mode, hostOS string) string {
+	effective := mode
+	if effective == "" {
+		if hostOS == "linux" {
+			effective = "docker"
+		} else {
+			effective = "native"
+		}
+	}
+	if effective == "docker" {
+		return "Linux"
+	}
+	switch hostOS {
+	case "windows":
+		return "Windows"
+	case "linux":
+		return "Linux"
+	case "darwin":
+		return "macOS"
+	default:
+		return ""
+	}
+}
+
 func (m *Manager) EnrichWithGitHubStatus(statuses []RunnerStatus, cfg *config.Config) {
 	repoRunners := map[string][]GitHubRunner{}
 
@@ -147,13 +172,22 @@ func (m *Manager) EnrichWithGitHubStatus(statuses []RunnerStatus, cfg *config.Co
 	}
 
 	for i := range statuses {
+		hcfg, ok := cfg.Hosts[statuses[i].Host]
+		if !ok {
+			continue
+		}
+		exp := expectedGitHubRunnerOS(statuses[i].Mode, hcfg.OS)
 		ghRunners := repoRunners[statuses[i].Repo]
 		for _, gr := range ghRunners {
-			if gr.Name == statuses[i].Instance {
-				statuses[i].Remote = gr.Status
-				statuses[i].Busy = gr.Busy
-				break
+			if gr.Name != statuses[i].Instance {
+				continue
 			}
+			if exp != "" && gr.OS != "" && !strings.EqualFold(gr.OS, exp) {
+				continue
+			}
+			statuses[i].Remote = gr.Status
+			statuses[i].Busy = gr.Busy
+			break
 		}
 	}
 }

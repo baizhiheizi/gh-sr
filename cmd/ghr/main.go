@@ -489,9 +489,13 @@ func logsCmd() *cobra.Command {
 			}
 
 			target := args[0]
-			rc, found := cfg.FindRunner(target)
-			if !found {
-				return fmt.Errorf("runner %q not found in config", target)
+			rc, err := cfg.FindRunnerForLogs(target, filterHost)
+			if err != nil {
+				return err
+			}
+			instance, err := rc.ResolveRunnerInstance(target)
+			if err != nil {
+				return err
 			}
 
 			hcfg := cfg.Hosts[rc.Host]
@@ -502,7 +506,7 @@ func logsCmd() *cobra.Command {
 			defer h.Close()
 
 			mgr := newManager(cfg)
-			output, err := mgr.Logs(h, *rc, target)
+			output, err := mgr.Logs(h, *rc, instance)
 			if err != nil {
 				return err
 			}

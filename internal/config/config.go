@@ -230,6 +230,65 @@ func (c *Config) FindRunner(name string) (*RunnerConfig, bool) {
 	return nil, false
 }
 
+// ResolveRunnerInstance maps a CLI argument (base name or instance) to the instance directory name (e.g. myapp-1).
+func (rc *RunnerConfig) ResolveRunnerInstance(nameArg string) (string, error) {
+	for _, inst := range rc.InstanceNames() {
+		if inst == nameArg {
+			return inst, nil
+		}
+	}
+	if rc.Name == nameArg {
+		names := rc.InstanceNames()
+		if len(names) != 1 {
+			return "", fmt.Errorf("runner %q has %d instances; specify one of: %s", rc.Name, len(names), strings.Join(names, ", "))
+		}
+		return names[0], nil
+	}
+	return "", fmt.Errorf("runner %q: %q is not a valid name or instance", rc.Name, nameArg)
+}
+
+// FindRunnerForLogs resolves a runner by base or instance name. If hostFilter is non-empty, only that host's runner block matches.
+// Returns an error when nothing matches or when multiple hosts match the same name without a host filter.
+func (c *Config) FindRunnerForLogs(nameArg, hostFilter string) (*RunnerConfig, error) {
+	var matches []*RunnerConfig
+	seen := map[*RunnerConfig]bool{}
+	for i := range c.Runners {
+		r := &c.Runners[i]
+		if hostFilter != "" && r.Host != hostFilter {
+			continue
+		}
+		matched := false
+		if r.Name == nameArg {
+			matched = true
+		} else {
+			for _, inst := range r.InstanceNames() {
+				if inst == nameArg {
+					matched = true
+					break
+				}
+			}
+		}
+		if matched && !seen[r] {
+			seen[r] = true
+			matches = append(matches, r)
+		}
+	}
+	if len(matches) == 0 {
+		if hostFilter != "" {
+			return nil, fmt.Errorf("runner %q not found for host %q", nameArg, hostFilter)
+		}
+		return nil, fmt.Errorf("runner %q not found in config", nameArg)
+	}
+	if len(matches) > 1 {
+		hosts := make([]string, 0, len(matches))
+		for _, r := range matches {
+			hosts = append(hosts, r.Host)
+		}
+		return nil, fmt.Errorf("runner %q matches multiple hosts %v; specify --host", nameArg, hosts)
+	}
+	return matches[0], nil
+}
+
 // FilterRunners returns runners matching optional host, repo, and/or explicit runner/instance names.
 func FilterRunners(cfg *Config, hostFilter, repoFilter string, nameArgs []string) []RunnerConfig {
 	runners := cfg.Runners

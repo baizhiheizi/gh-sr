@@ -201,12 +201,13 @@ func (m *Manager) startNative(h *host.Host, rc config.RunnerConfig, instanceName
 	}
 
 	if h.OS == "windows" {
+		// Merge stdout/stderr via cmd.exe so one log file works reliably (dual Start-Process redirects to the same path are brittle on .NET).
 		cmd := fmt.Sprintf(
 			"%s; $pidFile = Join-Path $runnerDir '.runner_pid'; "+
 				"$logFile = Join-Path $runnerDir 'runner.log'; "+
 				"if (Test-Path $pidFile) { $p = Get-Content $pidFile; try { Get-Process -Id $p -EA Stop | Out-Null; Write-Host 'already running'; exit 0 } catch {} }; "+
-				"$proc = Start-Process -FilePath (Join-Path $runnerDir 'run.cmd') -WorkingDirectory $runnerDir -PassThru -WindowStyle Hidden "+
-				"-RedirectStandardOutput $logFile -RedirectStandardError $logFile; "+
+				"$cmdArg = 'cd /d \"' + $runnerDir + '\" && run.cmd > \"' + $logFile + '\" 2>&1'; "+
+				"$proc = Start-Process -FilePath cmd.exe -ArgumentList '/c', $cmdArg -WorkingDirectory $runnerDir -PassThru -WindowStyle Hidden -NoNewWindow; "+
 				"$proc.Id | Out-File -FilePath $pidFile -NoNewline; Write-Host \"started PID $($proc.Id)\"",
 			windowsRunnerDirAssignment(h, "runnerDir", instanceName),
 		)
@@ -342,7 +343,17 @@ func (m *Manager) logsNative(h *host.Host, instanceName string) (string, error) 
 	if h.OS == "windows" {
 		cmd := fmt.Sprintf(
 			"%s; $logFile = Join-Path $runnerDir 'runner.log'; "+
-				"if (-not (Test-Path $logFile)) { Write-Output 'no logs found' } else { Get-Content -Tail 50 -LiteralPath $logFile }",
+				"$diagDir = Join-Path $runnerDir '_diag'; "+
+				"$tailMain = { if (Test-Path $logFile) { $lines = @(Get-Content -LiteralPath $logFile -Tail 50 -EA SilentlyContinue); "+
+				"$j = [string]::Join([Environment]::NewLine, $lines); "+
+				"if ($lines.Count -gt 0 -and ($j -match '\\S')) { $j } else { $null } } else { $null } }; "+
+				"$main = & $tailMain; "+
+				"if ($null -ne $main) { Write-Output $main } "+
+				"elseif (Test-Path $diagDir) { "+
+				"$latest = Get-ChildItem -Path $diagDir -Filter *.log -File -EA SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1; "+
+				"if ($latest) { Write-Output ('--- _diag/' + $latest.Name + ' (last 50 lines) ---'); Get-Content -LiteralPath $latest.FullName -Tail 50 } "+
+				"else { Write-Output 'no logs found' } } "+
+				"else { Write-Output 'no logs found' }",
 			windowsRunnerDirAssignment(h, "runnerDir", instanceName),
 		)
 		return h.RunShell(cmd)

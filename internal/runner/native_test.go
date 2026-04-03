@@ -1,6 +1,7 @@
 package runner
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -88,6 +89,25 @@ func Test_windowsNativeConfigScript_usesRunnerDirVariable(t *testing.T) {
 	}
 	if strings.Contains(script, "cd '$env:USERPROFILE") {
 		t.Fatalf("script should not cd into a literalized env path: %q", script)
+	}
+}
+
+func Test_windowsStartNative_usesCmdForMergedLogs(t *testing.T) {
+	t.Parallel()
+	h := host.NewHost("win", config.HostConfig{Addr: "u@h", OS: "windows", Arch: "amd64"})
+	script := fmt.Sprintf(
+		"%s; $pidFile = Join-Path $runnerDir '.runner_pid'; "+
+			"$logFile = Join-Path $runnerDir 'runner.log'; "+
+			"$cmdArg = 'cd /d \"' + $runnerDir + '\" && run.cmd > \"' + $logFile + '\" 2>&1'; "+
+			"$proc = Start-Process -FilePath cmd.exe -ArgumentList '/c', $cmdArg -WorkingDirectory $runnerDir -PassThru -WindowStyle Hidden -NoNewWindow; "+
+			"$proc.Id | Out-File -FilePath $pidFile -NoNewline; Write-Host \"started PID $($proc.Id)\"",
+		windowsRunnerDirAssignment(h, "runnerDir", "x-1"),
+	)
+	if !strings.Contains(script, "cmd.exe") || !strings.Contains(script, "2>&1") {
+		t.Fatalf("expected cmd.exe merged redirection: %q", script)
+	}
+	if strings.Contains(script, "RedirectStandardOutput") {
+		t.Fatalf("should not use Start-Process stream redirects to a single log file: %q", script)
 	}
 }
 

@@ -391,6 +391,54 @@ func TestConfig_queries(t *testing.T) {
 	}
 }
 
+func TestFindRunnerForLogs_and_ResolveRunnerInstance(t *testing.T) {
+	cfg := &Config{
+		GitHub: GitHubConfig{PAT: "x"},
+		Hosts: map[string]HostConfig{
+			"h1": {Addr: "a@b", OS: "linux", Arch: "amd64"},
+			"h2": {Addr: "c@d", OS: "windows", Arch: "amd64"},
+		},
+		Runners: []RunnerConfig{
+			{Name: "dup", Repo: "o/r", Host: "h1", Count: 1},
+			{Name: "dup", Repo: "o/r", Host: "h2", Count: 1},
+		},
+	}
+
+	_, err := cfg.FindRunnerForLogs("dup-1", "")
+	if err == nil {
+		t.Fatal("expected ambiguous without --host")
+	}
+
+	rc, err := cfg.FindRunnerForLogs("dup-1", "h2")
+	if err != nil || rc.Host != "h2" {
+		t.Fatalf("FindRunnerForLogs with host: err=%v host=%v", err, rc)
+	}
+
+	inst, err := rc.ResolveRunnerInstance("dup-1")
+	if err != nil || inst != "dup-1" {
+		t.Fatalf("ResolveRunnerInstance dup-1: %v %q", err, inst)
+	}
+	inst, err = rc.ResolveRunnerInstance("dup")
+	if err != nil || inst != "dup-1" {
+		t.Fatalf("ResolveRunnerInstance dup: %v %q", err, inst)
+	}
+
+	solo := &Config{
+		GitHub:  GitHubConfig{PAT: "x"},
+		Hosts:   map[string]HostConfig{"h1": {Addr: "a@b", OS: "linux", Arch: "amd64"}},
+		Runners: []RunnerConfig{{Name: "solo", Repo: "o/r", Host: "h1", Count: 2}},
+	}
+	_, err = solo.FindRunnerForLogs("solo", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	soloRC := &solo.Runners[0]
+	_, err = soloRC.ResolveRunnerInstance("solo")
+	if err == nil {
+		t.Fatal("expected error for multi-instance base name")
+	}
+}
+
 func TestApplyEnvFile(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "env")

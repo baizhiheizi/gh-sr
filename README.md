@@ -133,11 +133,11 @@ flowchart TD
 
 1. Connect to each host (or mark instances **unreachable** if connection fails).
 2. Ask the host whether each instance is **running** or **stopped** (native: PID file + process check; docker: `docker inspect`).
-3. Call the **GitHub API** to match runner **names** and show online/offline/busy from GitHub’s view.
+3. Call the **GitHub API** to match runner **names** and the runner’s **OS** (from the API’s `os` field vs native vs docker mode) so two config rows with the same instance name on different platforms do not show each other’s GitHub state.
 
-**`ghr logs <name>`** looks up the runner block by **base name** or a full **instance** name (`name-1`, `name-2`, …), connects to the host, then tails logs for that instance:
+**`ghr logs <name>`** looks up the runner block by **base name** or a full **instance** name (`name-1`, `name-2`, …), connects to the host, then tails logs for that instance. Use **`--host`** when the same instance name exists on more than one machine.
 
-- **Native** — last lines of `runner.log` under that instance’s directory (`~/.ghr/runners/<instance>` on Linux/macOS, or `%USERPROFILE%\.ghr\runners\<instance>` on Windows).
+- **Native** — last lines of `runner.log` under that instance’s directory (`~/.ghr/runners/<instance>` on Linux/macOS, or `%USERPROFILE%\.ghr\runners\<instance>` on Windows). On Windows, if that file is missing or empty, ghr tails the newest `*.log` under `_diag` in the same directory.
 - **Docker** — last lines from `docker logs` for container `gh-runner-<instance>`.
 
 If `count` is greater than 1, pass the specific instance (for example `myapp-1`) so logs match the right directory or container.
@@ -431,6 +431,8 @@ runners:
 | `runners[].labels` | Labels for workflow `runs-on` matching |
 | `runners[].mode` | `docker` or `native` (default: `docker` for Linux hosts, `native` for macOS and Windows). Set `docker` for Linux container runners on Windows (Docker Desktop) or macOS (Docker Desktop, OrbStack, or Colima). |
 
+**Unique runner names per repository:** GitHub registers each self-hosted runner by its **instance** name (`name-1`, `name-2`, …). That name must be **unique within a given `owner/repo`**. If two machines use the same base `name` and `count: 1`, both try to register as `name-1` and only one registration remains active. Prefer distinct base names (for example `myapp-win` vs `myapp-linux`) so every machine has its own GitHub runner record and `ghr status` matches the right row.
+
 ---
 
 ## Commands
@@ -463,6 +465,7 @@ All commands accept `--host` and `--repo` flags:
 ```bash
 ghr doctor --host mac-mini
 ghr status --host mac-mini
+ghr logs myapp-1 --host win-pc   # disambiguate when the same instance name exists on multiple hosts
 ghr up --repo an-lee/enjoy
 ghr down enjoy-win-1
 ```

@@ -17,8 +17,8 @@ func TestManager_EnrichWithGitHubStatus(t *testing.T) {
 		}
 		_ = json.NewEncoder(w).Encode(runnersResponse{
 			Runners: []GitHubRunner{
-				{Name: "ci-1", Status: "online", Busy: false},
-				{Name: "other", Status: "offline", Busy: false},
+				{Name: "ci-1", Status: "online", Busy: false, OS: "Linux"},
+				{Name: "other", Status: "offline", Busy: false, OS: "Linux"},
 			},
 		})
 	}))
@@ -36,11 +36,45 @@ func TestManager_EnrichWithGitHubStatus(t *testing.T) {
 
 	m := &Manager{GitHub: NewGitHubClientWithHTTP("p", ts.Client(), ts.URL)}
 	statuses := []RunnerStatus{
-		{Instance: "ci-1", Repo: "o/r"},
+		{Instance: "ci-1", Repo: "o/r", Host: "h", Mode: "docker"},
 	}
 	m.EnrichWithGitHubStatus(statuses, cfg)
 	if statuses[0].Remote != "online" || statuses[0].Busy {
 		t.Fatalf("got %+v", statuses[0])
+	}
+}
+
+func TestManager_EnrichWithGitHubStatus_OS_mismatch_skips(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/repos/o/r/actions/runners" {
+			http.NotFound(w, r)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(runnersResponse{
+			Runners: []GitHubRunner{
+				{Name: "ci-1", Status: "online", Busy: false, OS: "Linux"},
+			},
+		})
+	}))
+	defer ts.Close()
+
+	cfg := &config.Config{
+		GitHub: config.GitHubConfig{PAT: "p"},
+		Hosts: map[string]config.HostConfig{
+			"win": {Addr: "a@b", OS: "windows", Arch: "amd64"},
+		},
+		Runners: []config.RunnerConfig{
+			{Name: "ci", Repo: "o/r", Host: "win", Count: 1},
+		},
+	}
+
+	m := &Manager{GitHub: NewGitHubClientWithHTTP("p", ts.Client(), ts.URL)}
+	statuses := []RunnerStatus{
+		{Instance: "ci-1", Repo: "o/r", Host: "win", Mode: "native"},
+	}
+	m.EnrichWithGitHubStatus(statuses, cfg)
+	if statuses[0].Remote != "" {
+		t.Fatalf("expected no GitHub match for OS mismatch, got Remote=%q", statuses[0].Remote)
 	}
 }
 
