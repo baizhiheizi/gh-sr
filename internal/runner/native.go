@@ -115,11 +115,11 @@ func (m *Manager) setupNative(h *host.Host, rc config.RunnerConfig) error {
 
 		installed, _ := NativeRunnerConfigPresent(h, name)
 		if installed {
-			fmt.Printf("  %s: already installed, skipping\n", name)
+			fmt.Fprintf(m.out(), "  %s: already installed, skipping\n", name)
 			continue
 		}
 
-		fmt.Printf("  %s: installing runner v%s...\n", name, version)
+		fmt.Fprintf(m.out(), "  %s: installing runner v%s...\n", name, version)
 
 		if h.OS == "linux" {
 			installDepsCmd := linuxElevatePrelude + `
@@ -131,7 +131,7 @@ func (m *Manager) setupNative(h *host.Host, rc config.RunnerConfig) error {
 				fi
 			`
 			if _, err := h.Run(installDepsCmd); err != nil {
-				fmt.Printf("  %s: warning: failed to ensure curl/tar are installed: %v\n", name, err)
+				fmt.Fprintf(m.out(), "  %s: warning: failed to ensure curl/tar are installed: %v\n", name, err)
 			}
 		}
 
@@ -158,7 +158,7 @@ func (m *Manager) setupNative(h *host.Host, rc config.RunnerConfig) error {
 				dir, strings.TrimSpace(linuxElevatePrelude),
 			)
 			if _, err := h.Run(depsCmd); err != nil {
-				fmt.Printf("  %s: warning: failed to install runner dependencies: %v\n", name, err)
+				fmt.Fprintf(m.out(), "  %s: warning: failed to install runner dependencies: %v\n", name, err)
 			}
 		}
 
@@ -183,7 +183,7 @@ func (m *Manager) setupNative(h *host.Host, rc config.RunnerConfig) error {
 			}
 		}
 
-		fmt.Printf("  %s: configured\n", name)
+		fmt.Fprintf(m.out(), "  %s: configured\n", name)
 	}
 
 	return nil
@@ -215,7 +215,7 @@ func (m *Manager) startNative(h *host.Host, rc config.RunnerConfig, instanceName
 		if err != nil {
 			return err
 		}
-		fmt.Printf("  %s: %s\n", instanceName, strings.TrimSpace(out))
+		fmt.Fprintf(m.out(), "  %s: %s\n", instanceName, strings.TrimSpace(out))
 		return nil
 	}
 
@@ -229,7 +229,7 @@ func (m *Manager) startNative(h *host.Host, rc config.RunnerConfig, instanceName
 	if err != nil {
 		return err
 	}
-	fmt.Printf("  %s: %s\n", instanceName, strings.TrimSpace(out))
+	fmt.Fprintf(m.out(), "  %s: %s\n", instanceName, strings.TrimSpace(out))
 	return nil
 }
 
@@ -249,7 +249,7 @@ func (m *Manager) stopNative(h *host.Host, instanceName string) error {
 		if err != nil {
 			return err
 		}
-		fmt.Printf("  %s: %s\n", instanceName, strings.TrimSpace(out))
+		fmt.Fprintf(m.out(), "  %s: %s\n", instanceName, strings.TrimSpace(out))
 		return nil
 	}
 
@@ -268,7 +268,7 @@ func (m *Manager) stopNative(h *host.Host, instanceName string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Printf("  %s: %s\n", instanceName, strings.TrimSpace(out))
+	fmt.Fprintf(m.out(), "  %s: %s\n", instanceName, strings.TrimSpace(out))
 	return nil
 }
 
@@ -279,7 +279,7 @@ func (m *Manager) removeNative(h *host.Host, rc config.RunnerConfig, instanceNam
 
 	removeToken, err := m.GitHub.GetRemovalToken(rc.Repo)
 	if err != nil {
-		fmt.Printf("  %s: warning: could not get removal token: %v\n", instanceName, err)
+		fmt.Fprintf(m.out(), "  %s: warning: could not get removal token: %v\n", instanceName, err)
 	} else {
 		if h.OS == "windows" {
 			cmd := fmt.Sprintf(
@@ -292,7 +292,7 @@ func (m *Manager) removeNative(h *host.Host, rc config.RunnerConfig, instanceNam
 			cmd := fmt.Sprintf("cd %s && ./config.sh remove --token '%s'", dir, removeToken)
 			h.Run(cmd)
 		}
-		fmt.Printf("  %s: deregistered\n", instanceName)
+		fmt.Fprintf(m.out(), "  %s: deregistered\n", instanceName)
 	}
 
 	if h.OS == "windows" {
@@ -301,7 +301,7 @@ func (m *Manager) removeNative(h *host.Host, rc config.RunnerConfig, instanceNam
 		h.Run(fmt.Sprintf("rm -rf %s", dir))
 	}
 
-	fmt.Printf("  %s: removed\n", instanceName)
+	fmt.Fprintf(m.out(), "  %s: removed\n", instanceName)
 	return nil
 }
 

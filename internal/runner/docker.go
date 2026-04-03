@@ -109,9 +109,9 @@ func (m *Manager) setupDockerWindows(h *host.Host) error {
 	if err != nil || strings.TrimSpace(out) == "" {
 		return fmt.Errorf("docker not available on host %s: install Docker Desktop and ensure it is running", h.Name)
 	}
-	fmt.Printf("  %s: Docker %s available\n", h.Name, strings.TrimSpace(out))
+	fmt.Fprintf(m.out(), "  %s: Docker %s available\n", h.Name, strings.TrimSpace(out))
 
-	fmt.Printf("  %s: pulling runner image...\n", h.Name)
+	fmt.Fprintf(m.out(), "  %s: pulling runner image...\n", h.Name)
 	if _, err := dockerRun(h, fmt.Sprintf("docker pull %s", RunnerDockerImage)); err != nil {
 		return fmt.Errorf("pulling Docker image: %w", err)
 	}
@@ -177,8 +177,8 @@ func (m *Manager) setupDockerUnix(h *host.Host) error {
 	if hasCLI {
 		out, verr := UnixDockerServerVersion(h)
 		if verr == nil {
-			fmt.Printf("  %s: Docker %s available\n", h.Name, out)
-			fmt.Printf("  %s: pulling runner image...\n", h.Name)
+			fmt.Fprintf(m.out(), "  %s: Docker %s available\n", h.Name, out)
+			fmt.Fprintf(m.out(), "  %s: pulling runner image...\n", h.Name)
 			if _, err := h.Run(fmt.Sprintf("docker pull %s", RunnerDockerImage)); err != nil {
 				return fmt.Errorf("pulling Docker image: %w", err)
 			}
@@ -200,7 +200,7 @@ func (m *Manager) setupDockerUnix(h *host.Host) error {
 		)
 	}
 
-	fmt.Printf("  %s: Docker not found, attempting to install...\n", h.Name)
+	fmt.Fprintf(m.out(), "  %s: Docker not found, attempting to install...\n", h.Name)
 	installCmd := linuxElevatePrelude + `
 			if ! command -v curl >/dev/null 2>&1; then
 				if command -v apt-get >/dev/null 2>&1; then $SUDO apt-get update && $SUDO apt-get install -y curl;
@@ -228,9 +228,9 @@ func (m *Manager) setupDockerUnix(h *host.Host) error {
 	if verr != nil {
 		return fmt.Errorf("docker installed on host %s but still not usable (e.g. add user to 'docker' group and reconnect SSH): %w", h.Name, verr)
 	}
-	fmt.Printf("  %s: Docker %s available\n", h.Name, out)
+	fmt.Fprintf(m.out(), "  %s: Docker %s available\n", h.Name, out)
 
-	fmt.Printf("  %s: pulling runner image...\n", h.Name)
+	fmt.Fprintf(m.out(), "  %s: pulling runner image...\n", h.Name)
 	if _, err := h.Run(fmt.Sprintf("docker pull %s", RunnerDockerImage)); err != nil {
 		return fmt.Errorf("pulling Docker image: %w", err)
 	}
@@ -244,14 +244,14 @@ func (m *Manager) startDocker(h *host.Host, rc config.RunnerConfig, instanceName
 	if h.OS == "windows" {
 		running, _ := dockerRun(h, fmt.Sprintf(`docker inspect -f "{{.State.Running}}" %s 2>$null`, cname))
 		if strings.TrimSpace(running) == "true" {
-			fmt.Printf("  %s: already running\n", instanceName)
+			fmt.Fprintf(m.out(), "  %s: already running\n", instanceName)
 			return nil
 		}
 		dockerRunIgnoreErr(h, fmt.Sprintf("docker rm -f %s 2>$null", cname))
 	} else {
 		running, _ := h.Run(fmt.Sprintf("docker inspect -f '{{.State.Running}}' %s 2>/dev/null", cname))
 		if strings.TrimSpace(running) == "true" {
-			fmt.Printf("  %s: already running\n", instanceName)
+			fmt.Fprintf(m.out(), "  %s: already running\n", instanceName)
 			return nil
 		}
 		dockerRunIgnoreErr(h, fmt.Sprintf("docker rm -f %s 2>/dev/null || true", cname))
@@ -281,7 +281,7 @@ func (m *Manager) startDocker(h *host.Host, rc config.RunnerConfig, instanceName
 	if len(containerID) > 12 {
 		containerID = containerID[:12]
 	}
-	fmt.Printf("  %s: started (container %s)\n", instanceName, containerID)
+	fmt.Fprintf(m.out(), "  %s: started (container %s)\n", instanceName, containerID)
 	return nil
 }
 
@@ -296,7 +296,7 @@ func (m *Manager) stopDocker(h *host.Host, instanceName string) error {
 	}
 	running, _ := dockerRun(h, inspectCmd)
 	if strings.TrimSpace(running) != "true" {
-		fmt.Printf("  %s: not running\n", instanceName)
+		fmt.Fprintf(m.out(), "  %s: not running\n", instanceName)
 		return nil
 	}
 
@@ -304,7 +304,7 @@ func (m *Manager) stopDocker(h *host.Host, instanceName string) error {
 		return fmt.Errorf("stopping container: %w", err)
 	}
 
-	fmt.Printf("  %s: stopped\n", instanceName)
+	fmt.Fprintf(m.out(), "  %s: stopped\n", instanceName)
 	return nil
 }
 
@@ -323,7 +323,7 @@ func (m *Manager) removeDocker(h *host.Host, instanceName string) error {
 		return fmt.Errorf("removing container: %w", err)
 	}
 
-	fmt.Printf("  %s: removed\n", instanceName)
+	fmt.Fprintf(m.out(), "  %s: removed\n", instanceName)
 	return nil
 }
 

@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 
@@ -111,8 +112,10 @@ func loadConfig() (*config.Config, error) {
 	return config.LoadFromPath(path)
 }
 
-func newManager(cfg *config.Config) *runner.Manager {
-	return runner.NewManager(cfg.GitHub.PAT)
+func newManager(cfg *config.Config, w io.Writer) *runner.Manager {
+	m := runner.NewManager(cfg.GitHub.PAT)
+	m.Out = w
+	return m
 }
 
 func initCmd() *cobra.Command {
@@ -331,7 +334,7 @@ func setupCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			mgr := newManager(cfg)
+			mgr := newManager(cfg, cmd.OutOrStdout())
 			return ops.Setup(cmd.OutOrStdout(), cfg, mgr, filterHost, filterRepo, args)
 		},
 	}
@@ -346,7 +349,7 @@ func upCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			mgr := newManager(cfg)
+			mgr := newManager(cfg, cmd.OutOrStdout())
 			return ops.Up(cmd.OutOrStdout(), cfg, mgr, filterHost, filterRepo, args)
 		},
 	}
@@ -361,7 +364,7 @@ func downCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			mgr := newManager(cfg)
+			mgr := newManager(cfg, cmd.OutOrStdout())
 			return ops.Down(cmd.OutOrStdout(), cfg, mgr, filterHost, filterRepo, args)
 		},
 	}
@@ -376,7 +379,7 @@ func restartCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			mgr := newManager(cfg)
+			mgr := newManager(cfg, cmd.OutOrStdout())
 			return ops.Restart(cmd.OutOrStdout(), cfg, mgr, filterHost, filterRepo, args)
 		},
 	}
@@ -391,7 +394,7 @@ func statusCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			mgr := newManager(cfg)
+			mgr := newManager(cfg, cmd.OutOrStdout())
 			allStatuses, err := ops.CollectStatus(cmd.OutOrStdout(), cfg, mgr, filterHost, filterRepo, args)
 			if err != nil {
 				return err
@@ -412,7 +415,7 @@ func logsCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			mgr := newManager(cfg)
+			mgr := newManager(cfg, cmd.OutOrStdout())
 			output, err := ops.Logs(cfg, mgr, filterHost, args[0])
 			if err != nil {
 				return err
@@ -432,7 +435,7 @@ func cleanupCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			mgr := newManager(cfg)
+			mgr := newManager(cfg, cmd.OutOrStdout())
 			_, err = ops.CleanupOffline(cmd.OutOrStdout(), cfg, mgr)
 			return err
 		},
@@ -449,7 +452,7 @@ func updateCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			mgr := newManager(cfg)
+			mgr := newManager(cfg, cmd.OutOrStdout())
 			return ops.Update(cmd.OutOrStdout(), cfg, mgr, filterHost, filterRepo, args)
 		},
 	}

@@ -2,6 +2,8 @@ package runner
 
 import (
 	"fmt"
+	"io"
+	"os"
 	"strings"
 
 	"github.com/an-lee/ghr/internal/config"
@@ -10,6 +12,15 @@ import (
 
 type Manager struct {
 	GitHub *GitHubClient
+	// Out receives progress messages from runner operations. If nil, os.Stdout is used.
+	Out io.Writer
+}
+
+func (m *Manager) out() io.Writer {
+	if m != nil && m.Out != nil {
+		return m.Out
+	}
+	return os.Stdout
 }
 
 func NewManager(pat string) *Manager {

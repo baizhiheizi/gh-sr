@@ -123,6 +123,7 @@ var (
 
 func RunDashboard(cfg *config.Config, opts DashboardOpts) error {
 	mgr := runner.NewManager(cfg.GitHub.PAT)
+	mgr.Out = io.Discard
 	m := &dashboardModel{
 		opts:          opts,
 		cfg:           cfg,
@@ -341,7 +342,9 @@ func (m *dashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.cfg = cfg
-		m.mgr = runner.NewManager(cfg.GitHub.PAT)
+		mgr := runner.NewManager(cfg.GitHub.PAT)
+		mgr.Out = io.Discard
+		m.mgr = mgr
 		m.toast = "Config reloaded."
 		m.loading = true
 		return m, m.refreshCmd()
