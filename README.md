@@ -211,12 +211,38 @@ To use the checked-in example at `config/runners.yml` while hacking on this repo
 
 #### Linux SSH user and privileges
 
-`ghr setup` and `ghr update` run remote commands as the SSH user in `hosts.*.addr`. On **Linux**, if that user is **not** root and the `sudo` binary is on the remote `PATH`, `ghr` prefixes some steps with `sudo` (package installs, GitHub’s `installdependencies.sh` for native runners, and the Docker install script when Docker is missing on Linux). SSH sessions are non-interactive, so **passwordless `sudo`** (or running as **`root@host`**) is the reliable choice for those steps.
+`ghr setup` and `ghr update` run remote commands as the SSH user in `hosts.*.addr`. On **Linux**, when a step needs **root** (package installs, GitHub’s `installdependencies.sh` for native runners, or Docker’s install script when Docker is missing), `ghr` uses **`sudo -n`** only — non-interactive `sudo` that never prompts for a password.
 
-- **Docker mode on Linux** — If Docker is not already installed, expect a privilege path (root or working `sudo`). If Docker is installed and your user can run `docker` without `sudo` (for example via the `docker` group), routine `ghr` operations do not need `sudo`. On **macOS**, ghr never auto-installs Docker; install Docker Desktop, OrbStack, or Colima first.
+**Why `sudo -n`:** Remote automation uses SSH sessions **without a PTY** (no interactive terminal), the same way `ssh` runs a remote command by default. Interactive `sudo` would try to read a password from a TTY and fails with errors such as *“a terminal is required to read the password”*. So `ghr` requires **SSH as root** or **passwordless sudo** (`sudo -n true` must succeed on the host) for those install steps.
+
+**If privilege checks fail**, remote stderr may include:
+
+```text
+ghr: remote Linux commands need root SSH or passwordless sudo (non-interactive); SSH has no TTY for sudo passwords. Use NOPASSWD, connect as root, or install software manually. Run: ghr doctor
+```
+
+Run **`ghr doctor`** on your laptop to check Linux hosts: it prints **“linux: non-root user has passwordless sudo”** when `sudo -n` works, or **“linux: passwordless sudo not available…”** when it does not. Use **`ghr doctor --strict`** if you want that warning to fail the command.
+
+##### Setting up the SSH user on Linux
+
+- **Dedicated user + SSH keys** — Create a user on the runner host, authorize your public key in `~/.ssh/authorized_keys`, and set `hosts.*.addr` to `user@host` (or hostname).
+- **`root@host` in `hosts.*.addr`** — Avoids sudo entirely for `ghr`’s install paths. Only use if your security policy allows SSH as root; prefer key-based auth, disable password login, and restrict network access.
+- **Passwordless sudo (`NOPASSWD`)** — On the host, use `visudo` or a drop-in under `/etc/sudoers.d/`. A broad rule such as `runner ALL=(ALL) NOPASSWD: ALL` is common for a **dedicated CI user**. **Command-scoped NOPASSWD** is hard to maintain for Docker’s `get.docker.com` script and `installdependencies.sh` because they run many different commands; if you cannot grant broad NOPASSWD, use **`root@host`** or **pre-install** software so `ghr` does not need those scripts.
+- **Pre-install to limit elevation** — Install **Docker** before `ghr setup` and add the SSH user to the **`docker`** group so `docker` works without `sudo`. For **native** mode, ensure **`curl`** and **`tar`** are on `PATH` and install distro packages the runner needs in advance; that reduces how often `installdependencies.sh` must run with sudo.
+
+**Verify from your laptop** (same `user@host` as in `hosts.*.addr`):
+
+```bash
+ssh -o BatchMode=yes user@host true
+ssh -o BatchMode=yes user@host 'sudo -n true'
+```
+
+The first command checks non-interactive SSH (see also [All remote hosts](#all-remote-hosts)). The second must exit **0** if you rely on a non-root user with sudo for automated installs; if it fails, configure `NOPASSWD` for that user or use `root@host`.
+
+- **Docker mode on Linux** — If Docker is not already installed, expect a privilege path (root or working passwordless `sudo`). If Docker is installed and your user can run `docker` without `sudo` (for example via the `docker` group), routine `ghr` operations often do not need elevation. On **macOS**, ghr never auto-installs Docker; install Docker Desktop, OrbStack, or Colima first.
 - **Native mode** — You can avoid `sudo` if `curl` and `tar` are present and OS packages the runner needs are already installed; otherwise `ghr` may print warnings and the runner might be incomplete.
 
-`ghr` does not verify sudoers rules; failures show up as remote command errors or warnings.
+`ghr` does not deeply verify sudoers rules; failures show up as remote command errors or warnings.
 
 - **Windows** — OpenSSH Server enabled; Docker Desktop if you want Linux container runners (`mode: docker`):
   ```powershell
@@ -240,8 +266,10 @@ Run **`ghr doctor`** (optionally with `--host` / `--repo`) to confirm connectivi
 
 ### Linux
 
-- **Docker mode (default on Linux):** If Docker is not installed, `ghr setup` can run Docker’s install script, which requires **root** or **passwordless sudo** over a non-interactive SSH session (see [Linux SSH user and privileges](#linux-ssh-user-and-privileges)). To avoid that path, install Docker yourself and ensure the SSH user can run `docker` (for example membership in the `docker` group).
-- **Native mode:** Ensure `curl` and `tar` are on `PATH`. `ghr setup` may still invoke GitHub’s `installdependencies.sh` with `sudo` when available.
+For the full explanation of non-interactive SSH, the `ghr: remote Linux commands need root…` error, `NOPASSWD`, and verification commands, see **[Linux SSH user and privileges](#linux-ssh-user-and-privileges)** under Prerequisites.
+
+- **Docker mode (default on Linux):** If Docker is not installed, `ghr setup` can run Docker’s install script, which requires **root** or **passwordless sudo** (`sudo -n`) over SSH (see the section linked above). To avoid that path, install Docker yourself and ensure the SSH user can run `docker` (for example membership in the `docker` group).
+- **Native mode:** Ensure `curl` and `tar` are on `PATH`. `ghr setup` may still invoke GitHub’s `installdependencies.sh` with **`sudo -n`** when the SSH user is not root and passwordless sudo is available.
 
 Run **`ghr doctor`** after the host is prepared.
 
