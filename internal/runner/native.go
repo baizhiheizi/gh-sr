@@ -122,8 +122,7 @@ func (m *Manager) setupNative(h *host.Host, rc config.RunnerConfig) error {
 		fmt.Printf("  %s: installing runner v%s...\n", name, version)
 
 		if h.OS == "linux" {
-			installDepsCmd := `
-				SUDO=''; if command -v sudo >/dev/null 2>&1 && [ "$(id -u)" -ne 0 ]; then SUDO=sudo; fi;
+			installDepsCmd := linuxElevatePrelude + `
 				if ! command -v curl >/dev/null 2>&1 || ! command -v tar >/dev/null 2>&1; then
 					if command -v apt-get >/dev/null 2>&1; then $SUDO apt-get update && $SUDO apt-get install -y curl tar;
 					elif command -v yum >/dev/null 2>&1; then $SUDO yum install -y curl tar;
@@ -155,8 +154,8 @@ func (m *Manager) setupNative(h *host.Host, rc config.RunnerConfig) error {
 
 		if h.OS == "linux" {
 			depsCmd := fmt.Sprintf(
-				"cd %s && SUDO=''; if command -v sudo >/dev/null 2>&1 && [ \"$(id -u)\" -ne 0 ]; then SUDO=sudo; fi; $SUDO ./bin/installdependencies.sh",
-				dir,
+				"cd %s && %s && $SUDO ./bin/installdependencies.sh",
+				dir, strings.TrimSpace(linuxElevatePrelude),
 			)
 			if _, err := h.Run(depsCmd); err != nil {
 				fmt.Printf("  %s: warning: failed to install runner dependencies: %v\n", name, err)

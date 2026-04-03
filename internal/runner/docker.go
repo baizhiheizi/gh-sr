@@ -90,8 +90,7 @@ func (m *Manager) setupDockerUnix(h *host.Host) error {
 			)
 		}
 		fmt.Printf("  %s: Docker not found, attempting to install...\n", h.Name)
-		installCmd := `
-			SUDO=''; if command -v sudo >/dev/null 2>&1 && [ "$(id -u)" -ne 0 ]; then SUDO=sudo; fi;
+		installCmd := linuxElevatePrelude + `
 			if ! command -v curl >/dev/null 2>&1; then
 				if command -v apt-get >/dev/null 2>&1; then $SUDO apt-get update && $SUDO apt-get install -y curl;
 				elif command -v yum >/dev/null 2>&1; then $SUDO yum install -y curl;
@@ -101,7 +100,10 @@ func (m *Manager) setupDockerUnix(h *host.Host) error {
 			curl -fsSL https://get.docker.com | $SUDO sh
 		`
 		if _, instErr := h.Run(installCmd); instErr != nil {
-			return fmt.Errorf("failed to install docker on host %s: %w", h.Name, instErr)
+			return fmt.Errorf(
+				"failed to install docker on host %s (need root SSH, passwordless sudo, or install Docker manually; see ghr doctor): %w",
+				h.Name, instErr,
+			)
 		}
 
 		out, err = h.Run("docker info --format '{{.ServerVersion}}' 2>/dev/null || echo 'not found'")
