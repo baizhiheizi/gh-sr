@@ -51,20 +51,22 @@ func Test_dockerRunIgnoreErr_noPanic(t *testing.T) {
 	}
 }
 
-func Test_patchDockerConfigWindows_commandShape(t *testing.T) {
+func Test_windowsDockerCommand_commandShape(t *testing.T) {
 	t.Parallel()
-	// patchDockerConfigWindows sends a PowerShell script via RunShell; with no real
-	// SSH connection the call errors, but we can verify the script content by
-	// intercepting what RunShell would receive.  We do this by calling the exported
-	// helper directly with a fake host — the error is expected.
-	h := newTestHost("win", "windows")
-	err := patchDockerConfigWindows(h)
-	// Must error (no real SSH), not panic.
-	if err == nil {
-		t.Error("expected error from unconnected host")
+	script := windowsDockerCommand("docker pull ghcr.io/actions/actions-runner:latest")
+	if !strings.Contains(script, "$env:DOCKER_CONFIG = $ghrDockerConfigDir") {
+		t.Fatalf("script should set DOCKER_CONFIG, got %q", script)
 	}
-	// Sanity: error message should mention the host name.
-	if !strings.Contains(err.Error(), "win") && !strings.Contains(err.Error(), "patching") {
-		t.Logf("patchDockerConfigWindows error: %v", err)
+	if !strings.Contains(script, `"ghr.invalid"`) {
+		t.Fatalf("script should include dummy auth entry, got %q", script)
+	}
+	if !strings.Contains(script, `"credsStore": ""`) {
+		t.Fatalf("script should blank credsStore, got %q", script)
+	}
+	if !strings.Contains(script, "[System.Text.UTF8Encoding]::new($false)") {
+		t.Fatalf("script should write BOM-free UTF-8, got %q", script)
+	}
+	if !strings.Contains(script, "docker pull ghcr.io/actions/actions-runner:latest") {
+		t.Fatalf("script should include docker command, got %q", script)
 	}
 }

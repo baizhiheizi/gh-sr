@@ -19,7 +19,7 @@ func containerName(instanceName string) string {
 // wrapping on Windows and raw shell on Linux/macOS.
 func dockerRun(h *host.Host, cmd string) (string, error) {
 	if h.OS == "windows" {
-		return h.RunShell(cmd)
+		return h.RunShell(windowsDockerCommand(cmd))
 	}
 	return h.Run(cmd)
 }
@@ -27,7 +27,7 @@ func dockerRun(h *host.Host, cmd string) (string, error) {
 // dockerRunIgnoreErr is like dockerRun but discards the error (for best-effort cleanup).
 func dockerRunIgnoreErr(h *host.Host, cmd string) {
 	if h.OS == "windows" {
-		h.RunShell(cmd)
+		h.RunShell(windowsDockerCommand(cmd))
 	} else {
 		h.Run(cmd)
 	}
@@ -40,32 +40,29 @@ func (m *Manager) setupDocker(h *host.Host) error {
 	return m.setupDockerUnix(h)
 }
 
-// patchDockerConfigWindows removes "credsStore" from %USERPROFILE%\.docker\config.json
-// on the Windows host over SSH.
-//
-// Docker Desktop writes "credsStore": "desktop" into that file and the bundled
-// docker-credential-desktop helper calls Windows Credential Manager, which is
-// unavailable in OpenSSH sessions ("A specified logon session does not exist").
-// Removing credsStore entirely (not just setting it to "") disables the helper,
-// letting Docker attempt anonymous pulls. The rest of the config is preserved.
-func patchDockerConfigWindows(h *host.Host) error {
-	script := `
-$cfg = Join-Path $env:USERPROFILE '.docker\config.json'
-$dir = Split-Path $cfg
-New-Item -ItemType Directory -Force -Path $dir | Out-Null
-$json = $null
-if (Test-Path $cfg) {
-    try { $json = Get-Content $cfg -Raw | ConvertFrom-Json } catch { $json = $null }
+// windowsDockerCommand forces Docker to use an isolated config directory that
+// avoids the Windows native credential helper in SSH sessions. The dummy auth
+// entry keeps Docker CLI from auto-detecting wincred as the default store when
+// no auth is configured.
+func windowsDockerCommand(cmd string) string {
+	return strings.TrimSpace(fmt.Sprintf(`
+$ghrDockerConfigDir = Join-Path $env:TEMP 'ghr-docker-config'
+New-Item -ItemType Directory -Force -Path $ghrDockerConfigDir | Out-Null
+$ghrDockerConfigFile = Join-Path $ghrDockerConfigDir 'config.json'
+$ghrDockerConfigJson = @'
+{
+  "auths": {
+    "ghr.invalid": {
+      "auth": "Z2hyOmdocg=="
+    }
+  },
+  "credsStore": ""
 }
-if ($json -eq $null) { $json = [PSCustomObject]@{} }
-$json.PSObject.Properties.Remove('credsStore')
-$text = $json | ConvertTo-Json -Depth 10
-[System.IO.File]::WriteAllText($cfg, $text)
-`
-	if _, err := h.RunShell(strings.TrimSpace(script)); err != nil {
-		return fmt.Errorf("patching Docker config on %s: %w", h.Name, err)
-	}
-	return nil
+'@
+[System.IO.File]::WriteAllText($ghrDockerConfigFile, $ghrDockerConfigJson, [System.Text.UTF8Encoding]::new($false))
+$env:DOCKER_CONFIG = $ghrDockerConfigDir
+%s
+`, cmd))
 }
 
 func (m *Manager) setupDockerWindows(h *host.Host) error {
@@ -74,10 +71,6 @@ func (m *Manager) setupDockerWindows(h *host.Host) error {
 		return fmt.Errorf("docker not available on host %s: install Docker Desktop and ensure it is running", h.Name)
 	}
 	fmt.Printf("  %s: Docker %s available\n", h.Name, strings.TrimSpace(out))
-
-	if err := patchDockerConfigWindows(h); err != nil {
-		return err
-	}
 
 	fmt.Printf("  %s: pulling runner image...\n", h.Name)
 	if _, err := dockerRun(h, fmt.Sprintf("docker pull %s", RunnerDockerImage)); err != nil {

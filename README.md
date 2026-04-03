@@ -255,7 +255,7 @@ Run **`ghr doctor`** to confirm `docker info` from the SSH session.
 ### Windows
 
 - Install and enable **OpenSSH Server** (see the PowerShell snippet under [Prerequisites](#prerequisites)).
-- **Docker mode (Linux containers on the same Windows host):** Install [Docker Desktop](https://www.docker.com/products/docker-desktop/), use the default **Linux containers** mode, and keep Docker running. ghr does not install or start Docker Desktop for you.
+- **Docker mode (Linux containers on the same Windows host):** Install [Docker Desktop](https://www.docker.com/products/docker-desktop/), use the default **Linux containers** mode, and keep Docker running. ghr does not install or start Docker Desktop for you. Because Docker's Windows CLI may auto-detect `wincred` in non-interactive SSH sessions and fail with `A specified logon session does not exist`, ghr runs Windows Docker commands with an isolated `DOCKER_CONFIG` that disables credential helpers instead of relying on `%USERPROFILE%/.docker/config.json`.
 
 Run **`ghr doctor`** to confirm SSH and Docker readiness.
 
