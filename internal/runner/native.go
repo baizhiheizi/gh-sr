@@ -114,9 +114,12 @@ func (m *Manager) setupNative(h *host.Host, rc config.RunnerConfig) error {
 				return fmt.Errorf("installing runner on Windows: %w", err)
 			}
 		} else {
+			tarball := fmt.Sprintf("%s/ghr-runner-%s-%s.tar.gz", h.TempDir(), name, version)
 			cmds := fmt.Sprintf(
-				"mkdir -p %s && cd %s && curl -sL '%s' | tar xz",
-				dir, dir, url,
+				"mkdir -p %s && cd %s && tarball=%s && rm -f \"$tarball\" && "+
+					"curl -fSL --retry 3 --retry-delay 2 -o \"$tarball\" '%s' && "+
+					"tar xzf \"$tarball\" && rm -f \"$tarball\"",
+				dir, dir, tarball, url,
 			)
 			if _, err := h.Run(cmds); err != nil {
 				return fmt.Errorf("installing runner: %w", err)
