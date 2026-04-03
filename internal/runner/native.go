@@ -203,8 +203,10 @@ func (m *Manager) startNative(h *host.Host, rc config.RunnerConfig, instanceName
 	if h.OS == "windows" {
 		cmd := fmt.Sprintf(
 			"%s; $pidFile = Join-Path $runnerDir '.runner_pid'; "+
+				"$logFile = Join-Path $runnerDir 'runner.log'; "+
 				"if (Test-Path $pidFile) { $p = Get-Content $pidFile; try { Get-Process -Id $p -EA Stop | Out-Null; Write-Host 'already running'; exit 0 } catch {} }; "+
-				"$proc = Start-Process -FilePath (Join-Path $runnerDir 'run.cmd') -WorkingDirectory $runnerDir -PassThru -WindowStyle Hidden; "+
+				"$proc = Start-Process -FilePath (Join-Path $runnerDir 'run.cmd') -WorkingDirectory $runnerDir -PassThru -WindowStyle Hidden "+
+				"-RedirectStandardOutput $logFile -RedirectStandardError $logFile; "+
 				"$proc.Id | Out-File -FilePath $pidFile -NoNewline; Write-Host \"started PID $($proc.Id)\"",
 			windowsRunnerDirAssignment(h, "runnerDir", instanceName),
 		)
@@ -338,7 +340,11 @@ func (m *Manager) logsNative(h *host.Host, instanceName string) (string, error) 
 	dir := h.RunnerDir(instanceName)
 
 	if h.OS == "windows" {
-		cmd := fmt.Sprintf("%s; Get-Content -Tail 50 (Join-Path $runnerDir 'runner.log')", windowsRunnerDirAssignment(h, "runnerDir", instanceName))
+		cmd := fmt.Sprintf(
+			"%s; $logFile = Join-Path $runnerDir 'runner.log'; "+
+				"if (-not (Test-Path $logFile)) { Write-Output 'no logs found' } else { Get-Content -Tail 50 -LiteralPath $logFile }",
+			windowsRunnerDirAssignment(h, "runnerDir", instanceName),
+		)
 		return h.RunShell(cmd)
 	}
 

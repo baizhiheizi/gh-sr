@@ -11,8 +11,47 @@ import (
 // RunnerDockerImage is the container image used for docker-mode runners.
 const RunnerDockerImage = "ghcr.io/actions/actions-runner:latest"
 
+// dockerRunnerEntryScript registers once (registration tokens are single-use) then runs the
+// listener. Official ghcr.io/actions/actions-runner has no CMD; it expects config.sh then run.sh.
+const dockerRunnerEntryScript = `cd /home/runner && if [ ! -f .runner ]; then ./config.sh --unattended --replace; fi && exec ./run.sh`
+
 func containerName(instanceName string) string {
 	return "gh-runner-" + instanceName
+}
+
+// shellSingleQuote wraps s in single quotes for a POSIX shell word (safe for docker -e on Linux/macOS SSH).
+func shellSingleQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'"
+}
+
+// dockerEnvFlag renders one -e flag as a single shell word: -e 'NAME=value'
+func dockerEnvFlag(name, value string) string {
+	return "-e " + shellSingleQuote(name+"="+value)
+}
+
+// dockerStartCommand builds the docker run line for the official actions-runner image (config.sh + run.sh).
+func dockerStartCommand(cname, instanceName, regToken, repoURL, labels, sockMount, image string) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "docker run -d --name %s --restart unless-stopped ", cname)
+	b.WriteString(dockerEnvFlag("ACTIONS_RUNNER_INPUT_URL", repoURL))
+	b.WriteByte(' ')
+	b.WriteString(dockerEnvFlag("ACTIONS_RUNNER_INPUT_TOKEN", regToken))
+	b.WriteByte(' ')
+	b.WriteString(dockerEnvFlag("ACTIONS_RUNNER_INPUT_NAME", instanceName))
+	b.WriteByte(' ')
+	b.WriteString(dockerEnvFlag("ACTIONS_RUNNER_INPUT_LABELS", labels))
+	b.WriteByte(' ')
+	b.WriteString(dockerEnvFlag("ACTIONS_RUNNER_INPUT_WORK", "_work"))
+	b.WriteByte(' ')
+	if s := strings.TrimSpace(sockMount); s != "" {
+		b.WriteString(s)
+		b.WriteByte(' ')
+	}
+	b.WriteString("--entrypoint /bin/bash ")
+	b.WriteString(image)
+	b.WriteString(" -c ")
+	b.WriteString(shellSingleQuote(dockerRunnerEntryScript))
+	return b.String()
 }
 
 // dockerRun executes a Docker CLI command on the host, using PowerShell
@@ -231,16 +270,7 @@ func (m *Manager) startDocker(h *host.Host, rc config.RunnerConfig, instanceName
 		sockMount = ""
 	}
 
-	cmd := fmt.Sprintf(
-		"docker run -d --name %s --restart unless-stopped "+
-			"-e RUNNER_NAME=%s "+
-			"-e RUNNER_TOKEN=%s "+
-			"-e RUNNER_URL=%s "+
-			"-e RUNNER_LABELS=%s "+
-			"-e RUNNER_WORKDIR=_work "+
-			"%s%s",
-		cname, instanceName, regToken, repoURL, labels, sockMount, RunnerDockerImage,
-	)
+	cmd := dockerStartCommand(cname, instanceName, regToken, repoURL, labels, sockMount, RunnerDockerImage)
 
 	out, err := dockerRun(h, cmd)
 	if err != nil {

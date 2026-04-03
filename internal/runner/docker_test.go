@@ -52,6 +52,42 @@ func Test_dockerRunIgnoreErr_noPanic(t *testing.T) {
 	}
 }
 
+func Test_dockerStartCommand_officialImageShape(t *testing.T) {
+	t.Parallel()
+	cmd := dockerStartCommand(
+		"gh-runner-app-1",
+		"app-1",
+		"REGTOKEN123",
+		"https://github.com/o/r",
+		"self-hosted,linux",
+		"-v /var/run/docker.sock:/var/run/docker.sock",
+		"ghcr.io/actions/actions-runner:latest",
+	)
+	for _, sub := range []string{
+		"ACTIONS_RUNNER_INPUT_URL=",
+		"https://github.com/o/r",
+		"ACTIONS_RUNNER_INPUT_TOKEN=",
+		"REGTOKEN123",
+		"ACTIONS_RUNNER_INPUT_NAME=",
+		"app-1",
+		"ACTIONS_RUNNER_INPUT_LABELS=",
+		"self-hosted,linux",
+		"ACTIONS_RUNNER_INPUT_WORK=",
+		"_work",
+		"--entrypoint /bin/bash",
+		"ghcr.io/actions/actions-runner:latest",
+		"./config.sh --unattended --replace",
+		"exec ./run.sh",
+	} {
+		if !strings.Contains(cmd, sub) {
+			t.Fatalf("docker start command missing %q in:\n%s", sub, cmd)
+		}
+	}
+	if strings.Contains(cmd, "RUNNER_TOKEN=") || strings.Contains(cmd, "RUNNER_URL=") {
+		t.Fatalf("should not use legacy RUNNER_* env names: %s", cmd)
+	}
+}
+
 func Test_windowsDockerCommand_commandShape(t *testing.T) {
 	t.Parallel()
 	script := windowsDockerCommand("docker pull ghcr.io/actions/actions-runner:latest")

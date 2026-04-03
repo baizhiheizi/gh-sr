@@ -55,7 +55,7 @@ flowchart LR
 
 | Host OS | Default mode | Where the workload runs |
 |--------|--------------|-------------------------|
-| Linux | `docker` | Docker on that host: container name `gh-runner-<instance>`, image `ghcr.io/actions/actions-runner:latest`. On non-Windows hosts the container typically mounts the Docker socket for workflow `docker` steps. |
+| Linux | `docker` | Docker on that host: container name `gh-runner-<instance>`, image `ghcr.io/actions/actions-runner:latest`. ghr starts it with `config.sh --unattended` (once per container) then `run.sh`, using `ACTIONS_RUNNER_INPUT_*` env vars. On non-Windows hosts the container typically mounts the Docker socket for workflow `docker` steps. |
 | Linux | `native` (if set) | Files under `~/.ghr/runners/<instance>`; process via `run.sh` and a PID file. |
 | Windows | `native` | `%USERPROFILE%\.ghr\runners\<instance>`; process via `run.cmd` and a PID file. |
 | Windows | `docker` (if set) | Same Docker image on Docker Desktop over the same SSH connection as native Windows runners. |
