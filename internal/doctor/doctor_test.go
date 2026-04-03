@@ -84,6 +84,34 @@ func TestModesForHost(t *testing.T) {
 	}
 }
 
+func TestNativeInstallTargetsForHost(t *testing.T) {
+	t.Parallel()
+	runners := []config.RunnerConfig{
+		{Name: "a", Host: "h1", Repo: "o/r", Mode: "native", Count: 2},
+		{Name: "b", Host: "h1", Repo: "o/r", Mode: "docker"},
+		{Name: "c", Host: "h2", Repo: "o/r", Mode: "native", Count: 1},
+	}
+	got := nativeInstallTargetsForHost(runners, "h1", "linux")
+	want := [][2]string{{"a-1", "a"}, {"a-2", "a"}}
+	if len(got) != len(want) {
+		t.Fatalf("len %d, want %d: %#v", len(got), len(want), got)
+	}
+	for i := range want {
+		if got[i][0] != want[i][0] || got[i][1] != want[i][1] {
+			t.Fatalf("idx %d: got %#v want %#v", i, got[i], want[i])
+		}
+	}
+	if len(nativeInstallTargetsForHost(runners, "h2", "linux")) != 1 {
+		t.Fatalf("h2 should have one native target")
+	}
+	// On linux host, default mode for unspecified Mode is docker — no native targets for h2 if we use docker-only name
+	if nativeInstallTargetsForHost([]config.RunnerConfig{
+		{Name: "x", Host: "hx", Repo: "o/r", Count: 1},
+	}, "hx", "linux") != nil {
+		t.Fatalf("default docker on linux should yield no native install targets")
+	}
+}
+
 func TestRun_ConfigErrorSkipsGitHub(t *testing.T) {
 	t.Parallel()
 	var buf strings.Builder

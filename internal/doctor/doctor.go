@@ -131,6 +131,7 @@ func Run(w io.Writer, cfgPath, envPath string, cfg *config.Config, cfgErr error,
 			}
 			if modes["native"] {
 				checkNative(w, hostName, h, &r)
+				checkNativeRunnerInstall(w, hostName, h, hcfg, runners, &r)
 			}
 			if h.OS == "linux" {
 				checkLinuxSudo(w, hostName, h, &r)
@@ -218,6 +219,39 @@ func checkDocker(w io.Writer, hostName string, h *host.Host, r *Result) {
 		return
 	}
 	printLine(w, sevOK, hostName, fmt.Sprintf("docker: server version %s (image %s)", out, runner.RunnerDockerImage))
+}
+
+// nativeInstallTargetsForHost lists (instanceName, runnerConfigName) for native-mode runners on hostName.
+func nativeInstallTargetsForHost(runners []config.RunnerConfig, hostName, hostOS string) [][2]string {
+	var out [][2]string
+	for _, rc := range runners {
+		if rc.Host != hostName || rc.EffectiveMode(hostOS) != "native" {
+			continue
+		}
+		for _, inst := range rc.InstanceNames() {
+			out = append(out, [2]string{inst, rc.Name})
+		}
+	}
+	return out
+}
+
+func checkNativeRunnerInstall(w io.Writer, hostName string, h *host.Host, hcfg config.HostConfig, runners []config.RunnerConfig, r *Result) {
+	for _, pair := range nativeInstallTargetsForHost(runners, hostName, hcfg.OS) {
+		inst, runnerName := pair[0], pair[1]
+		dir := h.RunnerDir(inst)
+		ok, err := runner.NativeRunnerConfigPresent(h, inst)
+		if err != nil {
+			printLine(w, sevFail, hostName, fmt.Sprintf("native: instance %s: %v", inst, err))
+			r.Fail++
+			continue
+		}
+		if !ok {
+			printLine(w, sevFail, hostName, fmt.Sprintf("native: instance %s not installed (missing .runner under %s); run: ghr setup %s", inst, dir, runnerName))
+			r.Fail++
+			continue
+		}
+		printLine(w, sevOK, hostName, fmt.Sprintf("native: instance %s installed", inst))
+	}
 }
 
 func checkNative(w io.Writer, hostName string, h *host.Host, r *Result) {

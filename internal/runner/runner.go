@@ -51,7 +51,7 @@ func (m *Manager) Start(h *host.Host, rc config.RunnerConfig) error {
 		case "docker":
 			err = m.startDocker(h, rc, name)
 		case "native":
-			err = m.startNative(h, name)
+			err = m.startNative(h, rc, name)
 		}
 		if err != nil {
 			return fmt.Errorf("starting %s: %w", name, err)

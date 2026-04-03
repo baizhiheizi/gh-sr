@@ -1,8 +1,14 @@
 package runner
 
 import (
+	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/an-lee/ghr/internal/config"
+	"github.com/an-lee/ghr/internal/host"
 )
 
 func Test_archForGitHub(t *testing.T) {
@@ -39,5 +45,42 @@ func Test_runnerTarballURL(t *testing.T) {
 	}
 	if runnerTarballURL("1", "freebsd", "amd64") != "" {
 		t.Errorf("unsupported OS should return empty")
+	}
+}
+
+func TestNativeRunnerConfigPresent_local(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("unix-style paths and sh -c probe")
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	inst := "ghr-native-probe-" + filepath.Base(t.TempDir())
+
+	base := filepath.Join(home, ".ghr", "runners", inst)
+	if err := os.MkdirAll(base, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(base) })
+
+	if err := os.WriteFile(filepath.Join(base, ".runner"), []byte("{}"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	h := host.NewHost("local-test", config.HostConfig{Addr: config.LocalAddr, OS: "linux", Arch: "amd64"})
+	if err := h.Connect(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = h.Close() })
+
+	ok, err := NativeRunnerConfigPresent(h, inst)
+	if err != nil || !ok {
+		t.Fatalf("expected installed: ok=%v err=%v", ok, err)
+	}
+
+	okMissing, errMissing := NativeRunnerConfigPresent(h, inst+"-not-there")
+	if errMissing != nil || okMissing {
+		t.Fatalf("expected not installed: ok=%v err=%v", okMissing, errMissing)
 	}
 }

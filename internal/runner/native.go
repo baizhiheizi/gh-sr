@@ -8,6 +8,28 @@ import (
 	"github.com/an-lee/ghr/internal/host"
 )
 
+// NativeRunnerConfigPresent reports whether the remote instance directory contains
+// a configured runner (.runner), matching the check used by setup and doctor.
+func NativeRunnerConfigPresent(h *host.Host, instanceName string) (bool, error) {
+	dir := h.RunnerDir(instanceName)
+	if h.OS == "windows" {
+		safeDir := strings.ReplaceAll(dir, "'", "''")
+		out, err := h.RunShell(fmt.Sprintf(
+			"if (Test-Path (Join-Path '%s' '.runner')) { Write-Output 'yes' } else { Write-Output 'no' }",
+			safeDir,
+		))
+		if err != nil {
+			return false, err
+		}
+		return strings.TrimSpace(out) == "yes", nil
+	}
+	out, err := h.Run(fmt.Sprintf("test -f %s/.runner && echo yes || echo no", dir))
+	if err != nil {
+		return false, err
+	}
+	return strings.TrimSpace(out) == "yes", nil
+}
+
 func runnerTarballURL(version, osName, arch string) string {
 	switch osName {
 	case "darwin":
@@ -58,17 +80,8 @@ func (m *Manager) setupNative(h *host.Host, rc config.RunnerConfig) error {
 	for _, name := range rc.InstanceNames() {
 		dir := h.RunnerDir(name)
 
-		var installed string
-		if h.OS == "windows" {
-			safeDir := strings.ReplaceAll(dir, "'", "''")
-			installed, _ = h.RunShell(fmt.Sprintf(
-				"if (Test-Path (Join-Path '%s' '.runner')) { Write-Output 'yes' } else { Write-Output 'no' }",
-				safeDir,
-			))
-		} else {
-			installed, _ = h.Run(fmt.Sprintf("test -f %s/.runner && echo yes || echo no", dir))
-		}
-		if strings.TrimSpace(installed) == "yes" {
+		installed, _ := NativeRunnerConfigPresent(h, name)
+		if installed {
 			fmt.Printf("  %s: already installed, skipping\n", name)
 			continue
 		}
@@ -151,8 +164,16 @@ func (m *Manager) setupNative(h *host.Host, rc config.RunnerConfig) error {
 	return nil
 }
 
-func (m *Manager) startNative(h *host.Host, instanceName string) error {
+func (m *Manager) startNative(h *host.Host, rc config.RunnerConfig, instanceName string) error {
 	dir := h.RunnerDir(instanceName)
+
+	ok, err := NativeRunnerConfigPresent(h, instanceName)
+	if err != nil {
+		return fmt.Errorf("checking runner install at %s: %w", dir, err)
+	}
+	if !ok {
+		return fmt.Errorf("runner not installed on host %s at %s; run: ghr setup %s", h.Name, dir, rc.Name)
+	}
 
 	if h.OS == "windows" {
 		cmd := fmt.Sprintf(
