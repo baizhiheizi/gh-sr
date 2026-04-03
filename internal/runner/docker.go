@@ -80,17 +80,89 @@ func (m *Manager) setupDockerWindows(h *host.Host) error {
 	return nil
 }
 
+// UnixDockerCLIInstalled reports whether a docker binary exists on PATH on the host.
+func UnixDockerCLIInstalled(h *host.Host) (bool, error) {
+	out, err := h.Run(`if command -v docker >/dev/null 2>&1; then echo yes; else echo no; fi`)
+	if err != nil {
+		return false, err
+	}
+	switch strings.TrimSpace(out) {
+	case "yes":
+		return true, nil
+	case "no":
+		return false, nil
+	default:
+		return false, fmt.Errorf("unexpected output checking docker CLI: %q", out)
+	}
+}
+
+func wrapDockerInfoErr(err error) error {
+	if err == nil {
+		return nil
+	}
+	lower := strings.ToLower(err.Error())
+	switch {
+	case strings.Contains(lower, "permission denied") && strings.Contains(lower, "docker.sock"):
+		return fmt.Errorf("cannot access Docker socket (add the SSH user to the 'docker' group and reconnect SSH, or use root): %w", err)
+	case strings.Contains(lower, "permission denied"):
+		return fmt.Errorf("permission denied talking to Docker: %w", err)
+	case strings.Contains(lower, "cannot connect to the docker daemon"),
+		strings.Contains(lower, "is the docker daemon running"),
+		strings.Contains(lower, "connection refused"):
+		return fmt.Errorf("Docker daemon not reachable (start the Docker service, e.g. systemctl start docker; see README): %w", err)
+	default:
+		return err
+	}
+}
+
+// UnixDockerServerVersion returns the Docker Engine server version from docker info, or an error
+// that distinguishes socket permissions and daemon reachability from other failures.
+func UnixDockerServerVersion(h *host.Host) (string, error) {
+	out, err := h.Run("docker info --format '{{.ServerVersion}}'")
+	out = strings.TrimSpace(out)
+	if err == nil {
+		if out == "" {
+			return "", fmt.Errorf("docker info returned empty server version")
+		}
+		return out, nil
+	}
+	return "", wrapDockerInfoErr(err)
+}
+
 func (m *Manager) setupDockerUnix(h *host.Host) error {
-	out, err := h.Run("docker info --format '{{.ServerVersion}}' 2>/dev/null || echo 'not found'")
-	if err != nil || strings.Contains(out, "not found") {
+	hasCLI, err := UnixDockerCLIInstalled(h)
+	if err != nil {
+		return fmt.Errorf("checking docker on host %s: %w", h.Name, err)
+	}
+
+	if hasCLI {
+		out, verr := UnixDockerServerVersion(h)
+		if verr == nil {
+			fmt.Printf("  %s: Docker %s available\n", h.Name, out)
+			fmt.Printf("  %s: pulling runner image...\n", h.Name)
+			if _, err := h.Run(fmt.Sprintf("docker pull %s", RunnerDockerImage)); err != nil {
+				return fmt.Errorf("pulling Docker image: %w", err)
+			}
+			return nil
+		}
 		if h.OS == "darwin" {
 			return fmt.Errorf(
-				"docker not available on host %s: install Docker Desktop, OrbStack, or Colima and ensure the Docker CLI works in your SSH session",
-				h.Name,
+				"docker not available on host %s: install Docker Desktop, OrbStack, or Colima and ensure the Docker CLI works in your SSH session: %w",
+				h.Name, verr,
 			)
 		}
-		fmt.Printf("  %s: Docker not found, attempting to install...\n", h.Name)
-		installCmd := linuxElevatePrelude + `
+		return fmt.Errorf("docker on host %s is not usable: %w", h.Name, verr)
+	}
+
+	if h.OS == "darwin" {
+		return fmt.Errorf(
+			"docker not available on host %s: install Docker Desktop, OrbStack, or Colima and ensure the Docker CLI works in your SSH session",
+			h.Name,
+		)
+	}
+
+	fmt.Printf("  %s: Docker not found, attempting to install...\n", h.Name)
+	installCmd := linuxElevatePrelude + `
 			if ! command -v curl >/dev/null 2>&1; then
 				if command -v apt-get >/dev/null 2>&1; then $SUDO apt-get update && $SUDO apt-get install -y curl;
 				elif command -v yum >/dev/null 2>&1; then $SUDO yum install -y curl;
@@ -99,19 +171,25 @@ func (m *Manager) setupDockerUnix(h *host.Host) error {
 			fi &&
 			curl -fsSL https://get.docker.com | $SUDO sh
 		`
-		if _, instErr := h.Run(installCmd); instErr != nil {
-			return fmt.Errorf(
-				"failed to install docker on host %s (need root SSH, passwordless sudo, or install Docker manually; see ghr doctor): %w",
-				h.Name, instErr,
-			)
-		}
-
-		out, err = h.Run("docker info --format '{{.ServerVersion}}' 2>/dev/null || echo 'not found'")
-		if err != nil || strings.Contains(out, "not found") {
-			return fmt.Errorf("docker still not available on host %s after installation attempt", h.Name)
-		}
+	if _, instErr := h.Run(installCmd); instErr != nil {
+		return fmt.Errorf(
+			"failed to install docker on host %s (need root SSH, passwordless sudo, or install Docker manually; see ghr doctor): %w",
+			h.Name, instErr,
+		)
 	}
-	fmt.Printf("  %s: Docker %s available\n", h.Name, strings.TrimSpace(out))
+
+	hasCLI, err = UnixDockerCLIInstalled(h)
+	if err != nil {
+		return fmt.Errorf("rechecking docker on host %s: %w", h.Name, err)
+	}
+	if !hasCLI {
+		return fmt.Errorf("docker still not installed on host %s after installation attempt", h.Name)
+	}
+	out, verr := UnixDockerServerVersion(h)
+	if verr != nil {
+		return fmt.Errorf("docker installed on host %s but still not usable (e.g. add user to 'docker' group and reconnect SSH): %w", h.Name, verr)
+	}
+	fmt.Printf("  %s: Docker %s available\n", h.Name, out)
 
 	fmt.Printf("  %s: pulling runner image...\n", h.Name)
 	if _, err := h.Run(fmt.Sprintf("docker pull %s", RunnerDockerImage)); err != nil {

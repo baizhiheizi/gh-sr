@@ -201,20 +201,36 @@ func modesForHost(runners []config.RunnerConfig, hostName, hostOS string) map[st
 }
 
 func checkDocker(w io.Writer, hostName string, h *host.Host, r *Result) {
-	var out string
-	var err error
 	if h.OS == "windows" {
-		out, err = h.RunShell(`docker info --format "{{.ServerVersion}}"`)
-	} else {
-		out, err = h.Run("docker info --format '{{.ServerVersion}}' 2>/dev/null || echo 'not found'")
-	}
-	out = strings.TrimSpace(out)
-	if err != nil || out == "" || strings.Contains(out, "not found") {
-		reason := "docker info did not return a server version"
-		if err != nil {
-			reason = err.Error()
+		out, err := h.RunShell(`docker info --format "{{.ServerVersion}}"`)
+		out = strings.TrimSpace(out)
+		if err != nil || out == "" {
+			reason := "docker info did not return a server version"
+			if err != nil {
+				reason = err.Error()
+			}
+			printLine(w, sevFail, hostName, fmt.Sprintf("docker: daemon/CLI not usable (%s); install and start Docker (see README \"Host setup\")", reason))
+			r.Fail++
+			return
 		}
-		printLine(w, sevFail, hostName, fmt.Sprintf("docker: daemon/CLI not usable (%s); install and start Docker (see README \"Host setup\")", reason))
+		printLine(w, sevOK, hostName, fmt.Sprintf("docker: server version %s (image %s)", out, runner.RunnerDockerImage))
+		return
+	}
+
+	ok, err := runner.UnixDockerCLIInstalled(h)
+	if err != nil {
+		printLine(w, sevFail, hostName, fmt.Sprintf("docker: could not check CLI: %v", err))
+		r.Fail++
+		return
+	}
+	if !ok {
+		printLine(w, sevFail, hostName, "docker: CLI not on PATH; install Docker (see README \"Host setup\")")
+		r.Fail++
+		return
+	}
+	out, verr := runner.UnixDockerServerVersion(h)
+	if verr != nil {
+		printLine(w, sevFail, hostName, fmt.Sprintf("docker: %v", verr))
 		r.Fail++
 		return
 	}
