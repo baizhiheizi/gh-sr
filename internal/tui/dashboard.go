@@ -164,6 +164,18 @@ func (m *dashboardModel) selectedInstance() (string, bool) {
 	return m.statuses[m.cursor].Instance, true
 }
 
+// hostForSelectedAction returns the host filter for ops invoked from the action menu:
+// explicit TUI/CLI host filter if set, otherwise the host of the selected status row.
+func (m *dashboardModel) hostForSelectedAction() string {
+	if m.tuiHostFilter != "" {
+		return m.tuiHostFilter
+	}
+	if m.cursor >= 0 && m.cursor < len(m.statuses) {
+		return m.statuses[m.cursor].Host
+	}
+	return ""
+}
+
 func (m *dashboardModel) runOp(name string, fn func() error) tea.Cmd {
 	m.busy = true
 	m.busyOp = name
@@ -374,31 +386,32 @@ func (m *dashboardModel) updateActionMenu(key string) tea.Cmd {
 			return nil
 		}
 		nameArgs := []string{inst}
+		hostF := m.hostForSelectedAction()
 		switch m.menuCursor {
 		case 0:
 			m.panel = panelMain
 			return m.runOp("setup", func() error {
-				return ops.Setup(io.Discard, m.cfg, m.mgr, m.tuiHostFilter, m.tuiRepoFilter, nameArgs)
+				return ops.Setup(io.Discard, m.cfg, m.mgr, hostF, m.tuiRepoFilter, nameArgs)
 			})
 		case 1:
 			m.panel = panelMain
 			return m.runOp("up", func() error {
-				return ops.Up(io.Discard, m.cfg, m.mgr, m.tuiHostFilter, m.tuiRepoFilter, nameArgs)
+				return ops.Up(io.Discard, m.cfg, m.mgr, hostF, m.tuiRepoFilter, nameArgs)
 			})
 		case 2:
 			m.panel = panelMain
 			return m.runOp("down", func() error {
-				return ops.Down(io.Discard, m.cfg, m.mgr, m.tuiHostFilter, m.tuiRepoFilter, nameArgs)
+				return ops.Down(io.Discard, m.cfg, m.mgr, hostF, m.tuiRepoFilter, nameArgs)
 			})
 		case 3:
 			m.panel = panelMain
 			return m.runOp("restart", func() error {
-				return ops.Restart(io.Discard, m.cfg, m.mgr, m.tuiHostFilter, m.tuiRepoFilter, nameArgs)
+				return ops.Restart(io.Discard, m.cfg, m.mgr, hostF, m.tuiRepoFilter, nameArgs)
 			})
 		case 4:
 			m.panel = panelMain
 			return m.runOp("update", func() error {
-				return ops.Update(io.Discard, m.cfg, m.mgr, m.tuiHostFilter, m.tuiRepoFilter, nameArgs)
+				return ops.Update(io.Discard, m.cfg, m.mgr, hostF, m.tuiRepoFilter, nameArgs)
 			})
 		case 5:
 			m.panel = panelMain
@@ -407,7 +420,6 @@ func (m *dashboardModel) updateActionMenu(key string) tea.Cmd {
 			m.toast = ""
 			cfg := m.cfg
 			mgr := m.mgr
-			hostF := m.tuiHostFilter
 			return func() tea.Msg {
 				text, err := ops.Logs(cfg, mgr, hostF, inst)
 				return logLoadedMsg{text: text, err: err}
