@@ -8,7 +8,8 @@ import (
 	"github.com/an-lee/ghr/internal/host"
 )
 
-const dockerImage = "ghcr.io/actions/actions-runner:latest"
+// RunnerDockerImage is the container image used for docker-mode runners.
+const RunnerDockerImage = "ghcr.io/actions/actions-runner:latest"
 
 func containerName(instanceName string) string {
 	return "gh-runner-" + instanceName
@@ -47,7 +48,7 @@ func (m *Manager) setupDockerWindows(h *host.Host) error {
 	fmt.Printf("  %s: Docker %s available\n", h.Name, strings.TrimSpace(out))
 
 	fmt.Printf("  %s: pulling runner image...\n", h.Name)
-	if _, err := h.RunShell(fmt.Sprintf("docker pull %s", dockerImage)); err != nil {
+	if _, err := h.RunShell(fmt.Sprintf("docker pull %s", RunnerDockerImage)); err != nil {
 		return fmt.Errorf("pulling Docker image: %w", err)
 	}
 
@@ -86,7 +87,7 @@ func (m *Manager) setupDockerUnix(h *host.Host) error {
 	fmt.Printf("  %s: Docker %s available\n", h.Name, strings.TrimSpace(out))
 
 	fmt.Printf("  %s: pulling runner image...\n", h.Name)
-	if _, err := h.Run(fmt.Sprintf("docker pull %s", dockerImage)); err != nil {
+	if _, err := h.Run(fmt.Sprintf("docker pull %s", RunnerDockerImage)); err != nil {
 		return fmt.Errorf("pulling Docker image: %w", err)
 	}
 
@@ -133,7 +134,7 @@ func (m *Manager) startDocker(h *host.Host, rc config.RunnerConfig, instanceName
 			"-e RUNNER_LABELS=%s "+
 			"-e RUNNER_WORKDIR=_work "+
 			"%s%s",
-		cname, instanceName, regToken, repoURL, labels, sockMount, dockerImage,
+		cname, instanceName, regToken, repoURL, labels, sockMount, RunnerDockerImage,
 	)
 
 	out, err := dockerRun(h, cmd)

@@ -110,6 +110,12 @@ func (c *Connection) Close() error {
 	return nil
 }
 
+// HasSSHAuth reports whether any SSH client authentication method is available
+// (ssh-agent or a readable default private key under ~/.ssh).
+func HasSSHAuth() bool {
+	return len(collectAuthMethods()) > 0
+}
+
 func collectAuthMethods() []ssh.AuthMethod {
 	var methods []ssh.AuthMethod
 

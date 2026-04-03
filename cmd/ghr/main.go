@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/an-lee/ghr/internal/config"
+	"github.com/an-lee/ghr/internal/doctor"
 	"github.com/an-lee/ghr/internal/editor"
 	"github.com/an-lee/ghr/internal/host"
 	"github.com/an-lee/ghr/internal/runner"
@@ -47,6 +48,7 @@ then use unified commands to setup, start, stop, and monitor everything.` + linu
 
 	root.AddCommand(
 		initCmd(),
+		doctorCmd(),
 		setupCmd(),
 		upCmd(),
 		downCmd(),
@@ -121,7 +123,7 @@ func initCmd() *cobra.Command {
 			} else {
 				fmt.Printf("Unchanged (already exists): %s\n", envPath)
 			}
-			fmt.Println("\nNext: edit ~/.ghr/runners.yml, set GITHUB_PAT in ~/.ghr/env, then run `ghr config validate` and `ghr status`.")
+			fmt.Println("\nNext: edit ~/.ghr/runners.yml, set GITHUB_PAT in ~/.ghr/env, then run `ghr config validate`, `ghr doctor`, and `ghr status`.")
 			return nil
 		},
 	}
@@ -141,6 +143,42 @@ func configCmd() *cobra.Command {
 		configEditEnvCmd(),
 		configValidateCmd(),
 	)
+	return cmd
+}
+
+func doctorCmd() *cobra.Command {
+	var strict bool
+	cmd := &cobra.Command{
+		Use:   "doctor",
+		Short: "Check config, GitHub API access, and host prerequisites",
+		Long:  "Validates local paths, configuration, PAT access to the GitHub API, and SSH targets (Docker or native tooling per runner mode). See README \"Host setup\" for steps ghr cannot automate.",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := config.BootstrapEnv(); err != nil {
+				return err
+			}
+			cfgPath, err := config.ResolveConfigPath(cfgFile)
+			if err != nil {
+				return err
+			}
+			envPath, err := config.EnvFilePath()
+			if err != nil {
+				return err
+			}
+
+			cfg, cfgErr := config.LoadFromPath(cfgPath)
+			var gh *runner.GitHubClient
+			if cfg != nil {
+				gh = runner.NewGitHubClient(cfg.GitHub.PAT)
+			}
+
+			res := doctor.Run(cmd.OutOrStdout(), cfgPath, envPath, cfg, cfgErr, gh, filterHost, filterRepo, strict)
+			if code := doctor.ExitCode(res, strict); code != 0 {
+				os.Exit(code)
+			}
+			return nil
+		},
+	}
+	cmd.Flags().BoolVar(&strict, "strict", false, "non-zero exit if any check is WARN (default: only FAIL fails the run)")
 	return cmd
 }
 

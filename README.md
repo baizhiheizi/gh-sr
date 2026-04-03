@@ -114,6 +114,7 @@ sequenceDiagram
 | `ghr restart` | `down` then `up`; stop errors are ignored before start. |
 | `ghr update` | Remove local runner registration (native) or container (docker), then setup and start again—use when upgrading the runner stack. |
 | `ghr cleanup` | Deletes **offline** runners from the GitHub API only; it does not remove local install dirs or Docker containers. |
+| `ghr doctor` | Read-only checks: local paths, config, GitHub API, SSH targets, Docker vs native prerequisites. Use `--strict` to treat **WARN** as failure. |
 
 ```mermaid
 flowchart TD
@@ -171,7 +172,7 @@ go install github.com/an-lee/ghr/cmd/ghr@latest
 ghr init
 ```
 
-This creates `~/.ghr/runners.yml` from a template and `~/.ghr/env` for secrets (optional). Then edit those files (or use `ghr config edit` / `ghr config edit-env`), run `ghr config validate`, and you are ready to use `ghr status` and other commands.
+This creates `~/.ghr/runners.yml` from a template and `~/.ghr/env` for secrets (optional). Then edit those files (or use `ghr config edit` / `ghr config edit-env`), run `ghr config validate` and `ghr doctor`, and you are ready to use `ghr status` and other commands.
 
 Or build from source:
 
@@ -224,6 +225,39 @@ To use the checked-in example at `config/runners.yml` while hacking on this repo
   Set-Service -Name sshd -StartupType Automatic
   ```
   **SSH default shell:** OpenSSH may use cmd.exe or PowerShell 7 (`pwsh`) as the remote shell depending on your setup. ghr runs Windows automation via `powershell.exe` or `pwsh.exe` with `-EncodedCommand`, so it works with either default. Use `windows_ps: pwsh` on the host if you rely on PowerShell 7 only and do not have Windows PowerShell 5.1.
+
+## Host setup (manual steps)
+
+ghr automates runner installation and lifecycle over SSH, but some host preparation is still manual. After you edit config and secrets, run **`ghr doctor`** from your laptop to verify config paths, GitHub API access, SSH connectivity, and per-host tools (Docker vs native). By default the command exits with a non-zero status only when a check is **FAIL**; use **`ghr doctor --strict`** if you also want **WARN** lines to fail (for example in CI).
+
+### All remote hosts
+
+- Confirm non-interactive SSH works: `ssh -o BatchMode=yes user@host true` (use the same user and host as in `hosts.*.addr`).
+- **Host keys:** when `~/.ssh/known_hosts` exists, ghr verifies server keys the same way as the Go `knownhosts` package. Connect once with plain `ssh` if you need to accept a new host key before `ghr doctor` or `ghr setup`.
+- Remote commands run as the SSH user from your config; that user must have permission to install or run runners as documented for each OS below.
+
+Run **`ghr doctor`** (optionally with `--host` / `--repo`) to confirm connectivity from your control machine.
+
+### Linux
+
+- **Docker mode (default on Linux):** If Docker is not installed, `ghr setup` can run Docker’s install script, which requires **root** or **passwordless sudo** over a non-interactive SSH session (see [Linux SSH user and privileges](#linux-ssh-user-and-privileges)). To avoid that path, install Docker yourself and ensure the SSH user can run `docker` (for example membership in the `docker` group).
+- **Native mode:** Ensure `curl` and `tar` are on `PATH`. `ghr setup` may still invoke GitHub’s `installdependencies.sh` with `sudo` when available.
+
+Run **`ghr doctor`** after the host is prepared.
+
+### macOS
+
+- **Native:** `curl` is usually sufficient; ghr downloads the Actions runner over HTTPS.
+- **Docker mode:** Install [Docker Desktop](https://www.docker.com/products/docker-desktop/), [OrbStack](https://orbstack.dev/), or [Colima](https://github.com/abiosoft/colima). The `docker` CLI must work in the **same** environment as your SSH session (user, `PATH`, and Docker socket). Start the Docker engine (app or `colima start`, etc.) before relying on docker mode.
+
+Run **`ghr doctor`** to confirm `docker info` from the SSH session.
+
+### Windows
+
+- Install and enable **OpenSSH Server** (see the PowerShell snippet under [Prerequisites](#prerequisites)).
+- **Docker mode (Linux containers on the same Windows host):** Install [Docker Desktop](https://www.docker.com/products/docker-desktop/), use the default **Linux containers** mode, and keep Docker running. ghr does not install or start Docker Desktop for you.
+
+Run **`ghr doctor`** to confirm SSH and Docker readiness.
 
 ---
 
@@ -375,6 +409,7 @@ runners:
 
 ```bash
 ghr init [--force]       # Create ~/.ghr with template runners.yml and env file
+ghr doctor [--strict]    # Check config, GitHub API, and host prerequisites
 ghr setup [names...]     # Install runner binary and configure on hosts
 ghr up [names...]        # Start runners
 ghr down [names...]      # Stop runners
@@ -398,6 +433,7 @@ ghr dashboard            # Launch interactive TUI dashboard
 All commands accept `--host` and `--repo` flags:
 
 ```bash
+ghr doctor --host mac-mini
 ghr status --host mac-mini
 ghr up --repo an-lee/enjoy
 ghr down enjoy-win-1
@@ -408,6 +444,9 @@ ghr down enjoy-win-1
 ## Quick start
 
 ```bash
+# 0. Verify config, GitHub access, and hosts (optional but recommended)
+ghr doctor
+
 # 1. Set up runners on all hosts
 ghr setup
 
@@ -583,6 +622,8 @@ ghr/
       host.go               # Host abstraction
       connection.go         # SSH connection management (Executor interface)
       local.go              # Local command execution (addr: local)
+    doctor/
+      doctor.go             # ghr doctor diagnostics
     runner/
       runner.go             # Runner lifecycle orchestration
       native.go             # Native runner management (mac/win/linux)
