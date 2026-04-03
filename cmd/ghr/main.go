@@ -6,11 +6,12 @@ import (
 	"path/filepath"
 
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 
 	"github.com/an-lee/ghr/internal/config"
 	"github.com/an-lee/ghr/internal/doctor"
 	"github.com/an-lee/ghr/internal/editor"
-	"github.com/an-lee/ghr/internal/host"
+	"github.com/an-lee/ghr/internal/ops"
 	"github.com/an-lee/ghr/internal/runner"
 	"github.com/an-lee/ghr/internal/tui"
 )
@@ -38,8 +39,16 @@ func main() {
 of Linux, macOS, and Windows hosts — all from your laptop over SSH.
 
 Define your hosts and runners in ~/.ghr/runners.yml (or set GHR_CONFIG / --config),
-then use unified commands to setup, start, stop, and monitor everything.` + linuxSetupPrivilegesHelp,
+then use unified commands to setup, start, stop, and monitor everything.
+
+With no subcommand, ghr opens the interactive dashboard on a terminal; use ghr --help for all commands.` + linuxSetupPrivilegesHelp,
 		SilenceUsage: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if len(args) > 0 {
+				return fmt.Errorf("unknown argument %q — use a subcommand or ghr --help", args[0])
+			}
+			return runDashboard()
+		},
 	}
 
 	root.PersistentFlags().StringVarP(&cfgFile, "config", "c", "", "config file path (empty = auto; use \"ghr config path\" to print the resolved file)")
@@ -66,6 +75,31 @@ then use unified commands to setup, start, stop, and monitor everything.` + linu
 	}
 }
 
+func runDashboard() error {
+	if !term.IsTerminal(int(os.Stdout.Fd())) {
+		fmt.Fprintln(os.Stderr, tui.NonTTYHint)
+		return nil
+	}
+	cfg, err := loadConfig()
+	if err != nil {
+		return err
+	}
+	cfgPath, err := config.ResolveConfigPath(cfgFile)
+	if err != nil {
+		return err
+	}
+	envPath, err := config.EnvFilePath()
+	if err != nil {
+		return err
+	}
+	return tui.RunDashboard(cfg, tui.DashboardOpts{
+		ConfigPath: cfgPath,
+		EnvPath:    envPath,
+		FilterHost: filterHost,
+		FilterRepo: filterRepo,
+	})
+}
+
 func loadConfig() (*config.Config, error) {
 	if err := config.BootstrapEnv(); err != nil {
 		return nil, err
@@ -79,14 +113,6 @@ func loadConfig() (*config.Config, error) {
 
 func newManager(cfg *config.Config) *runner.Manager {
 	return runner.NewManager(cfg.GitHub.PAT)
-}
-
-func connectHost(name string, cfg config.HostConfig) (*host.Host, error) {
-	h := host.NewHost(name, cfg)
-	if err := h.Connect(); err != nil {
-		return nil, err
-	}
-	return h, nil
 }
 
 func initCmd() *cobra.Command {
@@ -306,34 +332,7 @@ func setupCmd() *cobra.Command {
 				return err
 			}
 			mgr := newManager(cfg)
-			runners := config.FilterRunners(cfg, filterHost, filterRepo, args)
-
-			hostsDone := map[string]bool{}
-			for _, rc := range runners {
-				hcfg := cfg.Hosts[rc.Host]
-				if hostsDone[rc.Host] && rc.EffectiveMode(hcfg.OS) == "docker" {
-					continue
-				}
-
-				if config.IsLocalAddr(hcfg.Addr) {
-					fmt.Printf("Setting up on %s (local)...\n", rc.Host)
-				} else {
-					fmt.Printf("Setting up on %s (%s)...\n", rc.Host, hcfg.Addr)
-				}
-				h, err := connectHost(rc.Host, hcfg)
-				if err != nil {
-					return err
-				}
-				defer h.Close()
-
-				if err := mgr.Setup(h, rc); err != nil {
-					return err
-				}
-				hostsDone[rc.Host] = true
-			}
-
-			fmt.Println("\nSetup complete.")
-			return nil
+			return ops.Setup(cmd.OutOrStdout(), cfg, mgr, filterHost, filterRepo, args)
 		},
 	}
 }
@@ -348,23 +347,7 @@ func upCmd() *cobra.Command {
 				return err
 			}
 			mgr := newManager(cfg)
-			runners := config.FilterRunners(cfg, filterHost, filterRepo, args)
-
-			for _, rc := range runners {
-				hcfg := cfg.Hosts[rc.Host]
-				fmt.Printf("Starting %s on %s...\n", rc.Name, rc.Host)
-				h, err := connectHost(rc.Host, hcfg)
-				if err != nil {
-					return err
-				}
-				defer h.Close()
-
-				if err := mgr.Start(h, rc); err != nil {
-					return err
-				}
-			}
-
-			return nil
+			return ops.Up(cmd.OutOrStdout(), cfg, mgr, filterHost, filterRepo, args)
 		},
 	}
 }
@@ -379,23 +362,7 @@ func downCmd() *cobra.Command {
 				return err
 			}
 			mgr := newManager(cfg)
-			runners := config.FilterRunners(cfg, filterHost, filterRepo, args)
-
-			for _, rc := range runners {
-				hcfg := cfg.Hosts[rc.Host]
-				fmt.Printf("Stopping %s on %s...\n", rc.Name, rc.Host)
-				h, err := connectHost(rc.Host, hcfg)
-				if err != nil {
-					return err
-				}
-				defer h.Close()
-
-				if err := mgr.Stop(h, rc); err != nil {
-					return err
-				}
-			}
-
-			return nil
+			return ops.Down(cmd.OutOrStdout(), cfg, mgr, filterHost, filterRepo, args)
 		},
 	}
 }
@@ -410,24 +377,7 @@ func restartCmd() *cobra.Command {
 				return err
 			}
 			mgr := newManager(cfg)
-			runners := config.FilterRunners(cfg, filterHost, filterRepo, args)
-
-			for _, rc := range runners {
-				hcfg := cfg.Hosts[rc.Host]
-				fmt.Printf("Restarting %s on %s...\n", rc.Name, rc.Host)
-				h, err := connectHost(rc.Host, hcfg)
-				if err != nil {
-					return err
-				}
-				defer h.Close()
-
-				_ = mgr.Stop(h, rc)
-				if err := mgr.Start(h, rc); err != nil {
-					return err
-				}
-			}
-
-			return nil
+			return ops.Restart(cmd.OutOrStdout(), cfg, mgr, filterHost, filterRepo, args)
 		},
 	}
 }
@@ -442,35 +392,10 @@ func statusCmd() *cobra.Command {
 				return err
 			}
 			mgr := newManager(cfg)
-			runners := config.FilterRunners(cfg, filterHost, filterRepo, args)
-
-			var allStatuses []runner.RunnerStatus
-			for _, rc := range runners {
-				hcfg := cfg.Hosts[rc.Host]
-				h, err := connectHost(rc.Host, hcfg)
-				if err != nil {
-					fmt.Printf("Warning: cannot connect to %s: %v\n", rc.Host, err)
-					for _, name := range rc.InstanceNames() {
-						allStatuses = append(allStatuses, runner.RunnerStatus{
-							Instance: name,
-							Host:     rc.Host,
-							Repo:     rc.Repo,
-							Mode:     rc.EffectiveMode(hcfg.OS),
-							Local:    "unreachable",
-						})
-					}
-					continue
-				}
-				defer h.Close()
-
-				statuses, err := mgr.Status(h, rc)
-				if err != nil {
-					return err
-				}
-				allStatuses = append(allStatuses, statuses...)
+			allStatuses, err := ops.CollectStatus(cmd.OutOrStdout(), cfg, mgr, filterHost, filterRepo, args)
+			if err != nil {
+				return err
 			}
-
-			mgr.EnrichWithGitHubStatus(allStatuses, cfg)
 			tui.PrintStatusTable(allStatuses)
 			return nil
 		},
@@ -487,26 +412,8 @@ func logsCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-
-			target := args[0]
-			rc, err := cfg.FindRunnerForLogs(target, filterHost)
-			if err != nil {
-				return err
-			}
-			instance, err := rc.ResolveRunnerInstance(target)
-			if err != nil {
-				return err
-			}
-
-			hcfg := cfg.Hosts[rc.Host]
-			h, err := connectHost(rc.Host, hcfg)
-			if err != nil {
-				return err
-			}
-			defer h.Close()
-
 			mgr := newManager(cfg)
-			output, err := mgr.Logs(h, *rc, instance)
+			output, err := ops.Logs(cfg, mgr, filterHost, args[0])
 			if err != nil {
 				return err
 			}
@@ -526,18 +433,8 @@ func cleanupCmd() *cobra.Command {
 				return err
 			}
 			mgr := newManager(cfg)
-
-			fmt.Println("Cleaning up offline runners...")
-			removed, err := mgr.CleanupOffline(cfg)
-			if err != nil {
-				return err
-			}
-			if removed == 0 {
-				fmt.Println("No offline runners found.")
-			} else {
-				fmt.Printf("Removed %d offline runner(s).\n", removed)
-			}
-			return nil
+			_, err = ops.CleanupOffline(cmd.OutOrStdout(), cfg, mgr)
+			return err
 		},
 	}
 }
@@ -553,28 +450,7 @@ func updateCmd() *cobra.Command {
 				return err
 			}
 			mgr := newManager(cfg)
-			runners := config.FilterRunners(cfg, filterHost, filterRepo, args)
-
-			for _, rc := range runners {
-				hcfg := cfg.Hosts[rc.Host]
-				h, err := connectHost(rc.Host, hcfg)
-				if err != nil {
-					return err
-				}
-				defer h.Close()
-
-				fmt.Printf("Updating %s on %s...\n", rc.Name, rc.Host)
-				_ = mgr.Remove(h, rc)
-				if err := mgr.Setup(h, rc); err != nil {
-					return err
-				}
-				if err := mgr.Start(h, rc); err != nil {
-					return err
-				}
-			}
-
-			fmt.Println("\nUpdate complete.")
-			return nil
+			return ops.Update(cmd.OutOrStdout(), cfg, mgr, filterHost, filterRepo, args)
 		},
 	}
 }
@@ -583,12 +459,9 @@ func dashboardCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "dashboard",
 		Short: "Launch interactive TUI dashboard",
+		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, err := loadConfig()
-			if err != nil {
-				return err
-			}
-			return tui.RunDashboard(cfg)
+			return runDashboard()
 		},
 	}
 }

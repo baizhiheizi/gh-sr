@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/an-lee/ghr/internal/config"
@@ -55,29 +56,45 @@ func PrintStatusTable(statuses []runner.RunnerStatus) {
 	}
 }
 
-func PrintConfig(cfg *config.Config) {
-	fmt.Println(titleStyle.Render("Resolved Configuration"))
+// FormatConfig returns a styled, redacted snapshot of the resolved configuration (stable host order).
+func FormatConfig(cfg *config.Config) string {
+	var b strings.Builder
+	b.WriteString(titleStyle.Render("Resolved Configuration"))
+	b.WriteString("\n")
 
 	patDisplay := cfg.GitHub.PAT
 	if len(patDisplay) > 8 {
 		patDisplay = patDisplay[:8] + "..." + patDisplay[len(patDisplay)-4:]
 	}
-	fmt.Printf("  %s %s\n\n", configKey.Render("PAT:"), configVal.Render(patDisplay))
+	b.WriteString(fmt.Sprintf("  %s %s\n\n", configKey.Render("PAT:"), configVal.Render(patDisplay)))
 
-	fmt.Println(configKey.Render("Hosts:"))
-	for name, h := range cfg.Hosts {
-		fmt.Printf("  %s  addr=%s  os=%s  arch=%s\n",
-			configVal.Render(name), h.Addr, h.OS, h.Arch)
+	b.WriteString(configKey.Render("Hosts:"))
+	b.WriteString("\n")
+	hostNames := make([]string, 0, len(cfg.Hosts))
+	for name := range cfg.Hosts {
+		hostNames = append(hostNames, name)
+	}
+	sort.Strings(hostNames)
+	for _, name := range hostNames {
+		h := cfg.Hosts[name]
+		b.WriteString(fmt.Sprintf("  %s  addr=%s  os=%s  arch=%s\n",
+			configVal.Render(name), h.Addr, h.OS, h.Arch))
 	}
 
-	fmt.Println()
-	fmt.Println(configKey.Render("Runners:"))
+	b.WriteString("\n")
+	b.WriteString(configKey.Render("Runners:"))
+	b.WriteString("\n")
 	for _, r := range cfg.Runners {
 		hcfg := cfg.Hosts[r.Host]
 		mode := r.EffectiveMode(hcfg.OS)
-		fmt.Printf("  %s  repo=%s  host=%s  count=%d  mode=%s  labels=[%s]\n",
-			configVal.Render(r.Name), r.Repo, r.Host, r.Count, mode, strings.Join(r.Labels, ", "))
+		b.WriteString(fmt.Sprintf("  %s  repo=%s  host=%s  count=%d  mode=%s  labels=[%s]\n",
+			configVal.Render(r.Name), r.Repo, r.Host, r.Count, mode, strings.Join(r.Labels, ", ")))
 	}
+	return b.String()
+}
+
+func PrintConfig(cfg *config.Config) {
+	fmt.Print(FormatConfig(cfg))
 }
 
 func formatGitHubStatus(s runner.RunnerStatus) string {

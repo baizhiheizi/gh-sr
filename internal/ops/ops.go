@@ -1,0 +1,202 @@
+package ops
+
+import (
+	"fmt"
+	"io"
+
+	"github.com/an-lee/ghr/internal/config"
+	"github.com/an-lee/ghr/internal/host"
+	"github.com/an-lee/ghr/internal/runner"
+)
+
+// ConnectHost opens a connection to the configured host (SSH or local).
+func ConnectHost(hostName string, hcfg config.HostConfig) (*host.Host, error) {
+	h := host.NewHost(hostName, hcfg)
+	if err := h.Connect(); err != nil {
+		return nil, err
+	}
+	return h, nil
+}
+
+// Setup installs and configures runners, mirroring the ghr setup command.
+func Setup(w io.Writer, cfg *config.Config, mgr *runner.Manager, filterHost, filterRepo string, nameArgs []string) error {
+	runners := config.FilterRunners(cfg, filterHost, filterRepo, nameArgs)
+	hostsDone := map[string]bool{}
+	for _, rc := range runners {
+		hcfg := cfg.Hosts[rc.Host]
+		if hostsDone[rc.Host] && rc.EffectiveMode(hcfg.OS) == "docker" {
+			continue
+		}
+
+		if config.IsLocalAddr(hcfg.Addr) {
+			fmt.Fprintf(w, "Setting up on %s (local)...\n", rc.Host)
+		} else {
+			fmt.Fprintf(w, "Setting up on %s (%s)...\n", rc.Host, hcfg.Addr)
+		}
+		h, err := ConnectHost(rc.Host, hcfg)
+		if err != nil {
+			return err
+		}
+		if err := mgr.Setup(h, rc); err != nil {
+			h.Close()
+			return err
+		}
+		h.Close()
+		hostsDone[rc.Host] = true
+	}
+
+	fmt.Fprintln(w, "\nSetup complete.")
+	return nil
+}
+
+// Up starts runners.
+func Up(w io.Writer, cfg *config.Config, mgr *runner.Manager, filterHost, filterRepo string, nameArgs []string) error {
+	runners := config.FilterRunners(cfg, filterHost, filterRepo, nameArgs)
+	for _, rc := range runners {
+		hcfg := cfg.Hosts[rc.Host]
+		fmt.Fprintf(w, "Starting %s on %s...\n", rc.Name, rc.Host)
+		h, err := ConnectHost(rc.Host, hcfg)
+		if err != nil {
+			return err
+		}
+		if err := mgr.Start(h, rc); err != nil {
+			h.Close()
+			return err
+		}
+		h.Close()
+	}
+	return nil
+}
+
+// Down stops runners.
+func Down(w io.Writer, cfg *config.Config, mgr *runner.Manager, filterHost, filterRepo string, nameArgs []string) error {
+	runners := config.FilterRunners(cfg, filterHost, filterRepo, nameArgs)
+	for _, rc := range runners {
+		hcfg := cfg.Hosts[rc.Host]
+		fmt.Fprintf(w, "Stopping %s on %s...\n", rc.Name, rc.Host)
+		h, err := ConnectHost(rc.Host, hcfg)
+		if err != nil {
+			return err
+		}
+		if err := mgr.Stop(h, rc); err != nil {
+			h.Close()
+			return err
+		}
+		h.Close()
+	}
+	return nil
+}
+
+// Restart stops then starts runners.
+func Restart(w io.Writer, cfg *config.Config, mgr *runner.Manager, filterHost, filterRepo string, nameArgs []string) error {
+	runners := config.FilterRunners(cfg, filterHost, filterRepo, nameArgs)
+	for _, rc := range runners {
+		hcfg := cfg.Hosts[rc.Host]
+		fmt.Fprintf(w, "Restarting %s on %s...\n", rc.Name, rc.Host)
+		h, err := ConnectHost(rc.Host, hcfg)
+		if err != nil {
+			return err
+		}
+		_ = mgr.Stop(h, rc)
+		if err := mgr.Start(h, rc); err != nil {
+			h.Close()
+			return err
+		}
+		h.Close()
+	}
+	return nil
+}
+
+// Update removes, sets up, and starts runners again.
+func Update(w io.Writer, cfg *config.Config, mgr *runner.Manager, filterHost, filterRepo string, nameArgs []string) error {
+	runners := config.FilterRunners(cfg, filterHost, filterRepo, nameArgs)
+	for _, rc := range runners {
+		hcfg := cfg.Hosts[rc.Host]
+		fmt.Fprintf(w, "Updating %s on %s...\n", rc.Name, rc.Host)
+		h, err := ConnectHost(rc.Host, hcfg)
+		if err != nil {
+			return err
+		}
+		_ = mgr.Remove(h, rc)
+		if err := mgr.Setup(h, rc); err != nil {
+			h.Close()
+			return err
+		}
+		if err := mgr.Start(h, rc); err != nil {
+			h.Close()
+			return err
+		}
+		h.Close()
+	}
+
+	fmt.Fprintln(w, "\nUpdate complete.")
+	return nil
+}
+
+// CollectStatus gathers runner status rows like ghr status.
+func CollectStatus(w io.Writer, cfg *config.Config, mgr *runner.Manager, filterHost, filterRepo string, nameArgs []string) ([]runner.RunnerStatus, error) {
+	runners := config.FilterRunners(cfg, filterHost, filterRepo, nameArgs)
+	var allStatuses []runner.RunnerStatus
+	for _, rc := range runners {
+		hcfg := cfg.Hosts[rc.Host]
+		h, err := ConnectHost(rc.Host, hcfg)
+		if err != nil {
+			if w != nil {
+				fmt.Fprintf(w, "Warning: cannot connect to %s: %v\n", rc.Host, err)
+			}
+			for _, name := range rc.InstanceNames() {
+				allStatuses = append(allStatuses, runner.RunnerStatus{
+					Instance: name,
+					Host:     rc.Host,
+					Repo:     rc.Repo,
+					Mode:     rc.EffectiveMode(hcfg.OS),
+					Local:    "unreachable",
+				})
+			}
+			continue
+		}
+		statuses, err := mgr.Status(h, rc)
+		h.Close()
+		if err != nil {
+			return nil, err
+		}
+		allStatuses = append(allStatuses, statuses...)
+	}
+
+	mgr.EnrichWithGitHubStatus(allStatuses, cfg)
+	return allStatuses, nil
+}
+
+// Logs returns recent log lines for a runner instance or base name.
+func Logs(cfg *config.Config, mgr *runner.Manager, filterHost, target string) (string, error) {
+	rc, err := cfg.FindRunnerForLogs(target, filterHost)
+	if err != nil {
+		return "", err
+	}
+	instance, err := rc.ResolveRunnerInstance(target)
+	if err != nil {
+		return "", err
+	}
+	hcfg := cfg.Hosts[rc.Host]
+	h, err := ConnectHost(rc.Host, hcfg)
+	if err != nil {
+		return "", err
+	}
+	defer h.Close()
+	return mgr.Logs(h, *rc, instance)
+}
+
+// CleanupOffline removes offline runners via the GitHub API.
+func CleanupOffline(w io.Writer, cfg *config.Config, mgr *runner.Manager) (int, error) {
+	fmt.Fprintln(w, "Cleaning up offline runners...")
+	removed, err := mgr.CleanupOffline(cfg)
+	if err != nil {
+		return 0, err
+	}
+	if removed == 0 {
+		fmt.Fprintln(w, "No offline runners found.")
+	} else {
+		fmt.Fprintf(w, "Removed %d offline runner(s).\n", removed)
+	}
+	return removed, nil
+}

@@ -20,10 +20,14 @@ func Preferred() string {
 	return "vim"
 }
 
+// Command returns an exec.Cmd to open path in the preferred editor (stdin/stdout/stderr unset).
+func Command(path string) *exec.Cmd {
+	return exec.Command(Preferred(), path)
+}
+
 // Open launches the preferred editor with path, attached to the terminal.
 func Open(path string) error {
-	ed := Preferred()
-	cmd := exec.Command(ed, path)
+	cmd := Command(path)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr

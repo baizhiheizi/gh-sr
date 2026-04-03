@@ -7,7 +7,7 @@ A CLI tool to manage self-hosted GitHub Actions runners across multiple hosts �
 - **Declarative config** — one YAML file defines your hosts and runners
 - **Multi-host** — manage runners on any number of machines (local PCs, Mac Minis, VPS)
 - **Docker & native** — Linux defaults to Docker; macOS and Windows default to native, but you can use `mode: docker` on any host that has Docker (Linux, macOS with Docker Desktop / OrbStack / Colima, or Windows with Docker Desktop)
-- **Interactive dashboard** — TUI with live status updates
+- **Interactive dashboard** — full-featured TUI (default when you run `ghr` on a terminal); same as `ghr dashboard`
 
 ---
 
@@ -437,7 +437,10 @@ runners:
 
 ## Commands
 
+Running **`ghr` with no subcommand** opens the interactive dashboard on a **TTY** (same as `ghr dashboard`). If stdout is not a terminal (for example in a pipe or CI), ghr prints a short hint to stderr and exits successfully; use `ghr status` or `ghr --help` in those environments.
+
 ```bash
+ghr                      # Open dashboard (TTY only; see above)
 ghr init [--force]       # Create ~/.ghr with template runners.yml and env file
 ghr doctor [--strict]    # Check config, GitHub API, and host prerequisites
 ghr setup [names...]     # Install runner binary and configure on hosts
@@ -453,10 +456,12 @@ ghr config show          # Print resolved configuration (PAT redacted)
 ghr config edit          # Edit resolved runners.yml in $VISUAL / $EDITOR
 ghr config edit-env      # Edit ~/.ghr/env in $VISUAL / $EDITOR
 ghr config validate      # Validate config (exit 0 if OK)
-ghr dashboard            # Launch interactive TUI dashboard
+ghr dashboard            # Same as bare ghr: launch interactive TUI dashboard
 ```
 
-**Backward compatibility:** older releases treated `ghr config` as “print configuration”. That is now `ghr config show`; plain `ghr config` lists subcommands.
+The dashboard includes live status, per-runner actions (setup, up, down, restart, update, logs), global actions (doctor, cleanup, show/validate/edit config and env), and host/repo filters. Press `?` inside the TUI for the full key map.
+
+**Backward compatibility:** older releases treated `ghr config` as “print configuration”. That is now `ghr config show`; plain `ghr config` lists subcommands. Older scripts that expected bare `ghr` to print usage should use `ghr --help` instead.
 
 ### Filters
 
@@ -487,8 +492,9 @@ ghr up
 # 3. Check status
 ghr status
 
-# 4. Launch dashboard for live monitoring
-ghr dashboard
+# 4. Launch dashboard for live monitoring (or run `ghr` alone on a TTY)
+ghr
+# ghr dashboard   # equivalent
 ```
 
 ---
@@ -655,13 +661,16 @@ ghr/
       local.go              # Local command execution (addr: local)
     doctor/
       doctor.go             # ghr doctor diagnostics
+    ops/
+      ops.go                # Shared setup/up/down/restart/update/status/logs/cleanup (CLI + TUI)
     runner/
       runner.go             # Runner lifecycle orchestration
       native.go             # Native runner management (mac/win/linux)
       docker.go             # Docker runner management
       github.go             # GitHub API client
     tui/
-      dashboard.go          # Interactive TUI dashboard
+      dashboard.go          # Interactive TUI dashboard (model + update)
+      dashboard_view.go     # TUI views and layout
       status.go             # Status table rendering
       styles.go             # Lipgloss styles
   config/
