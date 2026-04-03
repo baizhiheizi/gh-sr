@@ -40,15 +40,47 @@ func (m *Manager) setupDocker(h *host.Host) error {
 	return m.setupDockerUnix(h)
 }
 
+// patchDockerConfigWindows removes "credsStore" from %USERPROFILE%\.docker\config.json
+// on the Windows host over SSH.
+//
+// Docker Desktop writes "credsStore": "desktop" into that file and the bundled
+// docker-credential-desktop helper calls Windows Credential Manager, which is
+// unavailable in OpenSSH sessions ("A specified logon session does not exist").
+// Removing credsStore entirely (not just setting it to "") disables the helper,
+// letting Docker attempt anonymous pulls. The rest of the config is preserved.
+func patchDockerConfigWindows(h *host.Host) error {
+	script := `
+$cfg = Join-Path $env:USERPROFILE '.docker\config.json'
+$dir = Split-Path $cfg
+New-Item -ItemType Directory -Force -Path $dir | Out-Null
+$json = $null
+if (Test-Path $cfg) {
+    try { $json = Get-Content $cfg -Raw | ConvertFrom-Json } catch { $json = $null }
+}
+if ($json -eq $null) { $json = [PSCustomObject]@{} }
+$json.PSObject.Properties.Remove('credsStore')
+$text = $json | ConvertTo-Json -Depth 10
+[System.IO.File]::WriteAllText($cfg, $text)
+`
+	if _, err := h.RunShell(strings.TrimSpace(script)); err != nil {
+		return fmt.Errorf("patching Docker config on %s: %w", h.Name, err)
+	}
+	return nil
+}
+
 func (m *Manager) setupDockerWindows(h *host.Host) error {
-	out, err := h.RunShell(`docker info --format "{{.ServerVersion}}"`)
+	out, err := dockerRun(h, `docker info --format "{{.ServerVersion}}"`)
 	if err != nil || strings.TrimSpace(out) == "" {
 		return fmt.Errorf("docker not available on host %s: install Docker Desktop and ensure it is running", h.Name)
 	}
 	fmt.Printf("  %s: Docker %s available\n", h.Name, strings.TrimSpace(out))
 
+	if err := patchDockerConfigWindows(h); err != nil {
+		return err
+	}
+
 	fmt.Printf("  %s: pulling runner image...\n", h.Name)
-	if _, err := h.RunShell(fmt.Sprintf("docker pull %s", RunnerDockerImage)); err != nil {
+	if _, err := dockerRun(h, fmt.Sprintf("docker pull %s", RunnerDockerImage)); err != nil {
 		return fmt.Errorf("pulling Docker image: %w", err)
 	}
 
@@ -98,7 +130,7 @@ func (m *Manager) startDocker(h *host.Host, rc config.RunnerConfig, instanceName
 	cname := containerName(instanceName)
 
 	if h.OS == "windows" {
-		running, _ := h.RunShell(fmt.Sprintf(`docker inspect -f "{{.State.Running}}" %s 2>$null`, cname))
+		running, _ := dockerRun(h, fmt.Sprintf(`docker inspect -f "{{.State.Running}}" %s 2>$null`, cname))
 		if strings.TrimSpace(running) == "true" {
 			fmt.Printf("  %s: already running\n", instanceName)
 			return nil
