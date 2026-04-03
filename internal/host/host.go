@@ -106,6 +106,13 @@ func (h *Host) RunnerBaseDir() string {
 	return "$HOME/.ghr/runners"
 }
 
+func (h *Host) RunnerBaseDirPS() string {
+	if h.OS == "windows" {
+		return `Join-Path $env:USERPROFILE '.ghr\runners'`
+	}
+	return h.RunnerBaseDir()
+}
+
 func (h *Host) RunnerDir(instanceName string) string {
 	base := h.RunnerBaseDir()
 	if h.OS == "windows" {
@@ -114,11 +121,26 @@ func (h *Host) RunnerDir(instanceName string) string {
 	return base + "/" + instanceName
 }
 
+func (h *Host) RunnerDirPS(instanceName string) string {
+	base := h.RunnerBaseDirPS()
+	if h.OS == "windows" {
+		return fmt.Sprintf("Join-Path (%s) '%s'", base, strings.ReplaceAll(instanceName, "'", "''"))
+	}
+	return h.RunnerDir(instanceName)
+}
+
 func (h *Host) TempDir() string {
 	if h.OS == "windows" {
 		return "$env:TEMP"
 	}
 	return "/tmp"
+}
+
+func (h *Host) TempDirPS() string {
+	if h.OS == "windows" {
+		return "$env:TEMP"
+	}
+	return h.TempDir()
 }
 
 func (h *Host) PathSep() string {

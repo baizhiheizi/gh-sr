@@ -48,6 +48,49 @@ func Test_runnerTarballURL(t *testing.T) {
 	}
 }
 
+func Test_windowsNativeInstallScript_usesPowerShellExpressions(t *testing.T) {
+	t.Parallel()
+	h := host.NewHost("win", config.HostConfig{Addr: "u@h", OS: "windows", Arch: "amd64"})
+
+	script := windowsNativeInstallScript(
+		h,
+		"unwx-1",
+		"2.333.1",
+		"https://github.com/actions/runner/releases/download/v2.333.1/actions-runner-win-x64-2.333.1.zip",
+	)
+
+	if !strings.Contains(script, "$runnerDir = Join-Path (Join-Path $env:USERPROFILE '.ghr\\runners') 'unwx-1'") {
+		t.Fatalf("runner dir should be built from PowerShell expressions: %q", script)
+	}
+	if !strings.Contains(script, "$zip = Join-Path $env:TEMP 'actions-runner-2.333.1.zip'") {
+		t.Fatalf("zip path should use Join-Path with $env:TEMP: %q", script)
+	}
+	if strings.Contains(script, "'$env:USERPROFILE") || strings.Contains(script, "'$env:TEMP") {
+		t.Fatalf("script should not quote env expressions literally: %q", script)
+	}
+}
+
+func Test_windowsNativeConfigScript_usesRunnerDirVariable(t *testing.T) {
+	t.Parallel()
+	h := host.NewHost("win", config.HostConfig{Addr: "u@h", OS: "windows", Arch: "amd64"})
+	rc := config.RunnerConfig{
+		Repo:   "an-lee/gh-runners",
+		Labels: []string{"windows", "native"},
+	}
+
+	script := windowsNativeConfigScript(h, rc, "unwx-1", "token-value")
+
+	if !strings.Contains(script, "$runnerDir = Join-Path (Join-Path $env:USERPROFILE '.ghr\\runners') 'unwx-1'") {
+		t.Fatalf("runner dir should be assigned from a PowerShell expression: %q", script)
+	}
+	if !strings.Contains(script, "Set-Location -Path $runnerDir; & .\\config.cmd --unattended") {
+		t.Fatalf("script should configure from the resolved runner dir: %q", script)
+	}
+	if strings.Contains(script, "cd '$env:USERPROFILE") {
+		t.Fatalf("script should not cd into a literalized env path: %q", script)
+	}
+}
+
 func TestNativeRunnerConfigPresent_local(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("unix-style paths and sh -c probe")

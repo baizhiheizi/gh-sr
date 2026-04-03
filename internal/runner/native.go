@@ -13,10 +13,9 @@ import (
 func NativeRunnerConfigPresent(h *host.Host, instanceName string) (bool, error) {
 	dir := h.RunnerDir(instanceName)
 	if h.OS == "windows" {
-		safeDir := strings.ReplaceAll(dir, "'", "''")
 		out, err := h.RunShell(fmt.Sprintf(
-			"if (Test-Path (Join-Path '%s' '.runner')) { Write-Output 'yes' } else { Write-Output 'no' }",
-			safeDir,
+			"%s; if (Test-Path (Join-Path $runnerDir '.runner')) { Write-Output 'yes' } else { Write-Output 'no' }",
+			windowsRunnerDirAssignment(h, "runnerDir", instanceName),
 		))
 		if err != nil {
 			return false, err
@@ -65,6 +64,40 @@ func archForGitHub(arch string) string {
 	return arch
 }
 
+func powerShellSingleQuoted(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", "''") + "'"
+}
+
+func windowsRunnerDirAssignment(h *host.Host, varName, instanceName string) string {
+	return fmt.Sprintf("$%s = %s", varName, h.RunnerDirPS(instanceName))
+}
+
+func windowsNativeInstallScript(h *host.Host, instanceName, version, url string) string {
+	zipName := fmt.Sprintf("actions-runner-%s.zip", version)
+	return strings.Join([]string{
+		windowsRunnerDirAssignment(h, "runnerDir", instanceName),
+		"New-Item -ItemType Directory -Force -Path $runnerDir | Out-Null",
+		fmt.Sprintf("$zip = Join-Path %s %s", h.TempDirPS(), powerShellSingleQuoted(zipName)),
+		fmt.Sprintf("if (-not (Test-Path $zip)) { Invoke-WebRequest -Uri %s -OutFile $zip }", powerShellSingleQuoted(url)),
+		"Expand-Archive -Path $zip -DestinationPath $runnerDir -Force",
+	}, "; ")
+}
+
+func windowsNativeConfigScript(h *host.Host, rc config.RunnerConfig, instanceName, regToken string) string {
+	labels := strings.Join(rc.Labels, ",")
+	return strings.Join([]string{
+		windowsRunnerDirAssignment(h, "runnerDir", instanceName),
+		"Set-Location -Path $runnerDir",
+		fmt.Sprintf(
+			"& .\\config.cmd --unattended --url %s --token %s --name %s --labels %s --work '_work' --replace",
+			powerShellSingleQuoted("https://github.com/"+rc.Repo),
+			powerShellSingleQuoted(regToken),
+			powerShellSingleQuoted(instanceName),
+			powerShellSingleQuoted(labels),
+		),
+	}, "; ")
+}
+
 func (m *Manager) setupNative(h *host.Host, rc config.RunnerConfig) error {
 	version, err := m.GitHub.GetLatestRunnerVersion()
 	if err != nil {
@@ -104,13 +137,7 @@ func (m *Manager) setupNative(h *host.Host, rc config.RunnerConfig) error {
 		}
 
 		if h.OS == "windows" {
-			cmds := []string{
-				fmt.Sprintf("New-Item -ItemType Directory -Force -Path '%s' | Out-Null", dir),
-				fmt.Sprintf("$zip = '%s\\actions-runner-%s.zip'", h.TempDir(), version),
-				fmt.Sprintf("if (-not (Test-Path $zip)) { Invoke-WebRequest -Uri '%s' -OutFile $zip }", url),
-				fmt.Sprintf("Expand-Archive -Path $zip -DestinationPath '%s' -Force", dir),
-			}
-			if _, err := h.RunShell(strings.Join(cmds, "; ")); err != nil {
+			if _, err := h.RunShell(windowsNativeInstallScript(h, name, version, url)); err != nil {
 				return fmt.Errorf("installing runner on Windows: %w", err)
 			}
 		} else {
@@ -144,11 +171,7 @@ func (m *Manager) setupNative(h *host.Host, rc config.RunnerConfig) error {
 		labels := strings.Join(rc.Labels, ",")
 
 		if h.OS == "windows" {
-			configCmd := fmt.Sprintf(
-				"cd '%s'; .\\config.cmd --unattended --url 'https://github.com/%s' --token '%s' --name '%s' --labels '%s' --work '_work' --replace",
-				dir, rc.Repo, regToken, name, labels,
-			)
-			if _, err := h.RunShell(configCmd); err != nil {
+			if _, err := h.RunShell(windowsNativeConfigScript(h, rc, name, regToken)); err != nil {
 				return fmt.Errorf("configuring runner on Windows: %w", err)
 			}
 		} else {
@@ -180,11 +203,11 @@ func (m *Manager) startNative(h *host.Host, rc config.RunnerConfig, instanceName
 
 	if h.OS == "windows" {
 		cmd := fmt.Sprintf(
-			"$d = '%s'; $pidFile = Join-Path $d '.runner_pid'; "+
+			"%s; $pidFile = Join-Path $runnerDir '.runner_pid'; "+
 				"if (Test-Path $pidFile) { $p = Get-Content $pidFile; try { Get-Process -Id $p -EA Stop | Out-Null; Write-Host 'already running'; exit 0 } catch {} }; "+
-				"$proc = Start-Process -FilePath (Join-Path $d 'run.cmd') -WorkingDirectory $d -PassThru -WindowStyle Hidden; "+
+				"$proc = Start-Process -FilePath (Join-Path $runnerDir 'run.cmd') -WorkingDirectory $runnerDir -PassThru -WindowStyle Hidden; "+
 				"$proc.Id | Out-File -FilePath $pidFile -NoNewline; Write-Host \"started PID $($proc.Id)\"",
-			dir,
+			windowsRunnerDirAssignment(h, "runnerDir", instanceName),
 		)
 		out, err := h.RunShell(cmd)
 		if err != nil {
@@ -213,12 +236,12 @@ func (m *Manager) stopNative(h *host.Host, instanceName string) error {
 
 	if h.OS == "windows" {
 		cmd := fmt.Sprintf(
-			"$d = '%s'; $pidFile = Join-Path $d '.runner_pid'; "+
+			"%s; $pidFile = Join-Path $runnerDir '.runner_pid'; "+
 				"if (-not (Test-Path $pidFile)) { Write-Host 'not running'; exit 0 }; "+
 				"$p = Get-Content $pidFile; "+
 				"try { Stop-Process -Id $p -Force -EA Stop; Write-Host 'stopped' } catch { Write-Host 'not running' }; "+
 				"Remove-Item $pidFile -Force -EA SilentlyContinue",
-			dir,
+			windowsRunnerDirAssignment(h, "runnerDir", instanceName),
 		)
 		out, err := h.RunShell(cmd)
 		if err != nil {
@@ -257,7 +280,11 @@ func (m *Manager) removeNative(h *host.Host, rc config.RunnerConfig, instanceNam
 		fmt.Printf("  %s: warning: could not get removal token: %v\n", instanceName, err)
 	} else {
 		if h.OS == "windows" {
-			cmd := fmt.Sprintf("cd '%s'; .\\config.cmd remove --token '%s'", dir, removeToken)
+			cmd := fmt.Sprintf(
+				"%s; Set-Location -Path $runnerDir; & .\\config.cmd remove --token %s",
+				windowsRunnerDirAssignment(h, "runnerDir", instanceName),
+				powerShellSingleQuoted(removeToken),
+			)
 			h.RunShell(cmd)
 		} else {
 			cmd := fmt.Sprintf("cd %s && ./config.sh remove --token '%s'", dir, removeToken)
@@ -267,7 +294,7 @@ func (m *Manager) removeNative(h *host.Host, rc config.RunnerConfig, instanceNam
 	}
 
 	if h.OS == "windows" {
-		h.RunShell(fmt.Sprintf("Remove-Item -Recurse -Force '%s'", dir))
+		h.RunShell(fmt.Sprintf("%s; Remove-Item -Recurse -Force $runnerDir", windowsRunnerDirAssignment(h, "runnerDir", instanceName)))
 	} else {
 		h.Run(fmt.Sprintf("rm -rf %s", dir))
 	}
@@ -281,12 +308,12 @@ func (m *Manager) statusNative(h *host.Host, instanceName string) string {
 
 	if h.OS == "windows" {
 		cmd := fmt.Sprintf(
-			"$d = '%s'; if (-not (Test-Path (Join-Path $d '.runner'))) { Write-Host 'not installed'; exit 0 }; "+
-				"$pidFile = Join-Path $d '.runner_pid'; "+
+			"%s; if (-not (Test-Path (Join-Path $runnerDir '.runner'))) { Write-Host 'not installed'; exit 0 }; "+
+				"$pidFile = Join-Path $runnerDir '.runner_pid'; "+
 				"if (-not (Test-Path $pidFile)) { Write-Host 'stopped'; exit 0 }; "+
 				"$p = Get-Content $pidFile; "+
 				"try { Get-Process -Id $p -EA Stop | Out-Null; Write-Host 'running' } catch { Write-Host 'stopped' }",
-			dir,
+			windowsRunnerDirAssignment(h, "runnerDir", instanceName),
 		)
 		out, _ := h.RunShell(cmd)
 		return strings.TrimSpace(out)
@@ -312,7 +339,7 @@ func (m *Manager) logsNative(h *host.Host, instanceName string) (string, error) 
 	dir := h.RunnerDir(instanceName)
 
 	if h.OS == "windows" {
-		cmd := fmt.Sprintf("Get-Content -Tail 50 '%s\\runner.log'", dir)
+		cmd := fmt.Sprintf("%s; Get-Content -Tail 50 (Join-Path $runnerDir 'runner.log')", windowsRunnerDirAssignment(h, "runnerDir", instanceName))
 		return h.RunShell(cmd)
 	}
 

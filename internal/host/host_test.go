@@ -125,11 +125,20 @@ func TestHost_paths(t *testing.T) {
 	if win.RunnerBaseDir() != `$env:USERPROFILE\.ghr\runners` {
 		t.Errorf("windows base: %q", win.RunnerBaseDir())
 	}
+	if win.RunnerBaseDirPS() != `Join-Path $env:USERPROFILE '.ghr\runners'` {
+		t.Errorf("windows base ps: %q", win.RunnerBaseDirPS())
+	}
 	if win.RunnerDir("r1") != `$env:USERPROFILE\.ghr\runners\r1` {
 		t.Errorf("windows runner dir: %q", win.RunnerDir("r1"))
 	}
+	if win.RunnerDirPS("r1") != `Join-Path (Join-Path $env:USERPROFILE '.ghr\runners') 'r1'` {
+		t.Errorf("windows runner dir ps: %q", win.RunnerDirPS("r1"))
+	}
 	if win.TempDir() != "$env:TEMP" {
 		t.Errorf("windows temp: %q", win.TempDir())
+	}
+	if win.TempDirPS() != "$env:TEMP" {
+		t.Errorf("windows temp ps: %q", win.TempDirPS())
 	}
 	if win.PathSep() != `\` {
 		t.Errorf("windows sep: %q", win.PathSep())
@@ -139,11 +148,20 @@ func TestHost_paths(t *testing.T) {
 	if ln.RunnerBaseDir() != "$HOME/.ghr/runners" {
 		t.Errorf("linux base: %q", ln.RunnerBaseDir())
 	}
+	if ln.RunnerBaseDirPS() != "$HOME/.ghr/runners" {
+		t.Errorf("linux base ps: %q", ln.RunnerBaseDirPS())
+	}
 	if ln.RunnerDir("r1") != "$HOME/.ghr/runners/r1" {
 		t.Errorf("linux runner dir: %q", ln.RunnerDir("r1"))
 	}
+	if ln.RunnerDirPS("r1") != "$HOME/.ghr/runners/r1" {
+		t.Errorf("linux runner dir ps: %q", ln.RunnerDirPS("r1"))
+	}
 	if ln.TempDir() != "/tmp" {
 		t.Errorf("linux temp: %q", ln.TempDir())
+	}
+	if ln.TempDirPS() != "/tmp" {
+		t.Errorf("linux temp ps: %q", ln.TempDirPS())
 	}
 	if ln.PathSep() != "/" {
 		t.Errorf("linux sep: %q", ln.PathSep())
