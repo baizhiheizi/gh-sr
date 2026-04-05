@@ -74,7 +74,7 @@ func Test_windowsNativeConfigScript_usesRunnerDirVariable(t *testing.T) {
 	t.Parallel()
 	h := host.NewHost("win", config.HostConfig{Addr: "u@h", OS: "windows", Arch: "amd64"})
 	rc := config.RunnerConfig{
-		Repo:   "an-lee/gh-runners",
+		Repo:   "an-lee/ghr",
 		Labels: []string{"windows", "native"},
 	}
 

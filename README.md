@@ -2,8 +2,8 @@
 
 **ghr** is a CLI for managing self-hosted [GitHub Actions](https://docs.github.com/en/actions) runners across many machines from one place—usually your laptop. It connects over **SSH** (or runs **locally** with `addr: local`), installs and starts runners, and gives you a **terminal UI** for day-to-day operations.
 
-**Repository:** [github.com/an-lee/gh-runners](https://github.com/an-lee/gh-runners)  
-**Go module:** `github.com/an-lee/ghr` (used by `go install` and imports; the clone URL above is this repo’s name on GitHub).
+**Repository:** [github.com/an-lee/ghr](https://github.com/an-lee/ghr)  
+**Go module:** `github.com/an-lee/ghr` (used by `go install` and imports).
 
 ## Features
 
@@ -15,7 +15,7 @@
 ## Documentation
 
 **Full documentation (user guide, architecture, config reference):**  
-[https://an-lee.github.io/gh-runners/](https://an-lee.github.io/gh-runners/)
+[https://an-lee.github.io/ghr/](https://an-lee.github.io/ghr/)
 
 The Markdown sources live under [`docs/`](docs/) in this repo and are built with [MkDocs Material](https://squidfunk.github.io/mkdocs-material/).
 

@@ -16,11 +16,11 @@ This creates `~/.ghr/runners.yml` from a template and `~/.ghr/env` for secrets (
 
 ## Build from source
 
-This repository is [an-lee/gh-runners](https://github.com/an-lee/gh-runners); the Go module path is `github.com/an-lee/ghr`.
+This repository is [an-lee/ghr](https://github.com/an-lee/ghr); the Go module path is `github.com/an-lee/ghr`.
 
 ```bash
-git clone https://github.com/an-lee/gh-runners.git
-cd gh-runners
+git clone https://github.com/an-lee/ghr.git
+cd ghr
 go build -o ghr ./cmd/ghr/
 ```
 

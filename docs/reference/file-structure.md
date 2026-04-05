@@ -3,7 +3,7 @@
 Layout of this repository (module `github.com/an-lee/ghr`):
 
 ```text
-gh-runners/
+ghr/
   cmd/
     ghr/
       main.go               # CLI entry point

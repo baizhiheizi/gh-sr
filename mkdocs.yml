@@ -1,8 +1,8 @@
 site_name: ghr
 site_description: CLI to manage self-hosted GitHub Actions runners over SSH
-site_url: https://an-lee.github.io/gh-runners/
-repo_url: https://github.com/an-lee/gh-runners
-repo_name: an-lee/gh-runners
+site_url: https://an-lee.github.io/ghr/
+repo_url: https://github.com/an-lee/ghr
+repo_name: an-lee/ghr
 edit_uri: edit/main/docs/
 
 theme:
