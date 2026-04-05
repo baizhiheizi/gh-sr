@@ -17,7 +17,7 @@
 **Full documentation (user guide, architecture, config reference):**  
 [https://an-lee.github.io/ghr/](https://an-lee.github.io/ghr/)
 
-The Markdown sources live under [`docs/`](docs/) in this repo and are built with [MkDocs Material](https://squidfunk.github.io/mkdocs-material/).
+The Markdown sources live under [`docs/`](docs/) in this repo and are built with [Hugo](https://gohugo.io/) (Hugo Book theme).
 
 ## Install
 
@@ -56,12 +56,13 @@ Documentation deploys to GitHub Pages via **GitHub Actions** when changes land o
 Local preview:
 
 ```bash
-pip install -r docs/requirements.txt
-mkdocs serve
+# from the repository root:
+git clone https://github.com/alex-shpak/hugo-book docs/themes/book --depth 1
+cd docs && hugo server
 ```
 
-Strict build (also run in CI):
+Build (also run in CI):
 
 ```bash
-mkdocs build --strict
+cd docs && hugo --minify
 ```

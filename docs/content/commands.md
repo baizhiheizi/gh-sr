@@ -1,3 +1,8 @@
+---
+title: "Commands"
+weight: 50
+---
+
 # Commands
 
 Running **`ghr` with no subcommand** opens the interactive dashboard on a **TTY** (same as `ghr dashboard`). If stdout is not a terminal (for example in a pipe or CI), ghr prints a short hint to stderr and exits successfully; use `ghr status` or `ghr --help` in those environments.

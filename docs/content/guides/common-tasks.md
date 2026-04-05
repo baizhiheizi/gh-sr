@@ -1,3 +1,8 @@
+---
+title: "Common Tasks"
+weight: 20
+---
+
 # Common tasks
 
 ## Add a new host

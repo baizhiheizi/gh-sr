@@ -1,3 +1,8 @@
+---
+title: "Architecture"
+weight: 60
+---
+
 # Architecture
 
 This page explains where runners run, how **ghr** reaches each host, and how `status`, `dashboard`, and `logs` collect information.

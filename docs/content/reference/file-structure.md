@@ -1,3 +1,8 @@
+---
+title: "File Structure"
+weight: 10
+---
+
 # File structure
 
 Layout of this repository (module `github.com/an-lee/ghr`):
@@ -43,7 +48,7 @@ ghr/
       styles.go             # Lipgloss styles
   config/
     runners.yml             # Example YAML (not auto-loaded; use GHR_CONFIG or -c)
-  docs/                     # MkDocs source (this site)
+  docs/                     # Hugo source (this site)
   go.mod
   go.sum
 ```

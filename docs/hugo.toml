@@ -1,0 +1,12 @@
+baseURL = "https://an-lee.github.io/ghr/"
+languageCode = "en-us"
+title = "ghr"
+theme = "book"
+
+[params]
+  BookTheme = "auto"
+  BookToC = true
+  BookSearch = true
+  BookRepo = "https://github.com/an-lee/ghr"
+  BookEditPath = "edit/main/docs/content"
+  BookSection = "/"

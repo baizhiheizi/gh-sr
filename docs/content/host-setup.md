@@ -1,3 +1,8 @@
+---
+title: "Host Setup"
+weight: 40
+---
+
 # Host setup (manual steps)
 
 **ghr** automates runner installation and lifecycle over SSH, but some host preparation is still manual. After you edit config and secrets, run **`ghr doctor`** from your laptop to verify config paths, GitHub API access, SSH connectivity, and per-host tools (Docker vs native). By default the command exits with a non-zero status only when a check is **FAIL**; use **`ghr doctor --strict`** if you also want **WARN** lines to fail (for example in CI).

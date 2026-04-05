@@ -1,3 +1,8 @@
+---
+title: "GitHub PAT"
+weight: 30
+---
+
 # GitHub personal access token
 
 The GitHub user that creates the token must have **admin** access to every repository listed under `runners[].repo` in your config; the REST API requires that for self-hosted runner management.

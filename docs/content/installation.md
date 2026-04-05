@@ -1,3 +1,8 @@
+---
+title: "Installation"
+weight: 10
+---
+
 # Installation
 
 ## Install with Go

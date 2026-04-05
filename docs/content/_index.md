@@ -1,3 +1,8 @@
+---
+title: "ghr"
+weight: 1
+---
+
 # ghr
 
 **ghr** is a CLI tool to manage self-hosted [GitHub Actions](https://docs.github.com/en/actions) runners across multiple machines from a single control host—typically your laptop—using SSH or local execution.
