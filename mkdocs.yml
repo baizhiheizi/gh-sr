@@ -1,0 +1,57 @@
+site_name: ghr
+site_description: CLI to manage self-hosted GitHub Actions runners over SSH
+site_url: https://an-lee.github.io/gh-runners/
+repo_url: https://github.com/an-lee/gh-runners
+repo_name: an-lee/gh-runners
+edit_uri: edit/main/docs/
+
+theme:
+  name: material
+  palette:
+    - scheme: default
+      primary: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.expand
+    - navigation.sections
+    - content.code.copy
+
+plugins:
+  - search
+
+markdown_extensions:
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - admonition
+  - tables
+  - toc:
+      permalink: true
+
+nav:
+  - Home: index.md
+  - Architecture: architecture.md
+  - Installation: installation.md
+  - Configuration: configuration.md
+  - GitHub PAT: github-pat.md
+  - Host setup: host-setup.md
+  - Commands: commands.md
+  - Guides:
+      - Workflows: guides/workflows.md
+      - Common tasks: guides/common-tasks.md
+      - Local host: guides/local-host.md
+      - Linux on Windows: guides/linux-on-windows.md
+      - Linux on macOS: guides/linux-on-macos.md
+  - Reference:
+      - File structure: reference/file-structure.md
