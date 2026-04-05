@@ -1,3 +1,8 @@
+---
+title: "Linux on macOS"
+weight: 50
+---
+
 # Linux runners on a macOS host
 
 Set `mode: docker` on a runner that targets an `os: darwin` host to run the same Linux container image as on Linux. **ghr** does **not** run the Linux Docker install script on macOS; install a Docker runtime yourself.

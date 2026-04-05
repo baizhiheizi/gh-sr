@@ -1,3 +1,8 @@
+---
+title: "Linux on Windows"
+weight: 40
+---
+
 # Linux runners on a Windows host
 
 You can run Linux container runners on a Windows machine without a separate SSH endpoint into WSL2. Set `mode: docker` on a runner that targets an `os: windows` host and **ghr** will manage the Docker container over the same SSH connection (Docker CLI invoked through the same encoded PowerShell path as native Windows runners).

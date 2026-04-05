@@ -1,3 +1,8 @@
+---
+title: "Workflows"
+weight: 10
+---
+
 # Using runners in workflows
 
 Reference runners by label in your workflow files:

@@ -1,3 +1,8 @@
+---
+title: "Local Host"
+weight: 30
+---
+
 # Local host runners
 
 You can set up runners on the same machine where **ghr** runs, without SSH. Set `addr: local` on a host and **ghr** will execute commands directly via `os/exec` instead of dialing an SSH connection.
