@@ -46,6 +46,7 @@ func Setup(w io.Writer, cfg *config.Config, mgr *runner.Manager, filterHost, fil
 	}
 
 	fmt.Fprintln(w, "\nSetup complete.")
+	fmt.Fprintln(w, "Start runners with: ghr up [runner-names...] (setup registers the runner; up launches the listener.)")
 	return nil
 }
 

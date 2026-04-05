@@ -98,6 +98,50 @@ func windowsNativeConfigScript(h *host.Host, rc config.RunnerConfig, instanceNam
 	}, "; ")
 }
 
+// staleRegistrationMsg is the substring the Actions runner writes to its log when the
+// server-side registration has been deleted (auto-pruned after inactivity).
+const staleRegistrationMsg = "runner registration has been deleted from the server"
+
+func windowsNativeStartScript(h *host.Host, instanceName string) string {
+	return fmt.Sprintf(
+		"%s; $pidFile = Join-Path $runnerDir '.runner_pid'; "+
+			"$logFile = Join-Path $runnerDir 'runner.log'; "+
+			"if (Test-Path $pidFile) { $p = Get-Content $pidFile; try { Get-Process -Id $p -EA Stop | Out-Null; Write-Host 'already running'; exit 0 } catch {} }; "+
+			"$cmdArg = 'cd /d \"' + $runnerDir + '\" && run.cmd > \"' + $logFile + '\" 2>&1'; "+
+			"$proc = Start-Process -FilePath cmd.exe -ArgumentList '/c', $cmdArg -WorkingDirectory $runnerDir -PassThru -WindowStyle Hidden -NoNewWindow; "+
+			"$proc.Id | Out-File -FilePath $pidFile -NoNewline; Write-Host ('started PID ' + $proc.Id)",
+		windowsRunnerDirAssignment(h, "runnerDir", instanceName),
+	)
+}
+
+// windowsCheckStaleRegistration returns a PowerShell snippet that waits briefly for the
+// runner process to either stay alive (healthy) or exit, then checks runner.log for the
+// stale-registration message. It writes "stale" to stdout if detected, "ok" otherwise.
+func windowsCheckStaleRegistration(h *host.Host, instanceName string) string {
+	return fmt.Sprintf(
+		"%s; $pidFile = Join-Path $runnerDir '.runner_pid'; "+
+			"$logFile = Join-Path $runnerDir 'runner.log'; "+
+			"Start-Sleep -Seconds 5; "+
+			"$pid = Get-Content $pidFile -EA SilentlyContinue; "+
+			"$alive = $false; if ($pid) { try { Get-Process -Id $pid -EA Stop | Out-Null; $alive = $true } catch {} }; "+
+			"if ($alive) { Write-Host 'ok' } "+
+			"elseif ((Test-Path $logFile) -and (Select-String -Path $logFile -Pattern %s -Quiet)) { Write-Host 'stale' } "+
+			"else { Write-Host 'ok' }",
+		windowsRunnerDirAssignment(h, "runnerDir", instanceName),
+		powerShellSingleQuoted(staleRegistrationMsg),
+	)
+}
+
+// windowsDeleteRunnerConfig removes the .runner file so setupNative will re-configure.
+func windowsDeleteRunnerConfig(h *host.Host, instanceName string) string {
+	return fmt.Sprintf(
+		"%s; Remove-Item -Force (Join-Path $runnerDir '.runner') -EA SilentlyContinue; "+
+			"Remove-Item -Force (Join-Path $runnerDir '.credentials') -EA SilentlyContinue; "+
+			"Remove-Item -Force (Join-Path $runnerDir '.credentials_rsaparams') -EA SilentlyContinue",
+		windowsRunnerDirAssignment(h, "runnerDir", instanceName),
+	)
+}
+
 func (m *Manager) setupNative(h *host.Host, rc config.RunnerConfig) error {
 	version, err := m.GitHub.GetLatestRunnerVersion()
 	if err != nil {
@@ -190,6 +234,13 @@ func (m *Manager) setupNative(h *host.Host, rc config.RunnerConfig) error {
 }
 
 func (m *Manager) startNative(h *host.Host, rc config.RunnerConfig, instanceName string) error {
+	return m.startNativeOnce(h, rc, instanceName, true)
+}
+
+// startNativeOnce starts the runner and optionally detects a stale registration.
+// When retryOnStale is true and the runner exits immediately with the stale-registration
+// message, it clears local credentials, re-runs setupNative, and retries once.
+func (m *Manager) startNativeOnce(h *host.Host, rc config.RunnerConfig, instanceName string, retryOnStale bool) error {
 	dir := h.RunnerDir(instanceName)
 
 	ok, err := NativeRunnerConfigPresent(h, instanceName)
@@ -201,24 +252,22 @@ func (m *Manager) startNative(h *host.Host, rc config.RunnerConfig, instanceName
 	}
 
 	if h.OS == "windows" {
-		// Merge stdout/stderr via cmd.exe so one log file works reliably (dual Start-Process redirects to the same path are brittle on .NET).
-		cmd := fmt.Sprintf(
-			"%s; $pidFile = Join-Path $runnerDir '.runner_pid'; "+
-				"$logFile = Join-Path $runnerDir 'runner.log'; "+
-				"if (Test-Path $pidFile) { $p = Get-Content $pidFile; try { Get-Process -Id $p -EA Stop | Out-Null; Write-Host 'already running'; exit 0 } catch {} }; "+
-				"$cmdArg = 'cd /d \"' + $runnerDir + '\" && run.cmd > \"' + $logFile + '\" 2>&1'; "+
-				"$proc = Start-Process -FilePath cmd.exe -ArgumentList '/c', $cmdArg -WorkingDirectory $runnerDir -PassThru -WindowStyle Hidden -NoNewWindow; "+
-				"$proc.Id | Out-File -FilePath $pidFile -NoNewline; Write-Host \"started PID $($proc.Id)\"",
-			windowsRunnerDirAssignment(h, "runnerDir", instanceName),
-		)
-		out, err := h.RunShell(cmd)
+		out, err := h.RunShell(windowsNativeStartScript(h, instanceName))
 		if err != nil {
 			return err
 		}
 		fmt.Fprintf(m.out(), "  %s: %s\n", instanceName, strings.TrimSpace(out))
+
+		if retryOnStale {
+			checkOut, _ := h.RunShell(windowsCheckStaleRegistration(h, instanceName))
+			if strings.TrimSpace(checkOut) == "stale" {
+				return m.handleStaleRegistration(h, rc, instanceName)
+			}
+		}
 		return nil
 	}
 
+	// Unix (Linux / macOS)
 	cmd := fmt.Sprintf(
 		`cd %s && pid_file=".runner_pid" && `+
 			`if [ -f "$pid_file" ] && kill -0 "$(cat "$pid_file")" 2>/dev/null; then echo "already running"; exit 0; fi && `+
@@ -230,7 +279,38 @@ func (m *Manager) startNative(h *host.Host, rc config.RunnerConfig, instanceName
 		return err
 	}
 	fmt.Fprintf(m.out(), "  %s: %s\n", instanceName, strings.TrimSpace(out))
+
+	if retryOnStale {
+		checkCmd := fmt.Sprintf(
+			`cd %s && sleep 5 && pid=$(cat .runner_pid 2>/dev/null) && `+
+				`if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then echo ok; `+
+				`elif grep -q %q runner.log 2>/dev/null; then echo stale; `+
+				`else echo ok; fi`,
+			dir, staleRegistrationMsg,
+		)
+		checkOut, _ := h.Run(checkCmd)
+		if strings.TrimSpace(checkOut) == "stale" {
+			return m.handleStaleRegistration(h, rc, instanceName)
+		}
+	}
 	return nil
+}
+
+func (m *Manager) handleStaleRegistration(h *host.Host, rc config.RunnerConfig, instanceName string) error {
+	fmt.Fprintf(m.out(), "  %s: registration expired on GitHub, re-configuring...\n", instanceName)
+	dir := h.RunnerDir(instanceName)
+
+	if h.OS == "windows" {
+		h.RunShell(windowsDeleteRunnerConfig(h, instanceName))
+	} else {
+		h.Run(fmt.Sprintf("rm -f %s/.runner %s/.credentials %s/.credentials_rsaparams", dir, dir, dir))
+	}
+
+	if err := m.setupNative(h, rc); err != nil {
+		return fmt.Errorf("re-configuring after stale registration: %w", err)
+	}
+
+	return m.startNativeOnce(h, rc, instanceName, false)
 }
 
 func (m *Manager) stopNative(h *host.Host, instanceName string) error {

@@ -1,7 +1,6 @@
 package runner
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -94,20 +93,38 @@ func Test_windowsNativeConfigScript_usesRunnerDirVariable(t *testing.T) {
 
 func Test_windowsStartNative_usesCmdForMergedLogs(t *testing.T) {
 	t.Parallel()
-	h := host.NewHost("win", config.HostConfig{Addr: "u@h", OS: "windows", Arch: "amd64"})
-	script := fmt.Sprintf(
-		"%s; $pidFile = Join-Path $runnerDir '.runner_pid'; "+
-			"$logFile = Join-Path $runnerDir 'runner.log'; "+
-			"$cmdArg = 'cd /d \"' + $runnerDir + '\" && run.cmd > \"' + $logFile + '\" 2>&1'; "+
-			"$proc = Start-Process -FilePath cmd.exe -ArgumentList '/c', $cmdArg -WorkingDirectory $runnerDir -PassThru -WindowStyle Hidden -NoNewWindow; "+
-			"$proc.Id | Out-File -FilePath $pidFile -NoNewline; Write-Host \"started PID $($proc.Id)\"",
-		windowsRunnerDirAssignment(h, "runnerDir", "x-1"),
-	)
-	if !strings.Contains(script, "cmd.exe") || !strings.Contains(script, "2>&1") {
-		t.Fatalf("expected cmd.exe merged redirection: %q", script)
+	for _, addr := range []string{config.LocalAddr, "u@h"} {
+		h := host.NewHost("win", config.HostConfig{Addr: addr, OS: "windows", Arch: "amd64"})
+		script := windowsNativeStartScript(h, "x-1")
+		if !strings.Contains(script, "Start-Process") || !strings.Contains(script, "cmd.exe") || !strings.Contains(script, "2>&1") {
+			t.Fatalf("addr=%s: expected Start-Process cmd.exe merged redirection: %q", addr, script)
+		}
+		if strings.Contains(script, "RedirectStandardOutput") {
+			t.Fatalf("addr=%s: should not use Start-Process stream redirects to a single log file: %q", addr, script)
+		}
 	}
-	if strings.Contains(script, "RedirectStandardOutput") {
-		t.Fatalf("should not use Start-Process stream redirects to a single log file: %q", script)
+}
+
+func Test_staleRegistrationMsg(t *testing.T) {
+	t.Parallel()
+	logLine := `Failed to create a session. The runner registration has been deleted from the server, please re-configure.`
+	if !strings.Contains(logLine, staleRegistrationMsg) {
+		t.Fatalf("staleRegistrationMsg %q not found in typical log line", staleRegistrationMsg)
+	}
+}
+
+func Test_windowsCheckStaleRegistration_containsPatternAndSleep(t *testing.T) {
+	t.Parallel()
+	h := host.NewHost("win", config.HostConfig{Addr: "u@h", OS: "windows", Arch: "amd64"})
+	script := windowsCheckStaleRegistration(h, "x-1")
+	if !strings.Contains(script, "Start-Sleep") {
+		t.Fatalf("should wait before checking: %q", script)
+	}
+	if !strings.Contains(script, staleRegistrationMsg) {
+		t.Fatalf("should search for stale registration message: %q", script)
+	}
+	if !strings.Contains(script, "Select-String") {
+		t.Fatalf("should use Select-String to search runner.log: %q", script)
 	}
 }
 
