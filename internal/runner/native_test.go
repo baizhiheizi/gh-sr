@@ -91,16 +91,22 @@ func Test_windowsNativeConfigScript_usesRunnerDirVariable(t *testing.T) {
 	}
 }
 
-func Test_windowsStartNative_usesCmdForMergedLogs(t *testing.T) {
+func Test_windowsStartNative_usesCimProcessCreateForMergedLogs(t *testing.T) {
 	t.Parallel()
 	for _, addr := range []string{config.LocalAddr, "u@h"} {
 		h := host.NewHost("win", config.HostConfig{Addr: addr, OS: "windows", Arch: "amd64"})
 		script := windowsNativeStartScript(h, "x-1")
-		if !strings.Contains(script, "Start-Process") || !strings.Contains(script, "cmd.exe") || !strings.Contains(script, "2>&1") {
-			t.Fatalf("addr=%s: expected Start-Process cmd.exe merged redirection: %q", addr, script)
+		if !strings.Contains(script, "Invoke-CimMethod") || !strings.Contains(script, "Win32_Process") {
+			t.Fatalf("addr=%s: expected Invoke-CimMethod Win32_Process.Create: %q", addr, script)
 		}
-		if strings.Contains(script, "RedirectStandardOutput") {
-			t.Fatalf("addr=%s: should not use Start-Process stream redirects to a single log file: %q", addr, script)
+		if !strings.Contains(script, "cmd.exe") || !strings.Contains(script, "run.cmd") || !strings.Contains(script, "2>&1") {
+			t.Fatalf("addr=%s: expected cmd.exe run.cmd shell redirection to runner.log: %q", addr, script)
+		}
+		if strings.Contains(script, "Start-Process") {
+			t.Fatalf("addr=%s: Start-Process is tied to the SSH job on Win32-OpenSSH; use CIM instead: %q", addr, script)
+		}
+		if !strings.Contains(script, "ReturnValue") {
+			t.Fatalf("addr=%s: should check Win32_Process.Create ReturnValue: %q", addr, script)
 		}
 	}
 }

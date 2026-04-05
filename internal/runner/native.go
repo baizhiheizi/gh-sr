@@ -103,15 +103,21 @@ func windowsNativeConfigScript(h *host.Host, rc config.RunnerConfig, instanceNam
 const staleRegistrationMsg = "runner registration has been deleted from the server"
 
 func windowsNativeStartScript(h *host.Host, instanceName string) string {
-	return fmt.Sprintf(
-		"%s; $pidFile = Join-Path $runnerDir '.runner_pid'; "+
-			"$logFile = Join-Path $runnerDir 'runner.log'; "+
-			"if (Test-Path $pidFile) { $p = Get-Content $pidFile; try { Get-Process -Id $p -EA Stop | Out-Null; Write-Host 'already running'; exit 0 } catch {} }; "+
-			"$cmdArg = 'cd /d \"' + $runnerDir + '\" && run.cmd > \"' + $logFile + '\" 2>&1'; "+
-			"$proc = Start-Process -FilePath cmd.exe -ArgumentList '/c', $cmdArg -WorkingDirectory $runnerDir -PassThru -WindowStyle Hidden -NoNewWindow; "+
-			"$proc.Id | Out-File -FilePath $pidFile -NoNewline; Write-Host ('started PID ' + $proc.Id)",
-		windowsRunnerDirAssignment(h, "runnerDir", instanceName),
-	)
+	// Win32-OpenSSH tears down the session job on disconnect, killing Start-Process children.
+	// Win32_Process.Create starts outside that job so the listener survives after ghr closes SSH.
+	parts := []string{
+		windowsRunnerDirAssignment(h, "runnerDir", instanceName) + "; ",
+		`$pidFile = Join-Path $runnerDir '.runner_pid'; `,
+		`$logFile = Join-Path $runnerDir 'runner.log'; `,
+		`if (Test-Path $pidFile) { $existingPid = Get-Content $pidFile; try { Get-Process -Id $existingPid -EA Stop | Out-Null; Write-Host 'already running'; exit 0 } catch {} }; `,
+		`$cmdArg = 'cd /d "' + $runnerDir + '" && run.cmd > "' + $logFile + '" 2>&1'; `,
+		`$fullLine = 'cmd.exe /c ' + $cmdArg; `,
+		`$cim = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = $fullLine; CurrentDirectory = $runnerDir }; `,
+		`if ($cim.ReturnValue -ne 0) { Write-Host ('Win32_Process.Create failed: ' + $cim.ReturnValue); exit 1 }; `,
+		`$cim.ProcessId | Out-File -FilePath $pidFile -NoNewline; `,
+		`Write-Host ('started PID ' + $cim.ProcessId)`,
+	}
+	return strings.Join(parts, "")
 }
 
 // windowsCheckStaleRegistration returns a PowerShell snippet that waits briefly for the
@@ -320,8 +326,9 @@ func (m *Manager) stopNative(h *host.Host, instanceName string) error {
 		cmd := fmt.Sprintf(
 			"%s; $pidFile = Join-Path $runnerDir '.runner_pid'; "+
 				"if (-not (Test-Path $pidFile)) { Write-Host 'not running'; exit 0 }; "+
-				"$p = Get-Content $pidFile; "+
-				"try { Stop-Process -Id $p -Force -EA Stop; Write-Host 'stopped' } catch { Write-Host 'not running' }; "+
+				"$p = (Get-Content $pidFile | Select-Object -First 1).Trim(); "+
+				"$null = & taskkill.exe /PID $p /T /F 2>&1; "+
+				"if ($LASTEXITCODE -eq 0) { Write-Host 'stopped' } else { Write-Host 'not running' }; "+
 				"Remove-Item $pidFile -Force -EA SilentlyContinue",
 			windowsRunnerDirAssignment(h, "runnerDir", instanceName),
 		)
