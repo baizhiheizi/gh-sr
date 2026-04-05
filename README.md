@@ -114,6 +114,7 @@ sequenceDiagram
 | `ghr restart` | `down` then `up`; stop errors are ignored before start. |
 | `ghr update` | Remove local runner registration (native) or container (docker), then setup and start again—use when upgrading the runner stack. |
 | `ghr cleanup` | Deletes **offline** runners from the GitHub API only; it does not remove local install dirs or Docker containers. |
+| `ghr service install` / `uninstall` / `status` | **Native** runners only: install OS autostart (systemd on Linux, LaunchAgent on macOS, scheduled task at logon on Windows). **Docker** rows are skipped; containers already use Docker’s `--restart unless-stopped`. After install, `ghr up` and `ghr down` start/stop the same supervisor instead of a bare `nohup` / Win32 process. |
 | `ghr doctor` | Read-only checks: local paths, config, GitHub API, SSH targets, Docker vs native prerequisites. Use `--strict` to treat **WARN** as failure. |
 
 ```mermaid
@@ -157,6 +158,28 @@ flowchart LR
   logsCmd[ghr_logs] --> localCheck
   logsCmd --> tail[Log_tail_native_or_docker]
 ```
+
+### Autostart and reboot
+
+**Docker mode:** `docker run` uses **`--restart unless-stopped`**. If the container was **running** when the host shut down, it is typically started again when the Docker daemon comes up after reboot. **`ghr down`** runs `docker stop`; a **stopped** container is **not** brought back on boot until you run **`ghr up`** (or start the container another way).
+
+**Native mode:** A normal **`ghr up`** starts the listener as a background process that **does not** survive reboot. Install autostart once per instance:
+
+```bash
+ghr service install              # all runners (native only; docker rows are skipped)
+ghr service install myrunner     # one runner block
+ghr service install --system     # Linux only: unit in /etc/systemd/system (needs passwordless sudo or root SSH)
+ghr service status
+ghr service uninstall
+```
+
+**Linux (user units, default):** Units live under `~/.config/systemd/user/`. On many **headless** servers the user manager does not run at boot until someone logs in. Enable **lingering** once (as root): `loginctl enable-linger <ssh-user>` so `systemctl --user` services start at boot.
+
+**Linux (`--system`):** Writes `/etc/systemd/system/ghr-runner-<instance>.service` with `User=` / `Group=` set to the SSH user. Requires the same non-interactive **`sudo`** behavior as `ghr setup` on Linux.
+
+**macOS:** LaunchAgents run in the **logged-in** user session. A Mac mini without an interactive login may need autologin or another approach for purely headless use.
+
+**Windows:** The scheduled task uses an **at logon** trigger (`RunLevel Limited`). Servers that never log on interactively may need a different trigger or service wrapper.
 
 ---
 
@@ -453,6 +476,9 @@ ghr status               # Show status table
 ghr logs <name>          # Show recent logs from a runner
 ghr cleanup              # Remove offline/ghost runners from GitHub
 ghr update [names...]    # Update runner binary (remove + setup + start)
+ghr service install [--system] [names...]   # Native: OS autostart (systemd / launchd / task)
+ghr service uninstall [names...]            # Remove ghr-installed autostart
+ghr service status [names...]               # Autostart + unit state (docker: policy note)
 ghr config path          # Print resolved config and ~/.ghr/env paths
 ghr config show          # Print resolved configuration (PAT redacted)
 ghr config edit          # Edit resolved runners.yml in $VISUAL / $EDITOR
@@ -665,6 +691,12 @@ ghr/
       doctor.go             # ghr doctor diagnostics
     ops/
       ops.go                # Shared setup/up/down/restart/update/status/logs/cleanup (CLI + TUI)
+      service.go            # ghr service install/uninstall/status
+    autostart/
+      autostart.go          # systemd / launchd / Windows task install and Detect/Start/Stop
+      active.go             # Supervisor active check for ghr status
+      generate.go           # Unit and plist text generation
+      sanitize.go           # Safe names for unit files and tasks
     runner/
       runner.go             # Runner lifecycle orchestration
       native.go             # Native runner management (mac/win/linux)

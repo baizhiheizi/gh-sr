@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/an-lee/ghr/internal/autostart"
 	"github.com/an-lee/ghr/internal/config"
 	"github.com/an-lee/ghr/internal/host"
 )
@@ -62,7 +63,15 @@ func (m *Manager) Start(h *host.Host, rc config.RunnerConfig) error {
 		case "docker":
 			err = m.startDocker(h, rc, name)
 		case "native":
-			err = m.startNative(h, rc, name)
+			kind, derr := autostart.Detect(h, name)
+			if derr != nil {
+				return fmt.Errorf("starting %s: %w", name, derr)
+			}
+			if kind != autostart.KindNone {
+				err = autostart.Start(h, name)
+			} else {
+				err = m.startNative(h, rc, name)
+			}
 		}
 		if err != nil {
 			return fmt.Errorf("starting %s: %w", name, err)
@@ -80,7 +89,15 @@ func (m *Manager) Stop(h *host.Host, rc config.RunnerConfig) error {
 		case "docker":
 			err = m.stopDocker(h, name)
 		case "native":
-			err = m.stopNative(h, name)
+			kind, derr := autostart.Detect(h, name)
+			if derr != nil {
+				return fmt.Errorf("stopping %s: %w", name, derr)
+			}
+			if kind != autostart.KindNone {
+				err = autostart.Stop(h, name)
+			} else {
+				err = m.stopNative(h, name)
+			}
 		}
 		if err != nil {
 			return fmt.Errorf("stopping %s: %w", name, err)

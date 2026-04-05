@@ -32,6 +32,18 @@ sudo (or SSH as root) is usually required for those steps to succeed. For docker
 install Docker yourself or ensure sudo works; for native mode, pre-install curl/tar and runner OS dependencies
 if you cannot use sudo. See the README section "Linux SSH user and privileges".`
 
+// serviceLongHelp documents autostart behavior for the service subcommands.
+const serviceLongHelp = `
+
+Native runners do not survive host reboot until OS autostart is installed (ghr service install). After install,
+ghr up and ghr down start and stop the same supervisor (systemd, launchd, or a Windows scheduled task).
+
+Linux user units (default) require loginctl enable-linger <user> on many headless servers so systemd --user
+starts at boot without an interactive login. Use --system on Linux only for a system-wide unit in
+/etc/systemd/system (needs passwordless sudo or root SSH).
+
+Docker mode uses the container restart policy unless-stopped; ghr service install skips docker runners.`
+
 func main() {
 	root := &cobra.Command{
 		Use:   "ghr",
@@ -67,6 +79,7 @@ With no subcommand, ghr opens the interactive dashboard on a terminal; use ghr -
 		logsCmd(),
 		cleanupCmd(),
 		updateCmd(),
+		serviceCmd(),
 		configCmd(),
 		dashboardCmd(),
 	)
@@ -456,6 +469,54 @@ func updateCmd() *cobra.Command {
 			return ops.Update(cmd.OutOrStdout(), cfg, mgr, filterHost, filterRepo, args)
 		},
 	}
+}
+
+func serviceCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "service",
+		Short: "Install or manage OS autostart for native runners",
+		Long:  "Manage boot-time autostart for native-mode self-hosted runners." + serviceLongHelp,
+	}
+	var system bool
+	install := &cobra.Command{
+		Use:   "install [runner-names...]",
+		Short: "Install autostart for native runners (all or filtered)",
+		Long:  "Writes systemd user units (Linux), LaunchAgents (macOS), or a logon scheduled task (Windows), then enables and starts them." + serviceLongHelp,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, err := loadConfig()
+			if err != nil {
+				return err
+			}
+			return ops.ServiceInstall(cmd.OutOrStdout(), cfg, filterHost, filterRepo, args, system)
+		},
+	}
+	install.Flags().BoolVar(&system, "system", false, "Linux only: install systemd unit under /etc/systemd/system (passwordless sudo or root SSH)")
+	uninstall := &cobra.Command{
+		Use:   "uninstall [runner-names...]",
+		Short: "Remove autostart definitions installed by ghr",
+		Long:  "Stops and removes systemd units, LaunchAgents, or scheduled tasks created by ghr service install." + serviceLongHelp,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, err := loadConfig()
+			if err != nil {
+				return err
+			}
+			return ops.ServiceUninstall(cmd.OutOrStdout(), cfg, filterHost, filterRepo, args)
+		},
+	}
+	status := &cobra.Command{
+		Use:   "status [runner-names...]",
+		Short: "Show autostart state per runner instance",
+		Long:  "Reports whether ghr autostart is installed and the service state (native), or docker restart policy notes (docker)." + serviceLongHelp,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, err := loadConfig()
+			if err != nil {
+				return err
+			}
+			return ops.ServiceStatus(cmd.OutOrStdout(), cfg, filterHost, filterRepo, args)
+		},
+	}
+	cmd.AddCommand(install, uninstall, status)
+	return cmd
 }
 
 func dashboardCmd() *cobra.Command {

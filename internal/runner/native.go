@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/an-lee/ghr/internal/autostart"
 	"github.com/an-lee/ghr/internal/config"
 	"github.com/an-lee/ghr/internal/host"
 )
@@ -394,6 +395,17 @@ func (m *Manager) removeNative(h *host.Host, rc config.RunnerConfig, instanceNam
 
 func (m *Manager) statusNative(h *host.Host, instanceName string) string {
 	dir := h.RunnerDir(instanceName)
+
+	if kind, err := autostart.Detect(h, instanceName); err == nil && kind != autostart.KindNone {
+		active, err := autostart.IsServiceActive(h, instanceName, kind)
+		if err != nil {
+			return "unknown"
+		}
+		if active {
+			return "running"
+		}
+		return "stopped"
+	}
 
 	if h.OS == "windows" {
 		cmd := fmt.Sprintf(
