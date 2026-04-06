@@ -1,0 +1,9 @@
+We should add an `intruction` in the document system, telling users what `ghr` do and how does it do it
+
+---
+
+continue
+
+---
+
+Implement it.
