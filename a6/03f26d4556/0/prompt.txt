@@ -1,0 +1,1 @@
+We might add a dashboard UI drawing in the documents in @README.md , to tell user what does `ghr` do directly.
