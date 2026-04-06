@@ -41,6 +41,18 @@ Your laptop (control plane)          Runner hosts
 4. **Manage** — `ghr up` / `ghr down` start and stop runner instances as processes or containers
 5. **Monitor** — `ghr status` and `ghr dashboard` show running state from each host alongside GitHub's online/offline view
 
+```
+  ghr dashboard                              [r]efresh  [?]help  [q]uit
+
+  INSTANCE      HOST         REPO                MODE    LOCAL    GITHUB
+  ─────────────────────────────────────────────────────────────────────────
+  runner-1      mac-mini     org/backend         native  running  online
+  runner-2      linux-vps    org/frontend        docker  running  busy
+  runner-3      win-pc       org/infra           native  stopped  offline
+
+  [enter] runner actions  [g] global menu  [f] filter  [j/k] navigate
+```
+
 Only the machine where ghr runs needs the ghr binary. Target hosts only need SSH access and (for Docker mode) a working Docker installation.
 
 ## Key Concepts

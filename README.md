@@ -12,6 +12,20 @@
 - **Docker or native** runners per row, with sensible OS defaults and overrides.
 - **Multi-host** from a single config; optional **TUI** dashboard (`ghr` or `ghr dashboard` on a TTY).
 
+## Dashboard
+
+```
+  ghr dashboard                              [r]efresh  [?]help  [q]uit
+
+  INSTANCE      HOST         REPO                MODE    LOCAL    GITHUB
+  ─────────────────────────────────────────────────────────────────────────
+  runner-1      mac-mini     org/backend         native  running  online
+  runner-2      linux-vps    org/frontend        docker  running  busy
+  runner-3      win-pc       org/infra           native  stopped  offline
+
+  [enter] runner actions  [g] global menu  [f] filter  [j/k] navigate
+```
+
 ## Documentation
 
 **Full documentation (user guide, architecture, config reference):**  
