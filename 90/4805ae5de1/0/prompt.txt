@@ -1,0 +1,9 @@
+Could we monitor the hosts performance/usage, like cpu, memories usage, etc in `ghr` too?
+
+---
+
+1.c);2.b)
+
+---
+
+1.c);2.b)

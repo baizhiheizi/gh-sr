@@ -1,0 +1,24 @@
+{
+  "cli_version": "dev",
+  "checkpoint_id": "904805ae5de1",
+  "strategy": "manual-commit",
+  "branch": "main",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "cmd/ghr/main.go",
+    "internal/host/metrics.go",
+    "internal/host/metrics_test.go",
+    "internal/ops/metrics.go",
+    "internal/tui/dashboard.go",
+    "internal/tui/dashboard_view.go",
+    "internal/tui/metrics.go"
+  ],
+  "sessions": [
+    {
+      "metadata": "/90/4805ae5de1/0/metadata.json",
+      "transcript": "/90/4805ae5de1/0/full.jsonl",
+      "content_hash": "/90/4805ae5de1/0/content_hash.txt",
+      "prompt": "/90/4805ae5de1/0/prompt.txt"
+    }
+  ]
+}

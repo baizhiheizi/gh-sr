@@ -1,0 +1,36 @@
+{
+  "cli_version": "dev",
+  "checkpoint_id": "904805ae5de1",
+  "session_id": "6f4f6c4c-d4b4-42ba-9a5e-501751d14972",
+  "strategy": "manual-commit",
+  "created_at": "2026-04-07T08:21:24.775538304Z",
+  "branch": "main",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "cmd/ghr/main.go",
+    "internal/host/metrics.go",
+    "internal/host/metrics_test.go",
+    "internal/ops/metrics.go",
+    "internal/tui/dashboard.go",
+    "internal/tui/dashboard_view.go",
+    "internal/tui/metrics.go"
+  ],
+  "agent": "Cursor",
+  "model": "composer-2-fast",
+  "turn_id": "25bd43ab7d8e",
+  "session_metrics": {
+    "turn_count": 4
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-04-07T08:21:24.729086349Z",
+    "agent_lines": 695,
+    "agent_removed": 9,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 695,
+    "total_lines_changed": 704,
+    "agent_percentage": 100,
+    "metric_version": 2
+  }
+}
