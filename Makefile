@@ -9,6 +9,8 @@ endif
 
 CMD_DIR := ./cmd/ghr
 
+GIT_TAG := $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+
 PREFIX ?= /usr/local
 
 .PHONY: all build test vet check clean install
@@ -16,7 +18,7 @@ PREFIX ?= /usr/local
 all: build
 
 build:
-	go build -o $(BINARY) $(CMD_DIR)/
+	go build -ldflags "-X main.version=$(GIT_TAG)" -o $(BINARY) $(CMD_DIR)/
 
 test:
 	go test ./... -race -count=1

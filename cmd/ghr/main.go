@@ -17,6 +17,8 @@ import (
 	"github.com/an-lee/ghr/internal/tui"
 )
 
+var version = "dev"
+
 var (
 	cfgFile    string
 	filterHost string
@@ -83,6 +85,8 @@ With no subcommand, ghr opens the interactive dashboard on a terminal; use ghr -
 		configCmd(),
 		dashboardCmd(),
 		hostsCmd(),
+		versionCmd(),
+		helpCmd(root),
 	)
 
 	if err := root.Execute(); err != nil {
@@ -543,6 +547,33 @@ func dashboardCmd() *cobra.Command {
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runDashboard()
+		},
+	}
+}
+
+func versionCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "version",
+		Short: "Print ghr version",
+		Args:  cobra.NoArgs,
+		Run: func(cmd *cobra.Command, args []string) {
+			fmt.Println(version)
+		},
+	}
+}
+
+func helpCmd(root *cobra.Command) *cobra.Command {
+	return &cobra.Command{
+		Use:               "help [command]",
+		Short:             "Show help for a command",
+		Args:              cobra.ArbitraryArgs,
+		DisableFlagParsing: true,
+		Run: func(cmd *cobra.Command, args []string) {
+			target, _, _ := root.Find(args)
+			if target == nil {
+				target = root
+			}
+			target.Help()
 		},
 	}
 }
