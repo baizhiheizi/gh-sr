@@ -1,0 +1,5 @@
+In macOS, `docker info` runs well. But `ghr setup` still failed.
+Setting up on mac-mini (an-lee@192.168.31.72)...
+Error: docker not available on host mac-mini: install Docker Desktop, OrbStack, or Colima and ensure the Docker CLI works in your SSH session
+
+Help me to identify the root cause and fix it.
