@@ -54,13 +54,22 @@ func dockerStartCommand(cname, instanceName, regToken, repoURL, labels, sockMoun
 	return b.String()
 }
 
+// prependDarwinDockerPATH prefixes a remote shell command on macOS so the Docker CLI is on PATH
+// when SSH uses a minimal environment (missing /usr/local/bin and /opt/homebrew/bin).
+func prependDarwinDockerPATH(h *host.Host, cmd string) string {
+	if h.OS != "darwin" {
+		return cmd
+	}
+	return `export PATH="/usr/local/bin:/opt/homebrew/bin:$PATH"; ` + cmd
+}
+
 // dockerRun executes a Docker CLI command on the host, using PowerShell
 // wrapping on Windows and raw shell on Linux/macOS.
 func dockerRun(h *host.Host, cmd string) (string, error) {
 	if h.OS == "windows" {
 		return h.RunShell(windowsDockerCommand(cmd))
 	}
-	return h.Run(cmd)
+	return h.Run(prependDarwinDockerPATH(h, cmd))
 }
 
 // dockerRunIgnoreErr is like dockerRun but discards the error (for best-effort cleanup).
@@ -68,7 +77,7 @@ func dockerRunIgnoreErr(h *host.Host, cmd string) {
 	if h.OS == "windows" {
 		h.RunShell(windowsDockerCommand(cmd))
 	} else {
-		h.Run(cmd)
+		h.Run(prependDarwinDockerPATH(h, cmd))
 	}
 }
 
@@ -121,7 +130,7 @@ func (m *Manager) setupDockerWindows(h *host.Host) error {
 
 // UnixDockerCLIInstalled reports whether a docker binary exists on PATH on the host.
 func UnixDockerCLIInstalled(h *host.Host) (bool, error) {
-	out, err := h.Run(`if command -v docker >/dev/null 2>&1; then echo yes; else echo no; fi`)
+	out, err := h.Run(prependDarwinDockerPATH(h, `if command -v docker >/dev/null 2>&1; then echo yes; else echo no; fi`))
 	if err != nil {
 		return false, err
 	}
@@ -157,7 +166,7 @@ func wrapDockerInfoErr(err error) error {
 // UnixDockerServerVersion returns the Docker Engine server version from docker info, or an error
 // that distinguishes socket permissions and daemon reachability from other failures.
 func UnixDockerServerVersion(h *host.Host) (string, error) {
-	out, err := h.Run("docker info --format '{{.ServerVersion}}'")
+	out, err := h.Run(prependDarwinDockerPATH(h, "docker info --format '{{.ServerVersion}}'"))
 	out = strings.TrimSpace(out)
 	if err == nil {
 		if out == "" {
@@ -179,7 +188,7 @@ func (m *Manager) setupDockerUnix(h *host.Host) error {
 		if verr == nil {
 			fmt.Fprintf(m.out(), "  %s: Docker %s available\n", h.Name, out)
 			fmt.Fprintf(m.out(), "  %s: pulling runner image...\n", h.Name)
-			if _, err := h.Run(fmt.Sprintf("docker pull %s", RunnerDockerImage)); err != nil {
+			if _, err := dockerRun(h, fmt.Sprintf("docker pull %s", RunnerDockerImage)); err != nil {
 				return fmt.Errorf("pulling Docker image: %w", err)
 			}
 			return nil
@@ -231,7 +240,7 @@ func (m *Manager) setupDockerUnix(h *host.Host) error {
 	fmt.Fprintf(m.out(), "  %s: Docker %s available\n", h.Name, out)
 
 	fmt.Fprintf(m.out(), "  %s: pulling runner image...\n", h.Name)
-	if _, err := h.Run(fmt.Sprintf("docker pull %s", RunnerDockerImage)); err != nil {
+	if _, err := dockerRun(h, fmt.Sprintf("docker pull %s", RunnerDockerImage)); err != nil {
 		return fmt.Errorf("pulling Docker image: %w", err)
 	}
 
@@ -249,7 +258,7 @@ func (m *Manager) startDocker(h *host.Host, rc config.RunnerConfig, instanceName
 		}
 		dockerRunIgnoreErr(h, fmt.Sprintf("docker rm -f %s 2>$null", cname))
 	} else {
-		running, _ := h.Run(fmt.Sprintf("docker inspect -f '{{.State.Running}}' %s 2>/dev/null", cname))
+		running, _ := dockerRun(h, fmt.Sprintf("docker inspect -f '{{.State.Running}}' %s 2>/dev/null", cname))
 		if strings.TrimSpace(running) == "true" {
 			fmt.Fprintf(m.out(), "  %s: already running\n", instanceName)
 			return nil

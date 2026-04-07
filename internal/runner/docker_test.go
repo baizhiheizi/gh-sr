@@ -24,6 +24,34 @@ func newTestHost(name, os string) *host.Host {
 	})
 }
 
+func Test_prependDarwinDockerPATH(t *testing.T) {
+	t.Parallel()
+	const wantPrefix = `export PATH="/usr/local/bin:/opt/homebrew/bin:$PATH"; `
+	cases := []struct {
+		os      string
+		wantPre bool
+	}{
+		{"darwin", true},
+		{"linux", false},
+		{"windows", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.os, func(t *testing.T) {
+			t.Parallel()
+			h := newTestHost("h", tc.os)
+			cmd := "docker info"
+			got := prependDarwinDockerPATH(h, cmd)
+			pre := strings.HasPrefix(got, wantPrefix)
+			if pre != tc.wantPre {
+				t.Fatalf("os=%s want prefix=%v, got %q", tc.os, tc.wantPre, got)
+			}
+			if !strings.HasSuffix(got, cmd) {
+				t.Fatalf("suffix: got %q", got)
+			}
+		})
+	}
+}
+
 func Test_dockerRun_dispatchesRunShellOnWindows(t *testing.T) {
 	t.Parallel()
 	h := newTestHost("win", "windows")
