@@ -1,0 +1,1 @@
+We should provider `ghr help` and `ghr version` commmands.

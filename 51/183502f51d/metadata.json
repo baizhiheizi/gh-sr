@@ -1,0 +1,19 @@
+{
+  "cli_version": "dev",
+  "checkpoint_id": "51183502f51d",
+  "strategy": "manual-commit",
+  "branch": "main",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "Makefile",
+    "cmd/ghr/main.go"
+  ],
+  "sessions": [
+    {
+      "metadata": "/51/183502f51d/0/metadata.json",
+      "transcript": "/51/183502f51d/0/full.jsonl",
+      "content_hash": "/51/183502f51d/0/content_hash.txt",
+      "prompt": "/51/183502f51d/0/prompt.txt"
+    }
+  ]
+}
