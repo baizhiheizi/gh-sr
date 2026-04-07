@@ -1,9 +1,17 @@
-Could we monitor the hosts performance/usage, like cpu, memories usage, etc in `ghr` too?
+Commit the right changes for this branch.
+- If nothing relevant is staged yet, stage the right files first.
+- Ensure only relevant files are staged (unstage anything unrelated).
+- Write a concise commit message.
+- Do not push.
 
----
+Currently staged files:
+(none)
 
-1.c);2.b)
-
----
-
-1.c);2.b)
+Currently unstaged files:
+- cmd/ghr/main.go (modified)
+- internal/tui/dashboard.go (modified)
+- internal/tui/dashboard_view.go (modified)
+- internal/host/metrics.go (added)
+- internal/host/metrics_test.go (added)
+- internal/ops/metrics.go (added)
+- internal/tui/metrics.go (added)
