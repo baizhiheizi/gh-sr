@@ -16,6 +16,7 @@ ghr up [names...]        # Start runners
 ghr down [names...]      # Stop runners
 ghr restart [names...]   # Stop then start
 ghr status               # Show status table
+ghr hosts                # Show host resource usage (CPU, memory, disk, load, uptime)
 ghr logs <name>          # Show recent logs from a runner
 ghr cleanup              # Remove offline/ghost runners from GitHub
 ghr update [names...]    # Update runner binary (remove + setup + start)
@@ -30,7 +31,7 @@ ghr config validate      # Validate config (exit 0 if OK)
 ghr dashboard            # Same as bare ghr: launch interactive TUI dashboard
 ```
 
-The dashboard includes live status, per-runner actions (setup, up, down, restart, update, logs), global actions (doctor, cleanup, show/validate/edit config and env), and host/repo filters. Press `?` inside the TUI for the full key map.
+The dashboard includes live status, per-runner actions (setup, up, down, restart, update, logs), global actions (doctor, cleanup, show/validate/edit config and env), and host/repo filters. Press `h` to open the host metrics panel (CPU, memory, disk, load, uptime) or `?` for the full key map.
 
 **Backward compatibility:** older releases treated `ghr config` as “print configuration”. That is now `ghr config show`; plain `ghr config` lists subcommands. Older scripts that expected bare `ghr` to print usage should use `ghr --help` instead.
 
@@ -67,3 +68,26 @@ ghr
 ```
 
 For what each lifecycle command does on the host, see [Architecture — Lifecycle commands](architecture.md#lifecycle-commands-what-they-do).
+
+## Host metrics
+
+**`ghr hosts`** collects and displays real-time resource usage from every configured host over SSH:
+
+```
+HOST         CPU%   MEM              DISK              LOAD             UPTIME
+──────────────────────────────────────────────────────────────────────────────
+mac-mini      12%   3.2 / 16.0 GiB   45 / 500 GiB     0.42 0.38 0.31  5 days
+linux-vps     55%   1.8 /  4.0 GiB    8 /  80 GiB     1.20 0.95 0.80  12 days
+win-pc         8%   6.1 / 32.0 GiB   80 / 500 GiB     -               3 days
+```
+
+The same panel is available interactively in `ghr dashboard` by pressing `h`.
+
+Use `--host` to limit output to a single host:
+
+```bash
+ghr hosts --host mac-mini
+```
+
+> **Note:** Load averages are not available on Windows and show as `-`.
+
