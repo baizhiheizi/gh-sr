@@ -26,10 +26,11 @@ type GitHubConfig struct {
 }
 
 type HostConfig struct {
-	Addr      string `yaml:"addr"`
-	OS        string `yaml:"os"`
-	Arch      string `yaml:"arch"`
-	WindowsPS string `yaml:"windows_ps"` // powershell (default) or pwsh — which exe runs encoded remote scripts on Windows
+	Addr         string `yaml:"addr"`
+	OS           string `yaml:"os"`
+	Arch         string `yaml:"arch"`
+	WindowsPS    string `yaml:"windows_ps"`    // powershell (default) or pwsh — which exe runs encoded remote scripts on Windows
+	DockerSocket string `yaml:"docker_socket"` // override host Docker socket path (Linux only; default /var/run/docker.sock)
 }
 
 type RunnerConfig struct {
@@ -155,6 +156,14 @@ func (c *Config) Validate() error {
 			case "powershell", "pwsh":
 			default:
 				return fmt.Errorf("host %q: windows_ps must be powershell or pwsh (got %q)", name, h.WindowsPS)
+			}
+		}
+		if h.DockerSocket != "" {
+			if h.OS != "linux" {
+				return fmt.Errorf("host %q: docker_socket is only supported on Linux hosts", name)
+			}
+			if !strings.HasPrefix(h.DockerSocket, "/") {
+				return fmt.Errorf("host %q: docker_socket must be an absolute path (got %q)", name, h.DockerSocket)
 			}
 		}
 	}

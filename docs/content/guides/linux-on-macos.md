@@ -11,6 +11,8 @@ Set `mode: docker` on a runner that targets an `os: darwin` host to run the same
 
 - Docker Desktop, OrbStack, or Colima installed, with `docker` working in the environment where **ghr** runs commands (for example the same user over SSH).
 
+**Docker socket permissions:** macOS runtimes (Docker Desktop, OrbStack, Colima) expose a VM-internal socket that is accessible to all processes — there is no host `docker` group GID issue. ghr skips `--group-add` on macOS hosts. The `docker_socket` config field is not supported on macOS hosts.
+
 ```yaml
 hosts:
   mac-mini:

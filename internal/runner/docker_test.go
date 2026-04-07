@@ -9,6 +9,13 @@ import (
 	"github.com/an-lee/ghr/internal/host"
 )
 
+func Test_ContainerName(t *testing.T) {
+	t.Parallel()
+	if got := ContainerName("my-runner"); got != "gh-runner-my-runner" {
+		t.Errorf("got %q", got)
+	}
+}
+
 func Test_containerName(t *testing.T) {
 	t.Parallel()
 	if got := containerName("my-runner"); got != "gh-runner-my-runner" {
@@ -80,24 +87,42 @@ func Test_dockerRunIgnoreErr_noPanic(t *testing.T) {
 	}
 }
 
-func Test_dockerEngineSockBindMount(t *testing.T) {
+func Test_dockerEngineSockFlags_mountOnly_whenGIDzero(t *testing.T) {
 	t.Parallel()
-	got := strings.TrimSpace(dockerEngineSockBindMount())
-	const want = "-v /var/run/docker.sock:/var/run/docker.sock"
-	if got != want {
-		t.Fatalf("got %q want %q", got, want)
+	// An unconnected host will fail the GID stat; the function should fall back to mount-only.
+	h := newTestHost("lin", "linux")
+	got := dockerEngineSockFlags(h, "")
+	if !strings.Contains(got, "-v /var/run/docker.sock:/var/run/docker.sock") {
+		t.Fatalf("missing mount flag, got %q", got)
+	}
+}
+
+func Test_dockerEngineSockFlags_customSocketPath(t *testing.T) {
+	t.Parallel()
+	h := newTestHost("lin", "linux")
+	got := dockerEngineSockFlags(h, "/run/user/1000/docker.sock")
+	if !strings.Contains(got, "-v /run/user/1000/docker.sock:/var/run/docker.sock") {
+		t.Fatalf("expected custom socket bind-mount, got %q", got)
+	}
+}
+
+func Test_DefaultDockerSocket(t *testing.T) {
+	t.Parallel()
+	if DefaultDockerSocket != "/var/run/docker.sock" {
+		t.Fatalf("unexpected default: %q", DefaultDockerSocket)
 	}
 }
 
 func Test_dockerStartCommand_officialImageShape(t *testing.T) {
 	t.Parallel()
+	sockFlags := "-v /var/run/docker.sock:/var/run/docker.sock --group-add 999 "
 	cmd := dockerStartCommand(
 		"gh-runner-app-1",
 		"app-1",
 		"REGTOKEN123",
 		"https://github.com/o/r",
 		"self-hosted,linux",
-		strings.TrimSpace(dockerEngineSockBindMount()),
+		sockFlags,
 		"ghcr.io/actions/actions-runner:latest",
 	)
 	for _, sub := range []string{
@@ -121,7 +146,10 @@ func Test_dockerStartCommand_officialImageShape(t *testing.T) {
 		}
 	}
 	if !strings.Contains(cmd, "/var/run/docker.sock:/var/run/docker.sock") {
-		t.Fatalf("docker start command should bind Docker engine socket (required on Windows Docker Desktop too): %s", cmd)
+		t.Fatalf("docker start command should bind Docker engine socket: %s", cmd)
+	}
+	if !strings.Contains(cmd, "--group-add 999") {
+		t.Fatalf("docker start command should include --group-add flag: %s", cmd)
 	}
 	if strings.Contains(cmd, "RUNNER_TOKEN=") || strings.Contains(cmd, "RUNNER_URL=") {
 		t.Fatalf("should not use legacy RUNNER_* env names: %s", cmd)

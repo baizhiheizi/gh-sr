@@ -37,3 +37,5 @@ runners:
 Both runners share a single SSH connection to Windows. The native runner starts `run.cmd` via PowerShell; the Docker runner calls `docker run` the same way, which talks to Docker Desktop's Linux engine.
 
 Docker-mode Linux containers include a bind mount of `/var/run/docker.sock` so jobs can run `docker` against the same engine (GitHub Actions service containers, image pulls, [Agentic Workflows](https://github.github.com/gh-aw/guides/self-hosted-runners/) tooling, and similar). Use **Linux containers** in Docker Desktop (the default); Windows containers mode cannot run the `actions-runner` Linux image.
+
+**Docker socket permissions:** On Windows, Docker Desktop exposes the socket to all processes in the Hyper-V/WSL2 VM; there is no host `docker` group GID mismatch. The `--group-add` flag is only applied on Linux hosts and is skipped for Windows. No `docker_socket` override is needed or supported on Windows hosts.

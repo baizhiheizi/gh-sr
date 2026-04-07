@@ -15,8 +15,13 @@ const RunnerDockerImage = "ghcr.io/actions/actions-runner:latest"
 // listener. Official ghcr.io/actions/actions-runner has no CMD; it expects config.sh then run.sh.
 const dockerRunnerEntryScript = `cd /home/runner && if [ ! -f .runner ]; then ./config.sh --unattended --replace; fi && exec ./run.sh`
 
-func containerName(instanceName string) string {
+// ContainerName returns the Docker container name for a runner instance.
+func ContainerName(instanceName string) string {
 	return "gh-runner-" + instanceName
+}
+
+func containerName(instanceName string) string {
+	return ContainerName(instanceName)
 }
 
 // shellSingleQuote wraps s in single quotes for a POSIX shell word (safe for docker -e on Linux/macOS SSH).
@@ -54,11 +59,56 @@ func dockerStartCommand(cname, instanceName, regToken, repoURL, labels, sockMoun
 	return b.String()
 }
 
-// dockerEngineSockBindMount returns the docker run volume flag that exposes the host engine socket
-// inside the Linux actions-runner container. On Docker Desktop for Windows, Linux containers run in
-// the WSL2/Moby VM; this mount is the supported way for in-container `docker` to reach that engine.
-func dockerEngineSockBindMount() string {
-	return "-v /var/run/docker.sock:/var/run/docker.sock "
+// DefaultDockerSocket is the conventional Docker daemon socket path on Linux hosts.
+const DefaultDockerSocket = "/var/run/docker.sock"
+
+// defaultDockerSocket is an unexported alias kept for internal use within this package.
+const defaultDockerSocket = DefaultDockerSocket
+
+// dockerEngineSockFlags returns the docker run flags needed to expose the host Docker socket inside
+// a Linux actions-runner container and grant the container's runner user access to it.
+//
+// It returns both a -v bind-mount and a --group-add <GID> flag. The GID is read from the host
+// socket's owning group via `stat -c '%g'`; this avoids "permission denied" when the container's
+// runner user (uid 1001) is not in the host docker group. If the GID cannot be determined, only
+// the mount is returned (best-effort; caller may still get EACCES at runtime).
+//
+// socketPath is the host-side socket (from HostConfig.DockerSocket, defaulting to /var/run/docker.sock).
+// The container-side path is always /var/run/docker.sock so job scripts use the default DOCKER_HOST.
+func dockerEngineSockFlags(h *host.Host, socketPath string) string {
+	if socketPath == "" {
+		socketPath = defaultDockerSocket
+	}
+	mount := fmt.Sprintf("-v %s:/var/run/docker.sock ", socketPath)
+
+	// Query the GID that owns the socket on the host so we can pass --group-add.
+	out, err := h.Run(fmt.Sprintf("stat -c '%%g' %s 2>/dev/null", socketPath))
+	gid := strings.TrimSpace(out)
+	if err != nil || gid == "" || gid == "0" {
+		// GID 0 means root owns it and no special group; skip --group-add (no benefit or unknown).
+		return mount
+	}
+	return mount + fmt.Sprintf("--group-add %s ", gid)
+}
+
+// dockerEngineSockPreflightCheck verifies the socket path is present and is a socket on the host
+// before docker run. Returns an error with an actionable message if the socket is missing.
+func dockerEngineSockPreflightCheck(h *host.Host, socketPath string) error {
+	if socketPath == "" {
+		socketPath = defaultDockerSocket
+	}
+	out, err := h.Run(fmt.Sprintf("test -S %s && echo ok || echo missing", socketPath))
+	if err != nil {
+		return fmt.Errorf("checking Docker socket %s on host: %w", socketPath, err)
+	}
+	if strings.TrimSpace(out) != "ok" {
+		msg := fmt.Sprintf(
+			"Docker socket not found at %s on host %s; ensure Docker is installed and running (or set docker_socket in config for rootless Docker)",
+			socketPath, h.Name,
+		)
+		return fmt.Errorf("%s", msg)
+	}
+	return nil
 }
 
 // prependDarwinDockerPATH prefixes a remote shell command on macOS so the Docker CLI is on PATH
@@ -254,7 +304,7 @@ func (m *Manager) setupDockerUnix(h *host.Host) error {
 	return nil
 }
 
-func (m *Manager) startDocker(h *host.Host, rc config.RunnerConfig, instanceName string) error {
+func (m *Manager) startDocker(h *host.Host, hcfg config.HostConfig, rc config.RunnerConfig, instanceName string) error {
 	cname := containerName(instanceName)
 
 	if h.OS == "windows" {
@@ -281,7 +331,15 @@ func (m *Manager) startDocker(h *host.Host, rc config.RunnerConfig, instanceName
 	labels := strings.Join(rc.Labels, ",")
 	repoURL := fmt.Sprintf("https://github.com/%s", rc.Repo)
 
-	cmd := dockerStartCommand(cname, instanceName, regToken, repoURL, labels, dockerEngineSockBindMount(), RunnerDockerImage)
+	var sockFlags string
+	if h.OS == "linux" {
+		if err := dockerEngineSockPreflightCheck(h, hcfg.DockerSocket); err != nil {
+			return err
+		}
+		sockFlags = dockerEngineSockFlags(h, hcfg.DockerSocket)
+	}
+
+	cmd := dockerStartCommand(cname, instanceName, regToken, repoURL, labels, sockFlags, RunnerDockerImage)
 
 	out, err := dockerRun(h, cmd)
 	if err != nil {

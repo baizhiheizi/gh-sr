@@ -42,6 +42,42 @@ The first command checks non-interactive SSH (see also [All remote hosts](#all-r
 
 **ghr** does not deeply verify sudoers rules; failures show up as remote command errors or warnings.
 
+### Docker socket permissions (Linux)
+
+When `ghr` starts a docker-mode runner container on Linux, the **`runner` user inside the container** (uid 1001) must be able to reach the Docker socket. The socket (`/var/run/docker.sock`) is typically owned by `root` and a `docker` group on the host (commonly GID 999 or 998). ghr handles this automatically by:
+
+1. Querying the socket's owning GID on the host with `stat -c '%g' /var/run/docker.sock`.
+2. Passing `--group-add <GID>` to `docker run` so the container's runner user becomes a member of that group.
+3. Running a pre-flight `test -S` check before starting the container to catch missing or mis-configured sockets early.
+
+**If agentic-workflow tooling inside a job gets `permission denied` on the Docker socket**, the container was started without this `--group-add` flag (for example, by an older version of ghr or a manually issued `docker run`). Recreate the runner:
+
+```bash
+ghr down <runner-name>
+ghr up <runner-name>
+```
+
+**Rootless Docker** uses a per-user socket such as `/run/user/1000/docker.sock` instead of the system default. Set `docker_socket` in your host config to override:
+
+```yaml
+hosts:
+  my-linux:
+    addr: user@192.168.1.10
+    os: linux
+    arch: amd64
+    docker_socket: /run/user/1000/docker.sock
+```
+
+ghr will bind-mount the custom path into the container at `/var/run/docker.sock` (preserving the default `DOCKER_HOST` path that job scripts expect) and still adds `--group-add` for the socket's GID.
+
+**Verify from inside a running runner container:**
+
+```bash
+docker exec gh-runner-<instance> test -S /var/run/docker.sock && echo ok || echo missing
+```
+
+`ghr doctor` performs this check automatically for all running docker-mode containers and reports a WARN if the socket is not accessible inside.
+
 ## Windows (OpenSSH and Docker)
 
 - **Windows** — OpenSSH Server enabled; Docker Desktop if you want Linux container runners (`mode: docker`):
@@ -66,7 +102,7 @@ Run **`ghr doctor`** (optionally with `--host` / `--repo`) to confirm connectivi
 
 For the full explanation of non-interactive SSH, the `ghr: remote Linux commands need root…` error, `NOPASSWD`, and verification commands, see [Linux SSH user and privileges](#linux-ssh-user-and-privileges) above.
 
-- **Docker mode (default on Linux):** If Docker is not installed, `ghr setup` can run Docker’s install script, which requires **root** or **passwordless sudo** (`sudo -n`) over SSH (see the section linked above). To avoid that path, install Docker yourself and ensure the SSH user can run `docker` (for example membership in the `docker` group).
+- **Docker mode (default on Linux):** If Docker is not installed, `ghr setup` can run Docker’s install script, which requires **root** or **passwordless sudo** (`sudo -n`) over SSH (see the section linked above). To avoid that path, install Docker yourself and ensure the SSH user can run `docker` (for example membership in the `docker` group). ghr automatically passes `--group-add` for the socket GID and runs a pre-flight socket check before starting containers; see [Docker socket permissions](#docker-socket-permissions-linux) above for details and the `docker_socket` override for rootless Docker.
 - **Native mode:** Ensure `curl` and `tar` are on `PATH`. `ghr setup` may still invoke GitHub’s `installdependencies.sh` with **`sudo -n`** when the SSH user is not root and passwordless sudo is available.
 
 Run **`ghr doctor`** after the host is prepared.
@@ -74,7 +110,7 @@ Run **`ghr doctor`** after the host is prepared.
 ## macOS
 
 - **Native:** `curl` is usually sufficient; ghr downloads the Actions runner over HTTPS.
-- **Docker mode:** Install [Docker Desktop](https://www.docker.com/products/docker-desktop/), [OrbStack](https://orbstack.dev/), or [Colima](https://github.com/abiosoft/colima). The `docker` CLI must work in the **same** environment as your SSH session (user, `PATH`, and Docker socket). Start the Docker engine (app or `colima start`, etc.) before relying on docker mode.
+- **Docker mode:** Install [Docker Desktop](https://www.docker.com/products/docker-desktop/), [OrbStack](https://orbstack.dev/), or [Colima](https://github.com/abiosoft/colima). The `docker` CLI must work in the **same** environment as your SSH session (user, `PATH`, and Docker socket). Start the Docker engine (app or `colima start`, etc.) before relying on docker mode. **Docker socket permissions:** macOS Docker Desktop, OrbStack, and Colima use a Unix socket inside the VM that is accessible to all processes; ghr does not need `--group-add` on macOS and skips the GID detection step.
 
 Run **`ghr doctor`** to confirm `docker info` from the SSH session.
 

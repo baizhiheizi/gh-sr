@@ -127,7 +127,7 @@ func Run(w io.Writer, cfgPath, envPath string, cfg *config.Config, cfgErr error,
 			defer h.Close()
 			printLine(w, sevOK, hostName, fmt.Sprintf("connected (%s)", addrSummary(hcfg.Addr)))
 			if modes["docker"] {
-				checkDocker(w, hostName, h, &r)
+				checkDocker(w, hostName, h, hcfg, runners, &r)
 			}
 			if modes["native"] {
 				checkNative(w, hostName, h, &r)
@@ -200,7 +200,7 @@ func modesForHost(runners []config.RunnerConfig, hostName, hostOS string) map[st
 	return m
 }
 
-func checkDocker(w io.Writer, hostName string, h *host.Host, r *Result) {
+func checkDocker(w io.Writer, hostName string, h *host.Host, hcfg config.HostConfig, runners []config.RunnerConfig, r *Result) {
 	if h.OS == "windows" {
 		out, err := h.RunShell(`docker info --format "{{.ServerVersion}}"`)
 		out = strings.TrimSpace(out)
@@ -235,6 +235,56 @@ func checkDocker(w io.Writer, hostName string, h *host.Host, r *Result) {
 		return
 	}
 	printLine(w, sevOK, hostName, fmt.Sprintf("docker: server version %s (image %s)", out, runner.RunnerDockerImage))
+
+	if h.OS == "linux" {
+		checkLinuxDockerSocket(w, hostName, h, hcfg, runners, r)
+	}
+}
+
+// checkLinuxDockerSocket verifies the Docker socket path on Linux hosts and, if any docker-mode
+// runner container is already running, checks that the socket is accessible inside it.
+func checkLinuxDockerSocket(w io.Writer, hostName string, h *host.Host, hcfg config.HostConfig, runners []config.RunnerConfig, r *Result) {
+	socketPath := hcfg.DockerSocket
+	if socketPath == "" {
+		socketPath = runner.DefaultDockerSocket
+	}
+
+	// Verify the socket exists on the host.
+	out, err := h.Run(fmt.Sprintf("test -S %s && echo ok || echo missing", socketPath))
+	if err != nil || strings.TrimSpace(out) != "ok" {
+		printLine(w, sevFail, hostName, fmt.Sprintf(
+			"docker: socket not found at %s; ensure Docker daemon is running (rootless Docker? set docker_socket in config)", socketPath,
+		))
+		r.Fail++
+		return
+	}
+	printLine(w, sevOK, hostName, fmt.Sprintf("docker: socket present at %s", socketPath))
+
+	// For each docker-mode runner container that is already running, verify the socket is
+	// accessible inside it (catches containers started without the mount or without --group-add).
+	for _, rc := range runners {
+		if rc.Host != hostName || rc.EffectiveMode(h.OS) != "docker" {
+			continue
+		}
+		for _, inst := range rc.InstanceNames() {
+			cname := runner.ContainerName(inst)
+			running, rerr := h.Run(fmt.Sprintf("docker inspect -f '{{.State.Running}}' %s 2>/dev/null", cname))
+			if rerr != nil || strings.TrimSpace(running) != "true" {
+				continue
+			}
+			// Container is running; check that the socket is accessible inside.
+			res, execErr := h.Run(fmt.Sprintf("docker exec %s test -S /var/run/docker.sock && echo ok || echo missing", cname))
+			if execErr != nil || strings.TrimSpace(res) != "ok" {
+				printLine(w, sevWarn, hostName, fmt.Sprintf(
+					"docker: container %s is running but /var/run/docker.sock is not accessible inside it; recreate with: ghr down %s && ghr up %s",
+					cname, rc.Name, rc.Name,
+				))
+				r.Warn++
+			} else {
+				printLine(w, sevOK, hostName, fmt.Sprintf("docker: container %s has /var/run/docker.sock accessible", cname))
+			}
+		}
+	}
 }
 
 // nativeInstallTargetsForHost lists (instanceName, runnerConfigName) for native-mode runners on hostName.
