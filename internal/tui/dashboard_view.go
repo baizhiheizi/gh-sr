@@ -26,6 +26,8 @@ func (m *dashboardModel) View() tea.View {
 		return m.viewFilterList(m.filterHostChoices, "Select host filter (esc cancel)")
 	case panelFilterRepo:
 		return m.viewFilterList(m.filterRepoChoices, "Select repo filter (esc cancel)")
+	case panelHostMetrics:
+		return m.viewHostMetrics()
 	default:
 		return m.viewMain()
 	}
@@ -127,7 +129,7 @@ func (m *dashboardModel) footerMain() string {
 		loadingIndicator = "  (refreshing…)"
 	}
 	return helpStyle.Render(fmt.Sprintf(
-		"\n  j/k: move  enter: runner actions  g: global menu  f: filters  r: refresh  ?: help  q: quit%s",
+		"\n  j/k: move  enter: runner actions  g: global menu  h: host metrics  f: filters  r: refresh  ?: help  q: quit%s",
 		loadingIndicator,
 	))
 }
@@ -136,7 +138,8 @@ func helpOverlay() string {
 	return helpStyle.Render(`  — Help —
   Main: j/k navigate rows, enter opens actions for the selected instance.
   Actions: setup, up, down, restart, update, logs (esc back).
-  Global (g): doctor, cleanup, show/validate config, edit yaml/env, filters.
+  Host metrics (h): CPU, memory, disk, load average, uptime per host.
+  Global (g): doctor, host metrics, cleanup, show/validate config, edit yaml/env, filters.
   Filters (f): narrow by host or repo; clear restores full list.
   Scroll views (logs, doctor, config): j/k line, ctrl+u/ctrl+d page, home/end, esc back.
   Cleanup asks for y/n confirmation. Run ghr init from a shell (not in the TUI).`)
@@ -248,6 +251,64 @@ func (m *dashboardModel) viewScroll() tea.View {
 	for i := m.scrollOff; i < end; i++ {
 		b.WriteString("  " + m.scrollLines[i] + "\n")
 	}
+	v := tea.NewView(b.String())
+	v.AltScreen = true
+	return v
+}
+
+func (m *dashboardModel) viewHostMetrics() tea.View {
+	var b strings.Builder
+	b.WriteString(titleStyle.Render("Host Metrics"))
+	b.WriteString("\n\n")
+
+	if m.metricsLoading && len(m.hostMetrics) == 0 {
+		b.WriteString("  Loading metrics...\n")
+		v := tea.NewView(b.String())
+		v.AltScreen = true
+		return v
+	}
+
+	if len(m.hostMetrics) == 0 {
+		b.WriteString("  No hosts found.\n")
+	} else {
+		headers := []string{"HOST", "CPU", "MEMORY", "DISK", "LOAD AVG", "UPTIME"}
+		rows := make([][]string, len(m.hostMetrics))
+		for i, met := range m.hostMetrics {
+			rows[i] = metricsRow(met)
+		}
+
+		widths := make([]int, len(headers))
+		for i, h := range headers {
+			widths[i] = len(h)
+		}
+		for _, row := range rows {
+			for j, cell := range row {
+				if len(cell) > widths[j] {
+					widths[j] = len(cell)
+				}
+			}
+		}
+
+		var headerLine string
+		for i, h := range headers {
+			headerLine += headerStyle.Width(widths[i] + 2).Render(h)
+		}
+		b.WriteString(headerLine + "\n")
+
+		for _, row := range rows {
+			var line string
+			for j, cell := range row {
+				styled := cell
+				if j >= 1 && j <= 3 {
+					styled = colorizePercent(cell)
+				}
+				line += cellStyle.Width(widths[j] + 2).Render(styled)
+			}
+			b.WriteString(line + "\n")
+		}
+	}
+
+	b.WriteString(helpStyle.Render("\n  r: refresh  esc: back  q: back"))
 	v := tea.NewView(b.String())
 	v.AltScreen = true
 	return v

@@ -82,6 +82,7 @@ With no subcommand, ghr opens the interactive dashboard on a terminal; use ghr -
 		serviceCmd(),
 		configCmd(),
 		dashboardCmd(),
+		hostsCmd(),
 	)
 
 	if err := root.Execute(); err != nil {
@@ -517,6 +518,22 @@ func serviceCmd() *cobra.Command {
 	}
 	cmd.AddCommand(install, uninstall, status)
 	return cmd
+}
+
+func hostsCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "hosts",
+		Short: "Show host resource usage (CPU, memory, disk, load, uptime)",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, err := loadConfig()
+			if err != nil {
+				return err
+			}
+			metrics := ops.CollectHostMetrics(cmd.OutOrStdout(), cfg, filterHost)
+			tui.PrintHostMetricsTable(metrics)
+			return nil
+		},
+	}
 }
 
 func dashboardCmd() *cobra.Command {

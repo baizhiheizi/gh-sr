@@ -15,6 +15,7 @@ import (
 	"github.com/an-lee/ghr/internal/config"
 	"github.com/an-lee/ghr/internal/doctor"
 	"github.com/an-lee/ghr/internal/editor"
+	"github.com/an-lee/ghr/internal/host"
 	"github.com/an-lee/ghr/internal/ops"
 	"github.com/an-lee/ghr/internal/runner"
 )
@@ -40,6 +41,7 @@ const (
 	panelFilterHost
 	panelFilterRepo
 	panelConfirmCleanup
+	panelHostMetrics
 	panelScroll
 )
 
@@ -74,6 +76,10 @@ type dashboardModel struct {
 
 	filterHostChoices []string
 	filterRepoChoices []string
+
+	hostMetrics     []host.HostMetrics
+	hostMetricsCur  int
+	metricsLoading  bool
 }
 
 type statusRefreshedMsg struct {
@@ -105,10 +111,15 @@ type editorDoneMsg struct {
 	err error
 }
 
+type hostMetricsMsg struct {
+	metrics []host.HostMetrics
+}
+
 var (
 	actionMenuLabels = []string{"Setup", "Start (up)", "Stop (down)", "Restart", "Update", "View logs"}
 	globalMenuLabels = []string{
 		"Doctor",
+		"Host metrics (CPU, memory, disk)",
 		"Cleanup offline runners (GitHub API)",
 		"Show configuration",
 		"Validate configuration",
@@ -154,6 +165,15 @@ func (m *dashboardModel) refreshCmd() tea.Cmd {
 	return func() tea.Msg {
 		statuses, err := ops.CollectStatus(nil, cfg, mgr, hostF, repoF, nil)
 		return statusRefreshedMsg{statuses: statuses, err: err}
+	}
+}
+
+func (m *dashboardModel) refreshMetricsCmd() tea.Cmd {
+	cfg := m.cfg
+	hostF := m.tuiHostFilter
+	return func() tea.Msg {
+		metrics := ops.CollectHostMetrics(nil, cfg, hostF)
+		return hostMetricsMsg{metrics: metrics}
 	}
 }
 
@@ -233,6 +253,8 @@ func (m *dashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.updateFilterHost(key)
 		case panelFilterRepo:
 			return m, m.updateFilterRepo(key)
+		case panelHostMetrics:
+			return m, m.updateHostMetrics(key)
 		}
 
 		switch key {
@@ -242,6 +264,11 @@ func (m *dashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.panel == panelMain {
 				m.loading = true
 				return m, m.refreshCmd()
+			}
+		case "h":
+			if m.panel == panelMain {
+				m.metricsLoading = true
+				return m, m.refreshMetricsCmd()
 			}
 		case "g":
 			if m.panel == panelMain {
@@ -335,6 +362,13 @@ func (m *dashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.lastErr = ""
 			m.toast = "Configuration is valid."
 		}
+		return m, nil
+
+	case hostMetricsMsg:
+		m.metricsLoading = false
+		m.hostMetrics = msg.metrics
+		m.hostMetricsCur = 0
+		m.panel = panelHostMetrics
 		return m, nil
 
 	case editorDoneMsg:
@@ -465,15 +499,20 @@ func (m *dashboardModel) updateGlobalMenu(key string) tea.Cmd {
 				return doctorDoneMsg{out: buf.String()}
 			}
 		case 1:
+			m.panel = panelMain
+			m.metricsLoading = true
+			m.menuCursor = 0
+			return m.refreshMetricsCmd()
+		case 2:
 			m.panel = panelConfirmCleanup
 			m.menuCursor = 0
-		case 2:
+		case 3:
 			m.panel = panelMain
 			m.scrollTitle = "Configuration"
 			m.scrollLines = wrapLines(FormatConfig(m.cfg), max(40, m.width-4))
 			m.scrollOff = 0
 			m.panel = panelScroll
-		case 3:
+		case 4:
 			m.panel = panelMain
 			m.busy = true
 			m.busyOp = "validate"
@@ -486,7 +525,7 @@ func (m *dashboardModel) updateGlobalMenu(key string) tea.Cmd {
 				_, err := config.LoadFromPath(path)
 				return validateDoneMsg{err: err}
 			}
-		case 4:
+		case 5:
 			m.panel = panelMain
 			if _, err := os.Stat(m.opts.ConfigPath); err != nil {
 				m.lastErr = fmt.Sprintf("config file: %v", err)
@@ -498,7 +537,7 @@ func (m *dashboardModel) updateGlobalMenu(key string) tea.Cmd {
 			return tea.ExecProcess(editor.Command(p), func(err error) tea.Msg {
 				return editorDoneMsg{err: err}
 			})
-		case 5:
+		case 6:
 			m.panel = panelMain
 			if err := ensureEnvFile(m.opts.EnvPath); err != nil {
 				m.lastErr = err.Error()
@@ -510,15 +549,15 @@ func (m *dashboardModel) updateGlobalMenu(key string) tea.Cmd {
 			return tea.ExecProcess(editor.Command(p), func(err error) tea.Msg {
 				return editorDoneMsg{err: err}
 			})
-		case 6:
+		case 7:
 			m.filterHostChoices = m.sortedHostNames()
 			m.menuCursor = 0
 			m.panel = panelFilterHost
-		case 7:
+		case 8:
 			m.filterRepoChoices = m.sortedRepoNames()
 			m.menuCursor = 0
 			m.panel = panelFilterRepo
-		case 8:
+		case 9:
 			m.tuiHostFilter = ""
 			m.tuiRepoFilter = ""
 			m.panel = panelMain
@@ -615,6 +654,18 @@ func (m *dashboardModel) updateFilterRepo(key string) tea.Cmd {
 		m.menuCursor = 0
 		m.loading = true
 		return m.refreshCmd()
+	}
+	return nil
+}
+
+func (m *dashboardModel) updateHostMetrics(key string) tea.Cmd {
+	switch key {
+	case "esc", "q":
+		m.panel = panelMain
+		m.hostMetrics = nil
+	case "r":
+		m.metricsLoading = true
+		return m.refreshMetricsCmd()
 	}
 	return nil
 }
