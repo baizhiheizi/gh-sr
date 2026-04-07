@@ -1,0 +1,44 @@
+When running agentic workflow, the self-hosted linux(docker mode) runner always fails, it fails to pull docker image. It seems that is need docker installed in the runner. The logs are:
+Starting download of 6 image(s) with max 4 concurrent downloads...
+Attempt 1 of 3: Pulling ghcr.io/github/gh-aw-firewall/agent:0.25.13...
+Attempt 1 of 3: Pulling ghcr.io/github/gh-aw-firewall/api-proxy:0.25.13...
+Attempt 1 of 3: Pulling ghcr.io/github/gh-aw-firewall/squid:0.25.13...
+Attempt 1 of 3: Pulling ghcr.io/github/gh-aw-mcpg:v0.2.14...
+failed to connect to the docker API at unix:///var/run/docker.sock; check if the path is correct and if the daemon is running: dial unix /var/run/docker.sock: connect: no such file or directory
+failed to connect to the docker API at unix:///var/run/docker.sock; check if the path is correct and if the daemon is running: dial unix /var/run/docker.sock: connect: no such file or directory
+failed to connect to the docker API at unix:///var/run/docker.sock; check if the path is correct and if the daemon is running: dial unix /var/run/docker.sock: connect: no such file or directory
+Failed to pull ghcr.io/github/gh-aw-firewall/squid:0.25.13. Retrying in 5s...
+Failed to pull ghcr.io/github/gh-aw-firewall/api-proxy:0.25.13. Retrying in 5s...
+Failed to pull ghcr.io/github/gh-aw-mcpg:v0.2.14. Retrying in 5s...
+failed to connect to the docker API at unix:///var/run/docker.sock; check if the path is correct and if the daemon is running: dial unix /var/run/docker.sock: connect: no such file or directory
+Failed to pull ghcr.io/github/gh-aw-firewall/agent:0.25.13. Retrying in 5s...
+
+About agentic workflow self-hosted runner: https://github.github.com/gh-aw/guides/self-hosted-runners/
+
+Help me to identify the root cause, and fix it. Make it well design.
+
+---
+
+I check it:
+
+➜  docker inspect gh-runner-rune-linux-1 --format '{{json .Mounts}}'
+[]
+
+---
+
+I check it:
+
+➜  docker inspect gh-runner-rune-linux-1 --format '{{json .Mounts}}'
+[]
+
+---
+
+I `ghr down`, `docker container prune`, and `ghr up`, the mounts is still `[].
+
+---
+
+Yes. It's windows. So how should we fix it?
+
+---
+
+Yes. It's windows. So how should we fix it?
