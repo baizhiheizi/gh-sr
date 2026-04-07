@@ -35,3 +35,5 @@ runners:
 ```
 
 Both runners share a single SSH connection to Windows. The native runner starts `run.cmd` via PowerShell; the Docker runner calls `docker run` the same way, which talks to Docker Desktop's Linux engine.
+
+Docker-mode Linux containers include a bind mount of `/var/run/docker.sock` so jobs can run `docker` against the same engine (GitHub Actions service containers, image pulls, [Agentic Workflows](https://github.github.com/gh-aw/guides/self-hosted-runners/) tooling, and similar). Use **Linux containers** in Docker Desktop (the default); Windows containers mode cannot run the `actions-runner` Linux image.

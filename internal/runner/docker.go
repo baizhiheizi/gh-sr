@@ -54,6 +54,13 @@ func dockerStartCommand(cname, instanceName, regToken, repoURL, labels, sockMoun
 	return b.String()
 }
 
+// dockerEngineSockBindMount returns the docker run volume flag that exposes the host engine socket
+// inside the Linux actions-runner container. On Docker Desktop for Windows, Linux containers run in
+// the WSL2/Moby VM; this mount is the supported way for in-container `docker` to reach that engine.
+func dockerEngineSockBindMount() string {
+	return "-v /var/run/docker.sock:/var/run/docker.sock "
+}
+
 // prependDarwinDockerPATH prefixes a remote shell command on macOS so the Docker CLI is on PATH
 // when SSH uses a minimal environment (missing /usr/local/bin and /opt/homebrew/bin).
 func prependDarwinDockerPATH(h *host.Host, cmd string) string {
@@ -274,12 +281,7 @@ func (m *Manager) startDocker(h *host.Host, rc config.RunnerConfig, instanceName
 	labels := strings.Join(rc.Labels, ",")
 	repoURL := fmt.Sprintf("https://github.com/%s", rc.Repo)
 
-	sockMount := "-v /var/run/docker.sock:/var/run/docker.sock "
-	if h.OS == "windows" {
-		sockMount = ""
-	}
-
-	cmd := dockerStartCommand(cname, instanceName, regToken, repoURL, labels, sockMount, RunnerDockerImage)
+	cmd := dockerStartCommand(cname, instanceName, regToken, repoURL, labels, dockerEngineSockBindMount(), RunnerDockerImage)
 
 	out, err := dockerRun(h, cmd)
 	if err != nil {

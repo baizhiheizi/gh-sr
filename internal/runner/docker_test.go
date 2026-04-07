@@ -80,6 +80,15 @@ func Test_dockerRunIgnoreErr_noPanic(t *testing.T) {
 	}
 }
 
+func Test_dockerEngineSockBindMount(t *testing.T) {
+	t.Parallel()
+	got := strings.TrimSpace(dockerEngineSockBindMount())
+	const want = "-v /var/run/docker.sock:/var/run/docker.sock"
+	if got != want {
+		t.Fatalf("got %q want %q", got, want)
+	}
+}
+
 func Test_dockerStartCommand_officialImageShape(t *testing.T) {
 	t.Parallel()
 	cmd := dockerStartCommand(
@@ -88,7 +97,7 @@ func Test_dockerStartCommand_officialImageShape(t *testing.T) {
 		"REGTOKEN123",
 		"https://github.com/o/r",
 		"self-hosted,linux",
-		"-v /var/run/docker.sock:/var/run/docker.sock",
+		strings.TrimSpace(dockerEngineSockBindMount()),
 		"ghcr.io/actions/actions-runner:latest",
 	)
 	for _, sub := range []string{
@@ -110,6 +119,9 @@ func Test_dockerStartCommand_officialImageShape(t *testing.T) {
 		if !strings.Contains(cmd, sub) {
 			t.Fatalf("docker start command missing %q in:\n%s", sub, cmd)
 		}
+	}
+	if !strings.Contains(cmd, "/var/run/docker.sock:/var/run/docker.sock") {
+		t.Fatalf("docker start command should bind Docker engine socket (required on Windows Docker Desktop too): %s", cmd)
 	}
 	if strings.Contains(cmd, "RUNNER_TOKEN=") || strings.Contains(cmd, "RUNNER_URL=") {
 		t.Fatalf("should not use legacy RUNNER_* env names: %s", cmd)
