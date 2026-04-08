@@ -1,0 +1,91 @@
+In macOS host, linux runner, it fails:
+
+Starting download of 6 image(s) with max 4 concurrent downloads...
+Attempt 1 of 3: Pulling ghcr.io/github/gh-aw-firewall/api-proxy:0.25.13...
+Attempt 1 of 3: Pulling ghcr.io/github/gh-aw-firewall/agent:0.25.13...
+Attempt 1 of 3: Pulling ghcr.io/github/gh-aw-firewall/squid:0.25.13...
+Attempt 1 of 3: Pulling ghcr.io/github/gh-aw-mcpg:v0.2.14...
+failed to connect to the docker API at unix:///var/run/docker.sock; check if the path is correct and if the daemon is running: dial unix /var/run/docker.sock: connect: no such file or directory
+failed to connect to the docker API at unix:///var/run/docker.sock; check if the path is correct and if the daemon is running: dial unix /var/run/docker.sock: connect: no such file or directory
+failed to connect to the docker API at unix:///var/run/docker.sock; check if the path is correct and if the daemon is running: dial unix /var/run/docker.sock: connect: no such file or directory
+failed to connect to the docker API at unix:///var/run/docker.sock; check if the path is correct and if the daemon is running: dial unix /var/run/docker.sock: connect: no such file or directory
+Failed to pull ghcr.io/github/gh-aw-firewall/squid:0.25.13. Retrying in 5s...
+Failed to pull ghcr.io/github/gh-aw-firewall/agent:0.25.13. Retrying in 5s...
+Failed to pull ghcr.io/github/gh-aw-mcpg:v0.2.14. Retrying in 5s...
+Failed to pull ghcr.io/github/gh-aw-firewall/api-proxy:0.25.13. Retrying in 5s...
+Attempt 2 of 3: Pulling ghcr.io/github/gh-aw-mcpg:v0.2.14...
+Attempt 2 of 3: Pulling ghcr.io/github/gh-aw-firewall/agent:0.25.13...
+Attempt 2 of 3: Pulling ghcr.io/github/gh-aw-firewall/api-proxy:0.25.13...
+Attempt 2 of 3: Pulling ghcr.io/github/gh-aw-firewall/squid:0.25.13...
+failed to connect to the docker API at unix:///var/run/docker.sock; check if the path is correct and if the daemon is running: dial unix /var/run/docker.sock: connect: no such file or directory
+Failed to pull ghcr.io/github/gh-aw-mcpg:v0.2.14. Retrying in 10s...
+
+Identify the root cause and fix it. Also review the same problem in windows/linux hosts. Make all works
+
+---
+
+Commit the right changes for this branch.
+- If nothing relevant is staged yet, stage the right files first.
+- Ensure only relevant files are staged (unstage anything unrelated).
+- Write a concise commit message.
+- Do not push.
+
+Currently staged files:
+(none)
+
+Currently unstaged files:
+- docs/content/guides/linux-on-macos.md (modified)
+- docs/content/host-setup.md (modified)
+- internal/config/config.go (modified)
+- internal/config/config_test.go (modified)
+- internal/doctor/doctor.go (modified)
+- internal/runner/docker.go (modified)
+- internal/runner/docker_test.go (modified)
+
+---
+
+Commit the right changes for this branch.
+- If nothing relevant is staged yet, stage the right files first.
+- Ensure only relevant files are staged (unstage anything unrelated).
+- Write a concise commit message.
+- Do not push.
+
+Currently staged files:
+(none)
+
+Currently unstaged files:
+- docs/content/guides/linux-on-macos.md (modified)
+- docs/content/host-setup.md (modified)
+- internal/config/config.go (modified)
+- internal/config/config_test.go (modified)
+- internal/doctor/doctor.go (modified)
+- internal/runner/docker.go (modified)
+- internal/runner/docker_test.go (modified)
+
+---
+
+What about Linux runner on windows host? The same errors occured too, have you fixed it too?
+
+Starting download of 6 image(s) with max 4 concurrent downloads...
+Attempt 1 of 3: Pulling ghcr.io/github/gh-aw-firewall/api-proxy:0.25.13...
+Attempt 1 of 3: Pulling ghcr.io/github/gh-aw-firewall/agent:0.25.13...
+Attempt 1 of 3: Pulling ghcr.io/github/gh-aw-firewall/squid:0.25.13...
+Attempt 1 of 3: Pulling ghcr.io/github/gh-aw-mcpg:v0.2.14...
+permission denied while trying to connect to the docker API at unix:///var/run/docker.sock
+permission denied while trying to connect to the docker API at unix:///var/run/docker.sock
+permission denied while trying to connect to the docker API at unix:///var/run/docker.sock
+permission denied while trying to connect to the docker API at unix:///var/run/docker.sock
+
+---
+
+What about Linux runner on windows host? The same errors occured too, have you fixed it too?
+
+Starting download of 6 image(s) with max 4 concurrent downloads...
+Attempt 1 of 3: Pulling ghcr.io/github/gh-aw-firewall/api-proxy:0.25.13...
+Attempt 1 of 3: Pulling ghcr.io/github/gh-aw-firewall/agent:0.25.13...
+Attempt 1 of 3: Pulling ghcr.io/github/gh-aw-firewall/squid:0.25.13...
+Attempt 1 of 3: Pulling ghcr.io/github/gh-aw-mcpg:v0.2.14...
+permission denied while trying to connect to the docker API at unix:///var/run/docker.sock
+permission denied while trying to connect to the docker API at unix:///var/run/docker.sock
+permission denied while trying to connect to the docker API at unix:///var/run/docker.sock
+permission denied while trying to connect to the docker API at unix:///var/run/docker.sock

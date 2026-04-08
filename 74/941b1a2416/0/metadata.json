@@ -1,0 +1,32 @@
+{
+  "cli_version": "dev",
+  "checkpoint_id": "74941b1a2416",
+  "session_id": "40965be4-4737-4845-8a63-161d3444035f",
+  "strategy": "manual-commit",
+  "created_at": "2026-04-08T01:44:52.931824781Z",
+  "branch": "main",
+  "checkpoints_count": 4,
+  "files_touched": [
+    "docs/content/guides/linux-on-windows.md",
+    "internal/runner/docker.go",
+    "internal/runner/docker_test.go"
+  ],
+  "agent": "Cursor",
+  "model": "composer-2",
+  "turn_id": "71f264d0e17c",
+  "session_metrics": {
+    "turn_count": 10
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-04-08T01:44:52.878726055Z",
+    "agent_lines": 101,
+    "agent_removed": 7,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 101,
+    "total_lines_changed": 108,
+    "agent_percentage": 100,
+    "metric_version": 2
+  }
+}
