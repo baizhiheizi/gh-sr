@@ -1,0 +1,42 @@
+{
+  "cli_version": "dev",
+  "checkpoint_id": "12d9de88efe8",
+  "strategy": "manual-commit",
+  "branch": "main",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "README.md",
+    "cmd/ghr/main.go",
+    "docs/content/configuration.md",
+    "docs/content/guides/linux-on-windows.md",
+    "docs/content/host-setup.md",
+    "internal/config/config.go",
+    "internal/config/config_test.go",
+    "internal/config/mutate.go",
+    "internal/config/mutate_test.go",
+    "internal/config/runners.yml.template",
+    "internal/host/detect.go",
+    "internal/ops/detect.go",
+    "internal/ops/ops.go",
+    "internal/ops/service.go",
+    "internal/runner/docker.go",
+    "internal/runner/docker_test.go",
+    "internal/runner/native.go",
+    "internal/runner/runner.go"
+  ],
+  "sessions": [
+    {
+      "metadata": "/12/d9de88efe8/0/metadata.json",
+      "transcript": "/12/d9de88efe8/0/full.jsonl",
+      "content_hash": "/12/d9de88efe8/0/content_hash.txt",
+      "prompt": "/12/d9de88efe8/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 0,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 0,
+    "output_tokens": 0,
+    "api_call_count": 0
+  }
+}

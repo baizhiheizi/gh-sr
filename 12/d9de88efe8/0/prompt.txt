@@ -1,0 +1,1 @@
+The goal of ghr is to help user super easily to setup/config/manage self-hosted runners of GitHub to run workflows, especially agentic workflows. Help me to review the whole flow, refactor and improve it. Make the flow more easy. especially, we don't want users to do complicated config/setup in each host machine. Make `ghr` do all(almost at least) the work.
