@@ -1,1 +1,63 @@
 the goal of ghr is to help users easily manage the self-hosted runners to run GitHub workflows, especially agentic workflows. Help me to review the aw repo: https://github.com/github/gh-aw . Refactor ghr, to make it perfectly adaptive to agentic workflows.
+
+---
+
+Commit the right changes for this branch.
+- If nothing relevant is staged yet, stage the right files first.
+- Ensure only relevant files are staged (unstage anything unrelated).
+- Write a concise commit message.
+- Do not push.
+
+Currently staged files:
+(none)
+
+Currently unstaged files:
+- cmd/ghr/main.go (modified)
+- docs/content/configuration.md (modified)
+- docs/content/guides/workflows.md (modified)
+- docs/content/host-setup.md (modified)
+- internal/config/config.go (modified)
+- internal/config/config_test.go (modified)
+- internal/config/mutate.go (modified)
+- internal/config/runners.yml.template (modified)
+- internal/doctor/doctor.go (modified)
+- internal/ops/ops.go (modified)
+- internal/runner/docker.go (modified)
+- internal/runner/docker_test.go (modified)
+- internal/runner/github.go (modified)
+- internal/runner/github_test.go (modified)
+- internal/runner/native.go (modified)
+- internal/runner/runner.go (modified)
+- internal/tui/dashboard.go (modified)
+- internal/tui/status.go (modified)
+
+---
+
+Commit the right changes for this branch.
+- If nothing relevant is staged yet, stage the right files first.
+- Ensure only relevant files are staged (unstage anything unrelated).
+- Write a concise commit message.
+- Do not push.
+
+Currently staged files:
+(none)
+
+Currently unstaged files:
+- cmd/ghr/main.go (modified)
+- docs/content/configuration.md (modified)
+- docs/content/guides/workflows.md (modified)
+- docs/content/host-setup.md (modified)
+- internal/config/config.go (modified)
+- internal/config/config_test.go (modified)
+- internal/config/mutate.go (modified)
+- internal/config/runners.yml.template (modified)
+- internal/doctor/doctor.go (modified)
+- internal/ops/ops.go (modified)
+- internal/runner/docker.go (modified)
+- internal/runner/docker_test.go (modified)
+- internal/runner/github.go (modified)
+- internal/runner/github_test.go (modified)
+- internal/runner/native.go (modified)
+- internal/runner/runner.go (modified)
+- internal/tui/dashboard.go (modified)
+- internal/tui/status.go (modified)
