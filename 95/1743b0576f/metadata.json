@@ -3,14 +3,26 @@
   "checkpoint_id": "951743b0576f",
   "strategy": "manual-commit",
   "branch": "main",
-  "checkpoints_count": 6,
+  "checkpoints_count": 8,
   "files_touched": [
+    "cmd/ghr/main.go",
     "docs/content/configuration.md",
+    "docs/content/guides/workflows.md",
     "docs/content/host-setup.md",
     "internal/config/config.go",
     "internal/config/config_test.go",
+    "internal/config/mutate.go",
     "internal/config/runners.yml.template",
-    "internal/runner/native.go"
+    "internal/doctor/doctor.go",
+    "internal/ops/ops.go",
+    "internal/runner/docker.go",
+    "internal/runner/docker_test.go",
+    "internal/runner/github.go",
+    "internal/runner/github_test.go",
+    "internal/runner/native.go",
+    "internal/runner/runner.go",
+    "internal/tui/dashboard.go",
+    "internal/tui/status.go"
   ],
   "sessions": [
     {
@@ -30,6 +42,12 @@
       "transcript": "/95/1743b0576f/2/full.jsonl",
       "content_hash": "/95/1743b0576f/2/content_hash.txt",
       "prompt": "/95/1743b0576f/2/prompt.txt"
+    },
+    {
+      "metadata": "/95/1743b0576f/3/metadata.json",
+      "transcript": "/95/1743b0576f/3/full.jsonl",
+      "content_hash": "/95/1743b0576f/3/content_hash.txt",
+      "prompt": "/95/1743b0576f/3/prompt.txt"
     }
   ],
   "token_usage": {

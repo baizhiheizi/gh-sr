@@ -1,0 +1,1 @@
+the goal of ghr is to help users easily manage the self-hosted runners to run GitHub workflows, especially agentic workflows. Help me to review the aw repo: https://github.com/github/gh-aw . Refactor ghr, to make it perfectly adaptive to agentic workflows.
