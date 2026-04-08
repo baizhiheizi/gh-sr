@@ -17,7 +17,7 @@ go install github.com/an-lee/ghr/cmd/ghr@latest
 ghr init
 ```
 
-This creates `~/.ghr/runners.yml` from a template and `~/.ghr/env` for secrets (optional). Then edit those files (or use `ghr config edit` / `ghr config edit-env`), run `ghr config validate` and `ghr doctor`, and you are ready to use `ghr status` and other commands.
+This creates `~/.ghr/runners.yml` from a template and `~/.ghr/env` for secrets (optional). Then edit the config (or use `ghr config edit`), run `ghr doctor`, and you are ready. For authentication, the easiest path is `gh auth login` (GitHub CLI) — ghr picks up the token automatically. Alternatively, set `GITHUB_PAT` in `~/.ghr/env`.
 
 ## Build from source
 

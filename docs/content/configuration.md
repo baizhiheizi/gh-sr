@@ -18,13 +18,25 @@ If you pass `-c /path/to/runners.yml`, that path is always used (and `GHR_CONFIG
 
 Run `ghr config path` to see which config file and `~/.ghr/env` path apply in your environment.
 
+## Authentication
+
+**ghr** resolves a GitHub token in this order:
+
+1. `github.pat` in `runners.yml` (supports `env:VAR_NAME` to read from environment)
+2. `GITHUB_PAT` or `GITHUB_TOKEN` environment variable
+3. `gh` CLI — if you have `gh auth login` done, ghr picks up the token automatically
+
+The simplest setup is to install the [GitHub CLI](https://cli.github.com/) and run `gh auth login`. No env files or PAT fields needed.
+
+For PAT creation and scopes, see [Authentication](github-pat.md).
+
 ## Secrets (`~/.ghr/env`)
 
 Before the YAML file is loaded, **ghr** applies environment variables from **`~/.ghr/env`** if that file exists (dotenv-style: `KEY=value`, optional `export `, `#` comments). This keeps secrets out of your shell history and out of the YAML file. Pair it with `github.pat: env:GITHUB_PAT` in `runners.yml`. Create the directory and file with `ghr init`, or run `ghr config edit-env`.
 
-Keep `~/.ghr` permissions tight (`chmod 700 ~/.ghr`, `chmod 600 ~/.ghr/env` if you create files by hand).
+If you use `gh auth login`, the env file is optional — you can skip `GITHUB_PAT` entirely.
 
-For PAT creation and scopes, see [GitHub PAT](github-pat.md).
+Keep `~/.ghr` permissions tight (`chmod 700 ~/.ghr`, `chmod 600 ~/.ghr/env` if you create files by hand).
 
 ## Example `runners.yml`
 
@@ -32,7 +44,8 @@ Edit `~/.ghr/runners.yml` (after `ghr init`), or set `GHR_CONFIG` / `-c` to anot
 
 ```yaml
 github:
-  pat: env:GITHUB_PAT
+  # Optional if you use `gh auth login`. Otherwise set a PAT:
+  # pat: env:GITHUB_PAT
 
 hosts:
   my-laptop:
@@ -93,7 +106,7 @@ runners:
 
 | Field | Description |
 |---|---|
-| `github.pat` | GitHub PAT. Use `env:VAR_NAME` to read from environment. |
+| `github.pat` | GitHub PAT (optional if `gh auth login` is used). Use `env:VAR_NAME` to read from environment. |
 | `hosts.<name>.addr` | SSH target (`user@host` or `user@ip`), or `local` to run on the machine where ghr is running. Remote commands run as that user; on Linux, privilege expectations for `setup` / `update` follow [Linux SSH user and privileges](host-setup.md#linux-ssh-user-and-privileges). |
 | `hosts.<name>.os` | `linux`, `darwin`, or `windows`. Auto-detected when `addr` is `local`. |
 | `hosts.<name>.arch` | `amd64` or `arm64`. Auto-detected when `addr` is `local`. |

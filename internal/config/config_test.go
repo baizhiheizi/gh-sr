@@ -115,16 +115,6 @@ func TestValidate_errors(t *testing.T) {
 		frag string
 	}{
 		{
-			name: "empty_pat",
-			cfg: Config{
-				Hosts: map[string]HostConfig{"h": {Addr: "a@b", OS: "linux", Arch: "amd64"}},
-				Runners: []RunnerConfig{
-					{Name: "r", Repo: "o/r", Host: "h"},
-				},
-			},
-			frag: "github.pat",
-		},
-		{
 			name: "no_hosts",
 			cfg: Config{
 				GitHub:  GitHubConfig{PAT: "x"},

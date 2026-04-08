@@ -8,7 +8,7 @@
 ## Features
 
 - One set of commands for **Linux**, **macOS**, and **Windows** runners (`setup`, `up`, `down`, `status`, `logs`, `service`, …).
-- **Declarative YAML** for hosts and runners; secrets in `~/.ghr/env`.
+- **Declarative YAML** for hosts and runners; auth via `gh auth login` or PAT.
 - **Docker or native** runners per row, with sensible OS defaults and overrides.
 - **Multi-host** from a single config; optional **TUI** dashboard (`ghr` or `ghr dashboard` on a TTY).
 
@@ -44,8 +44,9 @@ Requires a recent **Go** toolchain (see `go.mod` / CI for the exact version).
 ## Quick start
 
 ```bash
+gh auth login       # easiest auth — or set GITHUB_PAT in ~/.ghr/env
 ghr init
-# Edit ~/.ghr/runners.yml and ~/.ghr/env (GitHub PAT — see docs)
+# Edit ~/.ghr/runners.yml (hosts and runners)
 ghr doctor
 ghr setup
 ghr up

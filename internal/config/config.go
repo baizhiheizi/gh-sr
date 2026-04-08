@@ -126,10 +126,6 @@ func (c *Config) applyDefaults() {
 }
 
 func (c *Config) Validate() error {
-	if c.GitHub.PAT == "" {
-		return fmt.Errorf("github.pat is required (use 'env:VAR_NAME' to read from environment)")
-	}
-
 	if len(c.Hosts) == 0 {
 		return fmt.Errorf("at least one host must be defined")
 	}

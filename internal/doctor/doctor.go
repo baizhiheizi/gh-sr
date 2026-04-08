@@ -36,8 +36,9 @@ func ExitCode(res Result, strict bool) int {
 }
 
 // Run prints diagnostics to w. cfg and cfgErr come from config.LoadFromPath (or Load) after BootstrapEnv.
+// tokenSource indicates how the GitHub token was obtained ("pat", "gh", or "" if unavailable).
 // If cfg is nil (load error), GitHub and host checks are skipped after the configuration section.
-func Run(w io.Writer, cfgPath, envPath string, cfg *config.Config, cfgErr error, gh *runner.GitHubClient, filterHost, filterRepo string, strict bool) Result {
+func Run(w io.Writer, cfgPath, envPath string, cfg *config.Config, cfgErr error, gh *runner.GitHubClient, tokenSource, filterHost, filterRepo string, strict bool) Result {
 	var r Result
 
 	fmt.Fprintln(w, "=== Local environment ===")
@@ -58,6 +59,16 @@ func Run(w io.Writer, cfgPath, envPath string, cfg *config.Config, cfgErr error,
 		r.Warn++
 	default:
 		printLine(w, sevOK, "local", fmt.Sprintf("env file present: %s", envPath))
+	}
+
+	switch tokenSource {
+	case config.TokenSourcePAT:
+		printLine(w, sevOK, "local", "GitHub token: from PAT (config or environment)")
+	case config.TokenSourceGH:
+		printLine(w, sevOK, "local", "GitHub token: from gh CLI (gh auth login)")
+	default:
+		printLine(w, sevFail, "local", "GitHub token: not found; set github.pat in runners.yml, export GITHUB_PAT, or run `gh auth login`")
+		r.Fail++
 	}
 
 	needSSH := cfg == nil

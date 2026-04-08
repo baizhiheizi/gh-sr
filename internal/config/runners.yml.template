@@ -2,7 +2,9 @@
 # Edit this file, then run: ghr up
 
 github:
-  pat: env:GITHUB_PAT  # "env:" prefix reads from environment variable
+  # Easiest: run `gh auth login` (GitHub CLI) — ghr picks up the token automatically.
+  # Or set a PAT below; "env:" prefix reads from environment variable (see ~/.ghr/env).
+  # pat: env:GITHUB_PAT
 
 hosts:
   # Example hosts:

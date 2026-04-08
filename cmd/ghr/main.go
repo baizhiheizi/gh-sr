@@ -130,10 +130,14 @@ func loadConfig() (*config.Config, error) {
 	return config.LoadFromPath(path)
 }
 
-func newManager(cfg *config.Config, w io.Writer) *runner.Manager {
-	m := runner.NewManager(cfg.GitHub.PAT)
+func newManager(cfg *config.Config, w io.Writer) (*runner.Manager, error) {
+	tok, err := config.ResolveToken(cfg)
+	if err != nil {
+		return nil, err
+	}
+	m := runner.NewManager(tok.Token)
 	m.Out = w
-	return m
+	return m, nil
 }
 
 func initCmd() *cobra.Command {
@@ -170,7 +174,8 @@ func initCmd() *cobra.Command {
 			} else {
 				fmt.Printf("Unchanged (already exists): %s\n", envPath)
 			}
-			fmt.Println("\nNext: edit ~/.ghr/runners.yml, set GITHUB_PAT in ~/.ghr/env, then run `ghr config validate`, `ghr doctor`, and `ghr status`.")
+			fmt.Println("\nNext: edit ~/.ghr/runners.yml, then run `ghr doctor` and `ghr status`.")
+			fmt.Println("Authentication: run `gh auth login` (easiest), or set GITHUB_PAT in ~/.ghr/env.")
 			return nil
 		},
 	}
@@ -214,11 +219,18 @@ func doctorCmd() *cobra.Command {
 
 			cfg, cfgErr := config.LoadFromPath(cfgPath)
 			var gh *runner.GitHubClient
+			var tokenSource string
 			if cfg != nil {
-				gh = runner.NewGitHubClient(cfg.GitHub.PAT)
+				tok, tokErr := config.ResolveToken(cfg)
+				if tokErr == nil {
+					gh = runner.NewGitHubClient(tok.Token)
+					tokenSource = tok.Source
+				} else {
+					cfgErr = tokErr
+				}
 			}
 
-			res := doctor.Run(cmd.OutOrStdout(), cfgPath, envPath, cfg, cfgErr, gh, filterHost, filterRepo, strict)
+			res := doctor.Run(cmd.OutOrStdout(), cfgPath, envPath, cfg, cfgErr, gh, tokenSource, filterHost, filterRepo, strict)
 			if code := doctor.ExitCode(res, strict); code != 0 {
 				os.Exit(code)
 			}
@@ -352,7 +364,10 @@ func setupCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			mgr := newManager(cfg, cmd.OutOrStdout())
+			mgr, err := newManager(cfg, cmd.OutOrStdout())
+			if err != nil {
+				return err
+			}
 			return ops.Setup(cmd.OutOrStdout(), cfg, mgr, filterHost, filterRepo, args)
 		},
 	}
@@ -367,7 +382,10 @@ func upCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			mgr := newManager(cfg, cmd.OutOrStdout())
+			mgr, err := newManager(cfg, cmd.OutOrStdout())
+			if err != nil {
+				return err
+			}
 			return ops.Up(cmd.OutOrStdout(), cfg, mgr, filterHost, filterRepo, args)
 		},
 	}
@@ -382,7 +400,10 @@ func downCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			mgr := newManager(cfg, cmd.OutOrStdout())
+			mgr, err := newManager(cfg, cmd.OutOrStdout())
+			if err != nil {
+				return err
+			}
 			return ops.Down(cmd.OutOrStdout(), cfg, mgr, filterHost, filterRepo, args)
 		},
 	}
@@ -397,7 +418,10 @@ func restartCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			mgr := newManager(cfg, cmd.OutOrStdout())
+			mgr, err := newManager(cfg, cmd.OutOrStdout())
+			if err != nil {
+				return err
+			}
 			return ops.Restart(cmd.OutOrStdout(), cfg, mgr, filterHost, filterRepo, args)
 		},
 	}
@@ -412,7 +436,10 @@ func statusCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			mgr := newManager(cfg, cmd.OutOrStdout())
+			mgr, err := newManager(cfg, cmd.OutOrStdout())
+			if err != nil {
+				return err
+			}
 			allStatuses, err := ops.CollectStatus(cmd.OutOrStdout(), cfg, mgr, filterHost, filterRepo, args)
 			if err != nil {
 				return err
@@ -433,7 +460,10 @@ func logsCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			mgr := newManager(cfg, cmd.OutOrStdout())
+			mgr, err := newManager(cfg, cmd.OutOrStdout())
+			if err != nil {
+				return err
+			}
 			output, err := ops.Logs(cfg, mgr, filterHost, args[0])
 			if err != nil {
 				return err
@@ -453,7 +483,10 @@ func cleanupCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			mgr := newManager(cfg, cmd.OutOrStdout())
+			mgr, err := newManager(cfg, cmd.OutOrStdout())
+			if err != nil {
+				return err
+			}
 			_, err = ops.CleanupOffline(cmd.OutOrStdout(), cfg, mgr)
 			return err
 		},
@@ -470,7 +503,10 @@ func updateCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			mgr := newManager(cfg, cmd.OutOrStdout())
+			mgr, err := newManager(cfg, cmd.OutOrStdout())
+			if err != nil {
+				return err
+			}
 			return ops.Update(cmd.OutOrStdout(), cfg, mgr, filterHost, filterRepo, args)
 		},
 	}
