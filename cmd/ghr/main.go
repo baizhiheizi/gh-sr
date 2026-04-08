@@ -250,7 +250,14 @@ func runQuickInit(runnersPath string, force bool) error {
 		count = 1
 	}
 
-	// Write a minimal config.
+	agenticAnswer := prompt("Use GitHub Agentic Workflows (gh-aw) profile? (y/n)", "n")
+	agentic := strings.ToLower(strings.TrimSpace(agenticAnswer)) == "y"
+
+	var profileLine string
+	if agentic {
+		profileLine = "\n    profile: agentic"
+	}
+
 	seed := fmt.Sprintf(`github: {}
 hosts:
   %s:
@@ -259,8 +266,8 @@ runners:
   - name: %s
     repo: %s
     host: %s
-    count: %d
-`, hostName, addr, runnerName, repo, hostName, count)
+    count: %d%s
+`, hostName, addr, runnerName, repo, hostName, count, profileLine)
 
 	if _, err := os.Stat(runnersPath); err == nil && !force {
 		fmt.Printf("\n%s already exists. Overwrite? [y/N]: ", runnersPath)
@@ -286,7 +293,11 @@ runners:
 	fmt.Println("Config generated! Summary:")
 	fmt.Printf("  Host:   %s (%s)\n", hostName, addr)
 	fmt.Printf("  Runner: %s -> %s (x%d)\n", runnerName, repo, count)
-	fmt.Println("  Mode:   auto-detected at runtime")
+	if agentic {
+		fmt.Println("  Profile: agentic (docker, host network, NET_ADMIN, gh-aw label)")
+	} else {
+		fmt.Println("  Mode:   auto-detected at runtime")
+	}
 	fmt.Println("  Labels: auto-generated from host os/arch")
 	fmt.Println()
 	fmt.Println("Next steps:")
@@ -330,41 +341,74 @@ func addHostCmd() *cobra.Command {
 
 func addRunnerCmd() *cobra.Command {
 	var (
-		repo   string
-		host   string
-		count  int
-		labels []string
-		mode   string
+		repo      string
+		org       string
+		group     string
+		host      string
+		count     int
+		labels    []string
+		mode      string
+		profile   string
+		ephemeral bool
 	)
 	cmd := &cobra.Command{
 		Use:   "runner <name>",
 		Short: "Add a runner entry (labels auto-generated if omitted)",
-		Long:  "Adds a runner to runners.yml. Labels are auto-generated from host os/arch if not specified.",
-		Args:  cobra.ExactArgs(1),
+		Long: `Adds a runner to runners.yml. Labels are auto-generated from host os/arch if not specified.
+
+Use --profile agentic to auto-configure for GitHub Agentic Workflows (gh-aw):
+sets docker mode, host networking, NET_ADMIN capability, and a gh-aw label.
+
+Use --org instead of --repo for organization-level runners, and --group
+to assign the runner to a runner group.`,
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfgPath, err := config.ResolveConfigPath(cfgFile)
 			if err != nil {
 				return err
 			}
 			name := args[0]
-			if repo == "" {
-				return fmt.Errorf("--repo is required")
+			if repo == "" && org == "" {
+				return fmt.Errorf("--repo or --org is required")
+			}
+			if repo != "" && org != "" {
+				return fmt.Errorf("specify --repo or --org, not both")
 			}
 			if host == "" {
 				return fmt.Errorf("--host is required")
 			}
-			if err := config.AddRunner(cfgPath, name, repo, host, count, labels, mode); err != nil {
+			opts := config.AddRunnerOpts{
+				Name:      name,
+				Repo:      repo,
+				Org:       org,
+				Group:     group,
+				Host:      host,
+				Count:     count,
+				Labels:    labels,
+				Mode:      mode,
+				Profile:   profile,
+				Ephemeral: ephemeral,
+			}
+			if err := config.AddRunnerFull(cfgPath, opts); err != nil {
 				return err
 			}
-			fmt.Printf("Added runner %q (repo=%s, host=%s) to %s\n", name, repo, host, cfgPath)
+			target := repo
+			if org != "" {
+				target = "org:" + org
+			}
+			fmt.Printf("Added runner %q (%s, host=%s) to %s\n", name, target, host, cfgPath)
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&repo, "repo", "", "GitHub owner/repo (required)")
+	cmd.Flags().StringVar(&repo, "repo", "", "GitHub owner/repo (required unless --org is set)")
+	cmd.Flags().StringVar(&org, "org", "", "GitHub organization (for org-level runners)")
+	cmd.Flags().StringVar(&group, "group", "", "runner group name (org-level runners only)")
 	cmd.Flags().StringVar(&host, "host", "", "host name from config (required)")
 	cmd.Flags().IntVar(&count, "count", 1, "number of parallel instances")
 	cmd.Flags().StringSliceVar(&labels, "labels", nil, "runner labels (auto-generated if empty)")
 	cmd.Flags().StringVar(&mode, "mode", "", "runner mode: docker or native (auto-detected if empty)")
+	cmd.Flags().StringVar(&profile, "profile", "", "runner profile: 'agentic' for GitHub Agentic Workflows")
+	cmd.Flags().BoolVar(&ephemeral, "ephemeral", false, "register as ephemeral (one job then deregister)")
 	return cmd
 }
 

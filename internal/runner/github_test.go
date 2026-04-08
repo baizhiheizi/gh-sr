@@ -145,6 +145,97 @@ func TestGitHubClient_GetLatestRunnerVersion(t *testing.T) {
 	}
 }
 
+func TestGitHubClient_GetRegistrationTokenScoped_org(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/orgs/my-org/actions/runners/registration-token" {
+			http.NotFound(w, r)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(tokenResponse{Token: "org-regtok"})
+	}))
+	defer ts.Close()
+
+	g := NewGitHubClientWithHTTP("pat", ts.Client(), ts.URL)
+	tok, err := g.GetRegistrationTokenScoped("org", "my-org")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tok != "org-regtok" {
+		t.Errorf("token %q", tok)
+	}
+}
+
+func TestGitHubClient_GetRemovalTokenScoped_org(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/orgs/my-org/actions/runners/remove-token" {
+			http.NotFound(w, r)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(tokenResponse{Token: "org-rem"})
+	}))
+	defer ts.Close()
+
+	g := NewGitHubClientWithHTTP("pat", ts.Client(), ts.URL)
+	tok, err := g.GetRemovalTokenScoped("org", "my-org")
+	if err != nil || tok != "org-rem" {
+		t.Fatalf("got %q %v", tok, err)
+	}
+}
+
+func TestGitHubClient_ListRunnersScoped_org(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/orgs/my-org/actions/runners" {
+			http.NotFound(w, r)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(runnersResponse{
+			Runners: []GitHubRunner{{ID: 1, Name: "org-r-1", Status: "online"}},
+		})
+	}))
+	defer ts.Close()
+
+	g := NewGitHubClientWithHTTP("pat", ts.Client(), ts.URL)
+	runners, err := g.ListRunnersScoped("org", "my-org")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(runners) != 1 || runners[0].Name != "org-r-1" {
+		t.Fatalf("got %+v", runners)
+	}
+}
+
+func TestGitHubClient_DeleteRunnerScoped_org(t *testing.T) {
+	var method, path string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		method = r.Method
+		path = r.URL.Path
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer ts.Close()
+
+	g := NewGitHubClientWithHTTP("pat", ts.Client(), ts.URL)
+	if err := g.DeleteRunnerScoped("org", "my-org", 42); err != nil {
+		t.Fatal(err)
+	}
+	if method != http.MethodDelete {
+		t.Errorf("method %s", method)
+	}
+	if path != "/orgs/my-org/actions/runners/42" {
+		t.Errorf("path %s", path)
+	}
+}
+
+func TestGitHubClient_actionsURL(t *testing.T) {
+	t.Parallel()
+	g := NewGitHubClientWithHTTP("pat", nil, "https://api.github.com")
+	if u := g.actionsURL("repo", "o/r", "runners"); u != "https://api.github.com/repos/o/r/actions/runners" {
+		t.Errorf("repo URL: %s", u)
+	}
+	if u := g.actionsURL("org", "my-org", "runners"); u != "https://api.github.com/orgs/my-org/actions/runners" {
+		t.Errorf("org URL: %s", u)
+	}
+}
+
 func TestGitHubClient_GetLatestRunnerVersion_emptyTag(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(releaseResponse{TagName: "v"})

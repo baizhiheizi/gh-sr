@@ -67,8 +67,34 @@ func AddHost(cfgPath, name, addr, hostOS, arch string) error {
 	return writeYAMLBack(cfgPath, &root)
 }
 
+// AddRunnerOpts holds parameters for AddRunner.
+type AddRunnerOpts struct {
+	Name      string
+	Repo      string
+	Org       string
+	Group     string
+	Host      string
+	Count     int
+	Labels    []string
+	Mode      string
+	Profile   string
+	Ephemeral bool
+}
+
 // AddRunner adds a runner entry to the config file at cfgPath.
 func AddRunner(cfgPath, name, repo, hostName string, count int, labels []string, mode string) error {
+	return AddRunnerFull(cfgPath, AddRunnerOpts{
+		Name:   name,
+		Repo:   repo,
+		Host:   hostName,
+		Count:  count,
+		Labels: labels,
+		Mode:   mode,
+	})
+}
+
+// AddRunnerFull adds a runner entry with all options.
+func AddRunnerFull(cfgPath string, opts AddRunnerOpts) error {
 	data, err := os.ReadFile(cfgPath)
 	if err != nil {
 		return fmt.Errorf("reading config: %w", err)
@@ -99,23 +125,43 @@ func AddRunner(cfgPath, name, repo, hostName string, count int, labels []string,
 	entry := &yaml.Node{Kind: yaml.MappingNode}
 	entry.Content = append(entry.Content,
 		&yaml.Node{Kind: yaml.ScalarNode, Value: "name"},
-		&yaml.Node{Kind: yaml.ScalarNode, Value: name},
-		&yaml.Node{Kind: yaml.ScalarNode, Value: "repo"},
-		&yaml.Node{Kind: yaml.ScalarNode, Value: repo},
-		&yaml.Node{Kind: yaml.ScalarNode, Value: "host"},
-		&yaml.Node{Kind: yaml.ScalarNode, Value: hostName},
+		&yaml.Node{Kind: yaml.ScalarNode, Value: opts.Name},
 	)
 
-	if count > 1 {
+	if opts.Repo != "" {
 		entry.Content = append(entry.Content,
-			&yaml.Node{Kind: yaml.ScalarNode, Value: "count"},
-			&yaml.Node{Kind: yaml.ScalarNode, Value: fmt.Sprintf("%d", count), Tag: "!!int"},
+			&yaml.Node{Kind: yaml.ScalarNode, Value: "repo"},
+			&yaml.Node{Kind: yaml.ScalarNode, Value: opts.Repo},
+		)
+	}
+	if opts.Org != "" {
+		entry.Content = append(entry.Content,
+			&yaml.Node{Kind: yaml.ScalarNode, Value: "org"},
+			&yaml.Node{Kind: yaml.ScalarNode, Value: opts.Org},
+		)
+	}
+	if opts.Group != "" {
+		entry.Content = append(entry.Content,
+			&yaml.Node{Kind: yaml.ScalarNode, Value: "group"},
+			&yaml.Node{Kind: yaml.ScalarNode, Value: opts.Group},
 		)
 	}
 
-	if len(labels) > 0 {
+	entry.Content = append(entry.Content,
+		&yaml.Node{Kind: yaml.ScalarNode, Value: "host"},
+		&yaml.Node{Kind: yaml.ScalarNode, Value: opts.Host},
+	)
+
+	if opts.Count > 1 {
+		entry.Content = append(entry.Content,
+			&yaml.Node{Kind: yaml.ScalarNode, Value: "count"},
+			&yaml.Node{Kind: yaml.ScalarNode, Value: fmt.Sprintf("%d", opts.Count), Tag: "!!int"},
+		)
+	}
+
+	if len(opts.Labels) > 0 {
 		labelsSeq := &yaml.Node{Kind: yaml.SequenceNode, Style: yaml.FlowStyle}
-		for _, l := range labels {
+		for _, l := range opts.Labels {
 			labelsSeq.Content = append(labelsSeq.Content,
 				&yaml.Node{Kind: yaml.ScalarNode, Value: l},
 			)
@@ -126,10 +172,24 @@ func AddRunner(cfgPath, name, repo, hostName string, count int, labels []string,
 		)
 	}
 
-	if mode != "" {
+	if opts.Mode != "" {
 		entry.Content = append(entry.Content,
 			&yaml.Node{Kind: yaml.ScalarNode, Value: "mode"},
-			&yaml.Node{Kind: yaml.ScalarNode, Value: mode},
+			&yaml.Node{Kind: yaml.ScalarNode, Value: opts.Mode},
+		)
+	}
+
+	if opts.Profile != "" {
+		entry.Content = append(entry.Content,
+			&yaml.Node{Kind: yaml.ScalarNode, Value: "profile"},
+			&yaml.Node{Kind: yaml.ScalarNode, Value: opts.Profile},
+		)
+	}
+
+	if opts.Ephemeral {
+		entry.Content = append(entry.Content,
+			&yaml.Node{Kind: yaml.ScalarNode, Value: "ephemeral"},
+			&yaml.Node{Kind: yaml.ScalarNode, Value: "true", Tag: "!!bool"},
 		)
 	}
 

@@ -733,7 +733,11 @@ func (m *dashboardModel) sortedHostNames() []string {
 func (m *dashboardModel) sortedRepoNames() []string {
 	seen := make(map[string]bool)
 	for _, r := range m.cfg.Runners {
-		seen[r.Repo] = true
+		if r.Org != "" {
+			seen["org:"+r.Org] = true
+		} else {
+			seen[r.Repo] = true
+		}
 	}
 	out := make([]string, 0, len(seen))
 	for r := range seen {

@@ -120,6 +120,16 @@ func Run(w io.Writer, cfgPath, envPath string, cfg *config.Config, cfgErr error,
 		}
 		printLine(w, sevOK, "github", fmt.Sprintf("%s: list runners OK (%d registered)", repo, len(list)))
 	}
+	orgs := uniqueOrgs(runners)
+	for _, org := range orgs {
+		list, err := gh.ListRunnersScoped("org", org)
+		if err != nil {
+			printLine(w, sevFail, "github", fmt.Sprintf("org %s: %v", org, err))
+			r.Fail++
+			continue
+		}
+		printLine(w, sevOK, "github", fmt.Sprintf("org %s: list runners OK (%d registered)", org, len(list)))
+	}
 
 	fmt.Fprintln(w, "\n=== Hosts ===")
 	fmt.Fprintf(w, "Docker mode uses image: %s\n\n", runner.RunnerDockerImage)
@@ -147,6 +157,9 @@ func Run(w io.Writer, cfgPath, envPath string, cfg *config.Config, cfgErr error,
 			}
 			if h.OS == "linux" {
 				checkLinuxSudo(w, hostName, h, &r)
+			}
+			if hasAgenticRunners(runners, hostName) {
+				checkAgenticPrereqs(w, hostName, h, &r)
 			}
 		}()
 	}
@@ -178,11 +191,28 @@ func addrSummary(addr string) string {
 func uniqueRepos(runners []config.RunnerConfig) []string {
 	seen := make(map[string]struct{})
 	for _, rc := range runners {
-		seen[rc.Repo] = struct{}{}
+		if rc.Repo != "" {
+			seen[rc.Repo] = struct{}{}
+		}
 	}
 	out := make([]string, 0, len(seen))
 	for repo := range seen {
 		out = append(out, repo)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func uniqueOrgs(runners []config.RunnerConfig) []string {
+	seen := make(map[string]struct{})
+	for _, rc := range runners {
+		if rc.Org != "" {
+			seen[rc.Org] = struct{}{}
+		}
+	}
+	out := make([]string, 0, len(seen))
+	for org := range seen {
+		out = append(out, org)
 	}
 	sort.Strings(out)
 	return out
@@ -435,6 +465,53 @@ func checkNative(w io.Writer, hostName string, h *host.Host, r *Result) {
 	default:
 		printLine(w, sevWarn, hostName, fmt.Sprintf("native: unknown os %q", h.OS))
 		r.Warn++
+	}
+}
+
+func hasAgenticRunners(runners []config.RunnerConfig, hostName string) bool {
+	for _, rc := range runners {
+		if rc.Host == hostName && rc.IsAgentic() {
+			return true
+		}
+	}
+	return false
+}
+
+// checkAgenticPrereqs verifies host prerequisites specific to GitHub Agentic Workflows:
+// port 80 availability (MCP gateway), iptables (AWF firewall), and sudo access.
+func checkAgenticPrereqs(w io.Writer, hostName string, h *host.Host, r *Result) {
+	if h.OS == "linux" || h.OS == "darwin" {
+		out, err := h.Run("ss -tlnp 2>/dev/null | grep -q ':80 ' && echo in-use || echo free")
+		if err == nil {
+			status := strings.TrimSpace(out)
+			if status == "in-use" {
+				printLine(w, sevWarn, hostName, "agentic: port 80 is in use; gh-aw MCP gateway needs port 80 free on the host network")
+				r.Warn++
+			} else {
+				printLine(w, sevOK, hostName, "agentic: port 80 is free (MCP gateway)")
+			}
+		}
+	}
+
+	if h.OS == "linux" {
+		out, err := h.Run("command -v iptables >/dev/null 2>&1 && echo yes || echo no")
+		if err == nil && strings.TrimSpace(out) == "yes" {
+			printLine(w, sevOK, hostName, "agentic: iptables available (AWF firewall)")
+		} else {
+			printLine(w, sevWarn, hostName, "agentic: iptables not found; AWF sandbox may fail (install iptables or ensure it is on PATH)")
+			r.Warn++
+		}
+
+		uid, err := h.Run("id -u")
+		if err == nil && strings.TrimSpace(uid) != "0" {
+			out, err := h.Run("sudo -n true 2>/dev/null && echo ok || echo no")
+			if err != nil || strings.TrimSpace(out) != "ok" {
+				printLine(w, sevWarn, hostName, "agentic: passwordless sudo not available; AWF requires sudo for iptables/firewall setup")
+				r.Warn++
+			} else {
+				printLine(w, sevOK, hostName, "agentic: sudo available for AWF firewall setup")
+			}
+		}
 	}
 }
 

@@ -94,8 +94,24 @@ func FormatConfig(cfg *config.Config) string {
 	for _, r := range cfg.Runners {
 		hcfg := cfg.Hosts[r.Host]
 		mode := r.EffectiveMode(hcfg.OS)
-		b.WriteString(fmt.Sprintf("  %s  repo=%s  host=%s  count=%d  mode=%s  labels=[%s]\n",
-			configVal.Render(r.Name), r.Repo, r.Host, r.Count, mode, strings.Join(r.Labels, ", ")))
+		target := r.Repo
+		targetKey := "repo"
+		if r.Org != "" {
+			target = r.Org
+			targetKey = "org"
+		}
+		extra := ""
+		if r.Profile != "" {
+			extra += fmt.Sprintf("  profile=%s", r.Profile)
+		}
+		if r.Group != "" {
+			extra += fmt.Sprintf("  group=%s", r.Group)
+		}
+		if r.Ephemeral {
+			extra += "  ephemeral"
+		}
+		b.WriteString(fmt.Sprintf("  %s  %s=%s  host=%s  count=%d  mode=%s  labels=[%s]%s\n",
+			configVal.Render(r.Name), targetKey, target, r.Host, r.Count, mode, strings.Join(r.Labels, ", "), extra))
 	}
 	return b.String()
 }

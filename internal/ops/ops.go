@@ -186,10 +186,14 @@ func CollectStatus(w io.Writer, cfg *config.Config, mgr *runner.Manager, filterH
 				fmt.Fprintf(w, "Warning: cannot connect to %s: %v\n", rc.Host, err)
 			}
 			for _, name := range rc.InstanceNames() {
+				repoDisplay := rc.Repo
+				if rc.Org != "" {
+					repoDisplay = "org:" + rc.Org
+				}
 				allStatuses = append(allStatuses, runner.RunnerStatus{
 					Instance: name,
 					Host:     rc.Host,
-					Repo:     rc.Repo,
+					Repo:     repoDisplay,
 					Mode:     rc.EffectiveMode(hcfg.OS),
 					Local:    "unreachable",
 				})

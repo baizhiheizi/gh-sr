@@ -50,33 +50,56 @@ func dockerCapAddFlags(capAdds []string) string {
 	return b.String()
 }
 
-// dockerStartCommand builds the docker run line for the official actions-runner image (config.sh + run.sh).
-// networkMode is "bridge" (default) or "host" (Linux docker-mode only; aligns job network with Docker host for tools like GitHub Agentic Workflows MCP gateway).
-// capAdds are optional Linux capabilities (e.g. NET_ADMIN for Agent Workflow Firewall / iptables inside the runner container).
-func dockerStartCommand(cname, instanceName, regToken, repoURL, labels, sockMount, image, networkMode string, capAdds []string) string {
+type dockerStartOpts struct {
+	ContainerName string
+	InstanceName  string
+	RegToken      string
+	RepoURL       string
+	Labels        string
+	SockMount     string
+	Image         string
+	NetworkMode   string
+	CapAdds       []string
+	RunnerGroup   string
+	Ephemeral     bool
+}
+
+func dockerStartCommand(opts dockerStartOpts) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "docker run -d --name %s ", cname)
-	if strings.TrimSpace(networkMode) == "host" {
+	fmt.Fprintf(&b, "docker run -d --name %s ", opts.ContainerName)
+	if strings.TrimSpace(opts.NetworkMode) == "host" {
 		b.WriteString("--network host ")
 	}
-	fmt.Fprintf(&b, "--restart unless-stopped ")
-	b.WriteString(dockerCapAddFlags(capAdds))
-	b.WriteString(dockerEnvFlag("ACTIONS_RUNNER_INPUT_URL", repoURL))
+	restartPolicy := "unless-stopped"
+	if opts.Ephemeral {
+		restartPolicy = "no"
+	}
+	fmt.Fprintf(&b, "--restart %s ", restartPolicy)
+	b.WriteString(dockerCapAddFlags(opts.CapAdds))
+	b.WriteString(dockerEnvFlag("ACTIONS_RUNNER_INPUT_URL", opts.RepoURL))
 	b.WriteByte(' ')
-	b.WriteString(dockerEnvFlag("ACTIONS_RUNNER_INPUT_TOKEN", regToken))
+	b.WriteString(dockerEnvFlag("ACTIONS_RUNNER_INPUT_TOKEN", opts.RegToken))
 	b.WriteByte(' ')
-	b.WriteString(dockerEnvFlag("ACTIONS_RUNNER_INPUT_NAME", instanceName))
+	b.WriteString(dockerEnvFlag("ACTIONS_RUNNER_INPUT_NAME", opts.InstanceName))
 	b.WriteByte(' ')
-	b.WriteString(dockerEnvFlag("ACTIONS_RUNNER_INPUT_LABELS", labels))
+	b.WriteString(dockerEnvFlag("ACTIONS_RUNNER_INPUT_LABELS", opts.Labels))
 	b.WriteByte(' ')
 	b.WriteString(dockerEnvFlag("ACTIONS_RUNNER_INPUT_WORK", "_work"))
 	b.WriteByte(' ')
-	if s := strings.TrimSpace(sockMount); s != "" {
+	if opts.RunnerGroup != "" {
+		b.WriteString(dockerEnvFlag("ACTIONS_RUNNER_INPUT_RUNNERGROUP", opts.RunnerGroup))
+		b.WriteByte(' ')
+	}
+	if opts.Ephemeral {
+		b.WriteString(dockerEnvFlag("ACTIONS_RUNNER_INPUT_EPHEMERAL", "true"))
+		b.WriteByte(' ')
+	}
+	if s := strings.TrimSpace(opts.SockMount); s != "" {
 		b.WriteString(s)
 		b.WriteByte(' ')
 	}
 	b.WriteString("--entrypoint /bin/bash ")
-	b.WriteString(image)
+	b.WriteString(opts.Image)
 	b.WriteString(" -c ")
 	b.WriteString(shellSingleQuote(dockerRunnerEntryScript))
 	return b.String()
@@ -507,13 +530,18 @@ func (m *Manager) startDocker(h *host.Host, rc config.RunnerConfig, instanceName
 		}
 	}
 
-	regToken, err := m.GitHub.GetRegistrationToken(rc.Repo)
+	regToken, err := m.GitHub.GetRegistrationTokenScoped(rc.Scope(), rc.ScopeTarget())
 	if err != nil {
 		return err
 	}
 
 	labels := strings.Join(rc.EffectiveLabels(h.OS, h.Arch), ",")
-	repoURL := fmt.Sprintf("https://github.com/%s", rc.Repo)
+	var repoURL string
+	if rc.Org != "" {
+		repoURL = fmt.Sprintf("https://github.com/%s", rc.Org)
+	} else {
+		repoURL = fmt.Sprintf("https://github.com/%s", rc.Repo)
+	}
 
 	var sockFlags string
 	switch h.OS {
@@ -533,7 +561,19 @@ func (m *Manager) startDocker(h *host.Host, rc config.RunnerConfig, instanceName
 		sockFlags = dockerEngineSockFlagsWindows(h)
 	}
 
-	cmd := dockerStartCommand(cname, instanceName, regToken, repoURL, labels, sockFlags, RunnerDockerImage, rc.EffectiveDockerNetworkMode(h.OS), rc.DockerCapAdd)
+	cmd := dockerStartCommand(dockerStartOpts{
+		ContainerName: cname,
+		InstanceName:  instanceName,
+		RegToken:      regToken,
+		RepoURL:       repoURL,
+		Labels:        labels,
+		SockMount:     sockFlags,
+		Image:         RunnerDockerImage,
+		NetworkMode:   rc.EffectiveDockerNetworkMode(h.OS),
+		CapAdds:       rc.DockerCapAdd,
+		RunnerGroup:   rc.Group,
+		Ephemeral:     rc.Ephemeral,
+	})
 
 	out, err := dockerRun(h, cmd)
 	if err != nil {

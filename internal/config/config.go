@@ -36,13 +36,38 @@ type HostConfig struct {
 type RunnerConfig struct {
 	Name              string   `yaml:"name"`
 	Repo              string   `yaml:"repo"`
+	Org               string   `yaml:"org"`
+	Group             string   `yaml:"group"`
 	Host              string   `yaml:"host"`
 	Count             int      `yaml:"count"`
 	Labels            []string `yaml:"labels"`
 	Mode              string   `yaml:"mode"`
+	Profile           string   `yaml:"profile"`
+	Ephemeral         bool     `yaml:"ephemeral"`
 	DockerNetworkMode string   `yaml:"docker_network_mode"` // bridge (default) or host; only for docker-mode Linux runners
 	// DockerCapAdd lists Linux capability names passed to docker run --cap-add (e.g. NET_ADMIN for gh-aw AWF iptables).
 	DockerCapAdd []string `yaml:"docker_cap_add"`
+}
+
+// Scope returns "repo" or "org" depending on how the runner is registered.
+func (rc *RunnerConfig) Scope() string {
+	if rc.Org != "" {
+		return "org"
+	}
+	return "repo"
+}
+
+// ScopeTarget returns the repo (owner/repo) or org name used for GitHub API calls.
+func (rc *RunnerConfig) ScopeTarget() string {
+	if rc.Org != "" {
+		return rc.Org
+	}
+	return rc.Repo
+}
+
+// IsAgentic reports whether the runner uses the agentic workflow profile.
+func (rc *RunnerConfig) IsAgentic() bool {
+	return strings.EqualFold(strings.TrimSpace(rc.Profile), "agentic")
 }
 
 func (rc *RunnerConfig) EffectiveMode(hostOS string) string {
@@ -107,12 +132,28 @@ func DefaultLabels(mode, hostOS, arch string) []string {
 }
 
 // EffectiveLabels returns the runner's labels, auto-generating them from host info if empty.
+// Agentic-profile runners automatically get a "gh-aw" label appended.
 func (rc *RunnerConfig) EffectiveLabels(hostOS, arch string) []string {
+	var labels []string
 	if len(rc.Labels) > 0 {
-		return rc.Labels
+		labels = rc.Labels
+	} else {
+		mode := rc.EffectiveMode(hostOS)
+		labels = DefaultLabels(mode, hostOS, arch)
 	}
-	mode := rc.EffectiveMode(hostOS)
-	return DefaultLabels(mode, hostOS, arch)
+	if rc.IsAgentic() && !hasLabel(labels, "gh-aw") {
+		labels = append(labels, "gh-aw")
+	}
+	return labels
+}
+
+func hasLabel(labels []string, target string) bool {
+	for _, l := range labels {
+		if strings.EqualFold(l, target) {
+			return true
+		}
+	}
+	return false
 }
 
 func (rc *RunnerConfig) InstanceNames() []string {
@@ -185,7 +226,33 @@ func (c *Config) applyDefaults() {
 		if c.Runners[i].Count < 1 {
 			c.Runners[i].Count = 1
 		}
+		c.Runners[i].applyAgenticDefaults()
 	}
+}
+
+// applyAgenticDefaults fills in the Docker configuration implied by profile: agentic.
+func (rc *RunnerConfig) applyAgenticDefaults() {
+	if !rc.IsAgentic() {
+		return
+	}
+	if rc.Mode == "" {
+		rc.Mode = "docker"
+	}
+	if rc.DockerNetworkMode == "" {
+		rc.DockerNetworkMode = "host"
+	}
+	if !hasCapability(rc.DockerCapAdd, "NET_ADMIN") {
+		rc.DockerCapAdd = append(rc.DockerCapAdd, "NET_ADMIN")
+	}
+}
+
+func hasCapability(caps []string, target string) bool {
+	for _, c := range caps {
+		if strings.EqualFold(c, target) {
+			return true
+		}
+	}
+	return false
 }
 
 func (c *Config) Validate() error {
@@ -240,8 +307,14 @@ func (c *Config) Validate() error {
 		if r.Name == "" {
 			return fmt.Errorf("runner name is required")
 		}
-		if r.Repo == "" {
-			return fmt.Errorf("runner %q: repo is required", r.Name)
+		if r.Repo == "" && r.Org == "" {
+			return fmt.Errorf("runner %q: repo or org is required", r.Name)
+		}
+		if r.Repo != "" && r.Org != "" {
+			return fmt.Errorf("runner %q: specify repo or org, not both", r.Name)
+		}
+		if r.Group != "" && r.Org == "" {
+			return fmt.Errorf("runner %q: group requires org (runner groups are organization-level)", r.Name)
 		}
 		if r.Host == "" {
 			return fmt.Errorf("runner %q: host is required", r.Name)
@@ -249,6 +322,12 @@ func (c *Config) Validate() error {
 		hcfg, ok := c.Hosts[r.Host]
 		if !ok {
 			return fmt.Errorf("runner %q: host %q not found in hosts", r.Name, r.Host)
+		}
+		if r.Profile != "" && !strings.EqualFold(r.Profile, "agentic") {
+			return fmt.Errorf("runner %q: profile must be 'agentic' (got %q)", r.Name, r.Profile)
+		}
+		if r.IsAgentic() && r.Mode == "native" {
+			return fmt.Errorf("runner %q: profile 'agentic' requires docker mode (AWF sandbox needs Docker)", r.Name)
 		}
 		if r.Mode != "" && r.Mode != "docker" && r.Mode != "native" {
 			return fmt.Errorf("runner %q: mode must be 'docker' or 'native' (got %q)", r.Name, r.Mode)
@@ -330,12 +409,30 @@ func (c *Config) UniqueRepos() []string {
 	seen := map[string]bool{}
 	var repos []string
 	for _, r := range c.Runners {
+		if r.Repo == "" {
+			continue
+		}
 		if !seen[r.Repo] {
 			seen[r.Repo] = true
 			repos = append(repos, r.Repo)
 		}
 	}
 	return repos
+}
+
+func (c *Config) UniqueOrgs() []string {
+	seen := map[string]bool{}
+	var orgs []string
+	for _, r := range c.Runners {
+		if r.Org == "" {
+			continue
+		}
+		if !seen[r.Org] {
+			seen[r.Org] = true
+			orgs = append(orgs, r.Org)
+		}
+	}
+	return orgs
 }
 
 func (c *Config) FindRunner(name string) (*RunnerConfig, bool) {

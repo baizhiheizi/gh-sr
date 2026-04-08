@@ -100,6 +100,14 @@ runners:
     count: 2
     labels: [self-hosted, Linux, X64]
     mode: docker
+
+  # GitHub Agentic Workflows — profile: agentic sets docker mode,
+  # host networking, NET_ADMIN, and a gh-aw label automatically.
+  - name: hangar-aw
+    repo: an-lee/hangar
+    host: vps-1
+    profile: agentic
+    count: 2
 ```
 
 ## Config reference
@@ -112,11 +120,15 @@ runners:
 | `hosts.<name>.arch` | `amd64` or `arm64`. Auto-detected when `addr` is `local`. |
 | `hosts.<name>.windows_ps` | Optional; **Windows hosts only.** Which executable runs remote PowerShell payloads: `powershell` (default, `powershell.exe`) or `pwsh` (`pwsh.exe`). ghr uses `-EncodedCommand` so the user’s SSH default shell (cmd.exe or pwsh) does not break nested quoting. |
 | `runners[].name` | Base name (instances become `name-1`, `name-2`, ...) |
-| `runners[].repo` | GitHub `owner/repo` |
+| `runners[].repo` | GitHub `owner/repo`. Required unless `org` is set. |
+| `runners[].org` | GitHub organization name. Use instead of `repo` for org-level runners. |
+| `runners[].group` | Runner group name (org-level runners only). Passed as `--runnergroup` during registration. |
 | `runners[].host` | References a key under `hosts` |
 | `runners[].count` | Number of parallel instances (default: 1) |
 | `runners[].labels` | Labels for workflow `runs-on` matching |
 | `runners[].mode` | `docker` or `native` (default: `docker` for Linux hosts, `native` for macOS and Windows). Set `docker` for Linux container runners on Windows (Docker Desktop) or macOS (Docker Desktop, OrbStack, or Colima). |
+| `runners[].profile` | Optional. `agentic` auto-configures for [GitHub Agentic Workflows](https://github.github.com/gh-aw/): sets `mode: docker`, `docker_network_mode: host`, `docker_cap_add: [NET_ADMIN]`, and adds a `gh-aw` label. See [Host setup — gh-aw](host-setup.md#github-agentic-workflows-gh-aw). |
+| `runners[].ephemeral` | Optional boolean. When `true`, the runner handles one job and deregisters. Docker-mode uses `--restart no`; native passes `--ephemeral` to `config.sh`. |
 | `runners[].docker_network_mode` | Optional. `bridge` (default) or `host`. Only for **`mode: docker`** runners. `host` runs the actions-runner container with Docker **`--network host`** so jobs share the engine host network (needed for [GitHub Agentic Workflows](https://github.github.com/gh-aw/guides/self-hosted-runners/) MCP gateway health checks). On **Linux** hosts, the container joins the host's network namespace directly. On **macOS** and **Windows** (Docker Desktop), it joins the Linux VM's network namespace — sufficient for gh-aw since the MCP gateway runs in the same VM. Weaker isolation; port **80** must be free on the host (Linux) or inside the VM (macOS/Windows). See [Host setup — GitHub Agentic Workflows](host-setup.md#github-agentic-workflows-gh-aw). |
 | `runners[].docker_cap_add` | Optional list of Linux capability names for **`docker run --cap-add`**. Only for **`mode: docker`** runners. Use **`[NET_ADMIN]`** when workflows run the [Agent Workflow Firewall](https://github.com/github/gh-aw-firewall) (`awf`) so jobs can configure iptables (e.g. `DOCKER-USER`); combine with **`docker_network_mode: host`** for gh-aw. Defaults to none (stronger isolation). See [Host setup — GitHub Agentic Workflows](host-setup.md#github-agentic-workflows-gh-aw). |
 

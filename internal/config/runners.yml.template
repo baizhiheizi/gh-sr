@@ -58,6 +58,41 @@ runners:
   #   labels: [self-hosted, Linux, X64]
   #   mode: native
   #
+  # GitHub Agentic Workflows (gh-aw) — use profile: agentic to auto-configure
+  # docker mode, host networking, NET_ADMIN, and a gh-aw label in one line:
+  #
+  # - name: my-aw-runner
+  #   repo: owner/repo
+  #   host: vps-1
+  #   profile: agentic   # sets mode: docker, docker_network_mode: host, docker_cap_add: [NET_ADMIN], label: gh-aw
+  #   count: 2
+  #
+  # Organization-level runner with runner group:
+  #
+  # - name: org-runner
+  #   org: my-org
+  #   group: my-runner-group
+  #   host: vps-1
+  #   profile: agentic
+  #   count: 2
+  #
+  # Ephemeral runner (one job then auto-deregister):
+  #
+  # - name: ephemeral-runner
+  #   repo: owner/repo
+  #   host: vps-1
+  #   profile: agentic
+  #   ephemeral: true
+  #
+  # Runner on the local machine:
+  #
+  # - name: my-project-local
+  #   repo: owner/repo
+  #   host: my-laptop
+  #   count: 1
+  #   labels: [self-hosted, Linux, X64]
+  #   mode: native
+  #
   # Linux runner on a Windows host (requires Docker Desktop):
   #
   # - name: my-project-linux-on-win

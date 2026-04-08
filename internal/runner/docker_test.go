@@ -140,17 +140,16 @@ func Test_socketPathFromDockerContextHost(t *testing.T) {
 func Test_dockerStartCommand_officialImageShape(t *testing.T) {
 	t.Parallel()
 	sockFlags := "-v /var/run/docker.sock:/var/run/docker.sock --group-add 999 "
-	cmd := dockerStartCommand(
-		"gh-runner-app-1",
-		"app-1",
-		"REGTOKEN123",
-		"https://github.com/o/r",
-		"self-hosted,linux",
-		sockFlags,
-		"ghcr.io/actions/actions-runner:latest",
-		"bridge",
-		nil,
-	)
+	cmd := dockerStartCommand(dockerStartOpts{
+		ContainerName: "gh-runner-app-1",
+		InstanceName:  "app-1",
+		RegToken:      "REGTOKEN123",
+		RepoURL:       "https://github.com/o/r",
+		Labels:        "self-hosted,linux",
+		SockMount:     sockFlags,
+		Image:         "ghcr.io/actions/actions-runner:latest",
+		NetworkMode:   "bridge",
+	})
 	for _, sub := range []string{
 		"ACTIONS_RUNNER_INPUT_URL=",
 		"https://github.com/o/r",
@@ -188,17 +187,16 @@ func Test_dockerStartCommand_officialImageShape(t *testing.T) {
 func Test_dockerStartCommand_hostNetwork(t *testing.T) {
 	t.Parallel()
 	sockFlags := "-v /var/run/docker.sock:/var/run/docker.sock --group-add 999 "
-	cmd := dockerStartCommand(
-		"gh-runner-app-1",
-		"app-1",
-		"REGTOKEN123",
-		"https://github.com/o/r",
-		"self-hosted,linux",
-		sockFlags,
-		"ghcr.io/actions/actions-runner:latest",
-		"host",
-		nil,
-	)
+	cmd := dockerStartCommand(dockerStartOpts{
+		ContainerName: "gh-runner-app-1",
+		InstanceName:  "app-1",
+		RegToken:      "REGTOKEN123",
+		RepoURL:       "https://github.com/o/r",
+		Labels:        "self-hosted,linux",
+		SockMount:     sockFlags,
+		Image:         "ghcr.io/actions/actions-runner:latest",
+		NetworkMode:   "host",
+	})
 	n := strings.Index(cmd, "--network host")
 	r := strings.Index(cmd, "--restart unless-stopped")
 	if n < 0 || r < 0 || n > r {
@@ -282,17 +280,16 @@ func Test_darwinDockerSockFlags_colimaSocketUsesVMBindPath(t *testing.T) {
 func Test_dockerStartCommand_darwinIncludesSocketMount(t *testing.T) {
 	t.Parallel()
 	sockFlags := darwinDockerSockFlags("")
-	cmd := dockerStartCommand(
-		"gh-runner-app-1",
-		"app-1",
-		"REGTOKEN",
-		"https://github.com/o/r",
-		"self-hosted,linux",
-		sockFlags,
-		"ghcr.io/actions/actions-runner:latest",
-		"bridge",
-		nil,
-	)
+	cmd := dockerStartCommand(dockerStartOpts{
+		ContainerName: "gh-runner-app-1",
+		InstanceName:  "app-1",
+		RegToken:      "REGTOKEN",
+		RepoURL:       "https://github.com/o/r",
+		Labels:        "self-hosted,linux",
+		SockMount:     sockFlags,
+		Image:         "ghcr.io/actions/actions-runner:latest",
+		NetworkMode:   "bridge",
+	})
 	if !strings.Contains(cmd, "/var/run/docker.sock:/var/run/docker.sock") {
 		t.Fatalf("darwin start command should bind Docker socket: %s", cmd)
 	}
@@ -303,19 +300,17 @@ func Test_dockerStartCommand_darwinIncludesSocketMount(t *testing.T) {
 
 func Test_dockerStartCommand_windowsIncludesSocketMount(t *testing.T) {
 	t.Parallel()
-	// Simulate mount-only sockFlags when GID probe fails (e.g. offline host).
 	sockFlags := dockerWindowsEngineSockMount
-	cmd := dockerStartCommand(
-		"gh-runner-app-1",
-		"app-1",
-		"REGTOKEN",
-		"https://github.com/o/r",
-		"self-hosted,linux",
-		sockFlags,
-		"ghcr.io/actions/actions-runner:latest",
-		"bridge",
-		nil,
-	)
+	cmd := dockerStartCommand(dockerStartOpts{
+		ContainerName: "gh-runner-app-1",
+		InstanceName:  "app-1",
+		RegToken:      "REGTOKEN",
+		RepoURL:       "https://github.com/o/r",
+		Labels:        "self-hosted,linux",
+		SockMount:     sockFlags,
+		Image:         "ghcr.io/actions/actions-runner:latest",
+		NetworkMode:   "bridge",
+	})
 	if !strings.Contains(cmd, "/var/run/docker.sock:/var/run/docker.sock") {
 		t.Fatalf("windows start command should bind Docker socket: %s", cmd)
 	}
@@ -324,19 +319,80 @@ func Test_dockerStartCommand_windowsIncludesSocketMount(t *testing.T) {
 func Test_dockerStartCommand_windowsIncludesGroupAddWhenGIDKnown(t *testing.T) {
 	t.Parallel()
 	sockFlags := appendGroupAddForDockerSockGID(dockerWindowsEngineSockMount, "999\n")
-	cmd := dockerStartCommand(
-		"gh-runner-app-1",
-		"app-1",
-		"REGTOKEN",
-		"https://github.com/o/r",
-		"self-hosted,linux",
-		sockFlags,
-		"ghcr.io/actions/actions-runner:latest",
-		"bridge",
-		nil,
-	)
+	cmd := dockerStartCommand(dockerStartOpts{
+		ContainerName: "gh-runner-app-1",
+		InstanceName:  "app-1",
+		RegToken:      "REGTOKEN",
+		RepoURL:       "https://github.com/o/r",
+		Labels:        "self-hosted,linux",
+		SockMount:     sockFlags,
+		Image:         "ghcr.io/actions/actions-runner:latest",
+		NetworkMode:   "bridge",
+	})
 	if !strings.Contains(cmd, "--group-add 999") {
 		t.Fatalf("windows start command should include --group-add when GID is known: %s", cmd)
+	}
+}
+
+func Test_dockerStartCommand_ephemeral(t *testing.T) {
+	t.Parallel()
+	cmd := dockerStartCommand(dockerStartOpts{
+		ContainerName: "gh-runner-app-1",
+		InstanceName:  "app-1",
+		RegToken:      "REGTOKEN",
+		RepoURL:       "https://github.com/o/r",
+		Labels:        "self-hosted,linux",
+		SockMount:     "-v /var/run/docker.sock:/var/run/docker.sock ",
+		Image:         "ghcr.io/actions/actions-runner:latest",
+		NetworkMode:   "host",
+		Ephemeral:     true,
+	})
+	if !strings.Contains(cmd, "--restart no") {
+		t.Fatalf("ephemeral should use --restart no: %s", cmd)
+	}
+	if strings.Contains(cmd, "--restart unless-stopped") {
+		t.Fatalf("ephemeral should not use --restart unless-stopped: %s", cmd)
+	}
+	if !strings.Contains(cmd, "ACTIONS_RUNNER_INPUT_EPHEMERAL=true") {
+		t.Fatalf("ephemeral should set env: %s", cmd)
+	}
+}
+
+func Test_dockerStartCommand_runnerGroup(t *testing.T) {
+	t.Parallel()
+	cmd := dockerStartCommand(dockerStartOpts{
+		ContainerName: "gh-runner-app-1",
+		InstanceName:  "app-1",
+		RegToken:      "REGTOKEN",
+		RepoURL:       "https://github.com/my-org",
+		Labels:        "self-hosted,linux",
+		SockMount:     "-v /var/run/docker.sock:/var/run/docker.sock ",
+		Image:         "ghcr.io/actions/actions-runner:latest",
+		NetworkMode:   "bridge",
+		RunnerGroup:   "my-group",
+	})
+	if !strings.Contains(cmd, "ACTIONS_RUNNER_INPUT_RUNNERGROUP=my-group") {
+		t.Fatalf("runner group env missing: %s", cmd)
+	}
+}
+
+func Test_dockerStartCommand_noRunnerGroupWhenEmpty(t *testing.T) {
+	t.Parallel()
+	cmd := dockerStartCommand(dockerStartOpts{
+		ContainerName: "gh-runner-app-1",
+		InstanceName:  "app-1",
+		RegToken:      "REGTOKEN",
+		RepoURL:       "https://github.com/o/r",
+		Labels:        "self-hosted,linux",
+		SockMount:     "-v /var/run/docker.sock:/var/run/docker.sock ",
+		Image:         "ghcr.io/actions/actions-runner:latest",
+		NetworkMode:   "bridge",
+	})
+	if strings.Contains(cmd, "ACTIONS_RUNNER_INPUT_RUNNERGROUP") {
+		t.Fatalf("should not set runner group when empty: %s", cmd)
+	}
+	if strings.Contains(cmd, "ACTIONS_RUNNER_INPUT_EPHEMERAL") {
+		t.Fatalf("should not set ephemeral when false: %s", cmd)
 	}
 }
 
@@ -361,17 +417,17 @@ func Test_dockerCapAddFlags(t *testing.T) {
 func Test_dockerStartCommand_capAdd(t *testing.T) {
 	t.Parallel()
 	sockFlags := "-v /var/run/docker.sock:/var/run/docker.sock "
-	cmd := dockerStartCommand(
-		"gh-runner-app-1",
-		"app-1",
-		"REGTOKEN",
-		"https://github.com/o/r",
-		"self-hosted,linux",
-		sockFlags,
-		"ghcr.io/actions/actions-runner:latest",
-		"bridge",
-		[]string{"NET_ADMIN"},
-	)
+	cmd := dockerStartCommand(dockerStartOpts{
+		ContainerName: "gh-runner-app-1",
+		InstanceName:  "app-1",
+		RegToken:      "REGTOKEN",
+		RepoURL:       "https://github.com/o/r",
+		Labels:        "self-hosted,linux",
+		SockMount:     sockFlags,
+		Image:         "ghcr.io/actions/actions-runner:latest",
+		NetworkMode:   "bridge",
+		CapAdds:       []string{"NET_ADMIN"},
+	})
 	r := strings.Index(cmd, "--restart unless-stopped")
 	c := strings.Index(cmd, "--cap-add NET_ADMIN")
 	if r < 0 || c < 0 || r > c {

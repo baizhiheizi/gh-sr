@@ -34,7 +34,7 @@ func NewManager(pat string) *Manager {
 type RunnerStatus struct {
 	Instance string
 	Host     string
-	Repo     string
+	Repo     string // owner/repo for repo-scoped, "org:name" for org-scoped
 	Labels   string
 	Mode     string
 	Local    string // "running", "stopped", "not installed"
@@ -177,10 +177,14 @@ func (m *Manager) Status(h *host.Host, rc config.RunnerConfig) ([]RunnerStatus, 
 	var statuses []RunnerStatus
 
 	for _, name := range rc.InstanceNames() {
+		repoDisplay := rc.Repo
+		if rc.Org != "" {
+			repoDisplay = "org:" + rc.Org
+		}
 		s := RunnerStatus{
 			Instance: name,
 			Host:     rc.Host,
-			Repo:     rc.Repo,
+			Repo:     repoDisplay,
 			Labels:   strings.Join(rc.EffectiveLabels(h.OS, h.Arch), ", "),
 			Mode:     mode,
 		}
@@ -237,34 +241,50 @@ func expectedGitHubRunnerOS(mode, hostOS string) string {
 }
 
 func (m *Manager) EnrichWithGitHubStatus(statuses []RunnerStatus, cfg *config.Config) {
-	repos := cfg.UniqueRepos()
-	repoRunners := make(map[string][]GitHubRunner, len(repos))
+	type scopeKey struct{ scope, target string }
+	keys := make(map[scopeKey]bool)
+	for _, r := range cfg.Runners {
+		keys[scopeKey{r.Scope(), r.ScopeTarget()}] = true
+	}
 
+	scopeRunners := make(map[scopeKey][]GitHubRunner, len(keys))
 	var mu sync.Mutex
 	var wg sync.WaitGroup
-	for _, repo := range repos {
+	for key := range keys {
 		wg.Add(1)
-		go func(repo string) {
+		go func(k scopeKey) {
 			defer wg.Done()
-			runners, err := m.GitHub.ListRunners(repo)
+			runners, err := m.GitHub.ListRunnersScoped(k.scope, k.target)
 			if err != nil {
 				return
 			}
 			mu.Lock()
-			repoRunners[repo] = runners
+			scopeRunners[k] = runners
 			mu.Unlock()
-		}(repo)
+		}(key)
 	}
 	wg.Wait()
+
+	rcByInstance := make(map[string]*config.RunnerConfig)
+	for i := range cfg.Runners {
+		rc := &cfg.Runners[i]
+		for _, inst := range rc.InstanceNames() {
+			rcByInstance[inst] = rc
+		}
+	}
 
 	for i := range statuses {
 		hcfg, ok := cfg.Hosts[statuses[i].Host]
 		if !ok {
 			continue
 		}
+		rc := rcByInstance[statuses[i].Instance]
+		if rc == nil {
+			continue
+		}
 		exp := expectedGitHubRunnerOS(statuses[i].Mode, hcfg.OS)
-		ghRunners := repoRunners[statuses[i].Repo]
-		for _, gr := range ghRunners {
+		key := scopeKey{rc.Scope(), rc.ScopeTarget()}
+		for _, gr := range scopeRunners[key] {
 			if gr.Name != statuses[i].Instance {
 				continue
 			}
@@ -279,15 +299,23 @@ func (m *Manager) EnrichWithGitHubStatus(statuses []RunnerStatus, cfg *config.Co
 }
 
 func (m *Manager) CleanupOffline(cfg *config.Config) (int, error) {
+	type scopeKey struct{ scope, target string }
+	seen := make(map[scopeKey]bool)
 	removed := 0
-	for _, repo := range cfg.UniqueRepos() {
-		runners, err := m.GitHub.ListRunners(repo)
+
+	for _, rc := range cfg.Runners {
+		key := scopeKey{rc.Scope(), rc.ScopeTarget()}
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		runners, err := m.GitHub.ListRunnersScoped(key.scope, key.target)
 		if err != nil {
-			return removed, fmt.Errorf("listing runners for %s: %w", repo, err)
+			return removed, fmt.Errorf("listing runners for %s: %w", key.target, err)
 		}
 		for _, r := range runners {
 			if r.Status == "offline" {
-				if err := m.GitHub.DeleteRunner(repo, r.ID); err != nil {
+				if err := m.GitHub.DeleteRunnerScoped(key.scope, key.target, r.ID); err != nil {
 					return removed, fmt.Errorf("deleting runner %s (id=%d): %w", r.Name, r.ID, err)
 				}
 				removed++

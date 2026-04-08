@@ -66,11 +66,27 @@ func (g *GitHubClient) repoActionsURL(repo, rest string) string {
 	return fmt.Sprintf("%s/repos/%s/actions/%s", g.apiBase, repo, rest)
 }
 
+func (g *GitHubClient) orgActionsURL(org, rest string) string {
+	return fmt.Sprintf("%s/orgs/%s/actions/%s", g.apiBase, org, rest)
+}
+
+// actionsURL returns the correct GitHub API URL for runners based on scope.
+func (g *GitHubClient) actionsURL(scope, target, rest string) string {
+	if scope == "org" {
+		return g.orgActionsURL(target, rest)
+	}
+	return g.repoActionsURL(target, rest)
+}
+
 func (g *GitHubClient) GetRegistrationToken(repo string) (string, error) {
-	url := g.repoActionsURL(repo, "runners/registration-token")
+	return g.GetRegistrationTokenScoped("repo", repo)
+}
+
+func (g *GitHubClient) GetRegistrationTokenScoped(scope, target string) (string, error) {
+	url := g.actionsURL(scope, target, "runners/registration-token")
 	resp, err := g.post(url, nil)
 	if err != nil {
-		return "", fmt.Errorf("getting registration token for %s: %w", repo, err)
+		return "", fmt.Errorf("getting registration token for %s: %w", target, err)
 	}
 
 	var tok tokenResponse
@@ -78,16 +94,20 @@ func (g *GitHubClient) GetRegistrationToken(repo string) (string, error) {
 		return "", fmt.Errorf("parsing registration token: %w", err)
 	}
 	if tok.Token == "" {
-		return "", fmt.Errorf("empty registration token for %s (check PAT permissions)", repo)
+		return "", fmt.Errorf("empty registration token for %s (check PAT permissions)", target)
 	}
 	return tok.Token, nil
 }
 
 func (g *GitHubClient) GetRemovalToken(repo string) (string, error) {
-	url := g.repoActionsURL(repo, "runners/remove-token")
+	return g.GetRemovalTokenScoped("repo", repo)
+}
+
+func (g *GitHubClient) GetRemovalTokenScoped(scope, target string) (string, error) {
+	url := g.actionsURL(scope, target, "runners/remove-token")
 	resp, err := g.post(url, nil)
 	if err != nil {
-		return "", fmt.Errorf("getting removal token for %s: %w", repo, err)
+		return "", fmt.Errorf("getting removal token for %s: %w", target, err)
 	}
 
 	var tok tokenResponse
@@ -95,16 +115,20 @@ func (g *GitHubClient) GetRemovalToken(repo string) (string, error) {
 		return "", fmt.Errorf("parsing removal token: %w", err)
 	}
 	if tok.Token == "" {
-		return "", fmt.Errorf("empty removal token for %s", repo)
+		return "", fmt.Errorf("empty removal token for %s", target)
 	}
 	return tok.Token, nil
 }
 
 func (g *GitHubClient) ListRunners(repo string) ([]GitHubRunner, error) {
-	url := g.repoActionsURL(repo, "runners")
+	return g.ListRunnersScoped("repo", repo)
+}
+
+func (g *GitHubClient) ListRunnersScoped(scope, target string) ([]GitHubRunner, error) {
+	url := g.actionsURL(scope, target, "runners")
 	resp, err := g.get(url)
 	if err != nil {
-		return nil, fmt.Errorf("listing runners for %s: %w", repo, err)
+		return nil, fmt.Errorf("listing runners for %s: %w", target, err)
 	}
 
 	var rr runnersResponse
@@ -115,7 +139,16 @@ func (g *GitHubClient) ListRunners(repo string) ([]GitHubRunner, error) {
 }
 
 func (g *GitHubClient) DeleteRunner(repo string, runnerID int64) error {
-	url := fmt.Sprintf("%s/repos/%s/actions/runners/%d", g.apiBase, repo, runnerID)
+	return g.DeleteRunnerScoped("repo", repo, runnerID)
+}
+
+func (g *GitHubClient) DeleteRunnerScoped(scope, target string, runnerID int64) error {
+	var url string
+	if scope == "org" {
+		url = fmt.Sprintf("%s/orgs/%s/actions/runners/%d", g.apiBase, target, runnerID)
+	} else {
+		url = fmt.Sprintf("%s/repos/%s/actions/runners/%d", g.apiBase, target, runnerID)
+	}
 	req, err := http.NewRequest("DELETE", url, nil)
 	if err != nil {
 		return err

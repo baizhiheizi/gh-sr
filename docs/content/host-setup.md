@@ -86,22 +86,64 @@ docker exec gh-runner-<instance> test -S /var/run/docker.sock && echo ok || echo
 
 ## GitHub Agentic Workflows (gh-aw)
 
-Repositories using [GitHub Agentic Workflows](https://github.github.com/gh-aw/guides/self-hosted-runners/) start an MCP gateway in Docker with host networking. Health checks use `http://localhost:80` from the job environment, which only matches that gateway when the job runs on the **same network namespace** as the Docker engine (for example GitHub-hosted runners or a **native** self-hosted runner).
+The easiest way to set up a runner for [GitHub Agentic Workflows](https://github.github.com/gh-aw/guides/self-hosted-runners/) is `profile: agentic`:
+
+```yaml
+runners:
+  - name: aw-runner
+    repo: owner/repo
+    host: vps-1
+    profile: agentic
+    count: 2
+```
+
+This automatically configures docker mode, host networking, `NET_ADMIN` capability, and a `gh-aw` label. You can also add it from the CLI:
+
+```bash
+ghr add runner aw-runner --repo owner/repo --host vps-1 --profile agentic
+```
+
+For **organization-level runners** with runner groups, use `org` and `group` instead of `repo`:
+
+```yaml
+runners:
+  - name: org-runner
+    org: my-org
+    group: my-runner-group
+    host: vps-1
+    profile: agentic
+```
+
+For **ephemeral runners** (clean-slate per job, good for security isolation):
+
+```yaml
+runners:
+  - name: aw-ephemeral
+    repo: owner/repo
+    host: vps-1
+    profile: agentic
+    ephemeral: true
+```
+
+### How it works
+
+gh-aw starts an MCP gateway in Docker with host networking. Health checks use `http://localhost:80` from the job environment, which only matches that gateway when the job runs on the **same network namespace** as the Docker engine.
 
 | Host | Runner mode | Typical approach for gh-aw |
 |------|-------------|----------------------------|
+| **Linux** | **Docker** with `profile: agentic` | Recommended. Profile sets host network + NET_ADMIN automatically. |
 | **Linux** | **Native** | Works; job runs on the host. |
-| **Linux** | **Docker** (default bridge) | Health check often **fails** (job `localhost` is inside the runner container). Set **`docker_network_mode: host`** on that runner so the container uses the host network (weaker isolation; port **80** must be free on the host). Then **`ghr down`** / **`ghr up`** to recreate the container. |
-| **macOS** | **Docker** (Desktop, OrbStack, Colima) | Set **`docker_network_mode: host`**. On Docker Desktop / OrbStack / Colima the runner container joins the Linux VM's network namespace — the same namespace the MCP gateway uses — so `localhost:80` health checks and `host.docker.internal` resolution work. Port **80** must be free inside the VM. Then **`ghr down`** / **`ghr up`** to recreate the container. |
-| **Windows** | **Docker** (Linux containers) | Set **`docker_network_mode: host`**. Docker Desktop for Windows runs Linux containers inside a WSL2 VM. With host networking, the runner container and the MCP gateway share the VM's network namespace, so health checks and MCP connections succeed. Port **80** must be free inside the VM. Then **`ghr down`** / **`ghr up`** to recreate the container. |
+| **Linux** | **Docker** (default bridge) | Health check often **fails**. Use `profile: agentic` or set `docker_network_mode: host` manually. |
+| **macOS** | **Docker** (Desktop, OrbStack, Colima) | Use `profile: agentic`. Port **80** must be free inside the VM. |
+| **Windows** | **Docker** (Linux containers) | Use `profile: agentic`. Port **80** must be free inside the VM. |
 
 > **Note:** On macOS and Windows, `--network host` means the Docker Desktop Linux VM's network namespace, not the macOS/Windows host itself. This is sufficient for gh-aw because all containers (runner, MCP gateway, MCP servers) share that same VM namespace.
 
-Workflows that run the [Agent Workflow Firewall](https://github.com/github/gh-aw-firewall) (`awf`) also need **`docker_cap_add: [NET_ADMIN]`** on **`mode: docker`** runners (see [Configuration](configuration.md)). `awf` configures host-level iptables (including the `DOCKER-USER` chain); the actions-runner container must have the **`NET_ADMIN`** capability or `sudo awf` can fail during firewall setup even when networking is correct. After editing config, run **`ghr down`** / **`ghr up`** so the container is recreated with the new flags.
+Workflows that run the [Agent Workflow Firewall](https://github.com/github/gh-aw-firewall) (`awf`) need the **`NET_ADMIN`** capability. The `profile: agentic` shortcut handles this. If configuring manually, add **`docker_cap_add: [NET_ADMIN]`** on **`mode: docker`** runners.
 
 **Verification (optional):** Keep Docker’s default iptables integration (do not set **`"iptables": false"`** in the engine `daemon.json`). On Docker Desktop, you can open a shell in the Linux engine (for example the **`docker-desktop`** WSL distro) and run **`sudo iptables -L DOCKER-USER -n`** — when the daemon is healthy, that chain is normally present. Then run a workflow that uses `awf` to confirm the job completes past firewall setup.
 
-**`ghr doctor`** prints a **WARN** when any docker-mode runner on a host still uses the default bridge network, as a reminder for gh-aw.
+**`ghr doctor`** checks agentic-profile runners for port 80 availability, iptables presence, and sudo access, in addition to the standard bridge-network warning.
 
 ## Windows (OpenSSH and Docker)
 

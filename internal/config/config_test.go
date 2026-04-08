@@ -190,13 +190,13 @@ func TestValidate_errors(t *testing.T) {
 			frag: "runner name is required",
 		},
 		{
-			name: "runner_repo",
+			name: "runner_repo_or_org",
 			cfg: Config{
 				GitHub:  GitHubConfig{PAT: "x"},
 				Hosts:   map[string]HostConfig{"h": {Addr: "a@b", OS: "linux", Arch: "amd64"}},
 				Runners: []RunnerConfig{{Name: "r", Repo: "", Host: "h"}},
 			},
-			frag: "repo is required",
+			frag: "repo or org is required",
 		},
 		{
 			name: "runner_host_missing",
@@ -650,6 +650,254 @@ func TestFindRunnerForLogs_and_ResolveRunnerInstance(t *testing.T) {
 	_, err = soloRC.ResolveRunnerInstance("solo")
 	if err == nil {
 		t.Fatal("expected error for multi-instance base name")
+	}
+}
+
+func TestAgenticProfile_applyDefaults(t *testing.T) {
+	t.Parallel()
+	rc := RunnerConfig{Name: "aw", Repo: "o/r", Host: "h", Profile: "agentic"}
+	rc.applyAgenticDefaults()
+	if rc.Mode != "docker" {
+		t.Errorf("mode: got %q want docker", rc.Mode)
+	}
+	if rc.DockerNetworkMode != "host" {
+		t.Errorf("docker_network_mode: got %q want host", rc.DockerNetworkMode)
+	}
+	if len(rc.DockerCapAdd) != 1 || rc.DockerCapAdd[0] != "NET_ADMIN" {
+		t.Errorf("docker_cap_add: got %v want [NET_ADMIN]", rc.DockerCapAdd)
+	}
+}
+
+func TestAgenticProfile_preservesExplicitValues(t *testing.T) {
+	t.Parallel()
+	rc := RunnerConfig{
+		Name:              "aw",
+		Repo:              "o/r",
+		Host:              "h",
+		Profile:           "agentic",
+		Mode:              "docker",
+		DockerNetworkMode: "host",
+		DockerCapAdd:      []string{"NET_ADMIN", "SYS_PTRACE"},
+	}
+	rc.applyAgenticDefaults()
+	if len(rc.DockerCapAdd) != 2 {
+		t.Errorf("should not duplicate NET_ADMIN: got %v", rc.DockerCapAdd)
+	}
+}
+
+func TestAgenticProfile_effectiveLabelsIncludesGhAw(t *testing.T) {
+	t.Parallel()
+	rc := RunnerConfig{Name: "aw", Repo: "o/r", Host: "h", Profile: "agentic", Mode: "docker"}
+	labels := rc.EffectiveLabels("linux", "amd64")
+	found := false
+	for _, l := range labels {
+		if l == "gh-aw" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("agentic profile should add gh-aw label, got %v", labels)
+	}
+}
+
+func TestAgenticProfile_effectiveLabelsDoesNotDuplicate(t *testing.T) {
+	t.Parallel()
+	rc := RunnerConfig{Name: "aw", Repo: "o/r", Host: "h", Profile: "agentic", Mode: "docker", Labels: []string{"custom", "gh-aw"}}
+	labels := rc.EffectiveLabels("linux", "amd64")
+	count := 0
+	for _, l := range labels {
+		if l == "gh-aw" {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Errorf("should not duplicate gh-aw label, got %v", labels)
+	}
+}
+
+func TestRunnerConfig_Scope(t *testing.T) {
+	t.Parallel()
+	rc := RunnerConfig{Repo: "o/r"}
+	if rc.Scope() != "repo" {
+		t.Errorf("repo scope: got %q", rc.Scope())
+	}
+	if rc.ScopeTarget() != "o/r" {
+		t.Errorf("repo target: got %q", rc.ScopeTarget())
+	}
+	rcOrg := RunnerConfig{Org: "my-org"}
+	if rcOrg.Scope() != "org" {
+		t.Errorf("org scope: got %q", rcOrg.Scope())
+	}
+	if rcOrg.ScopeTarget() != "my-org" {
+		t.Errorf("org target: got %q", rcOrg.ScopeTarget())
+	}
+}
+
+func TestValidate_orgRunner(t *testing.T) {
+	t.Parallel()
+	cfg := Config{
+		GitHub: GitHubConfig{PAT: "x"},
+		Hosts:  map[string]HostConfig{"h": {Addr: "a@b", OS: "linux", Arch: "amd64"}},
+		Runners: []RunnerConfig{{
+			Name: "r", Org: "my-org", Host: "h",
+		}},
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("org runner should be valid: %v", err)
+	}
+}
+
+func TestValidate_orgAndRepoBothSet(t *testing.T) {
+	t.Parallel()
+	cfg := Config{
+		GitHub: GitHubConfig{PAT: "x"},
+		Hosts:  map[string]HostConfig{"h": {Addr: "a@b", OS: "linux", Arch: "amd64"}},
+		Runners: []RunnerConfig{{
+			Name: "r", Repo: "o/r", Org: "my-org", Host: "h",
+		}},
+	}
+	err := cfg.Validate()
+	if err == nil || !strings.Contains(err.Error(), "not both") {
+		t.Fatalf("expected error about both: %v", err)
+	}
+}
+
+func TestValidate_groupRequiresOrg(t *testing.T) {
+	t.Parallel()
+	cfg := Config{
+		GitHub: GitHubConfig{PAT: "x"},
+		Hosts:  map[string]HostConfig{"h": {Addr: "a@b", OS: "linux", Arch: "amd64"}},
+		Runners: []RunnerConfig{{
+			Name: "r", Repo: "o/r", Host: "h", Group: "grp",
+		}},
+	}
+	err := cfg.Validate()
+	if err == nil || !strings.Contains(err.Error(), "group requires org") {
+		t.Fatalf("expected error about group: %v", err)
+	}
+}
+
+func TestValidate_profileInvalid(t *testing.T) {
+	t.Parallel()
+	cfg := Config{
+		GitHub: GitHubConfig{PAT: "x"},
+		Hosts:  map[string]HostConfig{"h": {Addr: "a@b", OS: "linux", Arch: "amd64"}},
+		Runners: []RunnerConfig{{
+			Name: "r", Repo: "o/r", Host: "h", Profile: "unknown",
+		}},
+	}
+	err := cfg.Validate()
+	if err == nil || !strings.Contains(err.Error(), "profile must be") {
+		t.Fatalf("expected error about profile: %v", err)
+	}
+}
+
+func TestValidate_agenticWithNativeMode(t *testing.T) {
+	t.Parallel()
+	cfg := Config{
+		GitHub: GitHubConfig{PAT: "x"},
+		Hosts:  map[string]HostConfig{"h": {Addr: "a@b", OS: "linux", Arch: "amd64"}},
+		Runners: []RunnerConfig{{
+			Name: "r", Repo: "o/r", Host: "h", Profile: "agentic", Mode: "native",
+		}},
+	}
+	err := cfg.Validate()
+	if err == nil || !strings.Contains(err.Error(), "requires docker mode") {
+		t.Fatalf("expected error about native mode: %v", err)
+	}
+}
+
+func TestValidate_agenticProfileValid(t *testing.T) {
+	t.Parallel()
+	cfg := Config{
+		GitHub: GitHubConfig{PAT: "x"},
+		Hosts:  map[string]HostConfig{"h": {Addr: "a@b", OS: "linux", Arch: "amd64"}},
+		Runners: []RunnerConfig{{
+			Name: "r", Repo: "o/r", Host: "h", Profile: "agentic",
+		}},
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("agentic profile should be valid: %v", err)
+	}
+}
+
+func TestValidate_ephemeralRunner(t *testing.T) {
+	t.Parallel()
+	cfg := Config{
+		GitHub: GitHubConfig{PAT: "x"},
+		Hosts:  map[string]HostConfig{"h": {Addr: "a@b", OS: "linux", Arch: "amd64"}},
+		Runners: []RunnerConfig{{
+			Name: "r", Repo: "o/r", Host: "h", Ephemeral: true,
+		}},
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("ephemeral runner should be valid: %v", err)
+	}
+}
+
+func TestLoad_agenticProfile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "runners.yml")
+	content := `
+github:
+  pat: tok
+hosts:
+  h1:
+    addr: a@b
+    os: linux
+    arch: amd64
+runners:
+  - name: aw
+    repo: o/r
+    host: h1
+    profile: agentic
+`
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rc := cfg.Runners[0]
+	if rc.Mode != "docker" {
+		t.Errorf("mode should be docker, got %q", rc.Mode)
+	}
+	if rc.DockerNetworkMode != "host" {
+		t.Errorf("docker_network_mode should be host, got %q", rc.DockerNetworkMode)
+	}
+	if len(rc.DockerCapAdd) != 1 || rc.DockerCapAdd[0] != "NET_ADMIN" {
+		t.Errorf("docker_cap_add should be [NET_ADMIN], got %v", rc.DockerCapAdd)
+	}
+}
+
+func TestUniqueOrgs(t *testing.T) {
+	t.Parallel()
+	cfg := &Config{
+		Runners: []RunnerConfig{
+			{Name: "a", Repo: "o/r", Host: "h"},
+			{Name: "b", Org: "my-org", Host: "h"},
+			{Name: "c", Org: "my-org", Host: "h"},
+			{Name: "d", Org: "other-org", Host: "h"},
+		},
+	}
+	orgs := cfg.UniqueOrgs()
+	if len(orgs) != 2 {
+		t.Fatalf("expected 2 orgs, got %v", orgs)
+	}
+}
+
+func TestUniqueRepos_skipOrgOnly(t *testing.T) {
+	t.Parallel()
+	cfg := &Config{
+		Runners: []RunnerConfig{
+			{Name: "a", Repo: "o/r", Host: "h"},
+			{Name: "b", Org: "my-org", Host: "h"},
+		},
+	}
+	repos := cfg.UniqueRepos()
+	if len(repos) != 1 || repos[0] != "o/r" {
+		t.Fatalf("expected [o/r], got %v", repos)
 	}
 }
 
