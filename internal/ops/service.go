@@ -11,6 +11,12 @@ import (
 
 // ServiceInstall installs OS-level autostart for native runners (systemd, LaunchAgent, or scheduled task).
 func ServiceInstall(w io.Writer, cfg *config.Config, filterHost, filterRepo string, nameArgs []string, system bool) error {
+	if err := ResolveHostInfo(w, cfg); err != nil {
+		return err
+	}
+	if err := ResolveModes(w, cfg); err != nil {
+		return err
+	}
 	runners := config.FilterRunners(cfg, filterHost, filterRepo, nameArgs)
 	for _, rc := range runners {
 		hcfg := cfg.Hosts[rc.Host]
@@ -54,6 +60,12 @@ func ServiceInstall(w io.Writer, cfg *config.Config, filterHost, filterRepo stri
 
 // ServiceUninstall removes autostart definitions created by ghr service install.
 func ServiceUninstall(w io.Writer, cfg *config.Config, filterHost, filterRepo string, nameArgs []string) error {
+	if err := ResolveHostInfo(w, cfg); err != nil {
+		return err
+	}
+	if err := ResolveModes(w, cfg); err != nil {
+		return err
+	}
 	runners := config.FilterRunners(cfg, filterHost, filterRepo, nameArgs)
 	for _, rc := range runners {
 		hcfg := cfg.Hosts[rc.Host]
@@ -94,6 +106,12 @@ func ServiceUninstall(w io.Writer, cfg *config.Config, filterHost, filterRepo st
 
 // ServiceStatus prints autostart installation state per runner instance.
 func ServiceStatus(w io.Writer, cfg *config.Config, filterHost, filterRepo string, nameArgs []string) error {
+	if err := ResolveHostInfo(w, cfg); err != nil {
+		return err
+	}
+	if err := ResolveModes(w, cfg); err != nil {
+		return err
+	}
 	runners := config.FilterRunners(cfg, filterHost, filterRepo, nameArgs)
 	for _, rc := range runners {
 		hcfg := cfg.Hosts[rc.Host]

@@ -7,24 +7,17 @@ github:
   # pat: env:GITHUB_PAT
 
 hosts:
-  # Example hosts:
+  # Example hosts (os and arch are auto-detected over SSH -- you only need addr):
   #
   # mac-mini:
-  #   addr: user@192.168.1.50   # SSH target
-  #   os: darwin
-  #   arch: arm64
+  #   addr: user@192.168.1.50   # SSH target (os/arch auto-detected)
   #
   # win-pc:
-  #   addr: user@192.168.1.51   # SSH target (enable OpenSSH Server on Windows)
-  #   os: windows
-  #   arch: amd64
+  #   addr: user@192.168.1.51   # SSH target (os/arch auto-detected)
   #   # windows_ps: pwsh   # optional: use pwsh.exe instead of powershell.exe for remote scripts
   #
   # vps-1:
-  #   # Linux: non-root SSH users often need passwordless sudo for ghr setup, or pre-install Docker (docker mode).
-  #   addr: root@203.0.113.10
-  #   os: linux
-  #   arch: amd64
+  #   addr: root@203.0.113.10   # os/arch auto-detected
   #
   # Local host (the machine running ghr):
   #
@@ -54,6 +47,7 @@ runners:
   #   labels: [self-hosted, Linux, X64]
   #   mode: docker  # "docker" (default on linux) or "native"
   #   # docker_network_mode: host   # host network for e.g. GitHub Agentic Workflows; works on Linux, macOS, and Windows docker-mode runners (see docs host-setup.md)
+  #   # docker_cap_add: [NET_ADMIN]   # optional; required for gh-aw AWF (iptables) inside the runner container — use with docker_network_mode: host (see host-setup.md)
   #
   # Runner on the local machine:
   #
@@ -70,5 +64,7 @@ runners:
   #   repo: owner/repo
   #   host: win-pc
   #   mode: docker   # Linux container via Docker Desktop
+  #   docker_network_mode: host   # recommended for GitHub Agentic Workflows (gh-aw)
+  #   docker_cap_add: [NET_ADMIN] # required for gh-aw Agent Workflow Firewall (awf) / iptables in jobs
   #   count: 1
   #   labels: [self-hosted, Linux, X64]

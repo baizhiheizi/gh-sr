@@ -20,6 +20,12 @@ func ConnectHost(hostName string, hcfg config.HostConfig) (*host.Host, error) {
 
 // Setup installs and configures runners, mirroring the ghr setup command.
 func Setup(w io.Writer, cfg *config.Config, mgr *runner.Manager, filterHost, filterRepo string, nameArgs []string) error {
+	if err := ResolveHostInfo(w, cfg); err != nil {
+		return err
+	}
+	if err := ResolveModes(w, cfg); err != nil {
+		return err
+	}
 	runners := config.FilterRunners(cfg, filterHost, filterRepo, nameArgs)
 	hostsDone := map[string]bool{}
 	for _, rc := range runners {
@@ -50,14 +56,24 @@ func Setup(w io.Writer, cfg *config.Config, mgr *runner.Manager, filterHost, fil
 	return nil
 }
 
-// Up starts runners.
+// Up starts runners, automatically running setup first if needed.
 func Up(w io.Writer, cfg *config.Config, mgr *runner.Manager, filterHost, filterRepo string, nameArgs []string) error {
+	if err := ResolveHostInfo(w, cfg); err != nil {
+		return err
+	}
+	if err := ResolveModes(w, cfg); err != nil {
+		return err
+	}
 	runners := config.FilterRunners(cfg, filterHost, filterRepo, nameArgs)
 	for _, rc := range runners {
 		hcfg := cfg.Hosts[rc.Host]
 		fmt.Fprintf(w, "Starting %s on %s...\n", rc.Name, rc.Host)
 		h, err := ConnectHost(rc.Host, hcfg)
 		if err != nil {
+			return err
+		}
+		if err := mgr.EnsureSetup(h, rc); err != nil {
+			h.Close()
 			return err
 		}
 		if err := mgr.Start(h, rc); err != nil {
@@ -71,6 +87,12 @@ func Up(w io.Writer, cfg *config.Config, mgr *runner.Manager, filterHost, filter
 
 // Down stops runners.
 func Down(w io.Writer, cfg *config.Config, mgr *runner.Manager, filterHost, filterRepo string, nameArgs []string) error {
+	if err := ResolveHostInfo(w, cfg); err != nil {
+		return err
+	}
+	if err := ResolveModes(w, cfg); err != nil {
+		return err
+	}
 	runners := config.FilterRunners(cfg, filterHost, filterRepo, nameArgs)
 	for _, rc := range runners {
 		hcfg := cfg.Hosts[rc.Host]
@@ -90,6 +112,12 @@ func Down(w io.Writer, cfg *config.Config, mgr *runner.Manager, filterHost, filt
 
 // Restart stops then starts runners.
 func Restart(w io.Writer, cfg *config.Config, mgr *runner.Manager, filterHost, filterRepo string, nameArgs []string) error {
+	if err := ResolveHostInfo(w, cfg); err != nil {
+		return err
+	}
+	if err := ResolveModes(w, cfg); err != nil {
+		return err
+	}
 	runners := config.FilterRunners(cfg, filterHost, filterRepo, nameArgs)
 	for _, rc := range runners {
 		hcfg := cfg.Hosts[rc.Host]
@@ -110,6 +138,12 @@ func Restart(w io.Writer, cfg *config.Config, mgr *runner.Manager, filterHost, f
 
 // Update removes, sets up, and starts runners again.
 func Update(w io.Writer, cfg *config.Config, mgr *runner.Manager, filterHost, filterRepo string, nameArgs []string) error {
+	if err := ResolveHostInfo(w, cfg); err != nil {
+		return err
+	}
+	if err := ResolveModes(w, cfg); err != nil {
+		return err
+	}
 	runners := config.FilterRunners(cfg, filterHost, filterRepo, nameArgs)
 	for _, rc := range runners {
 		hcfg := cfg.Hosts[rc.Host]
@@ -136,6 +170,12 @@ func Update(w io.Writer, cfg *config.Config, mgr *runner.Manager, filterHost, fi
 
 // CollectStatus gathers runner status rows like ghr status.
 func CollectStatus(w io.Writer, cfg *config.Config, mgr *runner.Manager, filterHost, filterRepo string, nameArgs []string) ([]runner.RunnerStatus, error) {
+	if err := ResolveHostInfo(w, cfg); err != nil {
+		return nil, err
+	}
+	if err := ResolveModes(w, cfg); err != nil {
+		return nil, err
+	}
 	runners := config.FilterRunners(cfg, filterHost, filterRepo, nameArgs)
 	var allStatuses []runner.RunnerStatus
 	for _, rc := range runners {
@@ -170,6 +210,12 @@ func CollectStatus(w io.Writer, cfg *config.Config, mgr *runner.Manager, filterH
 
 // Logs returns recent log lines for a runner instance or base name.
 func Logs(cfg *config.Config, mgr *runner.Manager, filterHost, target string) (string, error) {
+	if err := ResolveHostInfo(nil, cfg); err != nil {
+		return "", err
+	}
+	if err := ResolveModes(nil, cfg); err != nil {
+		return "", err
+	}
 	rc, err := cfg.FindRunnerForLogs(target, filterHost)
 	if err != nil {
 		return "", err

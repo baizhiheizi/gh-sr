@@ -154,7 +154,7 @@ func TestValidate_errors(t *testing.T) {
 			frag: `host "h"`,
 		},
 		{
-			name: "host_os",
+			name: "host_os_invalid",
 			cfg: Config{
 				GitHub:  GitHubConfig{PAT: "x"},
 				Hosts:   map[string]HostConfig{"h": {Addr: "a@b", OS: "freebsd", Arch: "amd64"}},
@@ -163,7 +163,7 @@ func TestValidate_errors(t *testing.T) {
 			frag: "os must be linux",
 		},
 		{
-			name: "host_arch",
+			name: "host_arch_invalid",
 			cfg: Config{
 				GitHub:  GitHubConfig{PAT: "x"},
 				Hosts:   map[string]HostConfig{"h": {Addr: "a@b", OS: "linux", Arch: "riscv64"}},
@@ -260,6 +260,39 @@ func TestValidate_errors(t *testing.T) {
 			},
 			frag: "docker_network_mode applies only when mode is docker",
 		},
+		{
+			name: "docker_cap_add_with_native",
+			cfg: Config{
+				GitHub: GitHubConfig{PAT: "x"},
+				Hosts:  map[string]HostConfig{"h": {Addr: "a@b", OS: "linux", Arch: "amd64"}},
+				Runners: []RunnerConfig{{
+					Name: "r", Repo: "o/r", Host: "h", Mode: "native", DockerCapAdd: []string{"NET_ADMIN"},
+				}},
+			},
+			frag: "docker_cap_add applies only when mode is docker",
+		},
+		{
+			name: "docker_cap_add_invalid_char",
+			cfg: Config{
+				GitHub: GitHubConfig{PAT: "x"},
+				Hosts:  map[string]HostConfig{"h": {Addr: "a@b", OS: "linux", Arch: "amd64"}},
+				Runners: []RunnerConfig{{
+					Name: "r", Repo: "o/r", Host: "h", Mode: "docker", DockerCapAdd: []string{"NET-ADMIN"},
+				}},
+			},
+			frag: "docker_cap_add invalid capability",
+		},
+		{
+			name: "docker_cap_add_empty_string",
+			cfg: Config{
+				GitHub: GitHubConfig{PAT: "x"},
+				Hosts:  map[string]HostConfig{"h": {Addr: "a@b", OS: "linux", Arch: "amd64"}},
+				Runners: []RunnerConfig{{
+					Name: "r", Repo: "o/r", Host: "h", Mode: "docker", DockerCapAdd: []string{"NET_ADMIN", ""},
+				}},
+			},
+			frag: "docker_cap_add contains an empty entry",
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -272,6 +305,78 @@ func TestValidate_errors(t *testing.T) {
 				t.Errorf("error %q should contain %q", err.Error(), tc.frag)
 			}
 		})
+	}
+}
+
+func TestDefaultLabels(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		mode, os, arch string
+		want           []string
+	}{
+		{"docker", "linux", "amd64", []string{"self-hosted", "Linux", "X64"}},
+		{"docker", "darwin", "arm64", []string{"self-hosted", "Linux", "ARM64"}},
+		{"docker", "windows", "amd64", []string{"self-hosted", "Linux", "X64"}},
+		{"native", "linux", "amd64", []string{"self-hosted", "Linux", "X64"}},
+		{"native", "darwin", "arm64", []string{"self-hosted", "macOS", "ARM64"}},
+		{"native", "windows", "amd64", []string{"self-hosted", "Windows", "X64"}},
+	}
+	for _, tc := range cases {
+		got := DefaultLabels(tc.mode, tc.os, tc.arch)
+		if len(got) != len(tc.want) {
+			t.Errorf("DefaultLabels(%s,%s,%s): got %v want %v", tc.mode, tc.os, tc.arch, got, tc.want)
+			continue
+		}
+		for i := range tc.want {
+			if got[i] != tc.want[i] {
+				t.Errorf("DefaultLabels(%s,%s,%s)[%d]: got %q want %q", tc.mode, tc.os, tc.arch, i, got[i], tc.want[i])
+			}
+		}
+	}
+}
+
+func TestEffectiveLabels(t *testing.T) {
+	t.Parallel()
+	rc := RunnerConfig{Name: "r", Labels: []string{"custom"}}
+	if got := rc.EffectiveLabels("linux", "amd64"); len(got) != 1 || got[0] != "custom" {
+		t.Errorf("explicit labels should be used: got %v", got)
+	}
+	rc2 := RunnerConfig{Name: "r"}
+	got := rc2.EffectiveLabels("linux", "amd64")
+	if len(got) != 3 || got[0] != "self-hosted" || got[1] != "Linux" || got[2] != "X64" {
+		t.Errorf("empty labels should be auto-generated: got %v", got)
+	}
+}
+
+func TestValidate_emptyOSArchRemoteHost(t *testing.T) {
+	t.Parallel()
+	cfg := Config{
+		GitHub:  GitHubConfig{PAT: "x"},
+		Hosts:   map[string]HostConfig{"h": {Addr: "user@host"}},
+		Runners: []RunnerConfig{{Name: "r", Repo: "o/r", Host: "h"}},
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("empty os/arch on remote host should be valid (auto-detected at runtime): %v", err)
+	}
+}
+
+func TestNeedsDetection(t *testing.T) {
+	t.Parallel()
+	cfg := &Config{
+		Hosts: map[string]HostConfig{
+			"h1": {Addr: "a@b", OS: "linux", Arch: "amd64"},
+		},
+	}
+	if cfg.NeedsDetection() {
+		t.Error("all hosts have os/arch, should not need detection")
+	}
+	cfg.Hosts["h2"] = HostConfig{Addr: "c@d"}
+	if !cfg.NeedsDetection() {
+		t.Error("h2 has no os/arch, should need detection")
+	}
+	cfg.Hosts["local"] = HostConfig{Addr: "local"}
+	if !cfg.NeedsDetection() {
+		t.Error("local host should be skipped, h2 still needs detection")
 	}
 }
 
@@ -347,6 +452,21 @@ func TestValidate_dockerNetworkModeHostOnDarwin(t *testing.T) {
 	}
 	if err := cfg.Validate(); err != nil {
 		t.Fatalf("docker_network_mode: host on macOS should be valid, got: %v", err)
+	}
+}
+
+func TestValidate_docker_cap_add_ok(t *testing.T) {
+	t.Parallel()
+	cfg := Config{
+		GitHub: GitHubConfig{PAT: "x"},
+		Hosts:  map[string]HostConfig{"w": {Addr: "a@b", OS: "windows", Arch: "amd64"}},
+		Runners: []RunnerConfig{{
+			Name: "r", Repo: "o/r", Host: "w", Mode: "docker",
+			DockerNetworkMode: "host", DockerCapAdd: []string{"NET_ADMIN"},
+		}},
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("docker_cap_add with docker mode should be valid, got: %v", err)
 	}
 }
 

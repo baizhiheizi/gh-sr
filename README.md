@@ -44,13 +44,19 @@ Requires a recent **Go** toolchain (see `go.mod` / CI for the exact version).
 ## Quick start
 
 ```bash
-gh auth login       # easiest auth — or set GITHUB_PAT in ~/.ghr/env
-ghr init
-# Edit ~/.ghr/runners.yml (hosts and runners)
-ghr doctor
-ghr setup
-ghr up
+gh auth login           # easiest auth — or set GITHUB_PAT in ~/.ghr/env
+ghr init --quick        # interactive: prompts for repo + host, auto-detects everything else
+ghr up                  # auto-setup + start (all in one)
 ghr status
+```
+
+Or step by step:
+
+```bash
+ghr init                            # create ~/.ghr with template config
+ghr add host my-vps root@10.0.0.1  # add a host (os/arch auto-detected)
+ghr add runner ci --repo owner/repo --host my-vps  # add a runner (labels auto-generated)
+ghr up                              # auto-setup + start
 ```
 
 Then run `ghr` on a terminal for the interactive dashboard, or use `ghr status`, `ghr logs <name>`, etc.

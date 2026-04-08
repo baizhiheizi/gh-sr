@@ -149,6 +149,7 @@ func Test_dockerStartCommand_officialImageShape(t *testing.T) {
 		sockFlags,
 		"ghcr.io/actions/actions-runner:latest",
 		"bridge",
+		nil,
 	)
 	for _, sub := range []string{
 		"ACTIONS_RUNNER_INPUT_URL=",
@@ -196,6 +197,7 @@ func Test_dockerStartCommand_hostNetwork(t *testing.T) {
 		sockFlags,
 		"ghcr.io/actions/actions-runner:latest",
 		"host",
+		nil,
 	)
 	n := strings.Index(cmd, "--network host")
 	r := strings.Index(cmd, "--restart unless-stopped")
@@ -289,6 +291,7 @@ func Test_dockerStartCommand_darwinIncludesSocketMount(t *testing.T) {
 		sockFlags,
 		"ghcr.io/actions/actions-runner:latest",
 		"bridge",
+		nil,
 	)
 	if !strings.Contains(cmd, "/var/run/docker.sock:/var/run/docker.sock") {
 		t.Fatalf("darwin start command should bind Docker socket: %s", cmd)
@@ -311,6 +314,7 @@ func Test_dockerStartCommand_windowsIncludesSocketMount(t *testing.T) {
 		sockFlags,
 		"ghcr.io/actions/actions-runner:latest",
 		"bridge",
+		nil,
 	)
 	if !strings.Contains(cmd, "/var/run/docker.sock:/var/run/docker.sock") {
 		t.Fatalf("windows start command should bind Docker socket: %s", cmd)
@@ -329,9 +333,53 @@ func Test_dockerStartCommand_windowsIncludesGroupAddWhenGIDKnown(t *testing.T) {
 		sockFlags,
 		"ghcr.io/actions/actions-runner:latest",
 		"bridge",
+		nil,
 	)
 	if !strings.Contains(cmd, "--group-add 999") {
 		t.Fatalf("windows start command should include --group-add when GID is known: %s", cmd)
+	}
+}
+
+func Test_dockerCapAddFlags(t *testing.T) {
+	t.Parallel()
+	if got := dockerCapAddFlags(nil); got != "" {
+		t.Fatalf("nil: got %q", got)
+	}
+	if got := dockerCapAddFlags([]string{}); got != "" {
+		t.Fatalf("empty: got %q", got)
+	}
+	got := dockerCapAddFlags([]string{"NET_ADMIN"})
+	if got != "--cap-add NET_ADMIN " {
+		t.Fatalf("single: got %q", got)
+	}
+	got = dockerCapAddFlags([]string{"NET_ADMIN", "SYS_PTRACE"})
+	if got != "--cap-add NET_ADMIN --cap-add SYS_PTRACE " {
+		t.Fatalf("two: got %q", got)
+	}
+}
+
+func Test_dockerStartCommand_capAdd(t *testing.T) {
+	t.Parallel()
+	sockFlags := "-v /var/run/docker.sock:/var/run/docker.sock "
+	cmd := dockerStartCommand(
+		"gh-runner-app-1",
+		"app-1",
+		"REGTOKEN",
+		"https://github.com/o/r",
+		"self-hosted,linux",
+		sockFlags,
+		"ghcr.io/actions/actions-runner:latest",
+		"bridge",
+		[]string{"NET_ADMIN"},
+	)
+	r := strings.Index(cmd, "--restart unless-stopped")
+	c := strings.Index(cmd, "--cap-add NET_ADMIN")
+	if r < 0 || c < 0 || r > c {
+		t.Fatalf("expected --cap-add after --restart: %s", cmd)
+	}
+	e := strings.Index(cmd, "-e 'ACTIONS_RUNNER_INPUT_URL=")
+	if e < 0 || c > e {
+		t.Fatalf("expected --cap-add before first -e: %s", cmd)
 	}
 }
 

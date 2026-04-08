@@ -1,10 +1,12 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
@@ -72,6 +74,7 @@ With no subcommand, ghr opens the interactive dashboard on a terminal; use ghr -
 
 	root.AddCommand(
 		initCmd(),
+		addCmd(),
 		doctorCmd(),
 		setupCmd(),
 		upCmd(),
@@ -141,9 +144,14 @@ func newManager(cfg *config.Config, w io.Writer) (*runner.Manager, error) {
 
 func initCmd() *cobra.Command {
 	var force bool
+	var quick bool
 	cmd := &cobra.Command{
 		Use:   "init",
 		Short: "Create ~/.ghr with template runners.yml and env file",
+		Long: `Create ~/.ghr directory with a template runners.yml and env file.
+
+Use --quick for an interactive setup that asks for a repo and host address,
+auto-detects everything else, and writes a working config ready for ghr up.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			dir, err := config.GhrDir()
 			if err != nil {
@@ -153,14 +161,7 @@ func initCmd() *cobra.Command {
 				return err
 			}
 			runnersPath := filepath.Join(dir, "runners.yml")
-			if _, err := os.Stat(runnersPath); err == nil && !force {
-				fmt.Printf("Already exists (use --force to overwrite): %s\n", runnersPath)
-			} else {
-				if err := os.WriteFile(runnersPath, config.RunnersYMLTemplate, 0o600); err != nil {
-					return err
-				}
-				fmt.Printf("Wrote %s\n", runnersPath)
-			}
+
 			envPath, err := config.EnvFilePath()
 			if err != nil {
 				return err
@@ -170,15 +171,200 @@ func initCmd() *cobra.Command {
 					return err
 				}
 				fmt.Printf("Wrote %s\n", envPath)
+			}
+
+			if quick {
+				return runQuickInit(runnersPath, force)
+			}
+
+			if _, err := os.Stat(runnersPath); err == nil && !force {
+				fmt.Printf("Already exists (use --force to overwrite): %s\n", runnersPath)
 			} else {
-				fmt.Printf("Unchanged (already exists): %s\n", envPath)
+				if err := os.WriteFile(runnersPath, config.RunnersYMLTemplate, 0o600); err != nil {
+					return err
+				}
+				fmt.Printf("Wrote %s\n", runnersPath)
 			}
 			fmt.Println("\nNext: edit ~/.ghr/runners.yml, then run `ghr doctor` and `ghr status`.")
 			fmt.Println("Authentication: run `gh auth login` (easiest), or set GITHUB_PAT in ~/.ghr/env.")
+			fmt.Println("Tip: use `ghr init --quick` for interactive setup.")
 			return nil
 		},
 	}
 	cmd.Flags().BoolVar(&force, "force", false, "overwrite existing ~/.ghr/runners.yml")
+	cmd.Flags().BoolVar(&quick, "quick", false, "interactive setup: prompts for repo and host, auto-detects everything else")
+	return cmd
+}
+
+func runQuickInit(runnersPath string, force bool) error {
+	scanner := bufio.NewScanner(os.Stdin)
+	prompt := func(label, defaultVal string) string {
+		if defaultVal != "" {
+			fmt.Printf("%s [%s]: ", label, defaultVal)
+		} else {
+			fmt.Printf("%s: ", label)
+		}
+		if scanner.Scan() {
+			v := strings.TrimSpace(scanner.Text())
+			if v != "" {
+				return v
+			}
+		}
+		return defaultVal
+	}
+
+	fmt.Println("=== ghr quick setup ===")
+	fmt.Println("This will create a working config. OS, arch, mode, and labels are all auto-detected.")
+	fmt.Println()
+
+	repo := prompt("GitHub repo (owner/repo)", "")
+	if repo == "" {
+		return fmt.Errorf("repo is required")
+	}
+	if !strings.Contains(repo, "/") {
+		return fmt.Errorf("repo must be in owner/repo format")
+	}
+
+	addr := prompt("SSH address of runner host (user@host, or 'local' for this machine)", "local")
+
+	hostName := "runner-host"
+	if config.IsLocalAddr(addr) {
+		hostName = "local"
+	} else {
+		parts := strings.SplitN(addr, "@", 2)
+		if len(parts) == 2 {
+			h := strings.Split(parts[1], ":")[0]
+			h = strings.ReplaceAll(h, ".", "-")
+			if h != "" {
+				hostName = h
+			}
+		}
+	}
+
+	baseName := strings.ReplaceAll(strings.Split(repo, "/")[1], ".", "-")
+	runnerName := baseName + "-" + hostName
+
+	countStr := prompt("Number of runner instances", "1")
+	count := 1
+	if _, err := fmt.Sscanf(countStr, "%d", &count); err != nil || count < 1 {
+		count = 1
+	}
+
+	// Write a minimal config.
+	seed := fmt.Sprintf(`github: {}
+hosts:
+  %s:
+    addr: %s
+runners:
+  - name: %s
+    repo: %s
+    host: %s
+    count: %d
+`, hostName, addr, runnerName, repo, hostName, count)
+
+	if _, err := os.Stat(runnersPath); err == nil && !force {
+		fmt.Printf("\n%s already exists. Overwrite? [y/N]: ", runnersPath)
+		if scanner.Scan() {
+			if strings.ToLower(strings.TrimSpace(scanner.Text())) != "y" {
+				fmt.Println("Aborted.")
+				return nil
+			}
+		}
+	}
+
+	if err := os.WriteFile(runnersPath, []byte(seed), 0o600); err != nil {
+		return err
+	}
+	fmt.Printf("\nWrote %s\n", runnersPath)
+
+	// Validate the generated config loads.
+	if _, err := config.Load(runnersPath); err != nil {
+		return fmt.Errorf("generated config is invalid: %w", err)
+	}
+
+	fmt.Println()
+	fmt.Println("Config generated! Summary:")
+	fmt.Printf("  Host:   %s (%s)\n", hostName, addr)
+	fmt.Printf("  Runner: %s -> %s (x%d)\n", runnerName, repo, count)
+	fmt.Println("  Mode:   auto-detected at runtime")
+	fmt.Println("  Labels: auto-generated from host os/arch")
+	fmt.Println()
+	fmt.Println("Next steps:")
+	fmt.Println("  ghr doctor   # verify config, GitHub access, and host connectivity")
+	fmt.Println("  ghr up       # setup + start runners (all in one)")
+	fmt.Println()
+	fmt.Println("Authentication: run `gh auth login` (easiest), or set GITHUB_PAT in ~/.ghr/env.")
+
+	return nil
+}
+
+func addCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "add",
+		Short: "Add a host or runner to the config",
+	}
+	cmd.AddCommand(addHostCmd(), addRunnerCmd())
+	return cmd
+}
+
+func addHostCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "host <name> <addr>",
+		Short: "Add a host entry (os/arch auto-detected over SSH)",
+		Long:  "Adds a host to runners.yml. Only name and SSH address are required; os and arch are auto-detected at runtime.",
+		Args:  cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfgPath, err := config.ResolveConfigPath(cfgFile)
+			if err != nil {
+				return err
+			}
+			name, addr := args[0], args[1]
+			if err := config.AddHost(cfgPath, name, addr, "", ""); err != nil {
+				return err
+			}
+			fmt.Printf("Added host %q (%s) to %s\n", name, addr, cfgPath)
+			return nil
+		},
+	}
+}
+
+func addRunnerCmd() *cobra.Command {
+	var (
+		repo   string
+		host   string
+		count  int
+		labels []string
+		mode   string
+	)
+	cmd := &cobra.Command{
+		Use:   "runner <name>",
+		Short: "Add a runner entry (labels auto-generated if omitted)",
+		Long:  "Adds a runner to runners.yml. Labels are auto-generated from host os/arch if not specified.",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfgPath, err := config.ResolveConfigPath(cfgFile)
+			if err != nil {
+				return err
+			}
+			name := args[0]
+			if repo == "" {
+				return fmt.Errorf("--repo is required")
+			}
+			if host == "" {
+				return fmt.Errorf("--host is required")
+			}
+			if err := config.AddRunner(cfgPath, name, repo, host, count, labels, mode); err != nil {
+				return err
+			}
+			fmt.Printf("Added runner %q (repo=%s, host=%s) to %s\n", name, repo, host, cfgPath)
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&repo, "repo", "", "GitHub owner/repo (required)")
+	cmd.Flags().StringVar(&host, "host", "", "host name from config (required)")
+	cmd.Flags().IntVar(&count, "count", 1, "number of parallel instances")
+	cmd.Flags().StringSliceVar(&labels, "labels", nil, "runner labels (auto-generated if empty)")
+	cmd.Flags().StringVar(&mode, "mode", "", "runner mode: docker or native (auto-detected if empty)")
 	return cmd
 }
 

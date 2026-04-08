@@ -97,6 +97,10 @@ Repositories using [GitHub Agentic Workflows](https://github.github.com/gh-aw/gu
 
 > **Note:** On macOS and Windows, `--network host` means the Docker Desktop Linux VM's network namespace, not the macOS/Windows host itself. This is sufficient for gh-aw because all containers (runner, MCP gateway, MCP servers) share that same VM namespace.
 
+Workflows that run the [Agent Workflow Firewall](https://github.com/github/gh-aw-firewall) (`awf`) also need **`docker_cap_add: [NET_ADMIN]`** on **`mode: docker`** runners (see [Configuration](configuration.md)). `awf` configures host-level iptables (including the `DOCKER-USER` chain); the actions-runner container must have the **`NET_ADMIN`** capability or `sudo awf` can fail during firewall setup even when networking is correct. After editing config, run **`ghr down`** / **`ghr up`** so the container is recreated with the new flags.
+
+**Verification (optional):** Keep Docker’s default iptables integration (do not set **`"iptables": false"`** in the engine `daemon.json`). On Docker Desktop, you can open a shell in the Linux engine (for example the **`docker-desktop`** WSL distro) and run **`sudo iptables -L DOCKER-USER -n`** — when the daemon is healthy, that chain is normally present. Then run a workflow that uses `awf` to confirm the job completes past firewall setup.
+
 **`ghr doctor`** prints a **WARN** when any docker-mode runner on a host still uses the default bridge network, as a reminder for gh-aw.
 
 ## Windows (OpenSSH and Docker)

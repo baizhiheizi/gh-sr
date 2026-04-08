@@ -85,7 +85,7 @@ func windowsNativeInstallScript(h *host.Host, instanceName, version, url string)
 }
 
 func windowsNativeConfigScript(h *host.Host, rc config.RunnerConfig, instanceName, regToken string) string {
-	labels := strings.Join(rc.Labels, ",")
+	labels := strings.Join(rc.EffectiveLabels(h.OS, h.Arch), ",")
 	return strings.Join([]string{
 		windowsRunnerDirAssignment(h, "runnerDir", instanceName),
 		"Set-Location -Path $runnerDir",
@@ -218,7 +218,7 @@ func (m *Manager) setupNative(h *host.Host, rc config.RunnerConfig) error {
 			return err
 		}
 
-		labels := strings.Join(rc.Labels, ",")
+		labels := strings.Join(rc.EffectiveLabels(h.OS, h.Arch), ",")
 
 		if h.OS == "windows" {
 			if _, err := h.RunShell(windowsNativeConfigScript(h, rc, name, regToken)); err != nil {
@@ -255,7 +255,10 @@ func (m *Manager) startNativeOnce(h *host.Host, rc config.RunnerConfig, instance
 		return fmt.Errorf("checking runner install at %s: %w", dir, err)
 	}
 	if !ok {
-		return fmt.Errorf("runner not installed on host %s at %s; run: ghr setup %s", h.Name, dir, rc.Name)
+		fmt.Fprintf(m.out(), "  %s: not installed, running setup...\n", instanceName)
+		if setupErr := m.setupNative(h, rc); setupErr != nil {
+			return fmt.Errorf("auto-setup for %s: %w", instanceName, setupErr)
+		}
 	}
 
 	if h.OS == "windows" {

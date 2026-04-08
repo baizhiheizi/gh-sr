@@ -34,15 +34,33 @@ func dockerEnvFlag(name, value string) string {
 	return "-e " + shellSingleQuote(name+"="+value)
 }
 
+// dockerCapAddFlags renders zero or more --cap-add flags for docker run (Linux capability names, e.g. NET_ADMIN).
+func dockerCapAddFlags(capAdds []string) string {
+	if len(capAdds) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	for _, c := range capAdds {
+		c = strings.TrimSpace(c)
+		if c == "" {
+			continue
+		}
+		fmt.Fprintf(&b, "--cap-add %s ", c)
+	}
+	return b.String()
+}
+
 // dockerStartCommand builds the docker run line for the official actions-runner image (config.sh + run.sh).
 // networkMode is "bridge" (default) or "host" (Linux docker-mode only; aligns job network with Docker host for tools like GitHub Agentic Workflows MCP gateway).
-func dockerStartCommand(cname, instanceName, regToken, repoURL, labels, sockMount, image, networkMode string) string {
+// capAdds are optional Linux capabilities (e.g. NET_ADMIN for Agent Workflow Firewall / iptables inside the runner container).
+func dockerStartCommand(cname, instanceName, regToken, repoURL, labels, sockMount, image, networkMode string, capAdds []string) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "docker run -d --name %s ", cname)
 	if strings.TrimSpace(networkMode) == "host" {
 		b.WriteString("--network host ")
 	}
 	fmt.Fprintf(&b, "--restart unless-stopped ")
+	b.WriteString(dockerCapAddFlags(capAdds))
 	b.WriteString(dockerEnvFlag("ACTIONS_RUNNER_INPUT_URL", repoURL))
 	b.WriteByte(' ')
 	b.WriteString(dockerEnvFlag("ACTIONS_RUNNER_INPUT_TOKEN", regToken))
@@ -474,12 +492,27 @@ func (m *Manager) startDocker(h *host.Host, rc config.RunnerConfig, instanceName
 		dockerRunIgnoreErr(h, fmt.Sprintf("docker rm -f %s 2>/dev/null || true", cname))
 	}
 
+	// Auto-pull image if not present locally.
+	imgCheck := fmt.Sprintf("docker images -q %s", RunnerDockerImage)
+	if h.OS == "windows" {
+		imgCheck += " 2>$null"
+	} else {
+		imgCheck += " 2>/dev/null"
+	}
+	imgOut, _ := dockerRun(h, imgCheck)
+	if strings.TrimSpace(imgOut) == "" {
+		fmt.Fprintf(m.out(), "  %s: pulling runner image...\n", instanceName)
+		if _, pullErr := dockerRun(h, fmt.Sprintf("docker pull %s", RunnerDockerImage)); pullErr != nil {
+			return fmt.Errorf("pulling Docker image for %s: %w", instanceName, pullErr)
+		}
+	}
+
 	regToken, err := m.GitHub.GetRegistrationToken(rc.Repo)
 	if err != nil {
 		return err
 	}
 
-	labels := strings.Join(rc.Labels, ",")
+	labels := strings.Join(rc.EffectiveLabels(h.OS, h.Arch), ",")
 	repoURL := fmt.Sprintf("https://github.com/%s", rc.Repo)
 
 	var sockFlags string
@@ -500,7 +533,7 @@ func (m *Manager) startDocker(h *host.Host, rc config.RunnerConfig, instanceName
 		sockFlags = dockerEngineSockFlagsWindows(h)
 	}
 
-	cmd := dockerStartCommand(cname, instanceName, regToken, repoURL, labels, sockFlags, RunnerDockerImage, rc.EffectiveDockerNetworkMode(h.OS))
+	cmd := dockerStartCommand(cname, instanceName, regToken, repoURL, labels, sockFlags, RunnerDockerImage, rc.EffectiveDockerNetworkMode(h.OS), rc.DockerCapAdd)
 
 	out, err := dockerRun(h, cmd)
 	if err != nil {

@@ -41,6 +41,8 @@ type RunnerConfig struct {
 	Labels            []string `yaml:"labels"`
 	Mode              string   `yaml:"mode"`
 	DockerNetworkMode string   `yaml:"docker_network_mode"` // bridge (default) or host; only for docker-mode Linux runners
+	// DockerCapAdd lists Linux capability names passed to docker run --cap-add (e.g. NET_ADMIN for gh-aw AWF iptables).
+	DockerCapAdd []string `yaml:"docker_cap_add"`
 }
 
 func (rc *RunnerConfig) EffectiveMode(hostOS string) string {
@@ -65,6 +67,52 @@ func (rc *RunnerConfig) EffectiveDockerNetworkMode(hostOS string) string {
 	default:
 		return "bridge"
 	}
+}
+
+// DefaultLabels generates standard GitHub Actions labels based on mode, host OS, and arch.
+// Docker-mode runners always report as Linux regardless of host OS.
+func DefaultLabels(mode, hostOS, arch string) []string {
+	labels := []string{"self-hosted"}
+
+	osLabel := ""
+	switch mode {
+	case "docker":
+		osLabel = "Linux"
+	default:
+		switch hostOS {
+		case "linux":
+			osLabel = "Linux"
+		case "darwin":
+			osLabel = "macOS"
+		case "windows":
+			osLabel = "Windows"
+		}
+	}
+	if osLabel != "" {
+		labels = append(labels, osLabel)
+	}
+
+	archLabel := ""
+	switch arch {
+	case "amd64":
+		archLabel = "X64"
+	case "arm64":
+		archLabel = "ARM64"
+	}
+	if archLabel != "" {
+		labels = append(labels, archLabel)
+	}
+
+	return labels
+}
+
+// EffectiveLabels returns the runner's labels, auto-generating them from host info if empty.
+func (rc *RunnerConfig) EffectiveLabels(hostOS, arch string) []string {
+	if len(rc.Labels) > 0 {
+		return rc.Labels
+	}
+	mode := rc.EffectiveMode(hostOS)
+	return DefaultLabels(mode, hostOS, arch)
 }
 
 func (rc *RunnerConfig) InstanceNames() []string {
@@ -149,18 +197,23 @@ func (c *Config) Validate() error {
 		if h.Addr == "" {
 			return fmt.Errorf("host %q: addr is required (use \"local\" for the current machine)", name)
 		}
-		switch h.OS {
-		case "linux", "darwin", "windows":
-		default:
-			return fmt.Errorf("host %q: os must be linux, darwin, or windows (got %q)", name, h.OS)
+		// os and arch may be empty for remote hosts -- they are auto-detected over SSH before operations.
+		if h.OS != "" {
+			switch h.OS {
+			case "linux", "darwin", "windows":
+			default:
+				return fmt.Errorf("host %q: os must be linux, darwin, or windows (got %q)", name, h.OS)
+			}
 		}
-		switch h.Arch {
-		case "amd64", "arm64":
-		default:
-			return fmt.Errorf("host %q: arch must be amd64 or arm64 (got %q)", name, h.Arch)
+		if h.Arch != "" {
+			switch h.Arch {
+			case "amd64", "arm64":
+			default:
+				return fmt.Errorf("host %q: arch must be amd64 or arm64 (got %q)", name, h.Arch)
+			}
 		}
 		if h.WindowsPS != "" {
-			if h.OS != "windows" {
+			if h.OS != "" && h.OS != "windows" {
 				return fmt.Errorf("host %q: windows_ps is only valid when os is windows", name)
 			}
 			switch strings.ToLower(strings.TrimSpace(h.WindowsPS)) {
@@ -170,7 +223,7 @@ func (c *Config) Validate() error {
 			}
 		}
 		if h.DockerSocket != "" {
-			if h.OS != "linux" && h.OS != "darwin" {
+			if h.OS != "" && h.OS != "linux" && h.OS != "darwin" {
 				return fmt.Errorf("host %q: docker_socket is only supported on Linux and macOS hosts", name)
 			}
 			if !strings.HasPrefix(h.DockerSocket, "/") {
@@ -209,9 +262,48 @@ func (c *Config) Validate() error {
 				return fmt.Errorf("runner %q: docker_network_mode applies only when mode is docker", r.Name)
 			}
 		}
+		if err := validateDockerCapAdd(&r, hcfg.OS); err != nil {
+			return err
+		}
 	}
 
 	return nil
+}
+
+func validateDockerCapAdd(r *RunnerConfig, hostOS string) error {
+	if len(r.DockerCapAdd) == 0 {
+		return nil
+	}
+	if r.EffectiveMode(hostOS) != "docker" {
+		return fmt.Errorf("runner %q: docker_cap_add applies only when mode is docker", r.Name)
+	}
+	for _, cap := range r.DockerCapAdd {
+		c := strings.TrimSpace(cap)
+		if c == "" {
+			return fmt.Errorf("runner %q: docker_cap_add contains an empty entry", r.Name)
+		}
+		if c != cap {
+			return fmt.Errorf("runner %q: docker_cap_add entries must not have leading or trailing spaces (got %q)", r.Name, cap)
+		}
+		for _, ch := range c {
+			isLetter := (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z')
+			isDigit := ch >= '0' && ch <= '9'
+			if !isLetter && !isDigit && ch != '_' {
+				return fmt.Errorf("runner %q: docker_cap_add invalid capability name %q (use letters, digits, underscore only)", r.Name, c)
+			}
+		}
+	}
+	return nil
+}
+
+// NeedsDetection reports whether any host is missing os or arch (and is not local).
+func (c *Config) NeedsDetection() bool {
+	for _, h := range c.Hosts {
+		if !IsLocalAddr(h.Addr) && (h.OS == "" || h.Arch == "") {
+			return true
+		}
+	}
+	return false
 }
 
 func (c *Config) RunnersForHost(hostName string) []RunnerConfig {

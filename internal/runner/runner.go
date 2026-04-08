@@ -42,6 +42,19 @@ type RunnerStatus struct {
 	Busy     bool
 }
 
+// ResolveModeOnHost returns the effective runner mode for this host, probing Docker availability
+// when mode is not explicitly set. If Docker is available and working, returns "docker";
+// otherwise falls back to "native". When mode is explicitly set in config, returns it as-is.
+func ResolveModeOnHost(h *host.Host, rc config.RunnerConfig) string {
+	if rc.Mode != "" {
+		return rc.Mode
+	}
+	if host.DetectDockerAvailable(h) {
+		return "docker"
+	}
+	return "native"
+}
+
 func (m *Manager) Setup(h *host.Host, rc config.RunnerConfig) error {
 	mode := rc.EffectiveMode(h.OS)
 
@@ -53,6 +66,40 @@ func (m *Manager) Setup(h *host.Host, rc config.RunnerConfig) error {
 	default:
 		return fmt.Errorf("unknown mode %q", mode)
 	}
+}
+
+// NeedsSetup checks whether a runner requires setup before it can start.
+// For docker mode: checks if the image is available locally.
+// For native mode: checks if any instance is missing the .runner config file.
+func (m *Manager) NeedsSetup(h *host.Host, rc config.RunnerConfig) bool {
+	mode := rc.EffectiveMode(h.OS)
+	switch mode {
+	case "docker":
+		cmd := fmt.Sprintf("docker images -q %s 2>/dev/null", RunnerDockerImage)
+		if h.OS == "windows" {
+			cmd = fmt.Sprintf(`docker images -q %s 2>$null`, RunnerDockerImage)
+		}
+		out, err := dockerRun(h, cmd)
+		return err != nil || strings.TrimSpace(out) == ""
+	case "native":
+		for _, name := range rc.InstanceNames() {
+			ok, _ := NativeRunnerConfigPresent(h, name)
+			if !ok {
+				return true
+			}
+		}
+		return false
+	}
+	return true
+}
+
+// EnsureSetup runs setup only if the runner is not already installed.
+func (m *Manager) EnsureSetup(h *host.Host, rc config.RunnerConfig) error {
+	if !m.NeedsSetup(h, rc) {
+		return nil
+	}
+	fmt.Fprintf(m.out(), "  %s: not yet set up, running setup...\n", rc.Name)
+	return m.Setup(h, rc)
 }
 
 func (m *Manager) Start(h *host.Host, rc config.RunnerConfig) error {
@@ -134,7 +181,7 @@ func (m *Manager) Status(h *host.Host, rc config.RunnerConfig) ([]RunnerStatus, 
 			Instance: name,
 			Host:     rc.Host,
 			Repo:     rc.Repo,
-			Labels:   strings.Join(rc.Labels, ", "),
+			Labels:   strings.Join(rc.EffectiveLabels(h.OS, h.Arch), ", "),
 			Mode:     mode,
 		}
 
