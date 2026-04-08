@@ -1,0 +1,1 @@
+Could we make `ghr doctor` include this situation? Make sure eveything working before running

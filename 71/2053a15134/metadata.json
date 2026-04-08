@@ -1,0 +1,27 @@
+{
+  "cli_version": "dev",
+  "checkpoint_id": "712053a15134",
+  "strategy": "manual-commit",
+  "branch": "main",
+  "checkpoints_count": 0,
+  "files_touched": [
+    "internal/doctor/doctor.go",
+    "internal/runner/docker.go",
+    "internal/runner/docker_test.go"
+  ],
+  "sessions": [
+    {
+      "metadata": "/71/2053a15134/0/metadata.json",
+      "transcript": "/71/2053a15134/0/full.jsonl",
+      "content_hash": "/71/2053a15134/0/content_hash.txt",
+      "prompt": "/71/2053a15134/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 530939,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 419102,
+    "output_tokens": 4227,
+    "api_call_count": 14
+  }
+}

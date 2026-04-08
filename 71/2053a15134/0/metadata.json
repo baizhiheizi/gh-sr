@@ -1,0 +1,41 @@
+{
+  "cli_version": "dev",
+  "checkpoint_id": "712053a15134",
+  "session_id": "83ec2a6a-83b3-4257-a477-9834d897a29e",
+  "strategy": "manual-commit",
+  "created_at": "2026-04-08T02:52:35.307494334Z",
+  "branch": "main",
+  "checkpoints_count": 0,
+  "files_touched": [
+    "internal/doctor/doctor.go",
+    "internal/runner/docker.go",
+    "internal/runner/docker_test.go"
+  ],
+  "agent": "Claude Code",
+  "model": "MiniMax-M2.7",
+  "turn_id": "12a1fee1cedf",
+  "checkpoint_transcript_start": 108,
+  "transcript_lines_at_start": 108,
+  "token_usage": {
+    "input_tokens": 530939,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 419102,
+    "output_tokens": 4227,
+    "api_call_count": 14
+  },
+  "session_metrics": {
+    "turn_count": 2
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-04-08T02:52:34.969121664Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 52,
+    "human_modified": 5,
+    "human_removed": 0,
+    "total_committed": 52,
+    "total_lines_changed": 57,
+    "agent_percentage": 0,
+    "metric_version": 2
+  }
+}
