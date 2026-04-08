@@ -137,7 +137,7 @@ func newManager(cfg *config.Config, w io.Writer) (*runner.Manager, error) {
 	if err != nil {
 		return nil, err
 	}
-	m := runner.NewManager(tok.Token)
+	m := runner.NewManager(tok)
 	m.Out = w
 	return m, nil
 }
@@ -186,7 +186,7 @@ auto-detects everything else, and writes a working config ready for gh wm up.`,
 				fmt.Printf("Wrote %s\n", runnersPath)
 			}
 			fmt.Println("\nNext: edit ~/.gh-wm/runners.yml, then run `gh wm doctor` and `gh wm status`.")
-			fmt.Println("Authentication: run `gh auth login` (easiest), or set GITHUB_PAT in ~/.gh-wm/env.")
+			fmt.Println("Authentication: run `gh auth login`.")
 			fmt.Println("Tip: use `gh wm init --quick` for interactive setup.")
 			return nil
 		},
@@ -304,7 +304,7 @@ runners:
 	fmt.Println("  gh wm doctor   # verify config, GitHub access, and host connectivity")
 	fmt.Println("  gh wm up       # setup + start runners (all in one)")
 	fmt.Println()
-	fmt.Println("Authentication: run `gh auth login` (easiest), or set GITHUB_PAT in ~/.gh-wm/env.")
+	fmt.Println("Authentication: run `gh auth login`.")
 
 	return nil
 }
@@ -432,7 +432,7 @@ func doctorCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "doctor",
 		Short: "Check config, GitHub API access, and host prerequisites",
-		Long:  "Validates local paths, configuration, PAT access to the GitHub API, and SSH targets (Docker or native tooling per runner mode). See README \"Host setup\" for steps gh wm cannot automate.",
+		Long:  "Validates local paths, configuration, GitHub API access, and SSH targets (Docker or native tooling per runner mode). See README \"Host setup\" for steps gh wm cannot automate.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := config.BootstrapEnv(); err != nil {
 				return err
@@ -448,18 +448,16 @@ func doctorCmd() *cobra.Command {
 
 			cfg, cfgErr := config.LoadFromPath(cfgPath)
 			var gh *runner.GitHubClient
-			var tokenSource string
+			hasGitHubToken := false
 			if cfg != nil {
 				tok, tokErr := config.ResolveToken(cfg)
 				if tokErr == nil {
-					gh = runner.NewGitHubClient(tok.Token)
-					tokenSource = tok.Source
-				} else {
-					cfgErr = tokErr
+					gh = runner.NewGitHubClient(tok)
+					hasGitHubToken = true
 				}
 			}
 
-			res := doctor.Run(cmd.OutOrStdout(), cfgPath, envPath, cfg, cfgErr, gh, tokenSource, filterHost, filterRepo, strict)
+			res := doctor.Run(cmd.OutOrStdout(), cfgPath, envPath, cfg, cfgErr, gh, hasGitHubToken, filterHost, filterRepo, strict)
 			if code := doctor.ExitCode(res, strict); code != 0 {
 				os.Exit(code)
 			}
@@ -497,7 +495,7 @@ func configPathCmd() *cobra.Command {
 func configShowCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "show",
-		Short: "Print resolved configuration (PAT redacted)",
+		Short: "Print resolved configuration (token source summarized)",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, err := loadConfig()
 			if err != nil {

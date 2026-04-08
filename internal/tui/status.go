@@ -62,18 +62,12 @@ func FormatConfig(cfg *config.Config) string {
 	b.WriteString(titleStyle.Render("Resolved Configuration"))
 	b.WriteString("\n")
 
-	tok, tokErr := config.ResolveToken(cfg)
-	var patDisplay string
-	if tokErr != nil {
-		patDisplay = "(none)"
-	} else if tok.Source == config.TokenSourceGH {
-		patDisplay = "(from gh CLI)"
-	} else if len(tok.Token) > 8 {
-		patDisplay = tok.Token[:8] + "..." + tok.Token[len(tok.Token)-4:]
-	} else {
-		patDisplay = "(set)"
+	_, tokErr := config.ResolveToken(cfg)
+	tokenDisplay := "(none)"
+	if tokErr == nil {
+		tokenDisplay = "(from gh CLI)"
 	}
-	b.WriteString(fmt.Sprintf("  %s %s\n\n", configKey.Render("Token:"), configVal.Render(patDisplay)))
+	b.WriteString(fmt.Sprintf("  %s %s\n\n", configKey.Render("Token:"), configVal.Render(tokenDisplay)))
 
 	b.WriteString(configKey.Render("Hosts:"))
 	b.WriteString("\n")

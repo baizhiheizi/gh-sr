@@ -161,7 +161,7 @@ func TestRun_ConfigErrorSkipsGitHub(t *testing.T) {
 	var buf strings.Builder
 	cfgPath := t.TempDir() + "/missing.yml"
 	envPath := t.TempDir() + "/env"
-	res := Run(&buf, cfgPath, envPath, nil, assertError(t, "no config"), nil, "", "", "", false)
+	res := Run(&buf, cfgPath, envPath, nil, assertError(t, "no config"), nil, false, "", "", false)
 	if res.Fail < 1 {
 		t.Fatalf("expected at least one FAIL, got %+v", res)
 	}
@@ -199,7 +199,7 @@ func TestRun_GitHubListRunnersUsesAPI(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	cfg := &config.Config{
-		GitHub: config.GitHubConfig{PAT: "test-token"},
+		GitHub: config.GitHubConfig{},
 		Hosts: map[string]config.HostConfig{
 			"localh": {Addr: config.LocalAddr, OS: "linux", Arch: "amd64"},
 		},
@@ -207,7 +207,7 @@ func TestRun_GitHubListRunnersUsesAPI(t *testing.T) {
 			{Name: "only-gh", Repo: "o/r", Host: "localh", Labels: []string{"x"}, Mode: "native"},
 		},
 	}
-	gh := runner.NewGitHubClientWithHTTP(cfg.GitHub.PAT, srv.Client(), srv.URL)
+	gh := runner.NewGitHubClientWithHTTP("test-token", srv.Client(), srv.URL)
 
 	tmp := t.TempDir()
 	cfgPath := filepath.Join(tmp, "runners.yml")
@@ -220,7 +220,7 @@ func TestRun_GitHubListRunnersUsesAPI(t *testing.T) {
 	}
 
 	var buf strings.Builder
-	res := Run(&buf, cfgPath, envPath, cfg, nil, gh, config.TokenSourcePAT, "", "", false)
+	res := Run(&buf, cfgPath, envPath, cfg, nil, gh, true, "", "", false)
 
 	out := buf.String()
 	if !strings.Contains(out, "list runners OK (0 registered)") {

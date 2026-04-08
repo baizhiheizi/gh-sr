@@ -20,21 +20,13 @@ Run `gh wm config path` to see which config file and `~/.gh-wm/env` path apply i
 
 ## Authentication
 
-**gh wm** resolves a GitHub token in this order:
+**gh wm** uses the [GitHub CLI](https://cli.github.com/) only: run **`gh auth login`** on the machine where you run gh wm. Do not use `github.pat` in YAML or `GITHUB_PAT` / `GITHUB_TOKEN` for gh wm (legacy `github.pat` is rejected at load time).
 
-1. `github.pat` in `runners.yml` (supports `env:VAR_NAME` to read from environment)
-2. `GITHUB_PAT` or `GITHUB_TOKEN` environment variable
-3. `gh` CLI — if you have `gh auth login` done, gh wm picks up the token automatically
-
-The simplest setup is to install the [GitHub CLI](https://cli.github.com/) and run `gh auth login`. No env files or PAT fields needed.
-
-For PAT creation and scopes, see [Authentication](github-pat.md).
+See [Authentication](authentication.md) for permissions and troubleshooting.
 
 ## Secrets (`~/.gh-wm/env`)
 
-Before the YAML file is loaded, **gh wm** applies environment variables from **`~/.gh-wm/env`** if that file exists (dotenv-style: `KEY=value`, optional `export `, `#` comments). This keeps secrets out of your shell history and out of the YAML file. Pair it with `github.pat: env:GITHUB_PAT` in `runners.yml`. Create the directory and file with `gh wm init`, or run `gh wm config edit-env`.
-
-If you use `gh auth login`, the env file is optional — you can skip `GITHUB_PAT` entirely.
+Before the YAML file is loaded, **gh wm** applies environment variables from **`~/.gh-wm/env`** if that file exists (dotenv-style: `KEY=value`, optional `export `, `#` comments). This is optional and intended for other tooling if needed — not for GitHub API tokens used by gh wm. Create the directory and file with `gh wm init`, or run `gh wm config edit-env`.
 
 Keep `~/.gh-wm` permissions tight (`chmod 700 ~/.gh-wm`, `chmod 600 ~/.gh-wm/env` if you create files by hand).
 
@@ -43,10 +35,6 @@ Keep `~/.gh-wm` permissions tight (`chmod 700 ~/.gh-wm`, `chmod 600 ~/.gh-wm/env
 Edit `~/.gh-wm/runners.yml` (after `gh wm init`), or set `GH_WM_CONFIG` / `-c` to another YAML file. You can open the resolved file in `$VISUAL` or `$EDITOR` with `gh wm config edit`.
 
 ```yaml
-github:
-  # Optional if you use `gh auth login`. Otherwise set a PAT:
-  # pat: env:GITHUB_PAT
-
 hosts:
   my-laptop:
     addr: local              # run on the local machine (no SSH)
@@ -114,7 +102,6 @@ runners:
 
 | Field | Description |
 |---|---|
-| `github.pat` | GitHub PAT (optional if `gh auth login` is used). Use `env:VAR_NAME` to read from environment. |
 | `hosts.<name>.addr` | SSH target (`user@host` or `user@ip`), or `local` to run on the machine where gh wm is running. Remote commands run as that user; on Linux, privilege expectations for `setup` / `update` follow [Linux SSH user and privileges](host-setup.md#linux-ssh-user-and-privileges). |
 | `hosts.<name>.os` | `linux`, `darwin`, or `windows`. Auto-detected when `addr` is `local`. |
 | `hosts.<name>.arch` | `amd64` or `arm64`. Auto-detected when `addr` is `local`. |

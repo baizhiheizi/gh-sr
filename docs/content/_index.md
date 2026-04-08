@@ -36,11 +36,11 @@ For control plane vs execution plane, lifecycle commands, and how status and log
 ```bash
 gh extension install an-lee/gh-wm
 gh wm init
-# Edit ~/.gh-wm/runners.yml and ~/.gh-wm/env (GitHub PAT)
+# Edit ~/.gh-wm/runners.yml; run gh auth login on this machine
 gh wm doctor
 gh wm setup
 gh wm up
 gh wm status
 ```
 
-See [Installation](installation.md) for prerequisites, building from source, and the Makefile. For PAT setup and YAML fields, see [GitHub PAT](github-pat.md) and [Configuration](configuration.md).
+See [Installation](installation.md) for prerequisites, building from source, and the Makefile. For authentication and YAML fields, see [Authentication](authentication.md) and [Configuration](configuration.md).

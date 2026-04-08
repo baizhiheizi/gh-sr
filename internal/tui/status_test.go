@@ -24,7 +24,7 @@ func Test_formatGitHubStatus(t *testing.T) {
 func TestFormatConfig_containsHostsAndRunners(t *testing.T) {
 	t.Parallel()
 	cfg := &config.Config{
-		GitHub: config.GitHubConfig{PAT: "github_pat_abcdefghijklmnop"},
+		GitHub: config.GitHubConfig{},
 		Hosts: map[string]config.HostConfig{
 			"h1": {Addr: "local", OS: "linux", Arch: "amd64"},
 		},
@@ -36,8 +36,11 @@ func TestFormatConfig_containsHostsAndRunners(t *testing.T) {
 	if !strings.Contains(out, "h1") || !strings.Contains(out, "r1") || !strings.Contains(out, "o/r") {
 		t.Fatalf("unexpected FormatConfig output:\n%s", out)
 	}
-	if strings.Contains(out, "github_pat_abcdefghijklmnop") {
-		t.Fatal("PAT should be redacted in FormatConfig")
+	if strings.Contains(out, "github_pat_") {
+		t.Fatal("FormatConfig should not echo raw tokens")
+	}
+	if !strings.Contains(out, "Token:") || (!strings.Contains(out, "(from gh CLI)") && !strings.Contains(out, "(none)")) {
+		t.Fatalf("expected Token line with gh or none, got:\n%s", out)
 	}
 }
 

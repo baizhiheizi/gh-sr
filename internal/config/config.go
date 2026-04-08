@@ -256,6 +256,10 @@ func hasCapability(caps []string, target string) bool {
 }
 
 func (c *Config) Validate() error {
+	if c.GitHub.PAT != "" {
+		return fmt.Errorf("github.pat is no longer supported; remove it from runners.yml and authenticate with `gh auth login`")
+	}
+
 	if len(c.Hosts) == 0 {
 		return fmt.Errorf("at least one host must be defined")
 	}

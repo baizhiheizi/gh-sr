@@ -1,8 +1,6 @@
 # GitHub Workflow Manager configuration
 # Edit this file, then run: gh wm up
-
-github:
-  pat: env:GITHUB_PAT  # "env:" prefix reads from environment variable
+# Authentication: run `gh auth login` — gh wm uses the GitHub CLI token only.
 
 hosts:
   # Example hosts:

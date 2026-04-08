@@ -29,7 +29,7 @@ This installs a binary named **`gh-wm`** on your `PATH`. Use **`gh wm`** by inst
 gh wm init
 ```
 
-This creates `~/.gh-wm/runners.yml` from a template and `~/.gh-wm/env` for secrets (optional). Then edit the config (or use `gh wm config edit`), run `gh wm doctor`, and you are ready. For authentication, the easiest path is `gh auth login` (GitHub CLI) — gh wm picks up the token automatically. Alternatively, set `GITHUB_PAT` in `~/.gh-wm/env`.
+This creates `~/.gh-wm/runners.yml` from a template and `~/.gh-wm/env` (optional dotenv for other tooling). Then edit the config (or use `gh wm config edit`), run **`gh auth login`**, then `gh wm doctor`. gh wm uses the GitHub CLI token only; see [Authentication](authentication.md).
 
 ## Build from source
 

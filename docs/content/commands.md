@@ -24,7 +24,7 @@ gh wm service install [--system] [names...]   # Native: OS autostart (systemd / 
 gh wm service uninstall [names...]            # Remove gh wm-installed autostart
 gh wm service status [names...]               # Autostart + unit state (docker: policy note)
 gh wm config path          # Print resolved config and ~/.gh-wm/env paths
-gh wm config show          # Print resolved configuration (PAT redacted)
+gh wm config show          # Print resolved configuration (token source summarized)
 gh wm config edit          # Edit resolved runners.yml in $VISUAL / $EDITOR
 gh wm config edit-env      # Edit ~/.gh-wm/env in $VISUAL / $EDITOR
 gh wm config validate      # Validate config (exit 0 if OK)

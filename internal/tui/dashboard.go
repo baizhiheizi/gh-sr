@@ -137,7 +137,7 @@ func RunDashboard(cfg *config.Config, opts DashboardOpts) error {
 	if err != nil {
 		return err
 	}
-	mgr := runner.NewManager(tok.Token)
+	mgr := runner.NewManager(tok)
 	mgr.Out = io.Discard
 	m := &dashboardModel{
 		opts:          opts,
@@ -397,7 +397,7 @@ func (m *dashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.lastErr = tokErr.Error()
 			return m, nil
 		}
-		mgr := runner.NewManager(tok.Token)
+		mgr := runner.NewManager(tok)
 		mgr.Out = io.Discard
 		m.mgr = mgr
 		m.toast = "Config reloaded."
@@ -501,15 +501,15 @@ func (m *dashboardModel) updateGlobalMenu(key string) tea.Cmd {
 			return func() tea.Msg {
 				var buf bytes.Buffer
 				var gh *runner.GitHubClient
-				var tokenSource string
+				hasGitHubToken := false
 				if cfg != nil {
 					tok, tokErr := config.ResolveToken(cfg)
 					if tokErr == nil {
-						gh = runner.NewGitHubClient(tok.Token)
-						tokenSource = tok.Source
+						gh = runner.NewGitHubClient(tok)
+						hasGitHubToken = true
 					}
 				}
-				doctor.Run(&buf, cfgPath, envPath, cfg, nil, gh, tokenSource, hostF, repoF, false)
+				doctor.Run(&buf, cfgPath, envPath, cfg, nil, gh, hasGitHubToken, hostF, repoF, false)
 				return doctorDoneMsg{out: buf.String()}
 			}
 		case 1:

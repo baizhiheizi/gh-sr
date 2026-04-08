@@ -70,7 +70,7 @@ func TestRunnerConfig_InstanceNames(t *testing.T) {
 	}
 }
 
-func TestLoad_resolveEnv(t *testing.T) {
+func TestLoad_rejectsGitHubPat(t *testing.T) {
 	t.Setenv("GH_WM_TEST_PAT", "secret-from-env")
 	dir := t.TempDir()
 	path := filepath.Join(dir, "runners.yml")
@@ -90,12 +90,12 @@ runners:
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	cfg, err := Load(path)
-	if err != nil {
-		t.Fatal(err)
+	_, err := Load(path)
+	if err == nil {
+		t.Fatal("expected error for legacy github.pat")
 	}
-	if cfg.GitHub.PAT != "secret-from-env" {
-		t.Errorf("PAT: got %q", cfg.GitHub.PAT)
+	if !strings.Contains(err.Error(), "github.pat") {
+		t.Errorf("error should mention github.pat: %v", err)
 	}
 }
 
@@ -103,8 +103,6 @@ func TestLoad_applyDefaults(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "runners.yml")
 	content := `
-github:
-  pat: tok
 hosts:
   h1:
     addr: a@b
@@ -136,9 +134,18 @@ func TestValidate_errors(t *testing.T) {
 		frag string
 	}{
 		{
+			name: "github_pat_legacy",
+			cfg: Config{
+				GitHub:  GitHubConfig{PAT: "ghp_removed"},
+				Hosts:   map[string]HostConfig{"h": {Addr: "a@b", OS: "linux", Arch: "amd64"}},
+				Runners: []RunnerConfig{{Name: "r", Repo: "o/r", Host: "h"}},
+			},
+			frag: "github.pat",
+		},
+		{
 			name: "no_hosts",
 			cfg: Config{
-				GitHub:  GitHubConfig{PAT: "x"},
+				GitHub:  GitHubConfig{},
 				Hosts:   map[string]HostConfig{},
 				Runners: []RunnerConfig{{Name: "r", Repo: "o/r", Host: "h"}},
 			},
@@ -147,7 +154,7 @@ func TestValidate_errors(t *testing.T) {
 		{
 			name: "host_addr",
 			cfg: Config{
-				GitHub:  GitHubConfig{PAT: "x"},
+				GitHub:  GitHubConfig{},
 				Hosts:   map[string]HostConfig{"h": {Addr: "", OS: "linux", Arch: "amd64"}},
 				Runners: []RunnerConfig{{Name: "r", Repo: "o/r", Host: "h"}},
 			},
@@ -156,7 +163,7 @@ func TestValidate_errors(t *testing.T) {
 		{
 			name: "host_os_invalid",
 			cfg: Config{
-				GitHub:  GitHubConfig{PAT: "x"},
+				GitHub:  GitHubConfig{},
 				Hosts:   map[string]HostConfig{"h": {Addr: "a@b", OS: "freebsd", Arch: "amd64"}},
 				Runners: []RunnerConfig{{Name: "r", Repo: "o/r", Host: "h"}},
 			},
@@ -165,7 +172,7 @@ func TestValidate_errors(t *testing.T) {
 		{
 			name: "host_arch_invalid",
 			cfg: Config{
-				GitHub:  GitHubConfig{PAT: "x"},
+				GitHub:  GitHubConfig{},
 				Hosts:   map[string]HostConfig{"h": {Addr: "a@b", OS: "linux", Arch: "riscv64"}},
 				Runners: []RunnerConfig{{Name: "r", Repo: "o/r", Host: "h"}},
 			},
@@ -174,7 +181,7 @@ func TestValidate_errors(t *testing.T) {
 		{
 			name: "no_runners",
 			cfg: Config{
-				GitHub:  GitHubConfig{PAT: "x"},
+				GitHub:  GitHubConfig{},
 				Hosts:   map[string]HostConfig{"h": {Addr: "a@b", OS: "linux", Arch: "amd64"}},
 				Runners: nil,
 			},
@@ -183,7 +190,7 @@ func TestValidate_errors(t *testing.T) {
 		{
 			name: "runner_name",
 			cfg: Config{
-				GitHub:  GitHubConfig{PAT: "x"},
+				GitHub:  GitHubConfig{},
 				Hosts:   map[string]HostConfig{"h": {Addr: "a@b", OS: "linux", Arch: "amd64"}},
 				Runners: []RunnerConfig{{Name: "", Repo: "o/r", Host: "h"}},
 			},
@@ -192,7 +199,7 @@ func TestValidate_errors(t *testing.T) {
 		{
 			name: "runner_repo_or_org",
 			cfg: Config{
-				GitHub:  GitHubConfig{PAT: "x"},
+				GitHub:  GitHubConfig{},
 				Hosts:   map[string]HostConfig{"h": {Addr: "a@b", OS: "linux", Arch: "amd64"}},
 				Runners: []RunnerConfig{{Name: "r", Repo: "", Host: "h"}},
 			},
@@ -201,7 +208,7 @@ func TestValidate_errors(t *testing.T) {
 		{
 			name: "runner_host_missing",
 			cfg: Config{
-				GitHub:  GitHubConfig{PAT: "x"},
+				GitHub:  GitHubConfig{},
 				Hosts:   map[string]HostConfig{"h": {Addr: "a@b", OS: "linux", Arch: "amd64"}},
 				Runners: []RunnerConfig{{Name: "r", Repo: "o/r", Host: "unknown"}},
 			},
@@ -210,7 +217,7 @@ func TestValidate_errors(t *testing.T) {
 		{
 			name: "bad_mode",
 			cfg: Config{
-				GitHub:  GitHubConfig{PAT: "x"},
+				GitHub:  GitHubConfig{},
 				Hosts:   map[string]HostConfig{"h": {Addr: "a@b", OS: "linux", Arch: "amd64"}},
 				Runners: []RunnerConfig{{Name: "r", Repo: "o/r", Host: "h", Mode: "k8s"}},
 			},
@@ -219,7 +226,7 @@ func TestValidate_errors(t *testing.T) {
 		{
 			name: "windows_ps_on_linux",
 			cfg: Config{
-				GitHub: GitHubConfig{PAT: "x"},
+				GitHub: GitHubConfig{},
 				Hosts: map[string]HostConfig{
 					"h": {Addr: "a@b", OS: "linux", Arch: "amd64", WindowsPS: "pwsh"},
 				},
@@ -230,7 +237,7 @@ func TestValidate_errors(t *testing.T) {
 		{
 			name: "windows_ps_invalid_value",
 			cfg: Config{
-				GitHub: GitHubConfig{PAT: "x"},
+				GitHub: GitHubConfig{},
 				Hosts: map[string]HostConfig{
 					"w": {Addr: "a@b", OS: "windows", Arch: "amd64", WindowsPS: "bash"},
 				},
@@ -241,7 +248,7 @@ func TestValidate_errors(t *testing.T) {
 		{
 			name: "docker_network_mode_invalid",
 			cfg: Config{
-				GitHub: GitHubConfig{PAT: "x"},
+				GitHub: GitHubConfig{},
 				Hosts:  map[string]HostConfig{"h": {Addr: "a@b", OS: "linux", Arch: "amd64"}},
 				Runners: []RunnerConfig{{
 					Name: "r", Repo: "o/r", Host: "h", Mode: "docker", DockerNetworkMode: "overlay",
@@ -252,7 +259,7 @@ func TestValidate_errors(t *testing.T) {
 		{
 			name: "docker_network_mode_with_native",
 			cfg: Config{
-				GitHub: GitHubConfig{PAT: "x"},
+				GitHub: GitHubConfig{},
 				Hosts:  map[string]HostConfig{"h": {Addr: "a@b", OS: "linux", Arch: "amd64"}},
 				Runners: []RunnerConfig{{
 					Name: "r", Repo: "o/r", Host: "h", Mode: "native", DockerNetworkMode: "bridge",
@@ -263,7 +270,7 @@ func TestValidate_errors(t *testing.T) {
 		{
 			name: "docker_cap_add_with_native",
 			cfg: Config{
-				GitHub: GitHubConfig{PAT: "x"},
+				GitHub: GitHubConfig{},
 				Hosts:  map[string]HostConfig{"h": {Addr: "a@b", OS: "linux", Arch: "amd64"}},
 				Runners: []RunnerConfig{{
 					Name: "r", Repo: "o/r", Host: "h", Mode: "native", DockerCapAdd: []string{"NET_ADMIN"},
@@ -274,7 +281,7 @@ func TestValidate_errors(t *testing.T) {
 		{
 			name: "docker_cap_add_invalid_char",
 			cfg: Config{
-				GitHub: GitHubConfig{PAT: "x"},
+				GitHub: GitHubConfig{},
 				Hosts:  map[string]HostConfig{"h": {Addr: "a@b", OS: "linux", Arch: "amd64"}},
 				Runners: []RunnerConfig{{
 					Name: "r", Repo: "o/r", Host: "h", Mode: "docker", DockerCapAdd: []string{"NET-ADMIN"},
@@ -285,7 +292,7 @@ func TestValidate_errors(t *testing.T) {
 		{
 			name: "docker_cap_add_empty_string",
 			cfg: Config{
-				GitHub: GitHubConfig{PAT: "x"},
+				GitHub: GitHubConfig{},
 				Hosts:  map[string]HostConfig{"h": {Addr: "a@b", OS: "linux", Arch: "amd64"}},
 				Runners: []RunnerConfig{{
 					Name: "r", Repo: "o/r", Host: "h", Mode: "docker", DockerCapAdd: []string{"NET_ADMIN", ""},
@@ -351,7 +358,7 @@ func TestEffectiveLabels(t *testing.T) {
 func TestValidate_emptyOSArchRemoteHost(t *testing.T) {
 	t.Parallel()
 	cfg := Config{
-		GitHub:  GitHubConfig{PAT: "x"},
+		GitHub:  GitHubConfig{},
 		Hosts:   map[string]HostConfig{"h": {Addr: "user@host"}},
 		Runners: []RunnerConfig{{Name: "r", Repo: "o/r", Host: "h"}},
 	}
@@ -383,7 +390,7 @@ func TestNeedsDetection(t *testing.T) {
 func TestValidate_dockerSocketOnDarwin(t *testing.T) {
 	t.Parallel()
 	cfg := Config{
-		GitHub: GitHubConfig{PAT: "x"},
+		GitHub: GitHubConfig{},
 		Hosts: map[string]HostConfig{
 			"mac": {Addr: "user@mac", OS: "darwin", Arch: "arm64", DockerSocket: "/Users/me/.colima/default/docker.sock"},
 		},
@@ -397,7 +404,7 @@ func TestValidate_dockerSocketOnDarwin(t *testing.T) {
 func TestValidate_dockerSocketOnWindows_rejected(t *testing.T) {
 	t.Parallel()
 	cfg := Config{
-		GitHub: GitHubConfig{PAT: "x"},
+		GitHub: GitHubConfig{},
 		Hosts: map[string]HostConfig{
 			"win": {Addr: "user@win", OS: "windows", Arch: "amd64", DockerSocket: "/var/run/docker.sock"},
 		},
@@ -416,7 +423,7 @@ func TestValidate_dockerSocketOnWindows_rejected(t *testing.T) {
 func TestValidate_dockerOnWindowsHost(t *testing.T) {
 	t.Parallel()
 	cfg := Config{
-		GitHub: GitHubConfig{PAT: "x"},
+		GitHub: GitHubConfig{},
 		Hosts:  map[string]HostConfig{"w": {Addr: "a@b", OS: "windows", Arch: "amd64"}},
 		Runners: []RunnerConfig{
 			{Name: "linux-on-win", Repo: "o/r", Host: "w", Mode: "docker"},
@@ -430,7 +437,7 @@ func TestValidate_dockerOnWindowsHost(t *testing.T) {
 func TestValidate_dockerNetworkModeHostOnWindows(t *testing.T) {
 	t.Parallel()
 	cfg := Config{
-		GitHub: GitHubConfig{PAT: "x"},
+		GitHub: GitHubConfig{},
 		Hosts:  map[string]HostConfig{"w": {Addr: "a@b", OS: "windows", Arch: "amd64"}},
 		Runners: []RunnerConfig{{
 			Name: "r", Repo: "o/r", Host: "w", Mode: "docker", DockerNetworkMode: "host",
@@ -444,7 +451,7 @@ func TestValidate_dockerNetworkModeHostOnWindows(t *testing.T) {
 func TestValidate_dockerNetworkModeHostOnDarwin(t *testing.T) {
 	t.Parallel()
 	cfg := Config{
-		GitHub: GitHubConfig{PAT: "x"},
+		GitHub: GitHubConfig{},
 		Hosts:  map[string]HostConfig{"m": {Addr: "a@b", OS: "darwin", Arch: "arm64"}},
 		Runners: []RunnerConfig{{
 			Name: "r", Repo: "o/r", Host: "m", Mode: "docker", DockerNetworkMode: "host",
@@ -458,7 +465,7 @@ func TestValidate_dockerNetworkModeHostOnDarwin(t *testing.T) {
 func TestValidate_docker_cap_add_ok(t *testing.T) {
 	t.Parallel()
 	cfg := Config{
-		GitHub: GitHubConfig{PAT: "x"},
+		GitHub: GitHubConfig{},
 		Hosts:  map[string]HostConfig{"w": {Addr: "a@b", OS: "windows", Arch: "amd64"}},
 		Runners: []RunnerConfig{{
 			Name: "r", Repo: "o/r", Host: "w", Mode: "docker",
@@ -473,7 +480,7 @@ func TestValidate_docker_cap_add_ok(t *testing.T) {
 func TestValidate_windows_ps_pwsh(t *testing.T) {
 	t.Parallel()
 	cfg := Config{
-		GitHub: GitHubConfig{PAT: "x"},
+		GitHub: GitHubConfig{},
 		Hosts: map[string]HostConfig{
 			"w": {Addr: "a@b", OS: "windows", Arch: "amd64", WindowsPS: "pwsh"},
 		},
@@ -503,7 +510,7 @@ func TestIsLocalAddr(t *testing.T) {
 func TestValidate_localHost(t *testing.T) {
 	t.Parallel()
 	cfg := Config{
-		GitHub: GitHubConfig{PAT: "x"},
+		GitHub: GitHubConfig{},
 		Hosts:  map[string]HostConfig{"laptop": {Addr: "local", OS: "linux", Arch: "amd64"}},
 		Runners: []RunnerConfig{
 			{Name: "r", Repo: "o/r", Host: "laptop"},
@@ -517,7 +524,7 @@ func TestValidate_localHost(t *testing.T) {
 func TestApplyDefaults_localHostAutoDetect(t *testing.T) {
 	t.Parallel()
 	cfg := Config{
-		GitHub: GitHubConfig{PAT: "x"},
+		GitHub: GitHubConfig{},
 		Hosts:  map[string]HostConfig{"laptop": {Addr: "local"}},
 		Runners: []RunnerConfig{
 			{Name: "r", Repo: "o/r", Host: "laptop"},
@@ -538,8 +545,6 @@ func TestLoad_localHost(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "runners.yml")
 	content := `
-github:
-  pat: tok
 hosts:
   laptop:
     addr: local
@@ -566,7 +571,7 @@ runners:
 
 func TestConfig_queries(t *testing.T) {
 	cfg := &Config{
-		GitHub: GitHubConfig{PAT: "x"},
+		GitHub: GitHubConfig{},
 		Hosts: map[string]HostConfig{
 			"h1": {Addr: "a@b", OS: "linux", Arch: "amd64"},
 			"h2": {Addr: "c@d", OS: "darwin", Arch: "arm64"},
@@ -607,7 +612,7 @@ func TestConfig_queries(t *testing.T) {
 
 func TestFindRunnerForLogs_and_ResolveRunnerInstance(t *testing.T) {
 	cfg := &Config{
-		GitHub: GitHubConfig{PAT: "x"},
+		GitHub: GitHubConfig{},
 		Hosts: map[string]HostConfig{
 			"h1": {Addr: "a@b", OS: "linux", Arch: "amd64"},
 			"h2": {Addr: "c@d", OS: "windows", Arch: "amd64"},
@@ -638,7 +643,7 @@ func TestFindRunnerForLogs_and_ResolveRunnerInstance(t *testing.T) {
 	}
 
 	solo := &Config{
-		GitHub:  GitHubConfig{PAT: "x"},
+		GitHub:  GitHubConfig{},
 		Hosts:   map[string]HostConfig{"h1": {Addr: "a@b", OS: "linux", Arch: "amd64"}},
 		Runners: []RunnerConfig{{Name: "solo", Repo: "o/r", Host: "h1", Count: 2}},
 	}
@@ -736,7 +741,7 @@ func TestRunnerConfig_Scope(t *testing.T) {
 func TestValidate_orgRunner(t *testing.T) {
 	t.Parallel()
 	cfg := Config{
-		GitHub: GitHubConfig{PAT: "x"},
+		GitHub: GitHubConfig{},
 		Hosts:  map[string]HostConfig{"h": {Addr: "a@b", OS: "linux", Arch: "amd64"}},
 		Runners: []RunnerConfig{{
 			Name: "r", Org: "my-org", Host: "h",
@@ -750,7 +755,7 @@ func TestValidate_orgRunner(t *testing.T) {
 func TestValidate_orgAndRepoBothSet(t *testing.T) {
 	t.Parallel()
 	cfg := Config{
-		GitHub: GitHubConfig{PAT: "x"},
+		GitHub: GitHubConfig{},
 		Hosts:  map[string]HostConfig{"h": {Addr: "a@b", OS: "linux", Arch: "amd64"}},
 		Runners: []RunnerConfig{{
 			Name: "r", Repo: "o/r", Org: "my-org", Host: "h",
@@ -765,7 +770,7 @@ func TestValidate_orgAndRepoBothSet(t *testing.T) {
 func TestValidate_groupRequiresOrg(t *testing.T) {
 	t.Parallel()
 	cfg := Config{
-		GitHub: GitHubConfig{PAT: "x"},
+		GitHub: GitHubConfig{},
 		Hosts:  map[string]HostConfig{"h": {Addr: "a@b", OS: "linux", Arch: "amd64"}},
 		Runners: []RunnerConfig{{
 			Name: "r", Repo: "o/r", Host: "h", Group: "grp",
@@ -780,7 +785,7 @@ func TestValidate_groupRequiresOrg(t *testing.T) {
 func TestValidate_profileInvalid(t *testing.T) {
 	t.Parallel()
 	cfg := Config{
-		GitHub: GitHubConfig{PAT: "x"},
+		GitHub: GitHubConfig{},
 		Hosts:  map[string]HostConfig{"h": {Addr: "a@b", OS: "linux", Arch: "amd64"}},
 		Runners: []RunnerConfig{{
 			Name: "r", Repo: "o/r", Host: "h", Profile: "unknown",
@@ -795,7 +800,7 @@ func TestValidate_profileInvalid(t *testing.T) {
 func TestValidate_agenticWithNativeMode(t *testing.T) {
 	t.Parallel()
 	cfg := Config{
-		GitHub: GitHubConfig{PAT: "x"},
+		GitHub: GitHubConfig{},
 		Hosts:  map[string]HostConfig{"h": {Addr: "a@b", OS: "linux", Arch: "amd64"}},
 		Runners: []RunnerConfig{{
 			Name: "r", Repo: "o/r", Host: "h", Profile: "agentic", Mode: "native",
@@ -810,7 +815,7 @@ func TestValidate_agenticWithNativeMode(t *testing.T) {
 func TestValidate_agenticProfileValid(t *testing.T) {
 	t.Parallel()
 	cfg := Config{
-		GitHub: GitHubConfig{PAT: "x"},
+		GitHub: GitHubConfig{},
 		Hosts:  map[string]HostConfig{"h": {Addr: "a@b", OS: "linux", Arch: "amd64"}},
 		Runners: []RunnerConfig{{
 			Name: "r", Repo: "o/r", Host: "h", Profile: "agentic",
@@ -824,7 +829,7 @@ func TestValidate_agenticProfileValid(t *testing.T) {
 func TestValidate_ephemeralRunner(t *testing.T) {
 	t.Parallel()
 	cfg := Config{
-		GitHub: GitHubConfig{PAT: "x"},
+		GitHub: GitHubConfig{},
 		Hosts:  map[string]HostConfig{"h": {Addr: "a@b", OS: "linux", Arch: "amd64"}},
 		Runners: []RunnerConfig{{
 			Name: "r", Repo: "o/r", Host: "h", Ephemeral: true,
@@ -839,8 +844,6 @@ func TestLoad_agenticProfile(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "runners.yml")
 	content := `
-github:
-  pat: tok
 hosts:
   h1:
     addr: a@b

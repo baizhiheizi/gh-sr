@@ -94,7 +94,7 @@ func (g *GitHubClient) GetRegistrationTokenScoped(scope, target string) (string,
 		return "", fmt.Errorf("parsing registration token: %w", err)
 	}
 	if tok.Token == "" {
-		return "", fmt.Errorf("empty registration token for %s (check PAT permissions)", target)
+		return "", fmt.Errorf("empty registration token for %s (check GitHub token and repo admin access)", target)
 	}
 	return tok.Token, nil
 }

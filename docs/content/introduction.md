@@ -32,12 +32,12 @@ Your laptop (control plane)          Runner hosts
         │
         ▼
   ~/.gh-wm/runners.yml  (your config)
-  ~/.gh-wm/env          (GitHub PAT)
+  gh auth login         (GitHub CLI token on the control machine)
 ```
 
 1. **Config** — You describe hosts and runners in `~/.gh-wm/runners.yml`
 2. **Connect** — gh wm reaches each host over SSH (or runs locally with `addr: local`)
-3. **Install** — `gh wm setup` downloads the runner software, configures it with your GitHub PAT, and (for Docker mode) pulls the runner image
+3. **Install** — `gh wm setup` downloads the runner software, registers it using credentials from **`gh auth login`**, and (for Docker mode) pulls the runner image
 4. **Manage** — `gh wm up` / `gh wm down` start and stop runner instances as processes or containers
 5. **Monitor** — `gh wm status` and `gh wm dashboard` show running state from each host alongside GitHub's online/offline view
 
@@ -81,7 +81,7 @@ Linux defaults to **docker** if you don't specify. Windows and macOS default to 
 ### Config and secrets
 
 - **`~/.gh-wm/runners.yml`** — Declares all hosts and runners (OS, mode, count, labels, etc.)
-- **`~/.gh-wm/env`** — Contains environment variables, most importantly your GitHub PAT (`GITHUB_PAT`)
+- **`~/.gh-wm/env`** — Optional dotenv file for other tooling; GitHub API access for gh wm is via **`gh auth login`** only
 
 ### Instances
 

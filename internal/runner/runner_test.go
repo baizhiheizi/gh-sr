@@ -25,7 +25,7 @@ func TestManager_EnrichWithGitHubStatus(t *testing.T) {
 	defer ts.Close()
 
 	cfg := &config.Config{
-		GitHub: config.GitHubConfig{PAT: "p"},
+		GitHub: config.GitHubConfig{},
 		Hosts: map[string]config.HostConfig{
 			"h": {Addr: "a@b", OS: "linux", Arch: "amd64"},
 		},
@@ -59,7 +59,7 @@ func TestManager_EnrichWithGitHubStatus_OS_mismatch_skips(t *testing.T) {
 	defer ts.Close()
 
 	cfg := &config.Config{
-		GitHub: config.GitHubConfig{PAT: "p"},
+		GitHub: config.GitHubConfig{},
 		Hosts: map[string]config.HostConfig{
 			"win": {Addr: "a@b", OS: "windows", Arch: "amd64"},
 		},
@@ -101,7 +101,7 @@ func TestManager_CleanupOffline(t *testing.T) {
 	defer ts.Close()
 
 	cfg := &config.Config{
-		GitHub: config.GitHubConfig{PAT: "p"},
+		GitHub: config.GitHubConfig{},
 		Hosts: map[string]config.HostConfig{
 			"h": {Addr: "a@b", OS: "linux", Arch: "amd64"},
 		},

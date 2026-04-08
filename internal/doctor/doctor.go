@@ -36,9 +36,9 @@ func ExitCode(res Result, strict bool) int {
 }
 
 // Run prints diagnostics to w. cfg and cfgErr come from config.LoadFromPath (or Load) after BootstrapEnv.
-// tokenSource indicates how the GitHub token was obtained ("pat", "gh", or "" if unavailable).
+// hasGitHubToken is true when gh CLI credentials yielded a token for github.com.
 // If cfg is nil (load error), GitHub and host checks are skipped after the configuration section.
-func Run(w io.Writer, cfgPath, envPath string, cfg *config.Config, cfgErr error, gh *runner.GitHubClient, tokenSource, filterHost, filterRepo string, strict bool) Result {
+func Run(w io.Writer, cfgPath, envPath string, cfg *config.Config, cfgErr error, gh *runner.GitHubClient, hasGitHubToken bool, filterHost, filterRepo string, strict bool) Result {
 	var r Result
 
 	fmt.Fprintln(w, "=== Local environment ===")
@@ -52,7 +52,7 @@ func Run(w io.Writer, cfgPath, envPath string, cfg *config.Config, cfgErr error,
 
 	switch _, err := os.Stat(envPath); {
 	case os.IsNotExist(err):
-		printLine(w, sevWarn, "local", fmt.Sprintf("env file not found: %s (optional if secrets are exported)", envPath))
+		printLine(w, sevWarn, "local", fmt.Sprintf("env file not found: %s (optional)", envPath))
 		r.Warn++
 	case err != nil:
 		printLine(w, sevWarn, "local", fmt.Sprintf("env file: %v", err))
@@ -61,13 +61,10 @@ func Run(w io.Writer, cfgPath, envPath string, cfg *config.Config, cfgErr error,
 		printLine(w, sevOK, "local", fmt.Sprintf("env file present: %s", envPath))
 	}
 
-	switch tokenSource {
-	case config.TokenSourcePAT:
-		printLine(w, sevOK, "local", "GitHub token: from PAT (config or environment)")
-	case config.TokenSourceGH:
+	if hasGitHubToken {
 		printLine(w, sevOK, "local", "GitHub token: from gh CLI (gh auth login)")
-	default:
-		printLine(w, sevFail, "local", "GitHub token: not found; set github.pat in runners.yml, export GITHUB_PAT, or run `gh auth login`")
+	} else {
+		printLine(w, sevFail, "local", "GitHub token: not found; run `gh auth login`")
 		r.Fail++
 	}
 
@@ -110,25 +107,30 @@ func Run(w io.Writer, cfgPath, envPath string, cfg *config.Config, cfgErr error,
 	}
 
 	fmt.Fprintln(w, "\n=== GitHub API ===")
-	repos := uniqueRepos(runners)
-	for _, repo := range repos {
-		list, err := gh.ListRunners(repo)
-		if err != nil {
-			printLine(w, sevFail, "github", fmt.Sprintf("%s: %v", repo, err))
-			r.Fail++
-			continue
+	if gh == nil {
+		printLine(w, sevFail, "github", "skipped: no GitHub token (run `gh auth login`)")
+		r.Fail++
+	} else {
+		repos := uniqueRepos(runners)
+		for _, repo := range repos {
+			list, err := gh.ListRunners(repo)
+			if err != nil {
+				printLine(w, sevFail, "github", fmt.Sprintf("%s: %v", repo, err))
+				r.Fail++
+				continue
+			}
+			printLine(w, sevOK, "github", fmt.Sprintf("%s: list runners OK (%d registered)", repo, len(list)))
 		}
-		printLine(w, sevOK, "github", fmt.Sprintf("%s: list runners OK (%d registered)", repo, len(list)))
-	}
-	orgs := uniqueOrgs(runners)
-	for _, org := range orgs {
-		list, err := gh.ListRunnersScoped("org", org)
-		if err != nil {
-			printLine(w, sevFail, "github", fmt.Sprintf("org %s: %v", org, err))
-			r.Fail++
-			continue
+		orgs := uniqueOrgs(runners)
+		for _, org := range orgs {
+			list, err := gh.ListRunnersScoped("org", org)
+			if err != nil {
+				printLine(w, sevFail, "github", fmt.Sprintf("org %s: %v", org, err))
+				r.Fail++
+				continue
+			}
+			printLine(w, sevOK, "github", fmt.Sprintf("org %s: list runners OK (%d registered)", org, len(list)))
 		}
-		printLine(w, sevOK, "github", fmt.Sprintf("org %s: list runners OK (%d registered)", org, len(list)))
 	}
 
 	fmt.Fprintln(w, "\n=== Hosts ===")

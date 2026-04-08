@@ -10,9 +10,7 @@ import (
 func TestAddHost(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "runners.yml")
-	initial := `github:
-  pat: tok
-hosts:
+	initial := `hosts:
   existing:
     addr: a@b
     os: linux
@@ -52,9 +50,7 @@ runners:
 func TestAddHost_duplicate(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "runners.yml")
-	initial := `github:
-  pat: tok
-hosts:
+	initial := `hosts:
   h1:
     addr: a@b
     os: linux
@@ -79,9 +75,7 @@ runners:
 func TestAddRunner(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "runners.yml")
-	initial := `github:
-  pat: tok
-hosts:
+	initial := `hosts:
   h1:
     addr: a@b
     os: linux

@@ -8,7 +8,7 @@
 ## Features
 
 - One set of commands for **Linux**, **macOS**, and **Windows** runners (`setup`, `up`, `down`, `status`, `logs`, `service`, …).
-- **Declarative YAML** for hosts and runners; auth via `gh auth login` or PAT.
+- **Declarative YAML** for hosts and runners; GitHub API auth via **`gh auth login`** only.
 - **Docker or native** runners per row, with sensible OS defaults and overrides.
 - **Multi-host** from a single config; optional **TUI** dashboard (`gh wm` or `gh wm dashboard` on a TTY).
 
@@ -56,7 +56,7 @@ Requires a recent **Go** toolchain when building from source (see `go.mod` / CI 
 ## Quick start
 
 ```bash
-gh auth login           # easiest auth — or set GITHUB_PAT in ~/.gh-wm/env
+gh auth login           # required: gh wm uses the GitHub CLI token
 gh wm init --quick        # interactive: prompts for repo + host, auto-detects everything else
 gh wm up                  # auto-setup + start (all in one)
 gh wm status
