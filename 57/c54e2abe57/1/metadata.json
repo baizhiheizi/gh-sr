@@ -1,0 +1,40 @@
+{
+  "cli_version": "dev",
+  "checkpoint_id": "57c54e2abe57",
+  "session_id": "83ec2a6a-83b3-4257-a477-9834d897a29e",
+  "strategy": "manual-commit",
+  "created_at": "2026-04-08T02:41:55.314671358Z",
+  "branch": "main",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "docs/content/guides/linux-on-macos.md",
+    "docs/content/host-setup.md",
+    "internal/runner/docker.go",
+    "internal/runner/docker_test.go"
+  ],
+  "agent": "Claude Code",
+  "model": "MiniMax-M2.7",
+  "turn_id": "f19528b47d78",
+  "token_usage": {
+    "input_tokens": 806850,
+    "cache_creation_tokens": 101570,
+    "cache_read_tokens": 659376,
+    "output_tokens": 19641,
+    "api_call_count": 26
+  },
+  "session_metrics": {
+    "turn_count": 1
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-04-08T02:41:55.107908382Z",
+    "agent_lines": 58,
+    "agent_removed": 7,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 58,
+    "total_lines_changed": 65,
+    "agent_percentage": 100,
+    "metric_version": 2
+  }
+}
