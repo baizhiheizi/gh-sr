@@ -1,41 +1,47 @@
-# Perf Improver Memory - an-lee/ghr
+# Perf Improver Memory - an-lee/gh-sr
 
 ## Commands
 
-- **Build**: `GOTOOLCHAIN=local go build ./...` (note: go.mod requires go 1.25; system has 1.24 — network is firewalled, toolchain auto-download blocked; use CI for full validation)
-- **Test**: `GOTOOLCHAIN=local go test ./... -race -count=1` (requires go 1.25)
-- **Vet**: `GOTOOLCHAIN=local go vet ./...`
+- **Build**: `make build` → `go build -ldflags "-X main.version=$(GIT_TAG)" -o gh-sr ./cmd/gh-sr/`
+- **Test**: `make test` → `go test ./... -race -count=1`
+- **Vet**: `make vet` → `go vet ./...`
+- **Check**: `make check` → vet + test
 - **Format**: `gofmt -w .`
-- **Makefile targets**: `make build`, `make test`, `make vet`, `make check`
+- ⚠️ `go.mod` requires go 1.25.0; sandbox has 1.24.13 and network is firewalled. Use CI for build/test validation.
+- CI: `.github/workflows/ci.yml` runs vet + test with go 1.25.x
 
 ## Performance Notes
 
-- `gofmt` works with system go 1.24 for syntax validation
-- Go 1.25.0 required per go.mod; CI must validate builds/tests
-- `CollectHostMetrics` in `ops/metrics.go`: Linux CPU metric uses `sleep 1` per host — parallelized in PR
-- SSH connections add latency per host; SSH connection reuse is not implemented
+- `CollectHostMetrics` in `ops/metrics.go`: already parallelized with goroutines ✅
+- `EnrichWithGitHubStatus` in `runner/runner.go`: already parallelized with goroutines ✅
+- `ListRunnersScoped` was single-page (GitHub defaults to 30/page, max 100). Fixed in PR #9 to paginate all results.
+- `CollectStatus` in `ops/ops.go` iterates runners sequentially — SSH connections opened one at a time. Good candidate for parallelization.
+- `ResolveHostInfo` in `ops/detect.go` detects OS/arch per host sequentially — parallelizable.
+- `ResolveModes` in `ops/detect.go` probes Docker per host sequentially — parallelizable with host-level caching.
 
 ## Optimization Backlog
 
-1. ✅ **Parallel host metrics** (done - PR pending): CollectHostMetrics was O(N×1s) due to per-host sleep; now O(1s)
-2. ✅ **Parallel GitHub status enrichment** (done - PR pending): EnrichWithGitHubStatus fetches per-repo concurrently
-3. **SSH connection pooling**: Each operation opens a new SSH connection. A pool/cache of connections per host would reduce latency for rapid multi-operation workflows.
-4. **ListRunners pagination**: GitHub API paginates at 100 runners; current impl silently truncates at 100 if repo has more runners.
-5. **`ghr status` concurrent host queries**: `CollectStatus` in ops/ops.go iterates hosts sequentially — could be parallelized like metrics.
+1. ✅ **ListRunnersScoped pagination** (done - PR #9): Was silently truncating at 30 runners; now fetches all pages with per_page=100.
+2. **CollectStatus parallelization**: `ops/ops.go` ConnectHost+Status called sequentially per runner; could use WaitGroup like CollectHostMetrics. Moderate risk (error handling needs care).
+3. **ResolveHostInfo parallelization**: Sequential host detection in `detect.go`. Easy win for multi-host configs.
+4. **ResolveModes parallelization**: Same as above — already caches per-host result, just needs concurrent dispatch.
 
 ## Work In Progress
 
-- Branch: `perf-assist/parallel-host-metrics`
-- Files: `internal/ops/metrics.go`, `internal/runner/runner.go`
+*(None)*
 
 ## Completed Work
 
-*(None yet)*
+- 2026-04-08: PR #9 — paginate `ListRunnersScoped` (per_page=100, full pagination loop)
 
 ## Backlog Cursor
 
-Last checked: Task 1, 2, 3 on 2026-04-07. Next run: Task 4 (PR maintenance), Task 5 (issue comments), Task 6 (benchmarks).
+Last checked: Tasks 1, 2, 3, 7 on 2026-04-08. Next run: Tasks 4, 5, 6, 7.
 
 ## Last Run
 
-2026-04-07 - Tasks 1, 2, 3, 7 - Run: https://github.com/an-lee/ghr/actions/runs/24079848123
+2026-04-08 - Tasks 1, 2, 3, 7 - Run: https://github.com/an-lee/gh-sr/actions/runs/24133836068
+
+## Previously Checked-Off Items by Maintainer
+
+*(None)*
