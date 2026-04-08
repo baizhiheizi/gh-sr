@@ -1,0 +1,21 @@
+{
+  "cli_version": "dev",
+  "checkpoint_id": "57c54e2abe57",
+  "strategy": "manual-commit",
+  "branch": "main",
+  "checkpoints_count": 4,
+  "files_touched": [
+    "docs/content/guides/linux-on-macos.md",
+    "docs/content/host-setup.md",
+    "internal/runner/docker.go",
+    "internal/runner/docker_test.go"
+  ],
+  "sessions": [
+    {
+      "metadata": "/57/c54e2abe57/0/metadata.json",
+      "transcript": "/57/c54e2abe57/0/full.jsonl",
+      "content_hash": "/57/c54e2abe57/0/content_hash.txt",
+      "prompt": "/57/c54e2abe57/0/prompt.txt"
+    }
+  ]
+}

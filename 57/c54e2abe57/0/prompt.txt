@@ -1,0 +1,73 @@
+`ghr doctor` goes well. But it failed to up the runner in macOS:
+
+Starting rune-linux on x1-pc...
+  rune-linux-1: already running
+  rune-linux-2: already running
+  rune-linux-3: already running
+Starting enjoy-linux on x1-pc...
+  enjoy-linux-1: already running
+  enjoy-linux-2: already running
+  enjoy-linux-3: already running
+Starting enjoy-web-linux on r1-linux...
+  enjoy-web-linux-1: already running
+  enjoy-web-linux-2: already running
+  enjoy-web-linux-3: already running
+Starting ohmyxin-linux on mac-mini...
+Error: starting ohmyxin-linux-1: starting Docker container: running "export PATH=\"/usr/local/bin:/opt/homebrew/bin:$PATH\"; docker run -d --name gh-runner-ohmyxin-linux-1 --restart unless-stopped -e 'ACTIONS_RUNNER_INPUT_URL=https://github.com/an-lee/ohmyxin' -e 'ACTIONS_RUNNER_INPUT_TOKEN=REDACTED' -e 'ACTIONS_RUNNER_INPUT_NAME=ohmyxin-linux-1' -e 'ACTIONS_RUNNER_INPUT_LABELS=self-hosted,Linux,X64' -e 'ACTIONS_RUNNER_INPUT_WORK=_work' -v /Users/an-lee/.colima/default/docker.sock:/var/run/docker.sock --entrypoint /bin/bash ghcr.io/actions/actions-runner:latest -c 'cd /home/runner && if [ ! -f .runner ]; then ./config.sh --unattended --replace; fi && exec ./run.sh'": Process exited with status 125
+stderr: docker: Error response from daemon: error while creating mount source path '/Users/an-lee/.colima/default/docker.sock': mkdir /Users/an-lee/.colima/default/docker.sock: operation not supported
+
+Run 'docker run --help' for more information
+
+Help me to identify the root cause and fix it.
+
+---
+
+`ghr doctor` goes well. But it failed to up the runner in macOS:
+
+Starting rune-linux on x1-pc...
+  rune-linux-1: already running
+  rune-linux-2: already running
+  rune-linux-3: already running
+Starting enjoy-linux on x1-pc...
+  enjoy-linux-1: already running
+  enjoy-linux-2: already running
+  enjoy-linux-3: already running
+Starting enjoy-web-linux on r1-linux...
+  enjoy-web-linux-1: already running
+  enjoy-web-linux-2: already running
+  enjoy-web-linux-3: already running
+Starting ohmyxin-linux on mac-mini...
+Error: starting ohmyxin-linux-1: starting Docker container: running "export PATH=\"/usr/local/bin:/opt/homebrew/bin:$PATH\"; docker run -d --name gh-runner-ohmyxin-linux-1 --restart unless-stopped -e 'ACTIONS_RUNNER_INPUT_URL=https://github.com/an-lee/ohmyxin' -e 'ACTIONS_RUNNER_INPUT_TOKEN=REDACTED' -e 'ACTIONS_RUNNER_INPUT_NAME=ohmyxin-linux-1' -e 'ACTIONS_RUNNER_INPUT_LABELS=self-hosted,Linux,X64' -e 'ACTIONS_RUNNER_INPUT_WORK=_work' -v /Users/an-lee/.colima/default/docker.sock:/var/run/docker.sock --entrypoint /bin/bash ghcr.io/actions/actions-runner:latest -c 'cd /home/runner && if [ ! -f .runner ]; then ./config.sh --unattended --replace; fi && exec ./run.sh'": Process exited with status 125
+stderr: docker: Error response from daemon: error while creating mount source path '/Users/an-lee/.colima/default/docker.sock': mkdir /Users/an-lee/.colima/default/docker.sock: operation not supported
+
+Run 'docker run --help' for more information
+
+Help me to identify the root cause and fix it.
+
+---
+
+Here are the logs:
+➜  ~ colima start --mount-type sshfs                                                                                                                                                                                               
+WARN[0002] 'volume mount type' cannot be updated after initial setup, discarded 
+INFO[0002] starting colima
+INFO[0002] runtime: docker
+INFO[0005] starting ...                                  context=vm
+INFO[0015] provisioning ...                              context=docker
+INFO[0018] starting ...                                  context=docker
+INFO[0020] done
+
+It seems not working?
+
+---
+
+Here are the logs:
+➜  ~ colima start --mount-type sshfs                                                                                                                                                                                               
+WARN[0002] 'volume mount type' cannot be updated after initial setup, discarded 
+INFO[0002] starting colima
+INFO[0002] runtime: docker
+INFO[0005] starting ...                                  context=vm
+INFO[0015] provisioning ...                              context=docker
+INFO[0018] starting ...                                  context=docker
+INFO[0020] done
+
+It seems not working?
