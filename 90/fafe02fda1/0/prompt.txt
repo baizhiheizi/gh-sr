@@ -1,0 +1,47 @@
+It seems that we have two `help` commands. Help me to fix it:
+
+➜  ghr help
+ghr manages self-hosted GitHub Actions runners on any combination
+of Linux, macOS, and Windows hosts — all from your laptop over SSH.
+
+Define your hosts and runners in ~/.ghr/runners.yml (or set GHR_CONFIG / --config),
+then use unified commands to setup, start, stop, and monitor everything.
+
+With no subcommand, ghr opens the interactive dashboard on a terminal; use ghr --help for all commands.
+
+Linux hosts: ghr setup and update may run package installs and similar steps on the remote host. For a non-root
+SSH user, ghr uses sudo when the sudo binary exists on the remote PATH; SSH is non-interactive, so passwordless
+sudo (or SSH as root) is usually required for those steps to succeed. For docker mode without Docker installed,
+install Docker yourself or ensure sudo works; for native mode, pre-install curl/tar and runner OS dependencies
+if you cannot use sudo. See the README section "Linux SSH user and privileges".
+
+Usage:
+  ghr [flags]
+  ghr [command]
+
+Available Commands:
+  cleanup     Remove offline/ghost runners from GitHub
+  completion  Generate the autocompletion script for the specified shell
+  config      Inspect or edit configuration
+  dashboard   Launch interactive TUI dashboard
+  doctor      Check config, GitHub API access, and host prerequisites
+  down        Stop runners
+  help        Help about any command
+  help        Show help for a command
+  hosts       Show host resource usage (CPU, memory, disk, load, uptime)
+  init        Create ~/.ghr with template runners.yml and env file
+  logs        Show recent logs from a runner
+  restart     Restart runners (stop then start)
+  service     Install or manage OS autostart for native runners
+  setup       Install runner prerequisites and configure runners on hosts
+  status      Show status of all runners
+  up          Start runners (all, or filtered by name/host/repo)
+  update      Update runner binary on hosts (remove + setup + start)
+  version     Print ghr version
+
+Flags:
+  -c, --config string   config file path (empty = auto; use "ghr config path" to print the resolved file)
+      --host string     filter by host name
+      --repo string     filter by repo (owner/repo)
+
+Use "ghr [command] --help" for more information about a command.
