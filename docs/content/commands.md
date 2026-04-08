@@ -71,7 +71,7 @@ For what each lifecycle command does on the host, see [Architecture — Lifecycl
 
 ## Host metrics
 
-**`gh sr hosts`** collects and displays real-time resource usage from every configured host over SSH:
+**`gh sr hosts`** collects and displays real-time resource usage from every configured host over SSH. All hosts are queried **concurrently**, so the command completes in roughly the time it takes to collect metrics from the slowest single host regardless of how many hosts you have configured:
 
 ```
 HOST         CPU%   MEM              DISK              LOAD             UPTIME
