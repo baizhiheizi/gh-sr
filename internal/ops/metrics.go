@@ -6,8 +6,8 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/an-lee/ghr/internal/config"
-	"github.com/an-lee/ghr/internal/host"
+	"github.com/an-lee/gh-wm/internal/config"
+	"github.com/an-lee/gh-wm/internal/host"
 )
 
 // CollectHostMetrics connects to each unique host in the config and gathers

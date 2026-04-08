@@ -1,4 +1,4 @@
-module github.com/an-lee/ghr
+module github.com/an-lee/gh-wm
 
 go 1.25.0
 

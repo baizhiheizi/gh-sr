@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/an-lee/ghr/internal/config"
-	"github.com/an-lee/ghr/internal/host"
-	"github.com/an-lee/ghr/internal/runner"
+	"github.com/an-lee/gh-wm/internal/config"
+	"github.com/an-lee/gh-wm/internal/host"
+	"github.com/an-lee/gh-wm/internal/runner"
 )
 
 // ConnectHost opens a connection to the configured host (SSH or local).
@@ -18,7 +18,7 @@ func ConnectHost(hostName string, hcfg config.HostConfig) (*host.Host, error) {
 	return h, nil
 }
 
-// Setup installs and configures runners, mirroring the ghr setup command.
+// Setup installs and configures runners, mirroring the gh wm setup command.
 func Setup(w io.Writer, cfg *config.Config, mgr *runner.Manager, filterHost, filterRepo string, nameArgs []string) error {
 	if err := ResolveHostInfo(w, cfg); err != nil {
 		return err
@@ -52,7 +52,7 @@ func Setup(w io.Writer, cfg *config.Config, mgr *runner.Manager, filterHost, fil
 	}
 
 	fmt.Fprintln(w, "\nSetup complete.")
-	fmt.Fprintln(w, "Start runners with: ghr up [runner-names...] (setup registers the runner; up launches the listener.)")
+	fmt.Fprintln(w, "Start runners with: gh wm up [runner-names...] (setup registers the runner; up launches the listener.)")
 	return nil
 }
 
@@ -168,7 +168,7 @@ func Update(w io.Writer, cfg *config.Config, mgr *runner.Manager, filterHost, fi
 	return nil
 }
 
-// CollectStatus gathers runner status rows like ghr status.
+// CollectStatus gathers runner status rows like gh wm status.
 func CollectStatus(w io.Writer, cfg *config.Config, mgr *runner.Manager, filterHost, filterRepo string, nameArgs []string) ([]runner.RunnerStatus, error) {
 	if err := ResolveHostInfo(w, cfg); err != nil {
 		return nil, err

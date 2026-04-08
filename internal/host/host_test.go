@@ -6,7 +6,7 @@ import (
 	"testing"
 	"unicode/utf16"
 
-	"github.com/an-lee/ghr/internal/config"
+	"github.com/an-lee/gh-wm/internal/config"
 )
 
 func Test_parseAddr(t *testing.T) {
@@ -122,16 +122,16 @@ func TestHost_wrapCommand_localWindows(t *testing.T) {
 func TestHost_paths(t *testing.T) {
 	t.Parallel()
 	win := NewHost("w", config.HostConfig{Addr: "u@h", OS: "windows", Arch: "amd64"})
-	if win.RunnerBaseDir() != `$env:USERPROFILE\.ghr\runners` {
+	if win.RunnerBaseDir() != `$env:USERPROFILE\.gh-wm\runners` {
 		t.Errorf("windows base: %q", win.RunnerBaseDir())
 	}
-	if win.RunnerBaseDirPS() != `Join-Path $env:USERPROFILE '.ghr\runners'` {
+	if win.RunnerBaseDirPS() != `Join-Path $env:USERPROFILE '.gh-wm\runners'` {
 		t.Errorf("windows base ps: %q", win.RunnerBaseDirPS())
 	}
-	if win.RunnerDir("r1") != `$env:USERPROFILE\.ghr\runners\r1` {
+	if win.RunnerDir("r1") != `$env:USERPROFILE\.gh-wm\runners\r1` {
 		t.Errorf("windows runner dir: %q", win.RunnerDir("r1"))
 	}
-	if win.RunnerDirPS("r1") != `Join-Path (Join-Path $env:USERPROFILE '.ghr\runners') 'r1'` {
+	if win.RunnerDirPS("r1") != `Join-Path (Join-Path $env:USERPROFILE '.gh-wm\runners') 'r1'` {
 		t.Errorf("windows runner dir ps: %q", win.RunnerDirPS("r1"))
 	}
 	if win.TempDir() != "$env:TEMP" {
@@ -145,16 +145,16 @@ func TestHost_paths(t *testing.T) {
 	}
 
 	ln := NewHost("l", config.HostConfig{Addr: "u@h", OS: "linux", Arch: "arm64"})
-	if ln.RunnerBaseDir() != "$HOME/.ghr/runners" {
+	if ln.RunnerBaseDir() != "$HOME/.gh-wm/runners" {
 		t.Errorf("linux base: %q", ln.RunnerBaseDir())
 	}
-	if ln.RunnerBaseDirPS() != "$HOME/.ghr/runners" {
+	if ln.RunnerBaseDirPS() != "$HOME/.gh-wm/runners" {
 		t.Errorf("linux base ps: %q", ln.RunnerBaseDirPS())
 	}
-	if ln.RunnerDir("r1") != "$HOME/.ghr/runners/r1" {
+	if ln.RunnerDir("r1") != "$HOME/.gh-wm/runners/r1" {
 		t.Errorf("linux runner dir: %q", ln.RunnerDir("r1"))
 	}
-	if ln.RunnerDirPS("r1") != "$HOME/.ghr/runners/r1" {
+	if ln.RunnerDirPS("r1") != "$HOME/.gh-wm/runners/r1" {
 		t.Errorf("linux runner dir ps: %q", ln.RunnerDirPS("r1"))
 	}
 	if ln.TempDir() != "/tmp" {

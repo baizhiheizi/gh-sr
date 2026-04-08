@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/an-lee/ghr/internal/host"
+	"github.com/an-lee/gh-wm/internal/host"
 )
 
 // Kind describes how autostart is installed for an instance.
@@ -19,9 +19,9 @@ const (
 	KindWindowsTask   Kind = "windows-task"
 )
 
-// ServiceBasename returns the systemd unit basename (without .service) for ghr-runner-<sanitized>.
+// ServiceBasename returns the systemd unit basename (without .service) for ghwm-runner-<sanitized>.
 func ServiceBasename(instanceSanitized string) string {
-	return "ghr-runner-" + instanceSanitized
+	return "ghwm-runner-" + instanceSanitized
 }
 
 func remoteHome(h *host.Host) (string, error) {
@@ -42,9 +42,9 @@ func remoteHome(h *host.Host) (string, error) {
 func absRunnerDir(h *host.Host, home, instance string) string {
 	home = strings.TrimRight(home, `/\`)
 	if h.OS == "windows" {
-		return home + `\` + `.ghr` + `\` + `runners` + `\` + instance
+		return home + `\` + `.gh-wm` + `\` + `runners` + `\` + instance
 	}
-	return home + "/.ghr/runners/" + instance
+	return home + "/.gh-wm/runners/" + instance
 }
 
 // writeRemoteBytes writes data to a remote path using base64 (POSIX) or PowerShell (Windows).
@@ -205,7 +205,7 @@ func installSystemdSystem(h *host.Host, instance, san, absRunnerDir string) erro
 	if err != nil {
 		return err
 	}
-	tmpPath := home + "/.ghr/" + base + ".service.tmp"
+	tmpPath := home + "/.gh-wm/" + base + ".service.tmp"
 	if err := writeRemoteBytes(h, tmpPath, []byte(unit)); err != nil {
 		return fmt.Errorf("staging systemd system unit: %w", err)
 	}
@@ -446,7 +446,7 @@ $SUDO systemctl stop %s.service
 	}
 }
 
-// StatusRow is one line of `ghr service status` output.
+// StatusRow is one line of `gh wm service status` output.
 type StatusRow struct {
 	Instance string
 	Host     string
@@ -460,7 +460,7 @@ func Status(h *host.Host, hostName, instance, mode string) (StatusRow, error) {
 	row := StatusRow{Instance: instance, Host: hostName, Mode: mode}
 	if mode != "native" {
 		row.Kind = KindNone
-		row.Detail = "docker: containers use --restart unless-stopped; ghr down stops the container so it will not auto-start on boot until ghr up"
+		row.Detail = "docker: containers use --restart unless-stopped; gh wm down stops the container so it will not auto-start on boot until gh wm up"
 		return row, nil
 	}
 

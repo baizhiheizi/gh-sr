@@ -1,5 +1,5 @@
-# ghr configuration
-# Edit this file, then run: ghr up
+# GitHub Workflow Manager configuration
+# Edit this file, then run: gh wm up
 
 github:
   pat: env:GITHUB_PAT  # "env:" prefix reads from environment variable
@@ -22,7 +22,7 @@ hosts:
   #   os: linux
   #   arch: amd64
   #
-  # Local host (the machine running ghr):
+  # Local host (the machine running gh wm):
   #
   # my-laptop:
   #   addr: local              # runs commands locally instead of over SSH

@@ -9,7 +9,7 @@ if [ "$(id -u)" -ne 0 ]; then
 	if command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
 		SUDO='sudo -n'
 	else
-		echo 'ghr: remote Linux commands need root SSH or passwordless sudo (non-interactive); SSH has no TTY for sudo passwords. Use NOPASSWD, connect as root, or install software manually. Run: ghr doctor' >&2
+		echo 'gh wm: remote Linux commands need root SSH or passwordless sudo (non-interactive); SSH has no TTY for sudo passwords. Use NOPASSWD, connect as root, or install software manually. Run: gh wm doctor' >&2
 		exit 1
 	fi
 fi

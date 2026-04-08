@@ -1,9 +1,9 @@
-# ghr configuration
-# Edit this file, then run: ghr up
+# GitHub Workflow Manager configuration
+# Edit this file, then run: gh wm up
 
 github:
-  # Easiest: run `gh auth login` (GitHub CLI) — ghr picks up the token automatically.
-  # Or set a PAT below; "env:" prefix reads from environment variable (see ~/.ghr/env).
+  # Easiest: run `gh auth login` (GitHub CLI) — gh wm picks up the token automatically.
+  # Or set a PAT below; "env:" prefix reads from environment variable (see ~/.gh-wm/env).
   # pat: env:GITHUB_PAT
 
 hosts:
@@ -19,7 +19,7 @@ hosts:
   # vps-1:
   #   addr: root@203.0.113.10   # os/arch auto-detected
   #
-  # Local host (the machine running ghr):
+  # Local host (the machine running gh wm):
   #
   # my-laptop:
   #   addr: local              # runs commands locally instead of over SSH

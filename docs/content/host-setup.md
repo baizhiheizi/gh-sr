@@ -5,28 +5,28 @@ weight: 40
 
 # Host setup (manual steps)
 
-**ghr** automates runner installation and lifecycle over SSH, but some host preparation is still manual. After you edit config and secrets, run **`ghr doctor`** from your laptop to verify config paths, GitHub API access, SSH connectivity, and per-host tools (Docker vs native). By default the command exits with a non-zero status only when a check is **FAIL**; use **`ghr doctor --strict`** if you also want **WARN** lines to fail (for example in CI).
+**gh wm** automates runner installation and lifecycle over SSH, but some host preparation is still manual. After you edit config and secrets, run **`gh wm doctor`** from your laptop to verify config paths, GitHub API access, SSH connectivity, and per-host tools (Docker vs native). By default the command exits with a non-zero status only when a check is **FAIL**; use **`gh wm doctor --strict`** if you also want **WARN** lines to fail (for example in CI).
 
 ## Linux SSH user and privileges
 
-`ghr setup` and `ghr update` run remote commands as the SSH user in `hosts.*.addr`. On **Linux**, when a step needs **root** (package installs, GitHub’s `installdependencies.sh` for native runners, or Docker’s install script when Docker is missing), **ghr** uses **`sudo -n`** only — non-interactive `sudo` that never prompts for a password.
+`gh wm setup` and `gh wm update` run remote commands as the SSH user in `hosts.*.addr`. On **Linux**, when a step needs **root** (package installs, GitHub’s `installdependencies.sh` for native runners, or Docker’s install script when Docker is missing), **gh wm** uses **`sudo -n`** only — non-interactive `sudo` that never prompts for a password.
 
-**Why `sudo -n`:** Remote automation uses SSH sessions **without a PTY** (no interactive terminal), the same way `ssh` runs a remote command by default. Interactive `sudo` would try to read a password from a TTY and fails with errors such as *“a terminal is required to read the password”*. So **ghr** requires **SSH as root** or **passwordless sudo** (`sudo -n true` must succeed on the host) for those install steps.
+**Why `sudo -n`:** Remote automation uses SSH sessions **without a PTY** (no interactive terminal), the same way `ssh` runs a remote command by default. Interactive `sudo` would try to read a password from a TTY and fails with errors such as *“a terminal is required to read the password”*. So **gh wm** requires **SSH as root** or **passwordless sudo** (`sudo -n true` must succeed on the host) for those install steps.
 
 **If privilege checks fail**, remote stderr may include:
 
 ```text
-ghr: remote Linux commands need root SSH or passwordless sudo (non-interactive); SSH has no TTY for sudo passwords. Use NOPASSWD, connect as root, or install software manually. Run: ghr doctor
+gh wm: remote Linux commands need root SSH or passwordless sudo (non-interactive); SSH has no TTY for sudo passwords. Use NOPASSWD, connect as root, or install software manually. Run: gh wm doctor
 ```
 
-Run **`ghr doctor`** on your laptop to check Linux hosts: it prints **“linux: non-root user has passwordless sudo”** when `sudo -n` works, or **“linux: passwordless sudo not available…”** when it does not. Use **`ghr doctor --strict`** if you want that warning to fail the command.
+Run **`gh wm doctor`** on your laptop to check Linux hosts: it prints **“linux: non-root user has passwordless sudo”** when `sudo -n` works, or **“linux: passwordless sudo not available…”** when it does not. Use **`gh wm doctor --strict`** if you want that warning to fail the command.
 
 ### Setting up the SSH user on Linux
 
 - **Dedicated user + SSH keys** — Create a user on the runner host, authorize your public key in `~/.ssh/authorized_keys`, and set `hosts.*.addr` to `user@host` (or hostname).
-- **`root@host` in `hosts.*.addr`** — Avoids sudo entirely for **ghr**’s install paths. Only use if your security policy allows SSH as root; prefer key-based auth, disable password login, and restrict network access.
-- **Passwordless sudo (`NOPASSWD`)** — On the host, use `visudo` or a drop-in under `/etc/sudoers.d/`. A broad rule such as `runner ALL=(ALL) NOPASSWD: ALL` is common for a **dedicated CI user**. **Command-scoped NOPASSWD** is hard to maintain for Docker’s `get.docker.com` script and `installdependencies.sh` because they run many different commands; if you cannot grant broad NOPASSWD, use **`root@host`** or **pre-install** software so **ghr** does not need those scripts.
-- **Pre-install to limit elevation** — Install **Docker** before `ghr setup` and add the SSH user to the **`docker`** group so `docker` works without `sudo`. For **native** mode, ensure **`curl`** and **`tar`** are on `PATH` and install distro packages the runner needs in advance; that reduces how often `installdependencies.sh` must run with sudo.
+- **`root@host` in `hosts.*.addr`** — Avoids sudo entirely for **gh wm**’s install paths. Only use if your security policy allows SSH as root; prefer key-based auth, disable password login, and restrict network access.
+- **Passwordless sudo (`NOPASSWD`)** — On the host, use `visudo` or a drop-in under `/etc/sudoers.d/`. A broad rule such as `runner ALL=(ALL) NOPASSWD: ALL` is common for a **dedicated CI user**. **Command-scoped NOPASSWD** is hard to maintain for Docker’s `get.docker.com` script and `installdependencies.sh` because they run many different commands; if you cannot grant broad NOPASSWD, use **`root@host`** or **pre-install** software so **gh wm** does not need those scripts.
+- **Pre-install to limit elevation** — Install **Docker** before `gh wm setup` and add the SSH user to the **`docker`** group so `docker` works without `sudo`. For **native** mode, ensure **`curl`** and **`tar`** are on `PATH` and install distro packages the runner needs in advance; that reduces how often `installdependencies.sh` must run with sudo.
 
 **Verify from your laptop** (same `user@host` as in `hosts.*.addr`):
 
@@ -37,33 +37,33 @@ ssh -o BatchMode=yes user@host 'sudo -n true'
 
 The first command checks non-interactive SSH (see also [All remote hosts](#all-remote-hosts)). The second must exit **0** if you rely on a non-root user with sudo for automated installs; if it fails, configure `NOPASSWD` for that user or use `root@host`.
 
-- **Docker mode on Linux** — If Docker is not already installed, expect a privilege path (root or working passwordless `sudo`). If Docker is installed and your user can run `docker` without `sudo` (for example via the `docker` group), routine **ghr** operations often do not need elevation. On **macOS**, ghr never auto-installs Docker; install Docker Desktop, OrbStack, or Colima first.
-- **Native mode** — You can avoid `sudo` if `curl` and `tar` are present and OS packages the runner needs are already installed; otherwise **ghr** may print warnings and the runner might be incomplete.
+- **Docker mode on Linux** — If Docker is not already installed, expect a privilege path (root or working passwordless `sudo`). If Docker is installed and your user can run `docker` without `sudo` (for example via the `docker` group), routine **gh wm** operations often do not need elevation. On **macOS**, gh wm never auto-installs Docker; install Docker Desktop, OrbStack, or Colima first.
+- **Native mode** — You can avoid `sudo` if `curl` and `tar` are present and OS packages the runner needs are already installed; otherwise **gh wm** may print warnings and the runner might be incomplete.
 
-**ghr** does not deeply verify sudoers rules; failures show up as remote command errors or warnings.
+**gh wm** does not deeply verify sudoers rules; failures show up as remote command errors or warnings.
 
 ### Docker socket permissions (Linux/macOS)
 
-When `ghr` starts a docker-mode runner container on Linux or macOS, it bind-mounts the Docker socket into the container at `/var/run/docker.sock` so jobs can reach the Docker daemon. **Resolving the host socket:** if `docker_socket` is not set, ghr uses the first path that exists: `/var/run/docker.sock`; otherwise the `unix://` endpoint from the host’s current default Docker context (`docker context inspect`, which matches Colima and Linux rootless when that context is active); on **macOS** only, `~/.colima/default/docker.sock` as a last resort. Set `docker_socket` when your engine uses a different path (for example a named Colima profile that is not the default context).
+When `gh wm` starts a docker-mode runner container on Linux or macOS, it bind-mounts the Docker socket into the container at `/var/run/docker.sock` so jobs can reach the Docker daemon. **Resolving the host socket:** if `docker_socket` is not set, gh wm uses the first path that exists: `/var/run/docker.sock`; otherwise the `unix://` endpoint from the host’s current default Docker context (`docker context inspect`, which matches Colima and Linux rootless when that context is active); on **macOS** only, `~/.colima/default/docker.sock` as a last resort. Set `docker_socket` when your engine uses a different path (for example a named Colima profile that is not the default context).
 
-**Colima on macOS (virtiofs):** If that resolved path is under `~/.colima/…`, ghr still uses it to find the API over SSH, but for `docker run -v` it bind-mounts **`/var/run/docker.sock`** (the path inside the Colima VM) instead of the macOS host file under `~/.colima/…`. Bind-mounting the host Colima client socket fails on common setups with virtiofs (`operation not supported`; see [Colima #997](https://github.com/abiosoft/colima/issues/997)). If you need a manual workaround instead, you can start Colima with `colima start --mount-type sshfs`.
+**Colima on macOS (virtiofs):** If that resolved path is under `~/.colima/…`, gh wm still uses it to find the API over SSH, but for `docker run -v` it bind-mounts **`/var/run/docker.sock`** (the path inside the Colima VM) instead of the macOS host file under `~/.colima/…`. Bind-mounting the host Colima client socket fails on common setups with virtiofs (`operation not supported`; see [Colima #997](https://github.com/abiosoft/colima/issues/997)). If you need a manual workaround instead, you can start Colima with `colima start --mount-type sshfs`.
 
-On **Linux**, the **`runner` user inside the container** (uid 1001) must also have permission to use the socket — ghr handles this automatically by:
+On **Linux**, the **`runner` user inside the container** (uid 1001) must also have permission to use the socket — gh wm handles this automatically by:
 
 1. Querying the socket's owning GID on the host with `stat -c '%g'` on the resolved host socket path.
 2. Passing `--group-add <GID>` to `docker run` so the container's runner user becomes a member of that group.
 3. Verifying the socket with `test -S` on the resolved path before starting the container.
 
-On **macOS** (Docker Desktop, OrbStack, Colima), the socket is accessible to all processes inside the VM — there is no docker group GID mismatch. ghr skips the `stat` query and `--group-add` on macOS hosts; only the bind-mount is applied.
+On **macOS** (Docker Desktop, OrbStack, Colima), the socket is accessible to all processes inside the VM — there is no docker group GID mismatch. gh wm skips the `stat` query and `--group-add` on macOS hosts; only the bind-mount is applied.
 
-**If agentic-workflow tooling inside a job gets `permission denied` on the Docker socket**, the container was started without this `--group-add` flag (for example, by an older version of ghr or a manually issued `docker run`). Recreate the runner:
+**If agentic-workflow tooling inside a job gets `permission denied` on the Docker socket**, the container was started without this `--group-add` flag (for example, by an older version of gh wm or a manually issued `docker run`). Recreate the runner:
 
 ```bash
-ghr down <runner-name>
-ghr up <runner-name>
+gh wm down <runner-name>
+gh wm up <runner-name>
 ```
 
-**Rootless Docker** (Linux) and **Colima** often use a non-default socket; ghr usually finds it via the default Docker context without extra config. If the active context does not point at the socket you want (for example a **named Colima profile** that is not selected in `docker context`), set `docker_socket` explicitly (supported on Linux and macOS; not applicable on Windows):
+**Rootless Docker** (Linux) and **Colima** often use a non-default socket; gh wm usually finds it via the default Docker context without extra config. If the active context does not point at the socket you want (for example a **named Colima profile** that is not selected in `docker context`), set `docker_socket` explicitly (supported on Linux and macOS; not applicable on Windows):
 
 ```yaml
 hosts:
@@ -74,7 +74,7 @@ hosts:
     docker_socket: /run/user/1000/docker.sock
 ```
 
-ghr will bind-mount the custom path into the container at `/var/run/docker.sock` (preserving the default `DOCKER_HOST` path that job scripts expect) and still adds `--group-add` for the socket's GID.
+gh wm will bind-mount the custom path into the container at `/var/run/docker.sock` (preserving the default `DOCKER_HOST` path that job scripts expect) and still adds `--group-add` for the socket's GID.
 
 **Verify from inside a running runner container:**
 
@@ -82,7 +82,7 @@ ghr will bind-mount the custom path into the container at `/var/run/docker.sock`
 docker exec gh-runner-<instance> test -S /var/run/docker.sock && echo ok || echo missing
 ```
 
-`ghr doctor` performs this check automatically for all running docker-mode containers on Linux and macOS hosts and reports a WARN if the socket is not accessible inside.
+`gh wm doctor` performs this check automatically for all running docker-mode containers on Linux and macOS hosts and reports a WARN if the socket is not accessible inside.
 
 ## GitHub Agentic Workflows (gh-aw)
 
@@ -100,7 +100,7 @@ runners:
 This automatically configures docker mode, host networking, `NET_ADMIN` capability, and a `gh-aw` label. You can also add it from the CLI:
 
 ```bash
-ghr add runner aw-runner --repo owner/repo --host vps-1 --profile agentic
+gh wm add runner aw-runner --repo owner/repo --host vps-1 --profile agentic
 ```
 
 For **organization-level runners** with runner groups, use `org` and `group` instead of `repo`:
@@ -143,7 +143,7 @@ Workflows that run the [Agent Workflow Firewall](https://github.com/github/gh-aw
 
 **Verification (optional):** Keep Docker’s default iptables integration (do not set **`"iptables": false"`** in the engine `daemon.json`). On Docker Desktop, you can open a shell in the Linux engine (for example the **`docker-desktop`** WSL distro) and run **`sudo iptables -L DOCKER-USER -n`** — when the daemon is healthy, that chain is normally present. Then run a workflow that uses `awf` to confirm the job completes past firewall setup.
 
-**`ghr doctor`** checks agentic-profile runners for port 80 availability, iptables presence, and sudo access, in addition to the standard bridge-network warning.
+**`gh wm doctor`** checks agentic-profile runners for port 80 availability, iptables presence, and sudo access, in addition to the standard bridge-network warning.
 
 ## Windows (OpenSSH and Docker)
 
@@ -155,37 +155,37 @@ Workflows that run the [Agent Workflow Firewall](https://github.com/github/gh-aw
   Set-Service -Name sshd -StartupType Automatic
   ```
 
-  **SSH default shell:** OpenSSH may use cmd.exe or PowerShell 7 (`pwsh`) as the remote shell depending on your setup. ghr runs Windows automation via `powershell.exe` or `pwsh.exe` with `-EncodedCommand`, so it works with either default. Use `windows_ps: pwsh` on the host if you rely on PowerShell 7 only and do not have Windows PowerShell 5.1.
+  **SSH default shell:** OpenSSH may use cmd.exe or PowerShell 7 (`pwsh`) as the remote shell depending on your setup. gh wm runs Windows automation via `powershell.exe` or `pwsh.exe` with `-EncodedCommand`, so it works with either default. Use `windows_ps: pwsh` on the host if you rely on PowerShell 7 only and do not have Windows PowerShell 5.1.
 
 ## All remote hosts
 
 - Confirm non-interactive SSH works: `ssh -o BatchMode=yes user@host true` (use the same user and host as in `hosts.*.addr`).
-- **Host keys:** when `~/.ssh/known_hosts` exists, ghr verifies server keys the same way as the Go `knownhosts` package. Connect once with plain `ssh` if you need to accept a new host key before `ghr doctor` or `ghr setup`.
+- **Host keys:** when `~/.ssh/known_hosts` exists, gh wm verifies server keys the same way as the Go `knownhosts` package. Connect once with plain `ssh` if you need to accept a new host key before `gh wm doctor` or `gh wm setup`.
 - Remote commands run as the SSH user from your config; that user must have permission to install or run runners as documented for each OS below.
 
-Run **`ghr doctor`** (optionally with `--host` / `--repo`) to confirm connectivity from your control machine.
+Run **`gh wm doctor`** (optionally with `--host` / `--repo`) to confirm connectivity from your control machine.
 
 ## Linux
 
-For the full explanation of non-interactive SSH, the `ghr: remote Linux commands need root…` error, `NOPASSWD`, and verification commands, see [Linux SSH user and privileges](#linux-ssh-user-and-privileges) above.
+For the full explanation of non-interactive SSH, the `gh wm: remote Linux commands need root…` error, `NOPASSWD`, and verification commands, see [Linux SSH user and privileges](#linux-ssh-user-and-privileges) above.
 
-- **Docker mode (default on Linux):** If Docker is not installed, `ghr setup` can run Docker’s install script, which requires **root** or **passwordless sudo** (`sudo -n`) over SSH (see the section linked above). To avoid that path, install Docker yourself and ensure the SSH user can run `docker` (for example membership in the `docker` group). ghr automatically passes `--group-add` for the socket GID and verifies the socket before starting containers; see [Docker socket permissions](#docker-socket-permissions-linuxmacos) above for path resolution and the optional `docker_socket` override.
-- **Native mode:** Ensure `curl` and `tar` are on `PATH`. `ghr setup` may still invoke GitHub’s `installdependencies.sh` with **`sudo -n`** when the SSH user is not root and passwordless sudo is available.
+- **Docker mode (default on Linux):** If Docker is not installed, `gh wm setup` can run Docker’s install script, which requires **root** or **passwordless sudo** (`sudo -n`) over SSH (see the section linked above). To avoid that path, install Docker yourself and ensure the SSH user can run `docker` (for example membership in the `docker` group). gh wm automatically passes `--group-add` for the socket GID and verifies the socket before starting containers; see [Docker socket permissions](#docker-socket-permissions-linuxmacos) above for path resolution and the optional `docker_socket` override.
+- **Native mode:** Ensure `curl` and `tar` are on `PATH`. `gh wm setup` may still invoke GitHub’s `installdependencies.sh` with **`sudo -n`** when the SSH user is not root and passwordless sudo is available.
 
-Run **`ghr doctor`** after the host is prepared.
+Run **`gh wm doctor`** after the host is prepared.
 
 ## macOS
 
-- **Native:** `curl` is usually sufficient; ghr downloads the Actions runner over HTTPS.
-- **Docker mode:** Install [Docker Desktop](https://www.docker.com/products/docker-desktop/), [OrbStack](https://orbstack.dev/), or [Colima](https://github.com/abiosoft/colima). The `docker` CLI must work in the **same** environment as your SSH session (user, `PATH`, and Docker context). Start the Docker engine (app or `colima start`, etc.) before relying on docker mode. **Docker socket permissions:** macOS Docker Desktop, OrbStack, and Colima use a Unix socket that is accessible to all processes; ghr does not need `--group-add` on macOS and skips the GID detection step. ghr bind-mounts the resolved host socket at `/var/run/docker.sock` inside the container (matching the Linux default). Override with `docker_socket` only when needed — see [Docker socket permissions](#docker-socket-permissions-linuxmacos) below.
+- **Native:** `curl` is usually sufficient; gh wm downloads the Actions runner over HTTPS.
+- **Docker mode:** Install [Docker Desktop](https://www.docker.com/products/docker-desktop/), [OrbStack](https://orbstack.dev/), or [Colima](https://github.com/abiosoft/colima). The `docker` CLI must work in the **same** environment as your SSH session (user, `PATH`, and Docker context). Start the Docker engine (app or `colima start`, etc.) before relying on docker mode. **Docker socket permissions:** macOS Docker Desktop, OrbStack, and Colima use a Unix socket that is accessible to all processes; gh wm does not need `--group-add` on macOS and skips the GID detection step. gh wm bind-mounts the resolved host socket at `/var/run/docker.sock` inside the container (matching the Linux default). Override with `docker_socket` only when needed — see [Docker socket permissions](#docker-socket-permissions-linuxmacos) below.
 
-Run **`ghr doctor`** to confirm `docker info` from the SSH session.
+Run **`gh wm doctor`** to confirm `docker info` from the SSH session.
 
 ## Windows (runner behavior)
 
 - Install and enable **OpenSSH Server** (see the PowerShell snippet under [Windows (OpenSSH and Docker)](#windows-openssh-and-docker)).
-- **Docker mode (Linux containers on the same Windows host):** Install [Docker Desktop](https://www.docker.com/products/docker-desktop/), use the default **Linux containers** mode, and keep Docker running. ghr does not install or start Docker Desktop for you. Because Docker's Windows CLI may auto-detect `wincred` in non-interactive SSH sessions and fail with `A specified logon session does not exist`, ghr runs Windows Docker commands with an isolated `DOCKER_CONFIG` that disables credential helpers instead of relying on `%USERPROFILE%/.docker/config.json`.
+- **Docker mode (Linux containers on the same Windows host):** Install [Docker Desktop](https://www.docker.com/products/docker-desktop/), use the default **Linux containers** mode, and keep Docker running. gh wm does not install or start Docker Desktop for you. Because Docker's Windows CLI may auto-detect `wincred` in non-interactive SSH sessions and fail with `A specified logon session does not exist`, gh wm runs Windows Docker commands with an isolated `DOCKER_CONFIG` that disables credential helpers instead of relying on `%USERPROFILE%/.docker/config.json`.
 
-- **Native mode:** After `ghr setup`, run **`ghr up`** to start the listener. Registration logs under `_diag` show **configure** finishing with exit code 0; that is normal and does not mean the runner is listening. For the **run** phase, check **`%USERPROFILE%\.ghr\runners\<instance>\runner.log`**. Over SSH, **`Start-Process` listeners are killed when the session disconnects**; ghr starts the listener with **`Win32_Process.Create` (CIM)** so it keeps running after `ghr` exits. If the runner shows **stopped** with `runner registration has been deleted from the server`, GitHub auto-pruned the stale registration. `ghr up` detects this automatically, re-registers, and retries. You can also fix it manually with **`ghr update <runner>`** (which removes, re-configures, and starts in one step). If `ghr status` shows **stopped** immediately after `ghr up` for other reasons, check `runner.log` for error details. As a fallback you can run **`run.cmd`** from an interactive session (RDP), use **Task Scheduler** at logon, or install the runner as a **Windows service** via GitHub’s `config.cmd` options.
+- **Native mode:** After `gh wm setup`, run **`gh wm up`** to start the listener. Registration logs under `_diag` show **configure** finishing with exit code 0; that is normal and does not mean the runner is listening. For the **run** phase, check **`%USERPROFILE%\.gh-wm\runners\<instance>\runner.log`**. Over SSH, **`Start-Process` listeners are killed when the session disconnects**; gh wm starts the listener with **`Win32_Process.Create` (CIM)** so it keeps running after `gh wm` exits. If the runner shows **stopped** with `runner registration has been deleted from the server`, GitHub auto-pruned the stale registration. `gh wm up` detects this automatically, re-registers, and retries. You can also fix it manually with **`gh wm update <runner>`** (which removes, re-configures, and starts in one step). If `gh wm status` shows **stopped** immediately after `gh wm up` for other reasons, check `runner.log` for error details. As a fallback you can run **`run.cmd`** from an interactive session (RDP), use **Task Scheduler** at logon, or install the runner as a **Windows service** via GitHub’s `config.cmd` options.
 
-Run **`ghr doctor`** to confirm SSH and Docker readiness.
+Run **`gh wm doctor`** to confirm SSH and Docker readiness.

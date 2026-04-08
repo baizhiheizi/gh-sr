@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/an-lee/ghr/internal/config"
-	"github.com/an-lee/ghr/internal/runner"
+	"github.com/an-lee/gh-wm/internal/config"
+	"github.com/an-lee/gh-wm/internal/runner"
 )
 
 func TestExitCode(t *testing.T) {

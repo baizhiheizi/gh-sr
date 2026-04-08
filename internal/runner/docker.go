@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/an-lee/ghr/internal/config"
-	"github.com/an-lee/ghr/internal/host"
+	"github.com/an-lee/gh-wm/internal/config"
+	"github.com/an-lee/gh-wm/internal/host"
 )
 
 // RunnerDockerImage is the container image used for docker-mode runners.
@@ -137,7 +137,7 @@ func remoteDockerSocketOK(h *host.Host, path string) (bool, error) {
 }
 
 // EffectiveDockerSocket returns the host-side Docker socket path for bind-mounting on Linux and macOS.
-// When HostConfig.DockerSocket is set, that path is used if it exists. Otherwise ghr probes, in order:
+// When HostConfig.DockerSocket is set, that path is used if it exists. Otherwise gh wm probes, in order:
 // /var/run/docker.sock, the active docker context unix endpoint (Colima, rootless Docker, etc.),
 // and on macOS ~/.colima/default/docker.sock.
 func EffectiveDockerSocket(h *host.Host) (string, error) {
@@ -181,7 +181,7 @@ func EffectiveDockerSocket(h *host.Host) (string, error) {
 			}
 		}
 	}
-	hint := "ensure Docker is running (rootless Docker: ghr uses your default docker context; set docker_socket to override)"
+	hint := "ensure Docker is running (rootless Docker: gh wm uses your default docker context; set docker_socket to override)"
 	if h.OS == "darwin" {
 		hint = "ensure Docker Desktop/OrbStack/Colima is running, or set docker_socket for a non-default socket path"
 	}
@@ -343,21 +343,21 @@ func (m *Manager) setupDocker(h *host.Host) error {
 // no auth is configured.
 func windowsDockerCommand(cmd string) string {
 	return strings.TrimSpace(fmt.Sprintf(`
-$ghrDockerConfigDir = Join-Path $env:TEMP 'ghr-docker-config'
-New-Item -ItemType Directory -Force -Path $ghrDockerConfigDir | Out-Null
-$ghrDockerConfigFile = Join-Path $ghrDockerConfigDir 'config.json'
-$ghrDockerConfigJson = @'
+$ghwmDockerConfigDir = Join-Path $env:TEMP 'gh-wm-docker-config'
+New-Item -ItemType Directory -Force -Path $ghwmDockerConfigDir | Out-Null
+$ghwmDockerConfigFile = Join-Path $ghwmDockerConfigDir 'config.json'
+$ghwmDockerConfigJson = @'
 {
   "auths": {
-    "ghr.invalid": {
+    "ghwm.invalid": {
       "auth": "Z2hyOmdocg=="
     }
   },
   "credsStore": ""
 }
 '@
-[System.IO.File]::WriteAllText($ghrDockerConfigFile, $ghrDockerConfigJson, [System.Text.UTF8Encoding]::new($false))
-$env:DOCKER_CONFIG = $ghrDockerConfigDir
+[System.IO.File]::WriteAllText($ghwmDockerConfigFile, $ghwmDockerConfigJson, [System.Text.UTF8Encoding]::new($false))
+$env:DOCKER_CONFIG = $ghwmDockerConfigDir
 %s
 `, cmd))
 }
@@ -470,7 +470,7 @@ func (m *Manager) setupDockerUnix(h *host.Host) error {
 		`
 	if _, instErr := h.Run(installCmd); instErr != nil {
 		return fmt.Errorf(
-			"failed to install docker on host %s (need root SSH, passwordless sudo, or install Docker manually; see ghr doctor): %w",
+			"failed to install docker on host %s (need root SSH, passwordless sudo, or install Docker manually; see gh wm doctor): %w",
 			h.Name, instErr,
 		)
 	}

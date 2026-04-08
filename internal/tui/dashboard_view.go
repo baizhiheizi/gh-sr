@@ -7,7 +7,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/an-lee/ghr/internal/runner"
+	"github.com/an-lee/gh-wm/internal/runner"
 )
 
 func (m *dashboardModel) View() tea.View {
@@ -36,7 +36,7 @@ func (m *dashboardModel) View() tea.View {
 func (m *dashboardModel) viewMain() tea.View {
 	var b strings.Builder
 
-	b.WriteString(titleStyle.Render("ghr dashboard"))
+	b.WriteString(titleStyle.Render("gh wm dashboard"))
 	b.WriteString("\n\n")
 
 	filterParts := []string{}
@@ -142,7 +142,7 @@ func helpOverlay() string {
   Global (g): doctor, host metrics, cleanup, show/validate config, edit yaml/env, filters.
   Filters (f): narrow by host or repo; clear restores full list.
   Scroll views (logs, doctor, config): j/k line, ctrl+u/ctrl+d page, home/end, esc back.
-  Cleanup asks for y/n confirmation. Run ghr init from a shell (not in the TUI).`)
+  Cleanup asks for y/n confirmation. Run gh wm init from a shell (not in the TUI).`)
 }
 
 func (m *dashboardModel) viewActionMenu() tea.View {

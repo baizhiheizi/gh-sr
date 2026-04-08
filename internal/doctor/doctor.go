@@ -7,9 +7,9 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/an-lee/ghr/internal/config"
-	"github.com/an-lee/ghr/internal/host"
-	"github.com/an-lee/ghr/internal/runner"
+	"github.com/an-lee/gh-wm/internal/config"
+	"github.com/an-lee/gh-wm/internal/host"
+	"github.com/an-lee/gh-wm/internal/runner"
 )
 
 const (
@@ -342,7 +342,7 @@ func checkWindowsDockerSocket(w io.Writer, hostName string, h *host.Host, runner
 			groups = strings.TrimSpace(groups)
 			if gerr != nil || groups == "" || groups == "[]" {
 				printLine(w, sevFail, hostName, fmt.Sprintf(
-					"docker: container %s has no --group-add for socket GID %s; jobs will fail with permission denied; fix with: ghr down %s && ghr up %s",
+					"docker: container %s has no --group-add for socket GID %s; jobs will fail with permission denied; fix with: gh wm down %s && gh wm up %s",
 					cname, gid, rc.Name, rc.Name,
 				))
 				r.Fail++
@@ -351,7 +351,7 @@ func checkWindowsDockerSocket(w io.Writer, hostName string, h *host.Host, runner
 			// groups is like "[999]" or "[0 999]"; check if socket GID is present.
 			if !strings.Contains(groups, gid) {
 				printLine(w, sevFail, hostName, fmt.Sprintf(
-					"docker: container %s groups=%s, socket GID=%s not included; jobs will fail with permission denied; fix with: ghr down %s && ghr up %s",
+					"docker: container %s groups=%s, socket GID=%s not included; jobs will fail with permission denied; fix with: gh wm down %s && gh wm up %s",
 					cname, groups, gid, rc.Name, rc.Name,
 				))
 				r.Fail++
@@ -389,7 +389,7 @@ func checkUnixDockerSocket(w io.Writer, hostName string, h *host.Host, runners [
 			res, execErr := h.Run(fmt.Sprintf("docker exec %s test -S /var/run/docker.sock && echo ok || echo missing", cname))
 			if execErr != nil || strings.TrimSpace(res) != "ok" {
 				printLine(w, sevWarn, hostName, fmt.Sprintf(
-					"docker: container %s is running but /var/run/docker.sock is not accessible inside it; recreate with: ghr down %s && ghr up %s",
+					"docker: container %s is running but /var/run/docker.sock is not accessible inside it; recreate with: gh wm down %s && gh wm up %s",
 					cname, rc.Name, rc.Name,
 				))
 				r.Warn++
@@ -425,7 +425,7 @@ func checkNativeRunnerInstall(w io.Writer, hostName string, h *host.Host, hcfg c
 			continue
 		}
 		if !ok {
-			printLine(w, sevFail, hostName, fmt.Sprintf("native: instance %s not installed (missing .runner under %s); run: ghr setup %s", inst, dir, runnerName))
+			printLine(w, sevFail, hostName, fmt.Sprintf("native: instance %s not installed (missing .runner under %s); run: gh wm setup %s", inst, dir, runnerName))
 			r.Fail++
 			continue
 		}
@@ -528,7 +528,7 @@ func checkLinuxSudo(w io.Writer, hostName string, h *host.Host, r *Result) {
 	out, err := h.Run(`sudo -n true 2>/dev/null && echo ok || echo no`)
 	out = strings.TrimSpace(out)
 	if err != nil || out != "ok" {
-		printLine(w, sevWarn, hostName, "linux: passwordless sudo not available; ghr setup/update may fail for package installs or Docker install")
+		printLine(w, sevWarn, hostName, "linux: passwordless sudo not available; gh wm setup/update may fail for package installs or Docker install")
 		r.Warn++
 		return
 	}

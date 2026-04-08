@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/an-lee/ghr/internal/config"
-	"github.com/an-lee/ghr/internal/host"
+	"github.com/an-lee/gh-wm/internal/config"
+	"github.com/an-lee/gh-wm/internal/host"
 )
 
 func Test_archForGitHub(t *testing.T) {
@@ -59,7 +59,7 @@ func Test_windowsNativeInstallScript_usesPowerShellExpressions(t *testing.T) {
 		"https://github.com/actions/runner/releases/download/v2.333.1/actions-runner-win-x64-2.333.1.zip",
 	)
 
-	if !strings.Contains(script, "$runnerDir = Join-Path (Join-Path $env:USERPROFILE '.ghr\\runners') 'unwx-1'") {
+	if !strings.Contains(script, "$runnerDir = Join-Path (Join-Path $env:USERPROFILE '.gh-wm\\runners') 'unwx-1'") {
 		t.Fatalf("runner dir should be built from PowerShell expressions: %q", script)
 	}
 	if !strings.Contains(script, "$zip = Join-Path $env:TEMP 'actions-runner-2.333.1.zip'") {
@@ -74,13 +74,13 @@ func Test_windowsNativeConfigScript_usesRunnerDirVariable(t *testing.T) {
 	t.Parallel()
 	h := host.NewHost("win", config.HostConfig{Addr: "u@h", OS: "windows", Arch: "amd64"})
 	rc := config.RunnerConfig{
-		Repo:   "an-lee/ghr",
+		Repo:   "an-lee/gh-wm",
 		Labels: []string{"windows", "native"},
 	}
 
 	script := windowsNativeConfigScript(h, rc, "unwx-1", "token-value")
 
-	if !strings.Contains(script, "$runnerDir = Join-Path (Join-Path $env:USERPROFILE '.ghr\\runners') 'unwx-1'") {
+	if !strings.Contains(script, "$runnerDir = Join-Path (Join-Path $env:USERPROFILE '.gh-wm\\runners') 'unwx-1'") {
 		t.Fatalf("runner dir should be assigned from a PowerShell expression: %q", script)
 	}
 	if !strings.Contains(script, "Set-Location -Path $runnerDir; & .\\config.cmd --unattended") {
@@ -142,9 +142,9 @@ func TestNativeRunnerConfigPresent_local(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	inst := "ghr-native-probe-" + filepath.Base(t.TempDir())
+	inst := "ghwm-native-probe-" + filepath.Base(t.TempDir())
 
-	base := filepath.Join(home, ".ghr", "runners", inst)
+	base := filepath.Join(home, ".gh-wm", "runners", inst)
 	if err := os.MkdirAll(base, 0o755); err != nil {
 		t.Fatal(err)
 	}

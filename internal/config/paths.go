@@ -7,32 +7,31 @@ import (
 )
 
 const (
-	// EnvVarConfigPath is the environment variable that overrides auto config path resolution
-	// when --config is not set.
-	EnvVarConfigPath = "GHR_CONFIG"
+	// EnvVarConfigPath overrides auto config path resolution when --config is not set.
+	EnvVarConfigPath = "GH_WM_CONFIG"
 )
 
-// GhrDir returns the directory ~/.ghr (or $HOME/.ghr).
-func GhrDir() (string, error) {
+// WmDir returns the directory ~/.gh-wm (or $HOME/.gh-wm).
+func WmDir() (string, error) {
 	h, err := os.UserHomeDir()
 	if err != nil {
 		return "", fmt.Errorf("user home: %w", err)
 	}
-	return filepath.Join(h, ".ghr"), nil
+	return filepath.Join(h, ".gh-wm"), nil
 }
 
-// EnvFilePath returns ~/.ghr/env.
+// EnvFilePath returns ~/.gh-wm/env.
 func EnvFilePath() (string, error) {
-	d, err := GhrDir()
+	d, err := WmDir()
 	if err != nil {
 		return "", err
 	}
 	return filepath.Join(d, "env"), nil
 }
 
-// UserRunnersPath returns ~/.ghr/runners.yml.
+// UserRunnersPath returns ~/.gh-wm/runners.yml.
 func UserRunnersPath() (string, error) {
-	d, err := GhrDir()
+	d, err := WmDir()
 	if err != nil {
 		return "", err
 	}
@@ -40,7 +39,7 @@ func UserRunnersPath() (string, error) {
 }
 
 // ResolveConfigPath picks the config file path when --config is empty (auto mode).
-// Order: non-empty flag, else GHR_CONFIG, else ~/.ghr/runners.yml.
+// Order: non-empty flag, else GH_WM_CONFIG, else ~/.gh-wm/runners.yml.
 func ResolveConfigPath(cfgFlag string) (string, error) {
 	if cfgFlag != "" {
 		return filepath.Abs(cfgFlag)
@@ -51,7 +50,7 @@ func ResolveConfigPath(cfgFlag string) (string, error) {
 	return UserRunnersPath()
 }
 
-// BootstrapEnv loads ~/.ghr/env into the process environment if the file exists.
+// BootstrapEnv loads ~/.gh-wm/env into the process environment if the file exists.
 func BootstrapEnv() error {
 	p, err := EnvFilePath()
 	if err != nil {

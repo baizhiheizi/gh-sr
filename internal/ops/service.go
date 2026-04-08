@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/an-lee/ghr/internal/autostart"
-	"github.com/an-lee/ghr/internal/config"
-	"github.com/an-lee/ghr/internal/runner"
+	"github.com/an-lee/gh-wm/internal/autostart"
+	"github.com/an-lee/gh-wm/internal/config"
+	"github.com/an-lee/gh-wm/internal/runner"
 )
 
 // ServiceInstall installs OS-level autostart for native runners (systemd, LaunchAgent, or scheduled task).
@@ -45,7 +45,7 @@ func ServiceInstall(w io.Writer, cfg *config.Config, filterHost, filterRepo stri
 			}
 			if !ok {
 				h.Close()
-				return fmt.Errorf("%s: runner not configured on host; run: ghr setup %s", inst, rc.Name)
+				return fmt.Errorf("%s: runner not configured on host; run: gh wm setup %s", inst, rc.Name)
 			}
 			if err := autostart.Install(h, inst, autostart.InstallOpts{System: system}); err != nil {
 				h.Close()
@@ -58,7 +58,7 @@ func ServiceInstall(w io.Writer, cfg *config.Config, filterHost, filterRepo stri
 	return nil
 }
 
-// ServiceUninstall removes autostart definitions created by ghr service install.
+// ServiceUninstall removes autostart definitions created by gh wm service install.
 func ServiceUninstall(w io.Writer, cfg *config.Config, filterHost, filterRepo string, nameArgs []string) error {
 	if err := ResolveHostInfo(w, cfg); err != nil {
 		return err

@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/an-lee/ghr/internal/config"
-	"github.com/an-lee/ghr/internal/host"
+	"github.com/an-lee/gh-wm/internal/config"
+	"github.com/an-lee/gh-wm/internal/host"
 )
 
 func Test_ContainerName(t *testing.T) {
@@ -207,10 +207,10 @@ func Test_dockerStartCommand_hostNetwork(t *testing.T) {
 func Test_windowsDockerCommand_commandShape(t *testing.T) {
 	t.Parallel()
 	script := windowsDockerCommand("docker pull ghcr.io/actions/actions-runner:latest")
-	if !strings.Contains(script, "$env:DOCKER_CONFIG = $ghrDockerConfigDir") {
+	if !strings.Contains(script, "$env:DOCKER_CONFIG = $ghwmDockerConfigDir") {
 		t.Fatalf("script should set DOCKER_CONFIG, got %q", script)
 	}
-	if !strings.Contains(script, `"ghr.invalid"`) {
+	if !strings.Contains(script, `"ghwm.invalid"`) {
 		t.Fatalf("script should include dummy auth entry, got %q", script)
 	}
 	if !strings.Contains(script, `"credsStore": ""`) {

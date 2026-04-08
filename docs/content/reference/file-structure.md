@@ -5,20 +5,20 @@ weight: 10
 
 # File structure
 
-Layout of this repository (module `github.com/an-lee/ghr`):
+Layout of this repository (module `github.com/an-lee/gh-wm`):
 
 ```text
-ghr/
+gh-wm/                      # repository root (GitHub: gh-wm)
   cmd/
-    ghr/
-      main.go               # CLI entry point
+    gh-wm/
+      main.go               # CLI entry point (binary name: gh-wm; command: gh wm)
   internal/
     config/
       config.go             # YAML config parsing and validation
-      envfile.go            # ~/.ghr/env dotenv loader
-      paths.go              # Config path resolution, ~/.ghr helpers
+      envfile.go            # ~/.gh-wm/env dotenv loader
+      paths.go              # Config path resolution, ~/.gh-wm helpers
       load.go               # LoadFromPath with missing-file hints
-      template.go           # Embedded template for ghr init
+      template.go           # Embedded template for gh wm init
       runners.yml.template  # Default runners.yml content
     editor/
       editor.go             # $VISUAL / $EDITOR / platform default
@@ -27,13 +27,13 @@ ghr/
       connection.go         # SSH connection management (Executor interface)
       local.go              # Local command execution (addr: local)
     doctor/
-      doctor.go             # ghr doctor diagnostics
+      doctor.go             # gh wm doctor diagnostics
     ops/
       ops.go                # Shared setup/up/down/restart/update/status/logs/cleanup (CLI + TUI)
-      service.go            # ghr service install/uninstall/status
+      service.go            # gh wm service install/uninstall/status
     autostart/
       autostart.go          # systemd / launchd / Windows task install and Detect/Start/Stop
-      active.go             # Supervisor active check for ghr status
+      active.go             # Supervisor active check for gh wm status
       generate.go           # Unit and plist text generation
       sanitize.go           # Safe names for unit files and tasks
     runner/
@@ -47,7 +47,7 @@ ghr/
       status.go             # Status table rendering
       styles.go             # Lipgloss styles
   config/
-    runners.yml             # Example YAML (not auto-loaded; use GHR_CONFIG or -c)
+    runners.yml             # Example YAML (not auto-loaded; use GH_WM_CONFIG or -c)
   docs/                     # Hugo source (this site)
   go.mod
   go.sum

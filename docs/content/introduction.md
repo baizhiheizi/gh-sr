@@ -9,11 +9,11 @@ weight: 2
 
 Self-hosted GitHub Actions runners give you more control over your CI/CD infrastructure — but managing them across multiple machines is tedious. To add a new runner you must SSH into each machine, download the runner software, configure it, start the process, and remember which machine has what. Monitoring, updating, and restarting runners means touching every machine individually. As the number of runners and machines grows, this overhead becomes unmanageable.
 
-## What is ghr?
+## What is gh wm?
 
-**ghr** is a CLI control plane that manages self-hosted GitHub Actions runners on remote machines from a single host — typically your laptop. Instead of SSHing into each machine, you describe your infrastructure in a YAML file and run commands like `ghr setup`, `ghr up`, and `ghr status` to manage everything from one place.
+**gh wm** is a CLI control plane that manages self-hosted GitHub Actions runners on remote machines from a single host — typically your laptop. Instead of SSHing into each machine, you describe your infrastructure in a YAML file and run commands like `gh wm setup`, `gh wm up`, and `gh wm status` to manage everything from one place.
 
-ghr handles:
+gh wm handles:
 
 - **Installation** — Downloads and configures the GitHub Actions runner software on each host
 - **Lifecycle** — Starts, stops, and restarts runner instances (as native processes or Docker containers)
@@ -25,24 +25,24 @@ ghr handles:
 ```
 Your laptop (control plane)          Runner hosts
                                     ──────────────
-  ghr CLI ──────────────────────────►  Mac mini
+  gh wm CLI ──────────────────────────►  Mac mini
         │                              Linux VPS
         │                              Windows PC
         │                              localhost
         │
         ▼
-  ~/.ghr/runners.yml  (your config)
-  ~/.ghr/env          (GitHub PAT)
+  ~/.gh-wm/runners.yml  (your config)
+  ~/.gh-wm/env          (GitHub PAT)
 ```
 
-1. **Config** — You describe hosts and runners in `~/.ghr/runners.yml`
-2. **Connect** — ghr reaches each host over SSH (or runs locally with `addr: local`)
-3. **Install** — `ghr setup` downloads the runner software, configures it with your GitHub PAT, and (for Docker mode) pulls the runner image
-4. **Manage** — `ghr up` / `ghr down` start and stop runner instances as processes or containers
-5. **Monitor** — `ghr status` and `ghr dashboard` show running state from each host alongside GitHub's online/offline view
+1. **Config** — You describe hosts and runners in `~/.gh-wm/runners.yml`
+2. **Connect** — gh wm reaches each host over SSH (or runs locally with `addr: local`)
+3. **Install** — `gh wm setup` downloads the runner software, configures it with your GitHub PAT, and (for Docker mode) pulls the runner image
+4. **Manage** — `gh wm up` / `gh wm down` start and stop runner instances as processes or containers
+5. **Monitor** — `gh wm status` and `gh wm dashboard` show running state from each host alongside GitHub's online/offline view
 
 ```
-  ghr dashboard                              [r]efresh  [?]help  [q]uit
+  gh wm dashboard                              [r]efresh  [?]help  [q]uit
 
   INSTANCE      HOST         REPO                MODE    LOCAL    GITHUB
   ─────────────────────────────────────────────────────────────────────────
@@ -53,17 +53,17 @@ Your laptop (control plane)          Runner hosts
   [enter] runner actions  [g] global menu  [f] filter  [j/k] navigate
 ```
 
-Only the machine where ghr runs needs the ghr binary. Target hosts only need SSH access and (for Docker mode) a working Docker installation.
+Only the machine where gh wm runs needs the gh wm binary. Target hosts only need SSH access and (for Docker mode) a working Docker installation.
 
 ## Key Concepts
 
 ### Control plane vs execution plane
 
-ghr is a **control plane only**. The ghr CLI runs on your machine and issues commands. The actual runner process or container always runs on the **target host** defined in your config — not on the machine where ghr executes.
+gh wm is a **control plane only**. The gh wm CLI runs on your machine and issues commands. The actual runner process or container always runs on the **target host** defined in your config — not on the machine where gh wm executes.
 
 ### Hosts
 
-A **host** is a machine (physical or virtual) where runners run. You specify it in `runners.yml` as an address — either `addr: local` to run runners on the same machine as ghr, or `user@hostname` for an SSH connection.
+A **host** is a machine (physical or virtual) where runners run. You specify it in `runners.yml` as an address — either `addr: local` to run runners on the same machine as gh wm, or `user@hostname` for an SSH connection.
 
 ### Runners
 
@@ -80,9 +80,9 @@ Linux defaults to **docker** if you don't specify. Windows and macOS default to 
 
 ### Config and secrets
 
-- **`~/.ghr/runners.yml`** — Declares all hosts and runners (OS, mode, count, labels, etc.)
-- **`~/.ghr/env`** — Contains environment variables, most importantly your GitHub PAT (`GHR_TOKEN`)
+- **`~/.gh-wm/runners.yml`** — Declares all hosts and runners (OS, mode, count, labels, etc.)
+- **`~/.gh-wm/env`** — Contains environment variables, most importantly your GitHub PAT (`GHR_TOKEN`)
 
 ### Instances
 
-When `count` is greater than 1, ghr creates multiple instances of a runner on the same host, each with its own directory (native) or container (docker). Instances are named `<runner-name>-1`, `<runner-name>-2`, and so on.
+When `count` is greater than 1, gh wm creates multiple instances of a runner on the same host, each with its own directory (native) or container (docker). Instances are named `<runner-name>-1`, `<runner-name>-2`, and so on.

@@ -7,9 +7,9 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/an-lee/ghr/internal/autostart"
-	"github.com/an-lee/ghr/internal/config"
-	"github.com/an-lee/ghr/internal/host"
+	"github.com/an-lee/gh-wm/internal/autostart"
+	"github.com/an-lee/gh-wm/internal/config"
+	"github.com/an-lee/gh-wm/internal/host"
 )
 
 type Manager struct {
@@ -215,7 +215,7 @@ func (m *Manager) Logs(h *host.Host, rc config.RunnerConfig, instanceName string
 	}
 }
 
-// expectedGitHubRunnerOS is the self-hosted runner "os" field from the GitHub API for this ghr row (mode + host OS).
+// expectedGitHubRunnerOS is the self-hosted runner "os" field from the GitHub API for this config row (mode + host OS).
 func expectedGitHubRunnerOS(mode, hostOS string) string {
 	effective := mode
 	if effective == "" {

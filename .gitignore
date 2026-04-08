@@ -1,8 +1,9 @@
 .env
-/ghr
+/gh-wm
 dist/
 site/
 docs/public/
 docs/resources/
 docs/themes/
 docs/.hugo_build.lock
+ghr

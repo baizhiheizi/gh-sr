@@ -1,13 +1,13 @@
-# ghr — GitHub Actions runner manager CLI
-# https://github.com/an-lee/ghr
+# gh-wm — GitHub Workflow Manager (GitHub CLI extension)
+# https://github.com/an-lee/gh-wm
 
 ifeq ($(OS),Windows_NT)
-BINARY := ghr.exe
+BINARY := gh-wm.exe
 else
-BINARY := ghr
+BINARY := gh-wm
 endif
 
-CMD_DIR := ./cmd/ghr
+CMD_DIR := ./cmd/gh-wm
 
 GIT_TAG := $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 

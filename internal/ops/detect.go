@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/an-lee/ghr/internal/config"
-	"github.com/an-lee/ghr/internal/host"
-	"github.com/an-lee/ghr/internal/runner"
+	"github.com/an-lee/gh-wm/internal/config"
+	"github.com/an-lee/gh-wm/internal/host"
+	"github.com/an-lee/gh-wm/internal/runner"
 )
 
 // ResolveHostInfo connects to each host that is missing OS or arch and auto-detects them.

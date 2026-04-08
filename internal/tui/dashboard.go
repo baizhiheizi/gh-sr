@@ -12,16 +12,16 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/an-lee/ghr/internal/config"
-	"github.com/an-lee/ghr/internal/doctor"
-	"github.com/an-lee/ghr/internal/editor"
-	"github.com/an-lee/ghr/internal/host"
-	"github.com/an-lee/ghr/internal/ops"
-	"github.com/an-lee/ghr/internal/runner"
+	"github.com/an-lee/gh-wm/internal/config"
+	"github.com/an-lee/gh-wm/internal/doctor"
+	"github.com/an-lee/gh-wm/internal/editor"
+	"github.com/an-lee/gh-wm/internal/host"
+	"github.com/an-lee/gh-wm/internal/ops"
+	"github.com/an-lee/gh-wm/internal/runner"
 )
 
 // NonTTYHint is printed when stdout is not a terminal and the dashboard cannot run.
-const NonTTYHint = `ghr: stdout is not a terminal; open the dashboard on a TTY, or use "ghr status" and "ghr --help".`
+const NonTTYHint = `gh wm: stdout is not a terminal; open the dashboard on a TTY, or use "gh wm status" and "gh wm --help".`
 
 // DashboardOpts configures the interactive dashboard (paths for reload and doctor).
 type DashboardOpts struct {

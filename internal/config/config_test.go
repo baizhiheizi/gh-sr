@@ -71,12 +71,12 @@ func TestRunnerConfig_InstanceNames(t *testing.T) {
 }
 
 func TestLoad_resolveEnv(t *testing.T) {
-	t.Setenv("GHR_TEST_PAT", "secret-from-env")
+	t.Setenv("GH_WM_TEST_PAT", "secret-from-env")
 	dir := t.TempDir()
 	path := filepath.Join(dir, "runners.yml")
 	content := `
 github:
-  pat: env:GHR_TEST_PAT
+  pat: env:GH_WM_TEST_PAT
 hosts:
   h1:
     addr: a@b
@@ -934,7 +934,7 @@ func TestApplyEnvFile_missing(t *testing.T) {
 	}
 }
 
-func TestResolveConfigPath_ghrConfig(t *testing.T) {
+func TestResolveConfigPath_wmConfig(t *testing.T) {
 	dir := t.TempDir()
 	other := filepath.Join(dir, "other.yml")
 	if err := os.WriteFile(other, []byte("x"), 0o600); err != nil {
@@ -948,7 +948,7 @@ func TestResolveConfigPath_ghrConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 	if got != other {
-		t.Errorf("GHR_CONFIG: want %q got %q", other, got)
+		t.Errorf("GH_WM_CONFIG: want %q got %q", other, got)
 	}
 }
 
@@ -970,7 +970,7 @@ func TestResolveConfigPath_ignoresCwdLocal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := filepath.Join(home, ".ghr", "runners.yml")
+	want := filepath.Join(home, ".gh-wm", "runners.yml")
 	if got != want {
 		t.Errorf("cwd config/runners.yml must not be auto-used: want %q got %q", want, got)
 	}

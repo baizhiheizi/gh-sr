@@ -1,12 +1,12 @@
-baseURL = "https://an-lee.github.io/ghr/"
+baseURL = "https://an-lee.github.io/gh-wm/"
 languageCode = "en-us"
-title = "ghr"
+title = "GitHub Workflow Manager"
 theme = "book"
 
 [params]
   BookTheme = "auto"
   BookToC = true
   BookSearch = true
-  BookRepo = "https://github.com/an-lee/ghr"
+  BookRepo = "https://github.com/an-lee/gh-wm"
   BookEditPath = "edit/main/docs/content"
   BookSection = "/"
