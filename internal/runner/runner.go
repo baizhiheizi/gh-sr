@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"sync"
 
 	"github.com/an-lee/ghr/internal/autostart"
 	"github.com/an-lee/ghr/internal/config"
@@ -189,15 +190,25 @@ func expectedGitHubRunnerOS(mode, hostOS string) string {
 }
 
 func (m *Manager) EnrichWithGitHubStatus(statuses []RunnerStatus, cfg *config.Config) {
-	repoRunners := map[string][]GitHubRunner{}
+	repos := cfg.UniqueRepos()
+	repoRunners := make(map[string][]GitHubRunner, len(repos))
 
-	for _, repo := range cfg.UniqueRepos() {
-		runners, err := m.GitHub.ListRunners(repo)
-		if err != nil {
-			continue
-		}
-		repoRunners[repo] = runners
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	for _, repo := range repos {
+		wg.Add(1)
+		go func(repo string) {
+			defer wg.Done()
+			runners, err := m.GitHub.ListRunners(repo)
+			if err != nil {
+				return
+			}
+			mu.Lock()
+			repoRunners[repo] = runners
+			mu.Unlock()
+		}(repo)
 	}
+	wg.Wait()
 
 	for i := range statuses {
 		hcfg, ok := cfg.Hosts[statuses[i].Host]
