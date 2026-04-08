@@ -35,9 +35,14 @@ func dockerEnvFlag(name, value string) string {
 }
 
 // dockerStartCommand builds the docker run line for the official actions-runner image (config.sh + run.sh).
-func dockerStartCommand(cname, instanceName, regToken, repoURL, labels, sockMount, image string) string {
+// networkMode is "bridge" (default) or "host" (Linux docker-mode only; aligns job network with Docker host for tools like GitHub Agentic Workflows MCP gateway).
+func dockerStartCommand(cname, instanceName, regToken, repoURL, labels, sockMount, image, networkMode string) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "docker run -d --name %s --restart unless-stopped ", cname)
+	fmt.Fprintf(&b, "docker run -d --name %s ", cname)
+	if strings.TrimSpace(networkMode) == "host" {
+		b.WriteString("--network host ")
+	}
+	fmt.Fprintf(&b, "--restart unless-stopped ")
 	b.WriteString(dockerEnvFlag("ACTIONS_RUNNER_INPUT_URL", repoURL))
 	b.WriteByte(' ')
 	b.WriteString(dockerEnvFlag("ACTIONS_RUNNER_INPUT_TOKEN", regToken))
@@ -495,7 +500,7 @@ func (m *Manager) startDocker(h *host.Host, rc config.RunnerConfig, instanceName
 		sockFlags = dockerEngineSockFlagsWindows(h)
 	}
 
-	cmd := dockerStartCommand(cname, instanceName, regToken, repoURL, labels, sockFlags, RunnerDockerImage)
+	cmd := dockerStartCommand(cname, instanceName, regToken, repoURL, labels, sockFlags, RunnerDockerImage, rc.EffectiveDockerNetworkMode(h.OS))
 
 	out, err := dockerRun(h, cmd)
 	if err != nil {

@@ -84,6 +84,27 @@ func TestModesForHost(t *testing.T) {
 	}
 }
 
+func TestCheckAgenticWorkflowDockerHint(t *testing.T) {
+	t.Parallel()
+	var buf strings.Builder
+	var r Result
+	runners := []config.RunnerConfig{
+		{Name: "zebra", Host: "h1", Repo: "o/r", Mode: "docker"},
+		{Name: "alpha", Host: "h1", Repo: "o/r", Mode: "docker", DockerNetworkMode: "host"},
+	}
+	checkAgenticWorkflowDockerHint(&buf, "h1", "linux", runners, &r)
+	out := buf.String()
+	if r.Warn != 1 {
+		t.Fatalf("expected 1 warning, got %d", r.Warn)
+	}
+	if !strings.Contains(out, "zebra") || strings.Contains(out, "alpha") {
+		t.Fatalf("expected WARN only for bridge docker runner zebra, got:\n%s", out)
+	}
+	if !strings.Contains(out, "agentic workflows") {
+		t.Fatalf("expected gh-aw hint: %s", out)
+	}
+}
+
 func TestNativeInstallTargetsForHost(t *testing.T) {
 	t.Parallel()
 	runners := []config.RunnerConfig{

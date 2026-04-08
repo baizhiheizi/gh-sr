@@ -148,6 +148,7 @@ func Test_dockerStartCommand_officialImageShape(t *testing.T) {
 		"self-hosted,linux",
 		sockFlags,
 		"ghcr.io/actions/actions-runner:latest",
+		"bridge",
 	)
 	for _, sub := range []string{
 		"ACTIONS_RUNNER_INPUT_URL=",
@@ -177,6 +178,29 @@ func Test_dockerStartCommand_officialImageShape(t *testing.T) {
 	}
 	if strings.Contains(cmd, "RUNNER_TOKEN=") || strings.Contains(cmd, "RUNNER_URL=") {
 		t.Fatalf("should not use legacy RUNNER_* env names: %s", cmd)
+	}
+	if strings.Contains(cmd, "--network host") {
+		t.Fatalf("bridge mode must not set --network host: %s", cmd)
+	}
+}
+
+func Test_dockerStartCommand_hostNetwork(t *testing.T) {
+	t.Parallel()
+	sockFlags := "-v /var/run/docker.sock:/var/run/docker.sock --group-add 999 "
+	cmd := dockerStartCommand(
+		"gh-runner-app-1",
+		"app-1",
+		"REGTOKEN123",
+		"https://github.com/o/r",
+		"self-hosted,linux",
+		sockFlags,
+		"ghcr.io/actions/actions-runner:latest",
+		"host",
+	)
+	n := strings.Index(cmd, "--network host")
+	r := strings.Index(cmd, "--restart unless-stopped")
+	if n < 0 || r < 0 || n > r {
+		t.Fatalf("expected --network host before --restart: %s", cmd)
 	}
 }
 
@@ -264,6 +288,7 @@ func Test_dockerStartCommand_darwinIncludesSocketMount(t *testing.T) {
 		"self-hosted,linux",
 		sockFlags,
 		"ghcr.io/actions/actions-runner:latest",
+		"bridge",
 	)
 	if !strings.Contains(cmd, "/var/run/docker.sock:/var/run/docker.sock") {
 		t.Fatalf("darwin start command should bind Docker socket: %s", cmd)
@@ -285,6 +310,7 @@ func Test_dockerStartCommand_windowsIncludesSocketMount(t *testing.T) {
 		"self-hosted,linux",
 		sockFlags,
 		"ghcr.io/actions/actions-runner:latest",
+		"bridge",
 	)
 	if !strings.Contains(cmd, "/var/run/docker.sock:/var/run/docker.sock") {
 		t.Fatalf("windows start command should bind Docker socket: %s", cmd)
@@ -302,6 +328,7 @@ func Test_dockerStartCommand_windowsIncludesGroupAddWhenGIDKnown(t *testing.T) {
 		"self-hosted,linux",
 		sockFlags,
 		"ghcr.io/actions/actions-runner:latest",
+		"bridge",
 	)
 	if !strings.Contains(cmd, "--group-add 999") {
 		t.Fatalf("windows start command should include --group-add when GID is known: %s", cmd)

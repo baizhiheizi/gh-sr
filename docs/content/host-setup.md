@@ -84,6 +84,19 @@ docker exec gh-runner-<instance> test -S /var/run/docker.sock && echo ok || echo
 
 `ghr doctor` performs this check automatically for all running docker-mode containers on Linux and macOS hosts and reports a WARN if the socket is not accessible inside.
 
+## GitHub Agentic Workflows (gh-aw)
+
+Repositories using [GitHub Agentic Workflows](https://github.github.com/gh-aw/guides/self-hosted-runners/) start an MCP gateway in Docker with host networking. Health checks use `http://localhost:80` from the job environment, which only matches that gateway when the job runs on the **same network namespace** as the Docker engine (for example GitHub-hosted runners or a **native** self-hosted runner).
+
+| Host | Runner mode | Typical approach for gh-aw |
+|------|-------------|----------------------------|
+| **Linux** | **Native** | Works; job runs on the host. |
+| **Linux** | **Docker** (default bridge) | Health check often **fails** (job `localhost` is inside the runner container). Set **`docker_network_mode: host`** on that runner so the container uses the host network (weaker isolation; port **80** must be free on the host). Then **`ghr down`** / **`ghr up`** to recreate the container. |
+| **macOS** | **Docker** (Desktop, OrbStack, Colima) | **`docker_network_mode: host` is not supported** in ghr on non-Linux hosts (Docker Desktop does not provide portable host networking for this). Prefer **`mode: native`** for gh-aw, or use GitHub-hosted runners, or rely on a future **gh-aw** fix for health checks inside containers. |
+| **Windows** | **Docker** (Linux containers) | Same as macOS: **`docker_network_mode: host` is rejected** in config validation. Prefer **native** Windows runners only for Windows jobs; for **Linux** gh-aw jobs on a Windows host, use a **native Linux** machine, hosted runners, or wait for upstream gh-aw changes. |
+
+**`ghr doctor`** prints a **WARN** when any docker-mode runner on a host still uses the default bridge network, as a reminder for gh-aw.
+
 ## Windows (OpenSSH and Docker)
 
 - **Windows** — OpenSSH Server enabled; Docker Desktop if you want Linux container runners (`mode: docker`):

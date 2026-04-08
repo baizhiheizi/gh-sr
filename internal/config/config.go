@@ -34,12 +34,13 @@ type HostConfig struct {
 }
 
 type RunnerConfig struct {
-	Name   string   `yaml:"name"`
-	Repo   string   `yaml:"repo"`
-	Host   string   `yaml:"host"`
-	Count  int      `yaml:"count"`
-	Labels []string `yaml:"labels"`
-	Mode   string   `yaml:"mode"`
+	Name              string   `yaml:"name"`
+	Repo              string   `yaml:"repo"`
+	Host              string   `yaml:"host"`
+	Count             int      `yaml:"count"`
+	Labels            []string `yaml:"labels"`
+	Mode              string   `yaml:"mode"`
+	DockerNetworkMode string   `yaml:"docker_network_mode"` // bridge (default) or host; only for docker-mode Linux runners
 }
 
 func (rc *RunnerConfig) EffectiveMode(hostOS string) string {
@@ -50,6 +51,20 @@ func (rc *RunnerConfig) EffectiveMode(hostOS string) string {
 		return "docker"
 	}
 	return "native"
+}
+
+// EffectiveDockerNetworkMode returns bridge or host for docker run --network.
+// Only docker-mode runners may use host; everything else resolves to bridge.
+func (rc *RunnerConfig) EffectiveDockerNetworkMode(hostOS string) string {
+	if rc.EffectiveMode(hostOS) != "docker" {
+		return "bridge"
+	}
+	switch strings.ToLower(strings.TrimSpace(rc.DockerNetworkMode)) {
+	case "host":
+		return "host"
+	default:
+		return "bridge"
+	}
 }
 
 func (rc *RunnerConfig) InstanceNames() []string {
@@ -178,11 +193,24 @@ func (c *Config) Validate() error {
 		if r.Host == "" {
 			return fmt.Errorf("runner %q: host is required", r.Name)
 		}
-		if _, ok := c.Hosts[r.Host]; !ok {
+		hcfg, ok := c.Hosts[r.Host]
+		if !ok {
 			return fmt.Errorf("runner %q: host %q not found in hosts", r.Name, r.Host)
 		}
 		if r.Mode != "" && r.Mode != "docker" && r.Mode != "native" {
 			return fmt.Errorf("runner %q: mode must be 'docker' or 'native' (got %q)", r.Name, r.Mode)
+		}
+		netMode := strings.ToLower(strings.TrimSpace(r.DockerNetworkMode))
+		if netMode != "" && netMode != "bridge" && netMode != "host" {
+			return fmt.Errorf("runner %q: docker_network_mode must be 'bridge' or 'host' (got %q)", r.Name, r.DockerNetworkMode)
+		}
+		if netMode != "" {
+			if r.EffectiveMode(hcfg.OS) != "docker" {
+				return fmt.Errorf("runner %q: docker_network_mode applies only when mode is docker", r.Name)
+			}
+			if netMode == "host" && hcfg.OS != "linux" {
+				return fmt.Errorf("runner %q: docker_network_mode: host is only supported on Linux hosts (Docker Desktop does not support portable host networking for this; use mode: native for agentic workflows on macOS/Windows, or see documentation)", r.Name)
+			}
 		}
 	}
 

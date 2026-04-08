@@ -29,6 +29,27 @@ func TestRunnerConfig_EffectiveMode(t *testing.T) {
 	}
 }
 
+func TestRunnerConfig_EffectiveDockerNetworkMode(t *testing.T) {
+	t.Parallel()
+	rc := RunnerConfig{Mode: "docker", DockerNetworkMode: "host"}
+	if got := rc.EffectiveDockerNetworkMode("linux"); got != "host" {
+		t.Errorf("docker host: got %q want host", got)
+	}
+	rc.DockerNetworkMode = "bridge"
+	if got := rc.EffectiveDockerNetworkMode("linux"); got != "bridge" {
+		t.Errorf("explicit bridge: got %q want bridge", got)
+	}
+	rc.DockerNetworkMode = ""
+	if got := rc.EffectiveDockerNetworkMode("linux"); got != "bridge" {
+		t.Errorf("empty: got %q want bridge", got)
+	}
+	rc.Mode = "native"
+	rc.DockerNetworkMode = "host"
+	if got := rc.EffectiveDockerNetworkMode("linux"); got != "bridge" {
+		t.Errorf("native mode ignores host: got %q want bridge", got)
+	}
+}
+
 func TestRunnerConfig_InstanceNames(t *testing.T) {
 	t.Parallel()
 	rc := RunnerConfig{Name: "ci", Count: 0}
@@ -216,6 +237,39 @@ func TestValidate_errors(t *testing.T) {
 				Runners: []RunnerConfig{{Name: "r", Repo: "o/r", Host: "w"}},
 			},
 			frag: "windows_ps must be powershell or pwsh",
+		},
+		{
+			name: "docker_network_mode_invalid",
+			cfg: Config{
+				GitHub: GitHubConfig{PAT: "x"},
+				Hosts:  map[string]HostConfig{"h": {Addr: "a@b", OS: "linux", Arch: "amd64"}},
+				Runners: []RunnerConfig{{
+					Name: "r", Repo: "o/r", Host: "h", Mode: "docker", DockerNetworkMode: "overlay",
+				}},
+			},
+			frag: "docker_network_mode must be",
+		},
+		{
+			name: "docker_network_mode_host_on_darwin",
+			cfg: Config{
+				GitHub: GitHubConfig{PAT: "x"},
+				Hosts:  map[string]HostConfig{"m": {Addr: "a@b", OS: "darwin", Arch: "arm64"}},
+				Runners: []RunnerConfig{{
+					Name: "r", Repo: "o/r", Host: "m", Mode: "docker", DockerNetworkMode: "host",
+				}},
+			},
+			frag: "docker_network_mode: host is only supported on Linux",
+		},
+		{
+			name: "docker_network_mode_with_native",
+			cfg: Config{
+				GitHub: GitHubConfig{PAT: "x"},
+				Hosts:  map[string]HostConfig{"h": {Addr: "a@b", OS: "linux", Arch: "amd64"}},
+				Runners: []RunnerConfig{{
+					Name: "r", Repo: "o/r", Host: "h", Mode: "native", DockerNetworkMode: "bridge",
+				}},
+			},
+			frag: "docker_network_mode applies only when mode is docker",
 		},
 	}
 	for _, tc := range cases {

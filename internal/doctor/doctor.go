@@ -139,6 +139,7 @@ func Run(w io.Writer, cfgPath, envPath string, cfg *config.Config, cfgErr error,
 			printLine(w, sevOK, hostName, fmt.Sprintf("connected (%s)", addrSummary(hcfg.Addr)))
 			if modes["docker"] {
 				checkDocker(w, hostName, h, runners, &r)
+				checkAgenticWorkflowDockerHint(w, hostName, hcfg.OS, runners, &r)
 			}
 			if modes["native"] {
 				checkNative(w, hostName, h, &r)
@@ -209,6 +210,33 @@ func modesForHost(runners []config.RunnerConfig, hostName, hostOS string) map[st
 		m[rc.EffectiveMode(hostOS)] = true
 	}
 	return m
+}
+
+// checkAgenticWorkflowDockerHint warns when docker-mode runners use the default bridge network,
+// which breaks GitHub Agentic Workflows MCP gateway localhost health checks unless gh-aw is fixed upstream.
+func checkAgenticWorkflowDockerHint(w io.Writer, hostName string, hostOS string, runners []config.RunnerConfig, r *Result) {
+	var names []string
+	for _, rc := range runners {
+		if rc.Host != hostName {
+			continue
+		}
+		if rc.EffectiveMode(hostOS) != "docker" {
+			continue
+		}
+		if rc.EffectiveDockerNetworkMode(hostOS) != "bridge" {
+			continue
+		}
+		names = append(names, rc.Name)
+	}
+	if len(names) == 0 {
+		return
+	}
+	sort.Strings(names)
+	printLine(w, sevWarn, hostName, fmt.Sprintf(
+		"agentic workflows: bridge-network docker runners (%s) may fail MCP gateway health checks; on Linux set docker_network_mode: host or use mode: native — see host setup documentation",
+		strings.Join(names, ", "),
+	))
+	r.Warn++
 }
 
 func checkDocker(w io.Writer, hostName string, h *host.Host, runners []config.RunnerConfig, r *Result) {
