@@ -1,0 +1,37 @@
+{
+  "cli_version": "dev",
+  "checkpoint_id": "5b570f337f58",
+  "session_id": "c3e2e26e-2043-45b7-a4cc-11cc02df02fe",
+  "strategy": "manual-commit",
+  "created_at": "2026-04-08T10:57:20.960384742Z",
+  "branch": "main",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "internal/runner/docker.go"
+  ],
+  "agent": "Claude Code",
+  "model": "glm-5.1",
+  "turn_id": "cf7876f86207",
+  "token_usage": {
+    "input_tokens": 68620,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 794496,
+    "output_tokens": 10713,
+    "api_call_count": 15
+  },
+  "session_metrics": {
+    "turn_count": 1
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-04-08T10:57:20.671822099Z",
+    "agent_lines": 14,
+    "agent_removed": 4,
+    "human_added": 3,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 17,
+    "total_lines_changed": 21,
+    "agent_percentage": 85.71428571428571,
+    "metric_version": 2
+  }
+}
