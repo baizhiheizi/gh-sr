@@ -1,0 +1,6 @@
+When running linux native mode, it fails to up.
+
+➜  ghr up
+Starting enjoy-web-linux on r1-linux...
+Error: starting enjoy-web-linux-1: running "cd $HOME/.ghr/runners/enjoy-web-linux-1 && pid_file=\".runner_pid\" && if [ -f \"$pid_file\" ] && kill -0 \"$(cat \"$pid_file\")\" 2>/dev/null; then echo \"already running\"; exit 0; fi && nohup ./run.sh > runner.log 2>&1 & echo $! > \"$pid_file\" && echo \"started PID $!\"": Process exited with status 1
+stderr: bash: line 1: : No such file or directory
