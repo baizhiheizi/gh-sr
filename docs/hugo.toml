@@ -1,12 +1,12 @@
-baseURL = "https://an-lee.github.io/gh-wm/"
+baseURL = "https://an-lee.github.io/gh-sr/"
 languageCode = "en-us"
-title = "GitHub Workflow Manager"
+title = "Self-hosted runner manager for GitHub"
 theme = "book"
 
 [params]
   BookTheme = "auto"
   BookToC = true
   BookSearch = true
-  BookRepo = "https://github.com/an-lee/gh-wm"
+  BookRepo = "https://github.com/an-lee/gh-sr"
   BookEditPath = "edit/main/docs/content"
   BookSection = "/"

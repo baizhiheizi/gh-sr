@@ -1,21 +1,21 @@
-# GitHub Workflow Manager (`gh wm`)
+# Self-hosted runner manager for GitHub (`gh sr`)
 
-**GitHub Workflow Manager** is a [GitHub CLI](https://cli.github.com/) extension for managing self-hosted [GitHub Actions](https://docs.github.com/en/actions) runners across many machines from one place—usually your laptop. It connects over **SSH** (or runs **locally** with `addr: local`), installs and starts runners, and gives you a **terminal UI** for day-to-day operations.
+**Self-hosted runner manager for GitHub** is a [GitHub CLI](https://cli.github.com/) extension for managing self-hosted [GitHub Actions](https://docs.github.com/en/actions) runners across many machines from one place—usually your laptop. It connects over **SSH** (or runs **locally** with `addr: local`), installs and starts runners, and gives you a **terminal UI** for day-to-day operations.
 
-**Repository:** [github.com/an-lee/gh-wm](https://github.com/an-lee/gh-wm)  
-**Go module:** `github.com/an-lee/gh-wm` (used by `go install` and imports).
+**Repository:** [github.com/an-lee/gh-sr](https://github.com/an-lee/gh-sr)  
+**Go module:** `github.com/an-lee/gh-sr` (used by `go install` and imports).
 
 ## Features
 
 - One set of commands for **Linux**, **macOS**, and **Windows** runners (`setup`, `up`, `down`, `status`, `logs`, `service`, …).
 - **Declarative YAML** for hosts and runners; GitHub API auth via **`gh auth login`** only.
 - **Docker or native** runners per row, with sensible OS defaults and overrides.
-- **Multi-host** from a single config; optional **TUI** dashboard (`gh wm` or `gh wm dashboard` on a TTY).
+- **Multi-host** from a single config; optional **TUI** dashboard (`gh sr` or `gh sr dashboard` on a TTY).
 
 ## Dashboard
 
 ```
-  gh wm dashboard                              [r]efresh  [?]help  [q]uit
+  gh sr dashboard                              [r]efresh  [?]help  [q]uit
 
   INSTANCE      HOST         REPO                MODE    LOCAL    GITHUB
   ─────────────────────────────────────────────────────────────────────────
@@ -29,7 +29,7 @@
 ## Documentation
 
 **Full documentation (user guide, architecture, config reference):**  
-[https://an-lee.github.io/gh-wm/](https://an-lee.github.io/gh-wm/)
+[https://an-lee.github.io/gh-sr/](https://an-lee.github.io/gh-sr/)
 
 The Markdown sources live under [`docs/`](docs/) in this repo and are built with [Hugo](https://gohugo.io/) (Hugo Book theme).
 
@@ -38,40 +38,40 @@ The Markdown sources live under [`docs/`](docs/) in this repo and are built with
 Install as a GitHub CLI extension (recommended):
 
 ```bash
-gh extension install an-lee/gh-wm
+gh extension install an-lee/gh-sr
 ```
 
-Then use **`gh wm`** (for example `gh wm status`). Requires [GitHub CLI](https://cli.github.com/) (`gh`) and a recent `gh` version.
+Then use **`gh sr`** (for example `gh sr status`). Requires [GitHub CLI](https://cli.github.com/) (`gh`) and a recent `gh` version.
 
 From source with Go:
 
 ```bash
-go install github.com/an-lee/gh-wm/cmd/gh-wm@latest
+go install github.com/an-lee/gh-sr/cmd/gh-sr@latest
 ```
 
-The resulting binary is named `gh-wm`. To invoke it as **`gh wm`**, install the extension as above, or run `gh-wm` directly if it is on your `PATH`.
+The resulting binary is named `gh-sr`. To invoke it as **`gh sr`**, install the extension as above, or run `gh-sr` directly if it is on your `PATH`.
 
 Requires a recent **Go** toolchain when building from source (see `go.mod` / CI for the exact version).
 
 ## Quick start
 
 ```bash
-gh auth login           # required: gh wm uses the GitHub CLI token
-gh wm init --quick        # interactive: prompts for repo + host, auto-detects everything else
-gh wm up                  # auto-setup + start (all in one)
-gh wm status
+gh auth login           # required: gh sr uses the GitHub CLI token
+gh sr init --quick        # interactive: prompts for repo + host, auto-detects everything else
+gh sr up                  # auto-setup + start (all in one)
+gh sr status
 ```
 
 Or step by step:
 
 ```bash
-gh wm init                            # create ~/.gh-wm with template config
-gh wm add host my-vps root@10.0.0.1  # add a host (os/arch auto-detected)
-gh wm add runner ci --repo owner/repo --host my-vps  # add a runner (labels auto-generated)
-gh wm up                              # auto-setup + start
+gh sr init                            # create ~/.gh-sr with template config
+gh sr add host my-vps root@10.0.0.1  # add a host (os/arch auto-detected)
+gh sr add runner ci --repo owner/repo --host my-vps  # add a runner (labels auto-generated)
+gh sr up                              # auto-setup + start
 ```
 
-Then run `gh wm` on a terminal for the interactive dashboard, or use `gh wm status`, `gh wm logs <name>`, etc.
+Then run `gh sr` on a terminal for the interactive dashboard, or use `gh sr status`, `gh sr logs <name>`, etc.
 
 ## Development
 

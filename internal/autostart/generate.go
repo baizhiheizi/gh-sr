@@ -9,7 +9,7 @@ import (
 func SystemdUserUnit(instanceSanitized, absRunnerDir string) string {
 	execPath := absRunnerDir + "/run.sh"
 	return fmt.Sprintf(`[Unit]
-Description=GitHub Actions runner (gh wm) %s
+Description=GitHub Actions runner (gh sr) %s
 After=network-online.target
 Wants=network-online.target
 
@@ -29,7 +29,7 @@ WantedBy=default.target
 func SystemdSystemUnit(instanceSanitized, absRunnerDir, user, group string) string {
 	execPath := absRunnerDir + "/run.sh"
 	return fmt.Sprintf(`[Unit]
-Description=GitHub Actions runner (gh wm) %s
+Description=GitHub Actions runner (gh sr) %s
 After=network-online.target
 Wants=network-online.target
 
@@ -49,7 +49,7 @@ WantedBy=multi-user.target
 
 // LaunchdLabel returns the launchd job label for an instance.
 func LaunchdLabel(instanceSanitized string) string {
-	return "com.github.ghwm.runner." + instanceSanitized
+	return "com.github.ghsr.runner." + instanceSanitized
 }
 
 func xmlEscapePlist(s string) string {
@@ -87,5 +87,5 @@ func LaunchdPlist(instanceSanitized, absRunnerDir string) string {
 
 // WindowsTaskName returns the scheduled task name for an instance.
 func WindowsTaskName(instanceSanitized string) string {
-	return "ghwm-runner-" + instanceSanitized
+	return "ghsr-runner-" + instanceSanitized
 }

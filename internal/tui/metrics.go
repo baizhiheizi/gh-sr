@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/an-lee/gh-wm/internal/host"
+	"github.com/an-lee/gh-sr/internal/host"
 )
 
 // PrintHostMetricsTable prints a tabular summary of host resource usage to stdout.

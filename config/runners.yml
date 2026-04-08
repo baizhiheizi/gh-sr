@@ -1,6 +1,6 @@
-# GitHub Workflow Manager configuration
-# Edit this file, then run: gh wm up
-# Authentication: run `gh auth login` — gh wm uses the GitHub CLI token only.
+# Self-hosted runner manager configuration
+# Edit this file, then run: gh sr up
+# Authentication: run `gh auth login` — gh sr uses the GitHub CLI token only.
 
 hosts:
   # Example hosts:
@@ -20,7 +20,7 @@ hosts:
   #   os: linux
   #   arch: amd64
   #
-  # Local host (the machine running gh wm):
+  # Local host (the machine running gh sr):
   #
   # my-laptop:
   #   addr: local              # runs commands locally instead of over SSH

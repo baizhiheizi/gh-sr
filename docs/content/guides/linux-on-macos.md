@@ -5,13 +5,13 @@ weight: 50
 
 # Linux runners on a macOS host
 
-Set `mode: docker` on a runner that targets an `os: darwin` host to run the same Linux container image as on Linux. **gh wm** does **not** run the Linux Docker install script on macOS; install a Docker runtime yourself.
+Set `mode: docker` on a runner that targets an `os: darwin` host to run the same Linux container image as on Linux. **gh sr** does **not** run the Linux Docker install script on macOS; install a Docker runtime yourself.
 
 **Requirements on the Mac:**
 
-- Docker Desktop, OrbStack, or Colima installed, with `docker` working in the environment where **gh wm** runs commands (for example the same user over SSH).
+- Docker Desktop, OrbStack, or Colima installed, with `docker` working in the environment where **gh sr** runs commands (for example the same user over SSH).
 
-**Docker socket permissions:** macOS runtimes (Docker Desktop, OrbStack, Colima) expose a socket that is accessible to all processes — there is no host `docker` group GID issue. gh wm skips `--group-add` on macOS hosts. gh wm bind-mounts the Docker socket into the container at `/var/run/docker.sock` so jobs can reach the Docker daemon. If `docker_socket` is unset, gh wm picks `/var/run/docker.sock` when present, otherwise the `unix://` path from your default Docker context (typical for Colima), otherwise `~/.colima/default/docker.sock` on macOS. **Colima + virtiofs:** when the resolved path is under `~/.colima/…`, gh wm uses `/var/run/docker.sock` as the bind-mount source for the runner container (VM path), not the macOS host socket file, to avoid `docker run` failing with `operation not supported` ([Colima #997](https://github.com/abiosoft/colima/issues/997)); you can also use `colima start --mount-type sshfs` if needed. Set `docker_socket` only when the default Docker context does not match the engine you want (e.g. a named Colima profile):
+**Docker socket permissions:** macOS runtimes (Docker Desktop, OrbStack, Colima) expose a socket that is accessible to all processes — there is no host `docker` group GID issue. gh sr skips `--group-add` on macOS hosts. gh sr bind-mounts the Docker socket into the container at `/var/run/docker.sock` so jobs can reach the Docker daemon. If `docker_socket` is unset, gh sr picks `/var/run/docker.sock` when present, otherwise the `unix://` path from your default Docker context (typical for Colima), otherwise `~/.colima/default/docker.sock` on macOS. **Colima + virtiofs:** when the resolved path is under `~/.colima/…`, gh sr uses `/var/run/docker.sock` as the bind-mount source for the runner container (VM path), not the macOS host socket file, to avoid `docker run` failing with `operation not supported` ([Colima #997](https://github.com/abiosoft/colima/issues/997)); you can also use `colima start --mount-type sshfs` if needed. Set `docker_socket` only when the default Docker context does not match the engine you want (e.g. a named Colima profile):
 
 ```yaml
 hosts:

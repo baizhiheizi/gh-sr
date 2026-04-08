@@ -7,9 +7,9 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/an-lee/gh-wm/internal/autostart"
-	"github.com/an-lee/gh-wm/internal/config"
-	"github.com/an-lee/gh-wm/internal/host"
+	"github.com/an-lee/gh-sr/internal/autostart"
+	"github.com/an-lee/gh-sr/internal/config"
+	"github.com/an-lee/gh-sr/internal/host"
 )
 
 type Manager struct {

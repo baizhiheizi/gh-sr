@@ -23,7 +23,7 @@ Labels must match what you configure under `runners[].labels` in [Configuration]
 
 ## GitHub Agentic Workflows (gh-aw)
 
-gh wm has first-class support for [GitHub Agentic Workflows](https://github.github.com/gh-aw/). Use `profile: agentic` to configure a runner with all the prerequisites gh-aw needs:
+gh sr has first-class support for [GitHub Agentic Workflows](https://github.github.com/gh-aw/). Use `profile: agentic` to configure a runner with all the prerequisites gh-aw needs:
 
 ```yaml
 runners:
@@ -49,7 +49,7 @@ Triage this issue.
 
 ### Organization-level runners
 
-gh-aw supports `runs-on: { group: my-group, labels: [...] }` for targeting runner groups. Register an org-level runner with gh wm:
+gh-aw supports `runs-on: { group: my-group, labels: [...] }` for targeting runner groups. Register an org-level runner with gh sr:
 
 ```yaml
 runners:

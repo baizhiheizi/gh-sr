@@ -5,8 +5,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/an-lee/gh-wm/internal/config"
-	"github.com/an-lee/gh-wm/internal/runner"
+	"github.com/an-lee/gh-sr/internal/config"
+	"github.com/an-lee/gh-sr/internal/runner"
 )
 
 func PrintStatusTable(statuses []runner.RunnerStatus) {

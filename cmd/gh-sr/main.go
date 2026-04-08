@@ -11,12 +11,12 @@ import (
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 
-	"github.com/an-lee/gh-wm/internal/config"
-	"github.com/an-lee/gh-wm/internal/doctor"
-	"github.com/an-lee/gh-wm/internal/editor"
-	"github.com/an-lee/gh-wm/internal/ops"
-	"github.com/an-lee/gh-wm/internal/runner"
-	"github.com/an-lee/gh-wm/internal/tui"
+	"github.com/an-lee/gh-sr/internal/config"
+	"github.com/an-lee/gh-sr/internal/doctor"
+	"github.com/an-lee/gh-sr/internal/editor"
+	"github.com/an-lee/gh-sr/internal/ops"
+	"github.com/an-lee/gh-sr/internal/runner"
+	"github.com/an-lee/gh-sr/internal/tui"
 )
 
 var version = "dev"
@@ -30,8 +30,8 @@ var (
 // linuxSetupPrivilegesHelp is appended to root/setup/update Long text (non-interactive SSH + sudo behavior on Linux).
 const linuxSetupPrivilegesHelp = `
 
-Linux hosts: gh wm setup and update may run package installs and similar steps on the remote host. For a non-root
-SSH user, gh wm uses sudo when the sudo binary exists on the remote PATH; SSH is non-interactive, so passwordless
+Linux hosts: gh sr setup and update may run package installs and similar steps on the remote host. For a non-root
+SSH user, gh sr uses sudo when the sudo binary exists on the remote PATH; SSH is non-interactive, so passwordless
 sudo (or SSH as root) is usually required for those steps to succeed. For docker mode without Docker installed,
 install Docker yourself or ensure sudo works; for native mode, pre-install curl/tar and runner OS dependencies
 if you cannot use sudo. See the README section "Linux SSH user and privileges".`
@@ -39,36 +39,36 @@ if you cannot use sudo. See the README section "Linux SSH user and privileges".`
 // serviceLongHelp documents autostart behavior for the service subcommands.
 const serviceLongHelp = `
 
-Native runners do not survive host reboot until OS autostart is installed (gh wm service install). After install,
-gh wm up and gh wm down start and stop the same supervisor (systemd, launchd, or a Windows scheduled task).
+Native runners do not survive host reboot until OS autostart is installed (gh sr service install). After install,
+gh sr up and gh sr down start and stop the same supervisor (systemd, launchd, or a Windows scheduled task).
 
 Linux user units (default) require loginctl enable-linger <user> on many headless servers so systemd --user
 starts at boot without an interactive login. Use --system on Linux only for a system-wide unit in
 /etc/systemd/system (needs passwordless sudo or root SSH).
 
-Docker mode uses the container restart policy unless-stopped; gh wm service install skips docker runners.`
+Docker mode uses the container restart policy unless-stopped; gh sr service install skips docker runners.`
 
 func main() {
 	root := &cobra.Command{
-		Use:   "wm",
+		Use:   "sr",
 		Short: "Manage self-hosted GitHub Actions runners across multiple hosts",
-		Long: `GitHub Workflow Manager (gh wm) manages self-hosted GitHub Actions runners on any combination
+		Long: `Self-hosted runner manager for GitHub (gh sr) manages self-hosted GitHub Actions runners on any combination
 of Linux, macOS, and Windows hosts — all from your laptop over SSH.
 
-Define your hosts and runners in ~/.gh-wm/runners.yml (or set GH_WM_CONFIG / --config),
+Define your hosts and runners in ~/.gh-sr/runners.yml (or set GH_SR_CONFIG / --config),
 then use unified commands to setup, start, stop, and monitor everything.
 
-With no subcommand, gh wm opens the interactive dashboard on a terminal; use gh wm --help for all commands.` + linuxSetupPrivilegesHelp,
+With no subcommand, gh sr opens the interactive dashboard on a terminal; use gh sr --help for all commands.` + linuxSetupPrivilegesHelp,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) > 0 {
-				return fmt.Errorf("unknown argument %q — use a subcommand or gh wm --help", args[0])
+				return fmt.Errorf("unknown argument %q — use a subcommand or gh sr --help", args[0])
 			}
 			return runDashboard()
 		},
 	}
 
-	root.PersistentFlags().StringVarP(&cfgFile, "config", "c", "", "config file path (empty = auto; use \"gh wm config path\" to print the resolved file)")
+	root.PersistentFlags().StringVarP(&cfgFile, "config", "c", "", "config file path (empty = auto; use \"gh sr config path\" to print the resolved file)")
 	root.PersistentFlags().StringVar(&filterHost, "host", "", "filter by host name")
 	root.PersistentFlags().StringVar(&filterRepo, "repo", "", "filter by repo (owner/repo)")
 
@@ -147,13 +147,13 @@ func initCmd() *cobra.Command {
 	var quick bool
 	cmd := &cobra.Command{
 		Use:   "init",
-		Short: "Create ~/.gh-wm with template runners.yml and env file",
-		Long: `Create ~/.gh-wm directory with a template runners.yml and env file.
+		Short: "Create ~/.gh-sr with template runners.yml and env file",
+		Long: `Create ~/.gh-sr directory with a template runners.yml and env file.
 
 Use --quick for an interactive setup that asks for a repo and host address,
-auto-detects everything else, and writes a working config ready for gh wm up.`,
+auto-detects everything else, and writes a working config ready for gh sr up.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			dir, err := config.WmDir()
+			dir, err := config.SrDir()
 			if err != nil {
 				return err
 			}
@@ -185,13 +185,13 @@ auto-detects everything else, and writes a working config ready for gh wm up.`,
 				}
 				fmt.Printf("Wrote %s\n", runnersPath)
 			}
-			fmt.Println("\nNext: edit ~/.gh-wm/runners.yml, then run `gh wm doctor` and `gh wm status`.")
+			fmt.Println("\nNext: edit ~/.gh-sr/runners.yml, then run `gh sr doctor` and `gh sr status`.")
 			fmt.Println("Authentication: run `gh auth login`.")
-			fmt.Println("Tip: use `gh wm init --quick` for interactive setup.")
+			fmt.Println("Tip: use `gh sr init --quick` for interactive setup.")
 			return nil
 		},
 	}
-	cmd.Flags().BoolVar(&force, "force", false, "overwrite existing ~/.gh-wm/runners.yml")
+	cmd.Flags().BoolVar(&force, "force", false, "overwrite existing ~/.gh-sr/runners.yml")
 	cmd.Flags().BoolVar(&quick, "quick", false, "interactive setup: prompts for repo and host, auto-detects everything else")
 	return cmd
 }
@@ -213,7 +213,7 @@ func runQuickInit(runnersPath string, force bool) error {
 		return defaultVal
 	}
 
-	fmt.Println("=== gh wm quick setup ===")
+	fmt.Println("=== gh sr quick setup ===")
 	fmt.Println("This will create a working config. OS, arch, mode, and labels are all auto-detected.")
 	fmt.Println()
 
@@ -301,8 +301,8 @@ runners:
 	fmt.Println("  Labels: auto-generated from host os/arch")
 	fmt.Println()
 	fmt.Println("Next steps:")
-	fmt.Println("  gh wm doctor   # verify config, GitHub access, and host connectivity")
-	fmt.Println("  gh wm up       # setup + start runners (all in one)")
+	fmt.Println("  gh sr doctor   # verify config, GitHub access, and host connectivity")
+	fmt.Println("  gh sr up       # setup + start runners (all in one)")
 	fmt.Println()
 	fmt.Println("Authentication: run `gh auth login`.")
 
@@ -432,7 +432,7 @@ func doctorCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "doctor",
 		Short: "Check config, GitHub API access, and host prerequisites",
-		Long:  "Validates local paths, configuration, GitHub API access, and SSH targets (Docker or native tooling per runner mode). See README \"Host setup\" for steps gh wm cannot automate.",
+		Long:  "Validates local paths, configuration, GitHub API access, and SSH targets (Docker or native tooling per runner mode). See README \"Host setup\" for steps gh sr cannot automate.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := config.BootstrapEnv(); err != nil {
 				return err
@@ -517,7 +517,7 @@ func configEditCmd() *cobra.Command {
 				return err
 			}
 			if _, err := os.Stat(path); os.IsNotExist(err) {
-				return fmt.Errorf("config file does not exist: %s\nRun `gh wm init` to create it", path)
+				return fmt.Errorf("config file does not exist: %s\nRun `gh sr init` to create it", path)
 			}
 			if err := editor.Open(path); err != nil {
 				return err
@@ -534,9 +534,9 @@ func configEditCmd() *cobra.Command {
 func configEditEnvCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "edit-env",
-		Short: "Open ~/.gh-wm/env in $VISUAL or $EDITOR",
+		Short: "Open ~/.gh-sr/env in $VISUAL or $EDITOR",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			dir, err := config.WmDir()
+			dir, err := config.SrDir()
 			if err != nil {
 				return err
 			}
@@ -724,7 +724,7 @@ func updateCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "update [runner-names...]",
 		Short: "Update runner binary on hosts (remove + setup + start)",
-		Long:  "Removes each runner, runs setup again, then starts it. Re-runs the same remote install paths as gh wm setup." + linuxSetupPrivilegesHelp,
+		Long:  "Removes each runner, runs setup again, then starts it. Re-runs the same remote install paths as gh sr setup." + linuxSetupPrivilegesHelp,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, err := loadConfig()
 			if err != nil {
@@ -761,8 +761,8 @@ func serviceCmd() *cobra.Command {
 	install.Flags().BoolVar(&system, "system", false, "Linux only: install systemd unit under /etc/systemd/system (passwordless sudo or root SSH)")
 	uninstall := &cobra.Command{
 		Use:   "uninstall [runner-names...]",
-		Short: "Remove autostart definitions installed by gh wm",
-		Long:  "Stops and removes systemd units, LaunchAgents, or scheduled tasks created by gh wm service install." + serviceLongHelp,
+		Short: "Remove autostart definitions installed by gh sr",
+		Long:  "Stops and removes systemd units, LaunchAgents, or scheduled tasks created by gh sr service install." + serviceLongHelp,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, err := loadConfig()
 			if err != nil {
@@ -774,7 +774,7 @@ func serviceCmd() *cobra.Command {
 	status := &cobra.Command{
 		Use:   "status [runner-names...]",
 		Short: "Show autostart state per runner instance",
-		Long:  "Reports whether gh wm autostart is installed and the service state (native), or docker restart policy notes (docker)." + serviceLongHelp,
+		Long:  "Reports whether gh sr autostart is installed and the service state (native), or docker restart policy notes (docker)." + serviceLongHelp,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, err := loadConfig()
 			if err != nil {
@@ -817,7 +817,7 @@ func dashboardCmd() *cobra.Command {
 func versionCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "version",
-		Short: "Print gh wm version",
+		Short: "Print gh sr version",
 		Args:  cobra.NoArgs,
 		Run: func(cmd *cobra.Command, args []string) {
 			fmt.Println(version)

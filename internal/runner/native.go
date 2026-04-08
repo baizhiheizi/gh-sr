@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/an-lee/gh-wm/internal/autostart"
-	"github.com/an-lee/gh-wm/internal/config"
-	"github.com/an-lee/gh-wm/internal/host"
+	"github.com/an-lee/gh-sr/internal/autostart"
+	"github.com/an-lee/gh-sr/internal/config"
+	"github.com/an-lee/gh-sr/internal/host"
 )
 
 // NativeRunnerConfigPresent reports whether the remote instance directory contains
@@ -120,7 +120,7 @@ const staleRegistrationMsg = "runner registration has been deleted from the serv
 
 func windowsNativeStartScript(h *host.Host, instanceName string) string {
 	// Win32-OpenSSH tears down the session job on disconnect, killing Start-Process children.
-	// Win32_Process.Create starts outside that job so the listener survives after gh wm closes SSH.
+	// Win32_Process.Create starts outside that job so the listener survives after gh sr closes SSH.
 	parts := []string{
 		windowsRunnerDirAssignment(h, "runnerDir", instanceName) + "; ",
 		`$pidFile = Join-Path $runnerDir '.runner_pid'; `,
@@ -206,7 +206,7 @@ func (m *Manager) setupNative(h *host.Host, rc config.RunnerConfig) error {
 				return fmt.Errorf("installing runner on Windows: %w", err)
 			}
 		} else {
-			tarball := fmt.Sprintf("%s/ghwm-runner-%s-%s.tar.gz", h.TempDir(), name, version)
+			tarball := fmt.Sprintf("%s/ghsr-runner-%s-%s.tar.gz", h.TempDir(), name, version)
 			cmds := fmt.Sprintf(
 				"mkdir -p %s && cd %s && tarball=%s && rm -f \"$tarball\" && "+
 					"curl -fSL --retry 3 --retry-delay 2 -o \"$tarball\" '%s' && "+

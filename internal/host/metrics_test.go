@@ -6,7 +6,7 @@ import (
 
 func TestParseUnixMetrics_Linux(t *testing.T) {
 	raw := `some preamble noise
-::GH_WM_METRICS_START::
+::GH_SR_METRICS_START::
 cpu_idle=85.3
 mem_total_mib=16024
 mem_used_mib=12300
@@ -14,7 +14,7 @@ disk_total_gib=500
 disk_used_gib=123
 load=1.23 0.89 0.45
 uptime=3d 4h 12m
-::GH_WM_METRICS_END::
+::GH_SR_METRICS_END::
 trailing noise`
 
 	var m HostMetrics
@@ -37,7 +37,7 @@ trailing noise`
 }
 
 func TestParseUnixMetrics_MissingEnd(t *testing.T) {
-	raw := `::GH_WM_METRICS_START::
+	raw := `::GH_SR_METRICS_START::
 cpu_idle=50.0
 mem_total_mib=8192
 mem_used_mib=4096`

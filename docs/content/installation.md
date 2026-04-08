@@ -10,38 +10,38 @@ weight: 10
 Requires [GitHub CLI](https://cli.github.com/) (`gh`).
 
 ```bash
-gh extension install an-lee/gh-wm
+gh extension install an-lee/gh-sr
 ```
 
-After installing, you invoke the tool as **`gh wm`**. Create config with **`gh wm init`** (see below).
+After installing, you invoke the tool as **`gh sr`**. Create config with **`gh sr init`** (see below).
 
 ## Install with Go
 
 ```bash
-go install github.com/an-lee/gh-wm/cmd/gh-wm@latest
+go install github.com/an-lee/gh-sr/cmd/gh-sr@latest
 ```
 
-This installs a binary named **`gh-wm`** on your `PATH`. Use **`gh wm`** by installing the extension as above, or run `gh-wm` directly.
+This installs a binary named **`gh-sr`** on your `PATH`. Use **`gh sr`** by installing the extension as above, or run `gh-sr` directly.
 
 `go install` does not create config files. After installing, run:
 
 ```bash
-gh wm init
+gh sr init
 ```
 
-This creates `~/.gh-wm/runners.yml` from a template and `~/.gh-wm/env` (optional dotenv for other tooling). Then edit the config (or use `gh wm config edit`), run **`gh auth login`**, then `gh wm doctor`. gh wm uses the GitHub CLI token only; see [Authentication](authentication.md).
+This creates `~/.gh-sr/runners.yml` from a template and `~/.gh-sr/env` (optional dotenv for other tooling). Then edit the config (or use `gh sr config edit`), run **`gh auth login`**, then `gh sr doctor`. gh sr uses the GitHub CLI token only; see [Authentication](authentication.md).
 
 ## Build from source
 
-This repository is [an-lee/gh-wm](https://github.com/an-lee/gh-wm); the Go module path is `github.com/an-lee/gh-wm`.
+This repository is [an-lee/gh-sr](https://github.com/an-lee/gh-sr); the Go module path is `github.com/an-lee/gh-sr`.
 
 ```bash
-git clone https://github.com/an-lee/gh-wm.git
-cd gh-wm
-go build -o gh-wm ./cmd/gh-wm/
+git clone https://github.com/an-lee/gh-sr.git
+cd gh-sr
+go build -o gh-sr ./cmd/gh-sr/
 ```
 
-On Windows without GNU Make, use `go build` as above; Go writes `gh-wm.exe` when you pass `-o gh-wm.exe`.
+On Windows without GNU Make, use `go build` as above; Go writes `gh-sr.exe` when you pass `-o gh-sr.exe`.
 
 ## Makefile (optional)
 
@@ -49,14 +49,14 @@ Requires [GNU Make](https://www.gnu.org/software/make/) and the same Go version 
 
 | Target | Description |
 |--------|-------------|
-| `make` / `make build` | Build `./cmd/gh-wm` into `gh-wm` (or `gh-wm.exe` on Windows when `OS` is `Windows_NT`). |
+| `make` / `make build` | Build `./cmd/gh-sr` into `gh-sr` (or `gh-sr.exe` on Windows when `OS` is `Windows_NT`). |
 | `make test` | Run `go test ./... -race -count=1` (same as CI). |
 | `make vet` | Run `go vet ./...`. |
 | `make check` | Run `vet` then `test`. |
 | `make clean` | Remove the built binary in the repo root. |
 | `make install` | Install the binary to `$(PREFIX)/bin` (default `PREFIX=/usr/local`). Set `DESTDIR` for staged installs (packaging). |
 
-To use the checked-in example at `config/runners.yml` while hacking on this repo, point the CLI at it explicitly, for example `export GH_WM_CONFIG="$PWD/config/runners.yml"` or `gh wm -c config/runners.yml status`.
+To use the checked-in example at `config/runners.yml` while hacking on this repo, point the CLI at it explicitly, for example `export GH_SR_CONFIG="$PWD/config/runners.yml"` or `gh sr -c config/runners.yml status`.
 
 ## Prerequisites
 
@@ -68,6 +68,6 @@ To use the checked-in example at `config/runners.yml` while hacking on this repo
 **On runner hosts:**
 
 - **Linux** — Docker installed (for `mode: docker`) or just a shell (for `mode: native`)
-- **macOS** — `curl` available (pre-installed). For `mode: docker`, install Docker Desktop, OrbStack, or Colima and ensure `docker` works in the same environment as your SSH session (gh wm does not auto-install Docker on macOS).
+- **macOS** — `curl` available (pre-installed). For `mode: docker`, install Docker Desktop, OrbStack, or Colima and ensure `docker` works in the same environment as your SSH session (gh sr does not auto-install Docker on macOS).
 
 For Linux `sudo`/SSH user setup, OpenSSH on Windows, and per-OS host preparation, see [Host setup](host-setup.md).

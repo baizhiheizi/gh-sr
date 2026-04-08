@@ -1,13 +1,13 @@
-# gh-wm — GitHub Workflow Manager (GitHub CLI extension)
-# https://github.com/an-lee/gh-wm
+# gh-sr — self-hosted GitHub Actions runners (GitHub CLI extension)
+# https://github.com/an-lee/gh-sr
 
 ifeq ($(OS),Windows_NT)
-BINARY := gh-wm.exe
+BINARY := gh-sr.exe
 else
-BINARY := gh-wm
+BINARY := gh-sr
 endif
 
-CMD_DIR := ./cmd/gh-wm
+CMD_DIR := ./cmd/gh-sr
 
 GIT_TAG := $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 

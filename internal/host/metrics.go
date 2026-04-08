@@ -86,7 +86,7 @@ func unixMetricsScript(hostOS string) string {
 	// Uptime: uptime -s or uptime.
 	if hostOS == "darwin" {
 		return `
-echo "::GH_WM_METRICS_START::"
+echo "::GH_SR_METRICS_START::"
 # CPU idle from top (macOS)
 cpu_idle=$(top -l 2 -n 0 -s 1 2>/dev/null | awk '/^CPU usage:/{idle=$7} END{gsub(/%/,"",idle); print idle}')
 echo "cpu_idle=${cpu_idle}"
@@ -126,13 +126,13 @@ if [ "$days" -gt 0 ]; then
 else
   echo "uptime=${hours}h ${mins}m"
 fi
-echo "::GH_WM_METRICS_END::"
+echo "::GH_SR_METRICS_END::"
 `
 	}
 
 	// Linux
 	return `
-echo "::GH_WM_METRICS_START::"
+echo "::GH_SR_METRICS_START::"
 # CPU: two samples of /proc/stat 1s apart
 read_cpu() { awk '/^cpu /{print $2+$3+$4,$5,$2+$3+$4+$5+$6+$7+$8}' /proc/stat; }
 sample1=$(read_cpu)
@@ -181,7 +181,7 @@ if [ "$days" -gt 0 ]; then
 else
   echo "uptime=${hours}h ${mins}m"
 fi
-echo "::GH_WM_METRICS_END::"
+echo "::GH_SR_METRICS_END::"
 `
 }
 
@@ -190,11 +190,11 @@ func parseUnixMetrics(raw string, m *HostMetrics) error {
 	inBlock := false
 	for _, line := range strings.Split(raw, "\n") {
 		line = strings.TrimSpace(line)
-		if line == "::GH_WM_METRICS_START::" {
+		if line == "::GH_SR_METRICS_START::" {
 			inBlock = true
 			continue
 		}
-		if line == "::GH_WM_METRICS_END::" {
+		if line == "::GH_SR_METRICS_END::" {
 			break
 		}
 		if !inBlock {
@@ -243,7 +243,7 @@ func (h *Host) collectMetricsWindows(m *HostMetrics) error {
 
 func windowsMetricsScript() string {
 	return `
-Write-Output "::GH_WM_METRICS_START::"
+Write-Output "::GH_SR_METRICS_START::"
 # CPU
 $cpu = (Get-CimInstance Win32_Processor | Measure-Object -Property LoadPercentage -Average).Average
 $cpuIdle = 100 - $cpu
@@ -271,6 +271,6 @@ $boot = (Get-CimInstance Win32_OperatingSystem).LastBootUpTime
 $span = (Get-Date) - $boot
 $d = $span.Days; $h = $span.Hours; $min = $span.Minutes
 if ($d -gt 0) { Write-Output "uptime=${d}d ${h}h ${min}m" } else { Write-Output "uptime=${h}h ${min}m" }
-Write-Output "::GH_WM_METRICS_END::"
+Write-Output "::GH_SR_METRICS_END::"
 `
 }

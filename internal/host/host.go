@@ -6,7 +6,7 @@ import (
 	"strings"
 	"unicode/utf16"
 
-	"github.com/an-lee/gh-wm/internal/config"
+	"github.com/an-lee/gh-sr/internal/config"
 )
 
 type Host struct {
@@ -101,14 +101,14 @@ func (h *Host) wrapCommand(cmd string) string {
 
 func (h *Host) RunnerBaseDir() string {
 	if h.OS == "windows" {
-		return `$env:USERPROFILE\.gh-wm\runners`
+		return `$env:USERPROFILE\.gh-sr\runners`
 	}
-	return "$HOME/.gh-wm/runners"
+	return "$HOME/.gh-sr/runners"
 }
 
 func (h *Host) RunnerBaseDirPS() string {
 	if h.OS == "windows" {
-		return `Join-Path $env:USERPROFILE '.gh-wm\runners'`
+		return `Join-Path $env:USERPROFILE '.gh-sr\runners'`
 	}
 	return h.RunnerBaseDir()
 }

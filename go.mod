@@ -1,4 +1,4 @@
-module github.com/an-lee/gh-wm
+module github.com/an-lee/gh-sr
 
 go 1.25.0
 

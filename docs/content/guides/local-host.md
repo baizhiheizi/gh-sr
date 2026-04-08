@@ -5,7 +5,7 @@ weight: 30
 
 # Local host runners
 
-You can set up runners on the same machine where **gh wm** runs, without SSH. Set `addr: local` on a host and **gh wm** will execute commands directly via `os/exec` instead of dialing an SSH connection.
+You can set up runners on the same machine where **gh sr** runs, without SSH. Set `addr: local` on a host and **gh sr** will execute commands directly via `os/exec` instead of dialing an SSH connection.
 
 When `addr` is `local`, the `os` and `arch` fields are **auto-detected** from the Go runtime (`runtime.GOOS` / `runtime.GOARCH`) and can be omitted. You can still set them explicitly to override.
 

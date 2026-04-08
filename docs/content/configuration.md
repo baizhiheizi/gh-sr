@@ -9,30 +9,30 @@ weight: 20
 
 When you do **not** pass `--config` / `-c`, the config file is chosen in this order:
 
-1. **`GH_WM_CONFIG`** — path to a YAML file (absolute or relative to the current working directory).
-2. **`~/.gh-wm/runners.yml`** — default after `gh wm init`.
+1. **`GH_SR_CONFIG`** — path to a YAML file (absolute or relative to the current working directory).
+2. **`~/.gh-sr/runners.yml`** — default after `gh sr init`.
 
-There is no automatic discovery of `./config/runners.yml` in the current directory; use `GH_WM_CONFIG` or `-c` if your file lives elsewhere.
+There is no automatic discovery of `./config/runners.yml` in the current directory; use `GH_SR_CONFIG` or `-c` if your file lives elsewhere.
 
-If you pass `-c /path/to/runners.yml`, that path is always used (and `GH_WM_CONFIG` is ignored).
+If you pass `-c /path/to/runners.yml`, that path is always used (and `GH_SR_CONFIG` is ignored).
 
-Run `gh wm config path` to see which config file and `~/.gh-wm/env` path apply in your environment.
+Run `gh sr config path` to see which config file and `~/.gh-sr/env` path apply in your environment.
 
 ## Authentication
 
-**gh wm** uses the [GitHub CLI](https://cli.github.com/) only: run **`gh auth login`** on the machine where you run gh wm. Do not use `github.pat` in YAML or `GITHUB_PAT` / `GITHUB_TOKEN` for gh wm (legacy `github.pat` is rejected at load time).
+**gh sr** uses the [GitHub CLI](https://cli.github.com/) only: run **`gh auth login`** on the machine where you run gh sr. Do not use `github.pat` in YAML or `GITHUB_PAT` / `GITHUB_TOKEN` for gh sr (legacy `github.pat` is rejected at load time).
 
 See [Authentication](authentication.md) for permissions and troubleshooting.
 
-## Secrets (`~/.gh-wm/env`)
+## Secrets (`~/.gh-sr/env`)
 
-Before the YAML file is loaded, **gh wm** applies environment variables from **`~/.gh-wm/env`** if that file exists (dotenv-style: `KEY=value`, optional `export `, `#` comments). This is optional and intended for other tooling if needed — not for GitHub API tokens used by gh wm. Create the directory and file with `gh wm init`, or run `gh wm config edit-env`.
+Before the YAML file is loaded, **gh sr** applies environment variables from **`~/.gh-sr/env`** if that file exists (dotenv-style: `KEY=value`, optional `export `, `#` comments). This is optional and intended for other tooling if needed — not for GitHub API tokens used by gh sr. Create the directory and file with `gh sr init`, or run `gh sr config edit-env`.
 
-Keep `~/.gh-wm` permissions tight (`chmod 700 ~/.gh-wm`, `chmod 600 ~/.gh-wm/env` if you create files by hand).
+Keep `~/.gh-sr` permissions tight (`chmod 700 ~/.gh-sr`, `chmod 600 ~/.gh-sr/env` if you create files by hand).
 
 ## Example `runners.yml`
 
-Edit `~/.gh-wm/runners.yml` (after `gh wm init`), or set `GH_WM_CONFIG` / `-c` to another YAML file. You can open the resolved file in `$VISUAL` or `$EDITOR` with `gh wm config edit`.
+Edit `~/.gh-sr/runners.yml` (after `gh sr init`), or set `GH_SR_CONFIG` / `-c` to another YAML file. You can open the resolved file in `$VISUAL` or `$EDITOR` with `gh sr config edit`.
 
 ```yaml
 hosts:
@@ -102,10 +102,10 @@ runners:
 
 | Field | Description |
 |---|---|
-| `hosts.<name>.addr` | SSH target (`user@host` or `user@ip`), or `local` to run on the machine where gh wm is running. Remote commands run as that user; on Linux, privilege expectations for `setup` / `update` follow [Linux SSH user and privileges](host-setup.md#linux-ssh-user-and-privileges). |
+| `hosts.<name>.addr` | SSH target (`user@host` or `user@ip`), or `local` to run on the machine where gh sr is running. Remote commands run as that user; on Linux, privilege expectations for `setup` / `update` follow [Linux SSH user and privileges](host-setup.md#linux-ssh-user-and-privileges). |
 | `hosts.<name>.os` | `linux`, `darwin`, or `windows`. Auto-detected when `addr` is `local`. |
 | `hosts.<name>.arch` | `amd64` or `arm64`. Auto-detected when `addr` is `local`. |
-| `hosts.<name>.windows_ps` | Optional; **Windows hosts only.** Which executable runs remote PowerShell payloads: `powershell` (default, `powershell.exe`) or `pwsh` (`pwsh.exe`). gh wm uses `-EncodedCommand` so the user’s SSH default shell (cmd.exe or pwsh) does not break nested quoting. |
+| `hosts.<name>.windows_ps` | Optional; **Windows hosts only.** Which executable runs remote PowerShell payloads: `powershell` (default, `powershell.exe`) or `pwsh` (`pwsh.exe`). gh sr uses `-EncodedCommand` so the user’s SSH default shell (cmd.exe or pwsh) does not break nested quoting. |
 | `runners[].name` | Base name (instances become `name-1`, `name-2`, ...) |
 | `runners[].repo` | GitHub `owner/repo`. Required unless `org` is set. |
 | `runners[].org` | GitHub organization name. Use instead of `repo` for org-level runners. |
@@ -119,4 +119,4 @@ runners:
 | `runners[].docker_network_mode` | Optional. `bridge` (default) or `host`. Only for **`mode: docker`** runners. `host` runs the actions-runner container with Docker **`--network host`** so jobs share the engine host network (needed for [GitHub Agentic Workflows](https://github.github.com/gh-aw/guides/self-hosted-runners/) MCP gateway health checks). On **Linux** hosts, the container joins the host's network namespace directly. On **macOS** and **Windows** (Docker Desktop), it joins the Linux VM's network namespace — sufficient for gh-aw since the MCP gateway runs in the same VM. Weaker isolation; port **80** must be free on the host (Linux) or inside the VM (macOS/Windows). See [Host setup — GitHub Agentic Workflows](host-setup.md#github-agentic-workflows-gh-aw). |
 | `runners[].docker_cap_add` | Optional list of Linux capability names for **`docker run --cap-add`**. Only for **`mode: docker`** runners. Use **`[NET_ADMIN]`** when workflows run the [Agent Workflow Firewall](https://github.com/github/gh-aw-firewall) (`awf`) so jobs can configure iptables (e.g. `DOCKER-USER`); combine with **`docker_network_mode: host`** for gh-aw. Defaults to none (stronger isolation). See [Host setup — GitHub Agentic Workflows](host-setup.md#github-agentic-workflows-gh-aw). |
 
-**Unique runner names per repository:** GitHub registers each self-hosted runner by its **instance** name (`name-1`, `name-2`, …). That name must be **unique within a given `owner/repo`**. If two machines use the same base `name` and `count: 1`, both try to register as `name-1` and only one registration remains active. Prefer distinct base names (for example `myapp-win` vs `myapp-linux`) so every machine has its own GitHub runner record and `gh wm status` matches the right row.
+**Unique runner names per repository:** GitHub registers each self-hosted runner by its **instance** name (`name-1`, `name-2`, …). That name must be **unique within a given `owner/repo`**. If two machines use the same base `name` and `count: 1`, both try to register as `name-1` and only one registration remains active. Prefer distinct base names (for example `myapp-win` vs `myapp-linux`) so every machine has its own GitHub runner record and `gh sr status` matches the right row.

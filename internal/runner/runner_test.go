@@ -6,7 +6,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/an-lee/gh-wm/internal/config"
+	"github.com/an-lee/gh-sr/internal/config"
 )
 
 func TestManager_EnrichWithGitHubStatus(t *testing.T) {

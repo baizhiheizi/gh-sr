@@ -71,12 +71,12 @@ func TestRunnerConfig_InstanceNames(t *testing.T) {
 }
 
 func TestLoad_rejectsGitHubPat(t *testing.T) {
-	t.Setenv("GH_WM_TEST_PAT", "secret-from-env")
+	t.Setenv("GH_SR_TEST_PAT", "secret-from-env")
 	dir := t.TempDir()
 	path := filepath.Join(dir, "runners.yml")
 	content := `
 github:
-  pat: env:GH_WM_TEST_PAT
+  pat: env:GH_SR_TEST_PAT
 hosts:
   h1:
     addr: a@b
@@ -951,7 +951,7 @@ func TestResolveConfigPath_wmConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 	if got != other {
-		t.Errorf("GH_WM_CONFIG: want %q got %q", other, got)
+		t.Errorf("GH_SR_CONFIG: want %q got %q", other, got)
 	}
 }
 
@@ -973,7 +973,7 @@ func TestResolveConfigPath_ignoresCwdLocal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := filepath.Join(home, ".gh-wm", "runners.yml")
+	want := filepath.Join(home, ".gh-sr", "runners.yml")
 	if got != want {
 		t.Errorf("cwd config/runners.yml must not be auto-used: want %q got %q", want, got)
 	}

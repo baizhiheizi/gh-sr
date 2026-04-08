@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/an-lee/gh-wm/internal/host"
+	"github.com/an-lee/gh-sr/internal/host"
 )
 
 // IsServiceActive reports whether the autostart supervisor considers the job running.
