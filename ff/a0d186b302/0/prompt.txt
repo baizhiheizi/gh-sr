@@ -1,0 +1,1 @@
+The repo has been renamed to `gh-wm`, review the codebase and documents. Update the `ghr` related code & doc, no need to compatible.
