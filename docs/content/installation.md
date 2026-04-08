@@ -45,7 +45,7 @@ On Windows without GNU Make, use `go build` as above; Go writes `gh-sr.exe` when
 
 ## Makefile (optional)
 
-Requires [GNU Make](https://www.gnu.org/software/make/) and the same Go version as in `go.mod` / CI (see [Prerequisites](#prerequisites)). Works on Linux and macOS, and on Windows in a Unix-like environment (for example WSL2 or MSYS2) where `make`, `rm`, and a POSIX shell are available. The `install` target uses the `install` utility from coreutils and is intended for Unix-like systems only, not plain cmd.exe or PowerShell.
+Requires [GNU Make](https://www.gnu.org/software/make/) and the same Go version as in `go.mod` / CI (see [Prerequisites](#prerequisites)). Works on Linux and macOS, and on Windows in a Unix-like environment (for example WSL2 or MSYS2) where `make`, `rm`, and a POSIX shell are available. The `install` target requires [GitHub CLI](https://cli.github.com/) (`gh`) and runs `gh extension install` so **`gh sr`** uses the binary built in the repository root (see `gh extension install --help`).
 
 | Target | Description |
 |--------|-------------|
@@ -54,7 +54,8 @@ Requires [GNU Make](https://www.gnu.org/software/make/) and the same Go version 
 | `make vet` | Run `go vet ./...`. |
 | `make check` | Run `vet` then `test`. |
 | `make clean` | Remove the built binary in the repo root. |
-| `make install` | Install the binary to `$(PREFIX)/bin` (default `PREFIX=/usr/local`). Set `DESTDIR` for staged installs (packaging). |
+| `make install` | Build, then `gh extension install --force .` (register this repo as the `gh sr` extension). |
+| `make uninstall` | `gh extension remove gh-sr`. |
 
 To use the checked-in example at `config/runners.yml` while hacking on this repo, point the CLI at it explicitly, for example `export GH_SR_CONFIG="$PWD/config/runners.yml"` or `gh sr -c config/runners.yml status`.
 

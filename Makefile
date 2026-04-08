@@ -1,5 +1,8 @@
 # gh-sr — self-hosted GitHub Actions runners (GitHub CLI extension)
 # https://github.com/an-lee/gh-sr
+#
+# Development: `make install` builds the binary and runs `gh extension install`
+# so `gh sr` uses the executable in this repository (see `gh extension install --help`).
 
 ifeq ($(OS),Windows_NT)
 BINARY := gh-sr.exe
@@ -11,9 +14,7 @@ CMD_DIR := ./cmd/gh-sr
 
 GIT_TAG := $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 
-PREFIX ?= /usr/local
-
-.PHONY: all build test vet check clean install
+.PHONY: all build test vet check clean install uninstall
 
 all: build
 
@@ -31,7 +32,10 @@ check: vet test
 clean:
 	rm -f $(BINARY)
 
-# Unix-like systems only (requires coreutils install); not for plain cmd.exe / PowerShell.
+# Build, then register this checkout with GitHub CLI (symlink under ~/.local/share/gh/extensions).
+# Requires `gh` on PATH. Re-run after cloning; rebuilds pick up without reinstalling.
 install: build
-	install -d "$(DESTDIR)$(PREFIX)/bin"
-	install -m 755 "$(BINARY)" "$(DESTDIR)$(PREFIX)/bin/$(BINARY)"
+	gh extension install --force .
+
+uninstall:
+	gh extension remove gh-sr
