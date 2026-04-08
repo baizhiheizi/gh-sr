@@ -2,6 +2,7 @@ package runner
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -173,6 +174,66 @@ func Test_windowsDockerCommand_commandShape(t *testing.T) {
 	}
 	if !strings.Contains(script, "docker pull ghcr.io/actions/actions-runner:latest") {
 		t.Fatalf("script should include docker command, got %q", script)
+	}
+}
+
+func Test_darwinDockerSockFlags_defaultSocket(t *testing.T) {
+	t.Parallel()
+	got := darwinDockerSockFlags("")
+	if !strings.Contains(got, "-v /var/run/docker.sock:/var/run/docker.sock") {
+		t.Fatalf("expected default socket mount, got %q", got)
+	}
+	if strings.Contains(got, "--group-add") {
+		t.Fatalf("macOS mount must not include --group-add, got %q", got)
+	}
+}
+
+func Test_darwinDockerSockFlags_customSocket(t *testing.T) {
+	t.Parallel()
+	got := darwinDockerSockFlags("/Users/me/.colima/default/docker.sock")
+	if !strings.Contains(got, "-v /Users/me/.colima/default/docker.sock:/var/run/docker.sock") {
+		t.Fatalf("expected custom socket mount, got %q", got)
+	}
+	if strings.Contains(got, "--group-add") {
+		t.Fatalf("macOS mount must not include --group-add, got %q", got)
+	}
+}
+
+func Test_dockerStartCommand_darwinIncludesSocketMount(t *testing.T) {
+	t.Parallel()
+	sockFlags := darwinDockerSockFlags("")
+	cmd := dockerStartCommand(
+		"gh-runner-app-1",
+		"app-1",
+		"REGTOKEN",
+		"https://github.com/o/r",
+		"self-hosted,linux",
+		sockFlags,
+		"ghcr.io/actions/actions-runner:latest",
+	)
+	if !strings.Contains(cmd, "/var/run/docker.sock:/var/run/docker.sock") {
+		t.Fatalf("darwin start command should bind Docker socket: %s", cmd)
+	}
+	if strings.Contains(cmd, "--group-add") {
+		t.Fatalf("darwin start command must not include --group-add: %s", cmd)
+	}
+}
+
+func Test_dockerStartCommand_windowsIncludesSocketMount(t *testing.T) {
+	t.Parallel()
+	// Simulate the sockFlags built for windows in startDocker.
+	sockFlags := fmt.Sprintf("-v /var/run/docker.sock:/var/run/docker.sock ")
+	cmd := dockerStartCommand(
+		"gh-runner-app-1",
+		"app-1",
+		"REGTOKEN",
+		"https://github.com/o/r",
+		"self-hosted,linux",
+		sockFlags,
+		"ghcr.io/actions/actions-runner:latest",
+	)
+	if !strings.Contains(cmd, "/var/run/docker.sock:/var/run/docker.sock") {
+		t.Fatalf("windows start command should bind Docker socket: %s", cmd)
 	}
 }
 

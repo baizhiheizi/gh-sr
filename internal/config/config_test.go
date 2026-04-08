@@ -232,6 +232,39 @@ func TestValidate_errors(t *testing.T) {
 	}
 }
 
+func TestValidate_dockerSocketOnDarwin(t *testing.T) {
+	t.Parallel()
+	cfg := Config{
+		GitHub: GitHubConfig{PAT: "x"},
+		Hosts: map[string]HostConfig{
+			"mac": {Addr: "user@mac", OS: "darwin", Arch: "arm64", DockerSocket: "/Users/me/.colima/default/docker.sock"},
+		},
+		Runners: []RunnerConfig{{Name: "r", Repo: "o/r", Host: "mac", Mode: "docker"}},
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("docker_socket on darwin should be valid, got: %v", err)
+	}
+}
+
+func TestValidate_dockerSocketOnWindows_rejected(t *testing.T) {
+	t.Parallel()
+	cfg := Config{
+		GitHub: GitHubConfig{PAT: "x"},
+		Hosts: map[string]HostConfig{
+			"win": {Addr: "user@win", OS: "windows", Arch: "amd64", DockerSocket: "/var/run/docker.sock"},
+		},
+		Runners: []RunnerConfig{{Name: "r", Repo: "o/r", Host: "win", Mode: "docker"}},
+	}
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("docker_socket on windows should be rejected")
+	}
+	if !strings.Contains(err.Error(), "docker_socket is only supported") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+
 func TestValidate_dockerOnWindowsHost(t *testing.T) {
 	t.Parallel()
 	cfg := Config{

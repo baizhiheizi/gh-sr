@@ -247,14 +247,14 @@ func checkDocker(w io.Writer, hostName string, h *host.Host, hcfg config.HostCon
 	}
 	printLine(w, sevOK, hostName, fmt.Sprintf("docker: server version %s (image %s)", out, runner.RunnerDockerImage))
 
-	if h.OS == "linux" {
-		checkLinuxDockerSocket(w, hostName, h, hcfg, runners, r)
+	if h.OS == "linux" || h.OS == "darwin" {
+		checkUnixDockerSocket(w, hostName, h, hcfg, runners, r)
 	}
 }
 
-// checkLinuxDockerSocket verifies the Docker socket path on Linux hosts and, if any docker-mode
+// checkUnixDockerSocket verifies the Docker socket path on Linux/macOS hosts and, if any docker-mode
 // runner container is already running, checks that the socket is accessible inside it.
-func checkLinuxDockerSocket(w io.Writer, hostName string, h *host.Host, hcfg config.HostConfig, runners []config.RunnerConfig, r *Result) {
+func checkUnixDockerSocket(w io.Writer, hostName string, h *host.Host, hcfg config.HostConfig, runners []config.RunnerConfig, r *Result) {
 	socketPath := hcfg.DockerSocket
 	if socketPath == "" {
 		socketPath = runner.DefaultDockerSocket
@@ -263,8 +263,12 @@ func checkLinuxDockerSocket(w io.Writer, hostName string, h *host.Host, hcfg con
 	// Verify the socket exists on the host.
 	out, err := h.Run(fmt.Sprintf("test -S %s && echo ok || echo missing", socketPath))
 	if err != nil || strings.TrimSpace(out) != "ok" {
+		hint := "ensure Docker daemon is running (rootless Docker? set docker_socket in config)"
+		if h.OS == "darwin" {
+			hint = "ensure Docker Desktop/OrbStack/Colima is running (non-default socket path? set docker_socket in config)"
+		}
 		printLine(w, sevFail, hostName, fmt.Sprintf(
-			"docker: socket not found at %s; ensure Docker daemon is running (rootless Docker? set docker_socket in config)", socketPath,
+			"docker: socket not found at %s; %s", socketPath, hint,
 		))
 		r.Fail++
 		return

@@ -59,7 +59,7 @@ func dockerStartCommand(cname, instanceName, regToken, repoURL, labels, sockMoun
 	return b.String()
 }
 
-// DefaultDockerSocket is the conventional Docker daemon socket path on Linux hosts.
+// DefaultDockerSocket is the conventional Docker daemon socket path on Linux and macOS hosts.
 const DefaultDockerSocket = "/var/run/docker.sock"
 
 // defaultDockerSocket is an unexported alias kept for internal use within this package.
@@ -89,6 +89,18 @@ func dockerEngineSockFlags(h *host.Host, socketPath string) string {
 		return mount
 	}
 	return mount + fmt.Sprintf("--group-add %s ", gid)
+}
+
+// darwinDockerSockFlags returns the docker run flags to bind-mount the Docker socket on a macOS
+// host. On macOS (Docker Desktop, OrbStack, Colima) the socket is accessible to all processes
+// inside the VM — there is no docker group GID mismatch — so only the -v mount is needed.
+//
+// socketPath is the host-side socket (from HostConfig.DockerSocket, defaulting to /var/run/docker.sock).
+func darwinDockerSockFlags(socketPath string) string {
+	if socketPath == "" {
+		socketPath = defaultDockerSocket
+	}
+	return fmt.Sprintf("-v %s:/var/run/docker.sock ", socketPath)
 }
 
 // dockerEngineSockPreflightCheck verifies the socket path is present and is a socket on the host
@@ -332,11 +344,25 @@ func (m *Manager) startDocker(h *host.Host, hcfg config.HostConfig, rc config.Ru
 	repoURL := fmt.Sprintf("https://github.com/%s", rc.Repo)
 
 	var sockFlags string
-	if h.OS == "linux" {
+	switch h.OS {
+	case "linux":
 		if err := dockerEngineSockPreflightCheck(h, hcfg.DockerSocket); err != nil {
 			return err
 		}
 		sockFlags = dockerEngineSockFlags(h, hcfg.DockerSocket)
+	case "darwin":
+		sockPath := hcfg.DockerSocket
+		if sockPath == "" {
+			sockPath = defaultDockerSocket
+		}
+		if err := dockerEngineSockPreflightCheck(h, sockPath); err != nil {
+			return err
+		}
+		sockFlags = darwinDockerSockFlags(sockPath)
+	case "windows":
+		// Docker Desktop (Linux containers mode) maps /var/run/docker.sock via the Hyper-V/WSL2 VM;
+		// bind-mount it so jobs can reach the Docker daemon the same way as on Linux/macOS.
+		sockFlags = fmt.Sprintf("-v /var/run/docker.sock:/var/run/docker.sock ")
 	}
 
 	cmd := dockerStartCommand(cname, instanceName, regToken, repoURL, labels, sockFlags, RunnerDockerImage)
