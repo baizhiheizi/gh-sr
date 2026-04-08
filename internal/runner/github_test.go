@@ -2,6 +2,7 @@ package runner
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -90,6 +91,42 @@ func TestGitHubClient_ListRunners(t *testing.T) {
 	}
 	if len(runners) != 1 || runners[0].Name != "r-1" {
 		t.Fatalf("got %+v", runners)
+	}
+}
+
+func TestGitHubClient_ListRunnersScoped_pagination(t *testing.T) {
+	t.Parallel()
+	// Page 1 returns 100 runners; page 2 returns 1 runner — total 101.
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/repos/o/r/actions/runners" {
+			http.NotFound(w, r)
+			return
+		}
+		page := r.URL.Query().Get("page")
+		if page == "1" {
+			runners := make([]GitHubRunner, 100)
+			for i := range runners {
+				runners[i] = GitHubRunner{ID: int64(i + 1), Name: fmt.Sprintf("r-%d", i+1)}
+			}
+			_ = json.NewEncoder(w).Encode(runnersResponse{Runners: runners})
+			return
+		}
+		_ = json.NewEncoder(w).Encode(runnersResponse{
+			Runners: []GitHubRunner{{ID: 101, Name: "r-101"}},
+		})
+	}))
+	defer ts.Close()
+
+	g := NewGitHubClientWithHTTP("pat", ts.Client(), ts.URL)
+	runners, err := g.ListRunners("o/r")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(runners) != 101 {
+		t.Errorf("expected 101 runners across 2 pages, got %d", len(runners))
+	}
+	if runners[100].Name != "r-101" {
+		t.Errorf("last runner: %+v", runners[100])
 	}
 }
 

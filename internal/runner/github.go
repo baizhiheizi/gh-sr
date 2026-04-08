@@ -15,12 +15,12 @@ type GitHubClient struct {
 }
 
 type GitHubRunner struct {
-	ID     int64    `json:"id"`
-	Name   string   `json:"name"`
-	OS     string   `json:"os"`
-	Status string   `json:"status"`
-	Busy   bool     `json:"busy"`
-	Labels []Label  `json:"labels"`
+	ID     int64   `json:"id"`
+	Name   string  `json:"name"`
+	OS     string  `json:"os"`
+	Status string  `json:"status"`
+	Busy   bool    `json:"busy"`
+	Labels []Label `json:"labels"`
 }
 
 type Label struct {
@@ -125,17 +125,24 @@ func (g *GitHubClient) ListRunners(repo string) ([]GitHubRunner, error) {
 }
 
 func (g *GitHubClient) ListRunnersScoped(scope, target string) ([]GitHubRunner, error) {
-	url := g.actionsURL(scope, target, "runners")
-	resp, err := g.get(url)
-	if err != nil {
-		return nil, fmt.Errorf("listing runners for %s: %w", target, err)
+	const perPage = 100
+	var all []GitHubRunner
+	for page := 1; ; page++ {
+		url := fmt.Sprintf("%s?per_page=%d&page=%d", g.actionsURL(scope, target, "runners"), perPage, page)
+		resp, err := g.get(url)
+		if err != nil {
+			return nil, fmt.Errorf("listing runners for %s: %w", target, err)
+		}
+		var rr runnersResponse
+		if err := json.Unmarshal(resp, &rr); err != nil {
+			return nil, fmt.Errorf("parsing runners list: %w", err)
+		}
+		all = append(all, rr.Runners...)
+		if len(rr.Runners) < perPage {
+			break
+		}
 	}
-
-	var rr runnersResponse
-	if err := json.Unmarshal(resp, &rr); err != nil {
-		return nil, fmt.Errorf("parsing runners list: %w", err)
-	}
-	return rr.Runners, nil
+	return all, nil
 }
 
 func (g *GitHubClient) DeleteRunner(repo string, runnerID int64) error {
