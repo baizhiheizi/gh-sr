@@ -208,9 +208,6 @@ func (c *Config) Validate() error {
 			if r.EffectiveMode(hcfg.OS) != "docker" {
 				return fmt.Errorf("runner %q: docker_network_mode applies only when mode is docker", r.Name)
 			}
-			if netMode == "host" && hcfg.OS != "linux" {
-				return fmt.Errorf("runner %q: docker_network_mode: host is only supported on Linux hosts (Docker Desktop does not support portable host networking for this; use mode: native for agentic workflows on macOS/Windows, or see documentation)", r.Name)
-			}
 		}
 	}
 

@@ -49,7 +49,7 @@ runners:
   #   count: 2
   #   labels: [self-hosted, Linux, X64]
   #   mode: docker  # "docker" (default on linux) or "native"
-  #   # docker_network_mode: host   # Linux docker only: host network for e.g. GitHub Agentic Workflows (see docs host-setup.md)
+  #   # docker_network_mode: host   # host network for e.g. GitHub Agentic Workflows; works on Linux, macOS, and Windows docker-mode runners (see docs host-setup.md)
   #
   # Runner on the local machine:
   #

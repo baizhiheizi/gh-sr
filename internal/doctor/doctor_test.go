@@ -103,6 +103,29 @@ func TestCheckAgenticWorkflowDockerHint(t *testing.T) {
 	if !strings.Contains(out, "agentic workflows") {
 		t.Fatalf("expected gh-aw hint: %s", out)
 	}
+	if !strings.Contains(out, "set docker_network_mode: host") {
+		t.Fatalf("expected docker_network_mode hint: %s", out)
+	}
+}
+
+func TestCheckAgenticWorkflowDockerHint_Windows(t *testing.T) {
+	t.Parallel()
+	var buf strings.Builder
+	var r Result
+	runners := []config.RunnerConfig{
+		{Name: "win-runner", Host: "w1", Repo: "o/r", Mode: "docker"},
+	}
+	checkAgenticWorkflowDockerHint(&buf, "w1", "windows", runners, &r)
+	out := buf.String()
+	if r.Warn != 1 {
+		t.Fatalf("expected 1 warning, got %d", r.Warn)
+	}
+	if !strings.Contains(out, "win-runner") {
+		t.Fatalf("expected WARN for bridge docker runner on Windows, got:\n%s", out)
+	}
+	if !strings.Contains(out, "set docker_network_mode: host") {
+		t.Fatalf("expected docker_network_mode hint for Windows: %s", out)
+	}
 }
 
 func TestNativeInstallTargetsForHost(t *testing.T) {

@@ -92,8 +92,10 @@ Repositories using [GitHub Agentic Workflows](https://github.github.com/gh-aw/gu
 |------|-------------|----------------------------|
 | **Linux** | **Native** | Works; job runs on the host. |
 | **Linux** | **Docker** (default bridge) | Health check often **fails** (job `localhost` is inside the runner container). Set **`docker_network_mode: host`** on that runner so the container uses the host network (weaker isolation; port **80** must be free on the host). Then **`ghr down`** / **`ghr up`** to recreate the container. |
-| **macOS** | **Docker** (Desktop, OrbStack, Colima) | **`docker_network_mode: host` is not supported** in ghr on non-Linux hosts (Docker Desktop does not provide portable host networking for this). Prefer **`mode: native`** for gh-aw, or use GitHub-hosted runners, or rely on a future **gh-aw** fix for health checks inside containers. |
-| **Windows** | **Docker** (Linux containers) | Same as macOS: **`docker_network_mode: host` is rejected** in config validation. Prefer **native** Windows runners only for Windows jobs; for **Linux** gh-aw jobs on a Windows host, use a **native Linux** machine, hosted runners, or wait for upstream gh-aw changes. |
+| **macOS** | **Docker** (Desktop, OrbStack, Colima) | Set **`docker_network_mode: host`**. On Docker Desktop / OrbStack / Colima the runner container joins the Linux VM's network namespace — the same namespace the MCP gateway uses — so `localhost:80` health checks and `host.docker.internal` resolution work. Port **80** must be free inside the VM. Then **`ghr down`** / **`ghr up`** to recreate the container. |
+| **Windows** | **Docker** (Linux containers) | Set **`docker_network_mode: host`**. Docker Desktop for Windows runs Linux containers inside a WSL2 VM. With host networking, the runner container and the MCP gateway share the VM's network namespace, so health checks and MCP connections succeed. Port **80** must be free inside the VM. Then **`ghr down`** / **`ghr up`** to recreate the container. |
+
+> **Note:** On macOS and Windows, `--network host` means the Docker Desktop Linux VM's network namespace, not the macOS/Windows host itself. This is sufficient for gh-aw because all containers (runner, MCP gateway, MCP servers) share that same VM namespace.
 
 **`ghr doctor`** prints a **WARN** when any docker-mode runner on a host still uses the default bridge network, as a reminder for gh-aw.
 

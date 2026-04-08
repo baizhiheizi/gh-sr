@@ -233,7 +233,7 @@ func checkAgenticWorkflowDockerHint(w io.Writer, hostName string, hostOS string,
 	}
 	sort.Strings(names)
 	printLine(w, sevWarn, hostName, fmt.Sprintf(
-		"agentic workflows: bridge-network docker runners (%s) may fail MCP gateway health checks; on Linux set docker_network_mode: host or use mode: native — see host setup documentation",
+		"agentic workflows: bridge-network docker runners (%s) may fail MCP gateway health checks; set docker_network_mode: host or use mode: native — see host setup documentation",
 		strings.Join(names, ", "),
 	))
 	r.Warn++

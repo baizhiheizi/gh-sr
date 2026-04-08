@@ -250,17 +250,6 @@ func TestValidate_errors(t *testing.T) {
 			frag: "docker_network_mode must be",
 		},
 		{
-			name: "docker_network_mode_host_on_darwin",
-			cfg: Config{
-				GitHub: GitHubConfig{PAT: "x"},
-				Hosts:  map[string]HostConfig{"m": {Addr: "a@b", OS: "darwin", Arch: "arm64"}},
-				Runners: []RunnerConfig{{
-					Name: "r", Repo: "o/r", Host: "m", Mode: "docker", DockerNetworkMode: "host",
-				}},
-			},
-			frag: "docker_network_mode: host is only supported on Linux",
-		},
-		{
 			name: "docker_network_mode_with_native",
 			cfg: Config{
 				GitHub: GitHubConfig{PAT: "x"},
@@ -330,6 +319,34 @@ func TestValidate_dockerOnWindowsHost(t *testing.T) {
 	}
 	if err := cfg.Validate(); err != nil {
 		t.Fatalf("mode: docker on windows host should be valid, got: %v", err)
+	}
+}
+
+func TestValidate_dockerNetworkModeHostOnWindows(t *testing.T) {
+	t.Parallel()
+	cfg := Config{
+		GitHub: GitHubConfig{PAT: "x"},
+		Hosts:  map[string]HostConfig{"w": {Addr: "a@b", OS: "windows", Arch: "amd64"}},
+		Runners: []RunnerConfig{{
+			Name: "r", Repo: "o/r", Host: "w", Mode: "docker", DockerNetworkMode: "host",
+		}},
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("docker_network_mode: host on Windows should be valid, got: %v", err)
+	}
+}
+
+func TestValidate_dockerNetworkModeHostOnDarwin(t *testing.T) {
+	t.Parallel()
+	cfg := Config{
+		GitHub: GitHubConfig{PAT: "x"},
+		Hosts:  map[string]HostConfig{"m": {Addr: "a@b", OS: "darwin", Arch: "arm64"}},
+		Runners: []RunnerConfig{{
+			Name: "r", Repo: "o/r", Host: "m", Mode: "docker", DockerNetworkMode: "host",
+		}},
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("docker_network_mode: host on macOS should be valid, got: %v", err)
 	}
 }
 
