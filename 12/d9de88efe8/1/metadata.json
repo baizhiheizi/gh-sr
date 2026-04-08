@@ -1,19 +1,17 @@
 {
   "cli_version": "dev",
   "checkpoint_id": "12d9de88efe8",
+  "session_id": "e2957366-f169-4f67-a28b-415f35fef884",
   "strategy": "manual-commit",
+  "created_at": "2026-04-08T04:28:55.71674613Z",
   "branch": "main",
-  "checkpoints_count": 4,
+  "checkpoints_count": 2,
   "files_touched": [
-    "README.md",
-    "cmd/ghr/main.go",
     "docs/content/configuration.md",
     "docs/content/guides/linux-on-windows.md",
     "docs/content/host-setup.md",
     "internal/config/config.go",
     "internal/config/config_test.go",
-    "internal/config/mutate.go",
-    "internal/config/mutate_test.go",
     "internal/config/runners.yml.template",
     "internal/host/detect.go",
     "internal/ops/detect.go",
@@ -24,25 +22,29 @@
     "internal/runner/native.go",
     "internal/runner/runner.go"
   ],
-  "sessions": [
-    {
-      "metadata": "/12/d9de88efe8/0/metadata.json",
-      "transcript": "/12/d9de88efe8/0/full.jsonl",
-      "content_hash": "/12/d9de88efe8/0/content_hash.txt",
-      "prompt": "/12/d9de88efe8/0/prompt.txt"
-    },
-    {
-      "metadata": "/12/d9de88efe8/1/metadata.json",
-      "transcript": "/12/d9de88efe8/1/full.jsonl",
-      "content_hash": "/12/d9de88efe8/1/content_hash.txt",
-      "prompt": "/12/d9de88efe8/1/prompt.txt"
-    }
-  ],
+  "agent": "Claude Code",
+  "model": "claude-4.6-opus-high",
+  "turn_id": "01c6105b39b2",
   "token_usage": {
     "input_tokens": 0,
     "cache_creation_tokens": 0,
     "cache_read_tokens": 0,
     "output_tokens": 0,
     "api_call_count": 0
+  },
+  "session_metrics": {
+    "turn_count": 4
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-04-08T04:28:55.699388162Z",
+    "agent_lines": 393,
+    "agent_removed": 8,
+    "human_added": 674,
+    "human_modified": 23,
+    "human_removed": 0,
+    "total_committed": 1090,
+    "total_lines_changed": 1113,
+    "agent_percentage": 36.02875112309075,
+    "metric_version": 2
   }
 }

@@ -1,0 +1,21 @@
+The runner(linux on windows host) fails again. Here are the logs. Help me to identify the root cause and fix it.
+Run set -o pipefail
+[INFO] Auto-detected DNS servers from /etc/resolv.conf: 192.168.65.7
+[WARN] ⚠️  Using --env-all: All host environment variables will be passed to container
+[WARN]    This may expose sensitive credentials if logs or configs are shared
+[WARN] ⚠️  Host access enabled with host.docker.internal in allowed domains
+[WARN]    Containers can access ANY service running on the host machine
+[WARN]    Only use this for trusted workloads (e.g., MCP gateways)
+[INFO] API proxy enabled: OpenAI=false, Anthropic=true, Copilot=false
+[INFO] Allowed domains: *.githubusercontent.com, anthropic.com, api.anthropic.com, api.github.com, api.snapcraft.io, archive.ubuntu.com, azure.archive.ubuntu.com, cdn.playwright.dev, codeload.github.com, crl.geotrust.com, crl.globalsign.com, crl.identrust.com, crl.sectigo.com, crl.thawte.com, crl.usertrust.com, crl.verisign.com, crl3.digicert.com, crl4.digicert.com, crls.ssl.com, files.pythonhosted.org, ghcr.io, github-cloud.githubusercontent.com, github-cloud.s3.amazonaws.com, github.com, host.docker.internal, json-schema.org, json.schemastore.org, keyserver.ubuntu.com, lfs.github.com, objects.githubusercontent.com, ocsp.digicert.com, ocsp.geotrust.com, ocsp.globalsign.com, ocsp.identrust.com, ocsp.sectigo.com, ocsp.ssl.com, ocsp.thawte.com, ocsp.usertrust.com, ocsp.verisign.com, packagecloud.io, packages.cloud.google.com, packages.microsoft.com, playwright.download.prss.microsoft.com, ppa.launchpad.net, pypi.org, raw.githubusercontent.com, registry.npmjs.org, s.symcb.com, s.symcd.com, security.ubuntu.com, sentry.io, statsig.anthropic.com, ts-crl.ws.symantec.com, ts-ocsp.ws.symantec.com, www.googleapis.com, api.minimaxi.com, https://api.minimaxi.com
+[INFO] Setting up host-level firewall network and iptables rules...
+[SUCCESS] Created network 'awf-net' with bridge 'fw-bridge'
+[INFO] Setting up host-level iptables rules...
+[WARN] DOCKER-USER chain does not exist, which is unexpected. Attempting to create it...
+Error: [ERROR] Fatal error: Error: Failed to create DOCKER-USER chain. This may indicate a permission or Docker installation issue.
+    at Object.D0 [as setupHostIptables] (/usr/local/lib/awf/awf-bundle.js:676:10612)
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at async j0 (/usr/local/lib/awf/awf-bundle.js:679:1471)
+    at async e.<anonymous> (/usr/local/lib/awf/awf-bundle.js:751:11093)
+Process exiting with code: 1
+Error: Process completed with exit code 1.
