@@ -1,0 +1,35 @@
+{
+  "cli_version": "dev",
+  "checkpoint_id": "c273e7eb35be",
+  "session_id": "c3e2e26e-2043-45b7-a4cc-11cc02df02fe",
+  "strategy": "manual-commit",
+  "created_at": "2026-04-08T09:36:13.277284045Z",
+  "branch": "main",
+  "checkpoints_count": 0,
+  "files_touched": [
+    "internal/doctor/doctor.go",
+    "internal/doctor/doctor_test.go"
+  ],
+  "agent": "Claude Code",
+  "model": "glm-5.1",
+  "turn_id": "a07723aaa2a4",
+  "token_usage": {
+    "input_tokens": 54706,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 387008,
+    "output_tokens": 9985,
+    "api_call_count": 10
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-04-08T09:36:13.157612457Z",
+    "agent_lines": 43,
+    "agent_removed": 5,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 43,
+    "total_lines_changed": 48,
+    "agent_percentage": 100,
+    "metric_version": 2
+  }
+}
