@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"runtime"
 	"sort"
 	"strings"
 
@@ -138,7 +139,6 @@ func Run(w io.Writer, cfgPath, envPath string, cfg *config.Config, cfgErr error,
 	hostOrder := uniqueHostNames(runners)
 	for _, hostName := range hostOrder {
 		hcfg := cfg.Hosts[hostName]
-		modes := modesForHost(runners, hostName, hcfg.OS)
 
 		h := host.NewHost(hostName, hcfg)
 		if err := h.Connect(); err != nil {
@@ -146,16 +146,24 @@ func Run(w io.Writer, cfgPath, envPath string, cfg *config.Config, cfgErr error,
 			r.Fail++
 			continue
 		}
+		if err := ensureDoctorHostOS(h, hcfg.Addr); err != nil {
+			printLine(w, sevFail, hostName, fmt.Sprintf("detect os: %v", err))
+			r.Fail++
+			_ = h.Close()
+			continue
+		}
+		modes := modesForHost(runners, hostName, h.OS)
+
 		func() {
 			defer h.Close()
 			printLine(w, sevOK, hostName, fmt.Sprintf("connected (%s)", addrSummary(hcfg.Addr)))
 			if modes["docker"] {
 				checkDocker(w, hostName, h, runners, &r)
-				checkAgenticWorkflowDockerHint(w, hostName, hcfg.OS, runners, &r)
+				checkAgenticWorkflowDockerHint(w, hostName, h.OS, runners, &r)
 			}
 			if modes["native"] {
 				checkNative(w, hostName, h, &r)
-				checkNativeRunnerInstall(w, hostName, h, hcfg, runners, &r)
+				checkNativeRunnerInstall(w, hostName, h, runners, &r)
 			}
 			if h.OS == "linux" {
 				checkLinuxSudo(w, hostName, h, &r)
@@ -188,6 +196,23 @@ func addrSummary(addr string) string {
 		return "local"
 	}
 	return "ssh " + addr
+}
+
+// ensureDoctorHostOS sets h.OS when empty: local hosts use runtime.GOOS; remote hosts use DetectOS over the existing connection.
+func ensureDoctorHostOS(h *host.Host, addr string) error {
+	if h.OS != "" {
+		return nil
+	}
+	if config.IsLocalAddr(addr) {
+		h.OS = runtime.GOOS
+		return nil
+	}
+	detected, err := host.DetectOS(h)
+	if err != nil {
+		return err
+	}
+	h.OS = detected
+	return nil
 }
 
 func uniqueRepos(runners []config.RunnerConfig) []string {
@@ -416,8 +441,8 @@ func nativeInstallTargetsForHost(runners []config.RunnerConfig, hostName, hostOS
 	return out
 }
 
-func checkNativeRunnerInstall(w io.Writer, hostName string, h *host.Host, hcfg config.HostConfig, runners []config.RunnerConfig, r *Result) {
-	for _, pair := range nativeInstallTargetsForHost(runners, hostName, hcfg.OS) {
+func checkNativeRunnerInstall(w io.Writer, hostName string, h *host.Host, runners []config.RunnerConfig, r *Result) {
+	for _, pair := range nativeInstallTargetsForHost(runners, hostName, h.OS) {
 		inst, runnerName := pair[0], pair[1]
 		dir := h.RunnerDir(inst)
 		ok, err := runner.NativeRunnerConfigPresent(h, inst)

@@ -6,10 +6,12 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
 	"github.com/an-lee/gh-sr/internal/config"
+	"github.com/an-lee/gh-sr/internal/host"
 	"github.com/an-lee/gh-sr/internal/runner"
 )
 
@@ -64,6 +66,17 @@ func TestUniqueHostNames(t *testing.T) {
 		if got[i] != want[i] {
 			t.Fatalf("got %v, want %v", got, want)
 		}
+	}
+}
+
+func TestEnsureDoctorHostOS_LocalFillsRuntimeGOOS(t *testing.T) {
+	t.Parallel()
+	h := host.NewHost("local", config.HostConfig{Addr: config.LocalAddr})
+	if err := ensureDoctorHostOS(h, config.LocalAddr); err != nil {
+		t.Fatal(err)
+	}
+	if h.OS != runtime.GOOS {
+		t.Fatalf("got %q want %q", h.OS, runtime.GOOS)
 	}
 }
 
