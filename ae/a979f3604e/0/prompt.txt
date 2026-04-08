@@ -1,0 +1,40 @@
+When running `ghr doctor`, the macOS fails:
+
+FAIL  [mac-mini    ] docker: socket not found at /var/run/docker.sock; ensure Docker Desktop/OrbStack/Colima is running (non-default socket path? set docker_socket in config)
+
+How should I fix?
+
+---
+
+I have only the ssh permission access the mac. And the logs:
+
+➜  ~ test -S /var/run/docker.sock && echo ok
+➜  ~ colima start
+WARN[0002] already running, ignoring
+➜  ~ test -S /var/run/docker.sock && echo ok
+
+---
+
+Here are the logs:
+
+➜  ~ ls -la ~/.colima/default/docker.sock
+srw-------@ 1 an-lee  staff  0 Apr  7 15:49 /Users/an-lee/.colima/default/docker.sock
+➜  ~ docker context inspect -f '{{.Endpoints.docker.Host}}'
+unix:///Users/an-lee/.colima/default/docker.sock
+
+---
+
+Here are the logs:
+
+➜  ~ ls -la ~/.colima/default/docker.sock
+srw-------@ 1 an-lee  staff  0 Apr  7 15:49 /Users/an-lee/.colima/default/docker.sock
+➜  ~ docker context inspect -f '{{.Endpoints.docker.Host}}'
+unix:///Users/an-lee/.colima/default/docker.sock
+
+---
+
+Could we make `ghr` handle this? We don't expect users to config so much.
+
+---
+
+Could we make `ghr` handle this? We don't expect users to config so much.

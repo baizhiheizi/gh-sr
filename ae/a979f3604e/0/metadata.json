@@ -1,0 +1,44 @@
+{
+  "cli_version": "dev",
+  "checkpoint_id": "aea979f3604e",
+  "session_id": "cc0f9acc-ae3e-4463-bb17-8b238e773d91",
+  "strategy": "manual-commit",
+  "created_at": "2026-04-08T02:05:34.71148987Z",
+  "branch": "main",
+  "checkpoints_count": 5,
+  "files_touched": [
+    "docs/content/guides/linux-on-macos.md",
+    "docs/content/host-setup.md",
+    "internal/config/config.go",
+    "internal/doctor/doctor.go",
+    "internal/ops/ops.go",
+    "internal/runner/docker.go",
+    "internal/runner/docker_test.go",
+    "internal/runner/runner.go"
+  ],
+  "agent": "Claude Code",
+  "model": "composer-2",
+  "turn_id": "c6aec2bb56d5",
+  "token_usage": {
+    "input_tokens": 0,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 0,
+    "output_tokens": 0,
+    "api_call_count": 0
+  },
+  "session_metrics": {
+    "turn_count": 10
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-04-08T02:05:34.675519345Z",
+    "agent_lines": 132,
+    "agent_removed": 45,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 132,
+    "total_lines_changed": 177,
+    "agent_percentage": 100,
+    "metric_version": 2
+  }
+}
