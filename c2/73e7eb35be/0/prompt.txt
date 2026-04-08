@@ -19,3 +19,18 @@ Docker mode uses image: ghcr.io/actions/actions-runner:latest
 OK    [r1          ] connected (ssh an-lee@10.0.0.132)
 WARN  [r1          ] native: unknown os ""
 FAIL  [r1          ] native: instance ohmyxin-linux-1 not installed (missing .runner under $HOME/.gh-sr/runners/ohmyxin-linux-1); run: gh sr setup ohmyxin-linux
+
+---
+
+Commit the right changes for this branch.
+- If nothing relevant is staged yet, stage the right files first.
+- Ensure only relevant files are staged (unstage anything unrelated).
+- Write a concise commit message.
+- Do not push.
+
+Currently staged files:
+- internal/doctor/doctor.go (modified)
+- internal/doctor/doctor_test.go (modified)
+
+Currently unstaged files:
+- internal/runner/docker.go (modified)
