@@ -3,8 +3,13 @@
   "checkpoint_id": "951743b0576f",
   "strategy": "manual-commit",
   "branch": "main",
-  "checkpoints_count": 2,
+  "checkpoints_count": 4,
   "files_touched": [
+    "docs/content/configuration.md",
+    "docs/content/host-setup.md",
+    "internal/config/config.go",
+    "internal/config/config_test.go",
+    "internal/config/runners.yml.template",
     "internal/runner/native.go"
   ],
   "sessions": [
@@ -13,6 +18,12 @@
       "transcript": "/95/1743b0576f/0/full.jsonl",
       "content_hash": "/95/1743b0576f/0/content_hash.txt",
       "prompt": "/95/1743b0576f/0/prompt.txt"
+    },
+    {
+      "metadata": "/95/1743b0576f/1/metadata.json",
+      "transcript": "/95/1743b0576f/1/full.jsonl",
+      "content_hash": "/95/1743b0576f/1/content_hash.txt",
+      "prompt": "/95/1743b0576f/1/prompt.txt"
     }
   ],
   "token_usage": {
