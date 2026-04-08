@@ -1,0 +1,1 @@
+Let's make this project a totally gh extension, rename it into `gh-wm`, means github workflow manager.
