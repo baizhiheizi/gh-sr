@@ -103,6 +103,45 @@ func darwinDockerSockFlags(socketPath string) string {
 	return fmt.Sprintf("-v %s:/var/run/docker.sock ", socketPath)
 }
 
+// dockerWindowsEngineSockMount is the bind-mount for the Docker engine socket on Windows hosts
+// (Docker Desktop Linux engine; path is resolved inside the Hyper-V/WSL2 VM).
+const dockerWindowsEngineSockMount = "-v /var/run/docker.sock:/var/run/docker.sock "
+
+// dockerWindowsSockGIDProbeCommand returns the docker CLI line to read the owning GID of
+// /var/run/docker.sock inside the Docker Desktop Linux engine. Uses sh+stat because the runner
+// image has no one-shot default CMD suitable for stat.
+func dockerWindowsSockGIDProbeCommand(image string) string {
+	return fmt.Sprintf(
+		`docker run --rm -v /var/run/docker.sock:/var/run/docker.sock --entrypoint sh %s -c "stat -c '%%g' /var/run/docker.sock"`,
+		image,
+	)
+}
+
+// appendGroupAddForDockerSockGID appends --group-add when probe output is a non-zero numeric GID.
+func appendGroupAddForDockerSockGID(mount, gidProbeOutput string) string {
+	gid := strings.TrimSpace(gidProbeOutput)
+	if gid == "" || gid == "0" {
+		return mount
+	}
+	for _, c := range gid {
+		if c < '0' || c > '9' {
+			return mount
+		}
+	}
+	return mount + fmt.Sprintf("--group-add %s ", gid)
+}
+
+// dockerEngineSockFlagsWindows returns docker run flags for the Docker socket on a Windows host
+// running Docker Desktop (Linux containers mode). The socket lives in the Linux engine VM; we
+// probe its group GID via a disposable container because Windows has no Unix stat on that path.
+func dockerEngineSockFlagsWindows(h *host.Host) string {
+	out, err := dockerRun(h, dockerWindowsSockGIDProbeCommand(RunnerDockerImage)+` 2>$null`)
+	if err != nil {
+		return dockerWindowsEngineSockMount
+	}
+	return appendGroupAddForDockerSockGID(dockerWindowsEngineSockMount, out)
+}
+
 // dockerEngineSockPreflightCheck verifies the socket path is present and is a socket on the host
 // before docker run. Returns an error with an actionable message if the socket is missing.
 func dockerEngineSockPreflightCheck(h *host.Host, socketPath string) error {
@@ -360,9 +399,9 @@ func (m *Manager) startDocker(h *host.Host, hcfg config.HostConfig, rc config.Ru
 		}
 		sockFlags = darwinDockerSockFlags(sockPath)
 	case "windows":
-		// Docker Desktop (Linux containers mode) maps /var/run/docker.sock via the Hyper-V/WSL2 VM;
-		// bind-mount it so jobs can reach the Docker daemon the same way as on Linux/macOS.
-		sockFlags = fmt.Sprintf("-v /var/run/docker.sock:/var/run/docker.sock ")
+		// Docker Desktop (Linux containers mode): bind-mount the engine socket and match Linux
+		// behavior by adding --group-add for the socket's GID when we can probe it from a disposable container.
+		sockFlags = dockerEngineSockFlagsWindows(h)
 	}
 
 	cmd := dockerStartCommand(cname, instanceName, regToken, repoURL, labels, sockFlags, RunnerDockerImage)

@@ -2,7 +2,6 @@ package runner
 
 import (
 	"errors"
-	"fmt"
 	"strings"
 	"testing"
 
@@ -221,8 +220,8 @@ func Test_dockerStartCommand_darwinIncludesSocketMount(t *testing.T) {
 
 func Test_dockerStartCommand_windowsIncludesSocketMount(t *testing.T) {
 	t.Parallel()
-	// Simulate the sockFlags built for windows in startDocker.
-	sockFlags := fmt.Sprintf("-v /var/run/docker.sock:/var/run/docker.sock ")
+	// Simulate mount-only sockFlags when GID probe fails (e.g. offline host).
+	sockFlags := dockerWindowsEngineSockMount
 	cmd := dockerStartCommand(
 		"gh-runner-app-1",
 		"app-1",
@@ -234,6 +233,62 @@ func Test_dockerStartCommand_windowsIncludesSocketMount(t *testing.T) {
 	)
 	if !strings.Contains(cmd, "/var/run/docker.sock:/var/run/docker.sock") {
 		t.Fatalf("windows start command should bind Docker socket: %s", cmd)
+	}
+}
+
+func Test_dockerStartCommand_windowsIncludesGroupAddWhenGIDKnown(t *testing.T) {
+	t.Parallel()
+	sockFlags := appendGroupAddForDockerSockGID(dockerWindowsEngineSockMount, "999\n")
+	cmd := dockerStartCommand(
+		"gh-runner-app-1",
+		"app-1",
+		"REGTOKEN",
+		"https://github.com/o/r",
+		"self-hosted,linux",
+		sockFlags,
+		"ghcr.io/actions/actions-runner:latest",
+	)
+	if !strings.Contains(cmd, "--group-add 999") {
+		t.Fatalf("windows start command should include --group-add when GID is known: %s", cmd)
+	}
+}
+
+func Test_appendGroupAddForDockerSockGID(t *testing.T) {
+	t.Parallel()
+	mount := dockerWindowsEngineSockMount
+	cases := []struct {
+		in   string
+		want string
+	}{
+		{"", mount},
+		{"   ", mount},
+		{"0", mount},
+		{"999", mount + "--group-add 999 "},
+		{"999\n", mount + "--group-add 999 "},
+		{"12ab", mount},
+		{"-1", mount},
+	}
+	for _, tc := range cases {
+		got := appendGroupAddForDockerSockGID(mount, tc.in)
+		if got != tc.want {
+			t.Errorf("appendGroupAddForDockerSockGID(%q): got %q want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
+func Test_dockerWindowsSockGIDProbeCommand_shape(t *testing.T) {
+	t.Parallel()
+	cmd := dockerWindowsSockGIDProbeCommand("ghcr.io/actions/actions-runner:latest")
+	for _, sub := range []string{
+		"docker run --rm",
+		"-v /var/run/docker.sock:/var/run/docker.sock",
+		"--entrypoint sh",
+		"ghcr.io/actions/actions-runner:latest",
+		`-c "stat -c '%g' /var/run/docker.sock"`,
+	} {
+		if !strings.Contains(cmd, sub) {
+			t.Fatalf("probe command missing %q in:\n%s", sub, cmd)
+		}
 	}
 }
 
