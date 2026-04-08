@@ -1,0 +1,33 @@
+{
+  "cli_version": "dev",
+  "checkpoint_id": "221a47631b3e",
+  "session_id": "b2f1b525-1383-448c-a483-bde3b447733b",
+  "strategy": "manual-commit",
+  "created_at": "2026-04-08T07:32:53.184711173Z",
+  "branch": "main",
+  "checkpoints_count": 0,
+  "files_touched": [
+    "internal/autostart/autostart.go",
+    "internal/runner/native_test.go"
+  ],
+  "agent": "Claude Code",
+  "model": "composer-2",
+  "turn_id": "55f3df636405",
+  "checkpoint_transcript_start": 42,
+  "transcript_lines_at_start": 42,
+  "session_metrics": {
+    "turn_count": 4
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-04-08T07:32:53.18421564Z",
+    "agent_lines": 15,
+    "agent_removed": 15,
+    "human_added": 1250,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 1265,
+    "total_lines_changed": 2478,
+    "agent_percentage": 1.2106537530266344,
+    "metric_version": 2
+  }
+}

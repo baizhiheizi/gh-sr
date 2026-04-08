@@ -80,6 +80,12 @@
       "transcript": "/22/1a47631b3e/2/full.jsonl",
       "content_hash": "/22/1a47631b3e/2/content_hash.txt",
       "prompt": "/22/1a47631b3e/2/prompt.txt"
+    },
+    {
+      "metadata": "/22/1a47631b3e/3/metadata.json",
+      "transcript": "/22/1a47631b3e/3/full.jsonl",
+      "content_hash": "/22/1a47631b3e/3/content_hash.txt",
+      "prompt": ""
     }
   ]
 }
