@@ -1,0 +1,36 @@
+The `doctor` seems not right. The OS should be dected automatically. And the config does not include `native` mode. But it throws WARN and FAIL.
+
+➜  gh sr doctor
+=== Local environment ===
+OK    [local       ] config file exists: /home/an-lee/.gh-sr/runners.yml
+OK    [local       ] env file present: /home/an-lee/.gh-sr/env
+OK    [local       ] GitHub token: from gh CLI (gh auth login)
+OK    [local       ] SSH client auth available (agent or default ~/.ssh keys)
+
+=== Configuration ===
+OK    [config      ] YAML valid and constraints satisfied
+
+=== GitHub API ===
+OK    [github      ] an-lee/ohmyxin: list runners OK (3 registered)
+
+=== Hosts ===
+Docker mode uses image: ghcr.io/actions/actions-runner:latest
+
+OK    [r1          ] connected (ssh an-lee@10.0.0.132)
+WARN  [r1          ] native: unknown os ""
+FAIL  [r1          ] native: instance ohmyxin-linux-1 not installed (missing .runner under $HOME/.gh-sr/runners/ohmyxin-linux-1); run: gh sr setup ohmyxin-linux
+
+---
+
+Commit the right changes for this branch.
+- If nothing relevant is staged yet, stage the right files first.
+- Ensure only relevant files are staged (unstage anything unrelated).
+- Write a concise commit message.
+- Do not push.
+
+Currently staged files:
+- internal/doctor/doctor.go (modified)
+- internal/doctor/doctor_test.go (modified)
+
+Currently unstaged files:
+- internal/runner/docker.go (modified)
