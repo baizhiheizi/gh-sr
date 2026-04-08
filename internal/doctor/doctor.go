@@ -225,6 +225,7 @@ func checkDocker(w io.Writer, hostName string, h *host.Host, runners []config.Ru
 			return
 		}
 		printLine(w, sevOK, hostName, fmt.Sprintf("docker: server version %s (image %s)", out, runner.RunnerDockerImage))
+		checkWindowsDockerSocket(w, hostName, h, runners, r)
 		return
 	}
 
@@ -249,6 +250,57 @@ func checkDocker(w io.Writer, hostName string, h *host.Host, runners []config.Ru
 
 	if h.OS == "linux" || h.OS == "darwin" {
 		checkUnixDockerSocket(w, hostName, h, runners, r)
+	}
+}
+
+// checkWindowsDockerSocket probes the Docker Desktop socket GID and checks that any running
+// docker-mode runner containers have the correct --group-add flag for it.
+func checkWindowsDockerSocket(w io.Writer, hostName string, h *host.Host, runners []config.RunnerConfig, r *Result) {
+	probeCmd := runner.DockerWindowsSockGIDProbeCommand(runner.RunnerDockerImage) + ` 2>$null`
+	out, err := h.RunShell(probeCmd)
+	if err != nil {
+		printLine(w, sevWarn, hostName, fmt.Sprintf(
+			"docker: could not probe socket GID; bind-mount may lack --group-add; jobs may fail with permission denied; recreate containers after fixing",
+		))
+		r.Warn++
+		return
+	}
+	gid := strings.TrimSpace(out)
+	printLine(w, sevOK, hostName, fmt.Sprintf("docker: socket GID=%s", gid))
+
+	// Check each docker-mode runner container that is already running.
+	for _, rc := range runners {
+		if rc.Host != hostName || rc.EffectiveMode(h.OS) != "docker" {
+			continue
+		}
+		for _, inst := range rc.InstanceNames() {
+			cname := runner.ContainerName(inst)
+			running, rerr := h.RunShell(fmt.Sprintf(`docker inspect -f "{{.State.Running}}" %s 2>$null`, cname))
+			if rerr != nil || strings.TrimSpace(running) != "true" {
+				continue
+			}
+			// Get the supplemental groups the container was started with.
+			groups, gerr := h.RunShell(fmt.Sprintf(`docker inspect -f "{{.HostConfig.Groups}}" %s 2>$null`, cname))
+			groups = strings.TrimSpace(groups)
+			if gerr != nil || groups == "" || groups == "[]" {
+				printLine(w, sevFail, hostName, fmt.Sprintf(
+					"docker: container %s has no --group-add for socket GID %s; jobs will fail with permission denied; fix with: ghr down %s && ghr up %s",
+					cname, gid, rc.Name, rc.Name,
+				))
+				r.Fail++
+				continue
+			}
+			// groups is like "[999]" or "[0 999]"; check if socket GID is present.
+			if !strings.Contains(groups, gid) {
+				printLine(w, sevFail, hostName, fmt.Sprintf(
+					"docker: container %s groups=%s, socket GID=%s not included; jobs will fail with permission denied; fix with: ghr down %s && ghr up %s",
+					cname, groups, gid, rc.Name, rc.Name,
+				))
+				r.Fail++
+			} else {
+				printLine(w, sevOK, hostName, fmt.Sprintf("docker: container %s has socket GID %s in groups %s", cname, gid, groups))
+			}
+		}
 	}
 }
 

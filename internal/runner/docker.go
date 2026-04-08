@@ -200,10 +200,10 @@ func darwinDockerSockFlags(socketPath string) string {
 // (Docker Desktop Linux engine; path is resolved inside the Hyper-V/WSL2 VM).
 const dockerWindowsEngineSockMount = "-v /var/run/docker.sock:/var/run/docker.sock "
 
-// dockerWindowsSockGIDProbeCommand returns the docker CLI line to read the owning GID of
+// DockerWindowsSockGIDProbeCommand returns the docker CLI line to read the owning GID of
 // /var/run/docker.sock inside the Docker Desktop Linux engine. Uses sh+stat because the runner
 // image has no one-shot default CMD suitable for stat.
-func dockerWindowsSockGIDProbeCommand(image string) string {
+func DockerWindowsSockGIDProbeCommand(image string) string {
 	return fmt.Sprintf(
 		`docker run --rm -v /var/run/docker.sock:/var/run/docker.sock --entrypoint sh %s -c "stat -c '%%g' /var/run/docker.sock"`,
 		image,
@@ -230,7 +230,7 @@ func appendGroupAddForDockerSockGID(mount, gidProbeOutput string) string {
 // running Docker Desktop (Linux containers mode). The socket lives in the Linux engine VM; we
 // probe its group GID via a disposable container because Windows has no Unix stat on that path.
 func dockerEngineSockFlagsWindows(h *host.Host) string {
-	out, err := dockerRun(h, dockerWindowsSockGIDProbeCommand(RunnerDockerImage)+` 2>$null`)
+	out, err := dockerRun(h, DockerWindowsSockGIDProbeCommand(RunnerDockerImage)+` 2>$null`)
 	if err != nil {
 		return dockerWindowsEngineSockMount
 	}

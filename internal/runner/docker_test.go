@@ -331,9 +331,9 @@ func Test_appendGroupAddForDockerSockGID(t *testing.T) {
 	}
 }
 
-func Test_dockerWindowsSockGIDProbeCommand_shape(t *testing.T) {
+func Test_DockerWindowsSockGIDProbeCommand_shape(t *testing.T) {
 	t.Parallel()
-	cmd := dockerWindowsSockGIDProbeCommand("ghcr.io/actions/actions-runner:latest")
+	cmd := DockerWindowsSockGIDProbeCommand("ghcr.io/actions/actions-runner:latest")
 	for _, sub := range []string{
 		"docker run --rm",
 		"-v /var/run/docker.sock:/var/run/docker.sock",
