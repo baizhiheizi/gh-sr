@@ -115,3 +115,47 @@ Help me to implement it.
 ---
 
 Help me to implement it.
+
+---
+
+Commit the right changes for this branch.
+- If nothing relevant is staged yet, stage the right files first.
+- Ensure only relevant files are staged (unstage anything unrelated).
+- Write a concise commit message.
+- Do not push.
+
+Currently staged files:
+(none)
+
+Currently unstaged files:
+- config/runners.yml (modified)
+- docs/content/configuration.md (modified)
+- docs/content/host-setup.md (modified)
+- internal/config/config.go (modified)
+- internal/config/config_test.go (modified)
+- internal/doctor/doctor.go (modified)
+- internal/doctor/doctor_test.go (modified)
+- internal/runner/docker.go (modified)
+- internal/runner/docker_test.go (modified)
+
+---
+
+Commit the right changes for this branch.
+- If nothing relevant is staged yet, stage the right files first.
+- Ensure only relevant files are staged (unstage anything unrelated).
+- Write a concise commit message.
+- Do not push.
+
+Currently staged files:
+(none)
+
+Currently unstaged files:
+- config/runners.yml (modified)
+- docs/content/configuration.md (modified)
+- docs/content/host-setup.md (modified)
+- internal/config/config.go (modified)
+- internal/config/config_test.go (modified)
+- internal/doctor/doctor.go (modified)
+- internal/doctor/doctor_test.go (modified)
+- internal/runner/docker.go (modified)
+- internal/runner/docker_test.go (modified)
