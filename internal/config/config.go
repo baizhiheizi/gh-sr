@@ -47,6 +47,9 @@ type RunnerConfig struct {
 	DockerNetworkMode string   `yaml:"docker_network_mode"` // bridge (default) or host; only for docker-mode Linux runners
 	// DockerCapAdd lists Linux capability names passed to docker run --cap-add (e.g. NET_ADMIN for gh-aw AWF iptables).
 	DockerCapAdd []string `yaml:"docker_cap_add"`
+	// DockerPreSetup is a bash script that runs inside the container before the runner starts.
+	// Use this to install tools needed for your workflows (e.g., Node.js for awf).
+	DockerPreSetup string `yaml:"docker_pre_setup"`
 }
 
 // Scope returns "repo" or "org" depending on how the runner is registered.

@@ -11,9 +11,17 @@ import (
 // RunnerDockerImage is the container image used for docker-mode runners.
 const RunnerDockerImage = "ghcr.io/actions/actions-runner:latest"
 
-// dockerRunnerEntryScript registers once (registration tokens are single-use) then runs the
-// listener. Official ghcr.io/actions/actions-runner has no CMD; it expects config.sh then run.sh.
-const dockerRunnerEntryScript = `cd /home/runner && if [ ! -f .runner ]; then ./config.sh --unattended --replace; fi && exec ./run.sh`
+// dockerRunnerEntryScript returns the entry script for the container. preSetup is a bash script
+// that runs inside the container before the runner starts; use it to install tools needed by
+// workflows (e.g., Node.js for awf). Official ghcr.io/actions/actions-runner has no CMD; it
+// expects config.sh then run.sh.
+func dockerRunnerEntryScript(preSetup string) string {
+	setup := `cd /home/runner && if [ ! -f .runner ]; then ./config.sh --unattended --replace; fi && exec ./run.sh`
+	if preSetup != "" {
+		return preSetup + " && " + setup
+	}
+	return setup
+}
 
 // ContainerName returns the Docker container name for a runner instance.
 func ContainerName(instanceName string) string {
@@ -62,6 +70,7 @@ type dockerStartOpts struct {
 	CapAdds       []string
 	RunnerGroup   string
 	Ephemeral     bool
+	PreSetup      string
 }
 
 func dockerStartCommand(opts dockerStartOpts) string {
@@ -101,7 +110,7 @@ func dockerStartCommand(opts dockerStartOpts) string {
 	b.WriteString("--entrypoint /bin/bash ")
 	b.WriteString(opts.Image)
 	b.WriteString(" -c ")
-	b.WriteString(shellSingleQuote(dockerRunnerEntryScript))
+	b.WriteString(shellSingleQuote(dockerRunnerEntryScript(opts.PreSetup)))
 	return b.String()
 }
 
@@ -573,6 +582,7 @@ func (m *Manager) startDocker(h *host.Host, rc config.RunnerConfig, instanceName
 		CapAdds:       rc.DockerCapAdd,
 		RunnerGroup:   rc.Group,
 		Ephemeral:     rc.Ephemeral,
+		PreSetup:      rc.DockerPreSetup,
 	})
 
 	out, err := dockerRun(h, cmd)
