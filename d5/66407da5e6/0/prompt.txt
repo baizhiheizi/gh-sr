@@ -1,0 +1,117 @@
+The runner fails when running agentic workflow. The logs are as following. Help me to identify the root cause and fix it. You should also review the documents of gh aw self-hosted runners. Identify what's missing for our runner config for aw workflow running.
+
+Validating gateway configuration...
+Configuration validated successfully
+⏱️  TIMING: Configuration validation took 18ms
+Starting gateway with container: docker run -i --rm --network host -v /var/run/docker.sock:/var/run/docker.sock -e MCP_GATEWAY_PORT -e MCP_GATEWAY_DOMAIN -e MCP_GATEWAY_API_KEY -e MCP_GATEWAY_PAYLOAD_DIR -e MCP_GATEWAY_PAYLOAD_SIZE_THRESHOLD -e DEBUG -e MCP_GATEWAY_LOG_DIR -e GH_AW_MCP_LOG_DIR -e GH_AW_SAFE_OUTPUTS -e GH_AW_SAFE_OUTPUTS_CONFIG_PATH -e GH_AW_SAFE_OUTPUTS_TOOLS_PATH -e GH_AW_ASSETS_BRANCH -e GH_AW_ASSETS_MAX_SIZE_KB -e GH_AW_ASSETS_ALLOWED_EXTS -e DEFAULT_BRANCH -e GITHUB_MCP_SERVER_TOKEN -e GITHUB_MCP_GUARD_MIN_INTEGRITY -e GITHUB_MCP_GUARD_REPOS -e GITHUB_REPOSITORY -e GITHUB_SERVER_URL -e GITHUB_SHA -e GITHUB_WORKSPACE -e GITHUB_TOKEN -e GITHUB_RUN_ID -e GITHUB_RUN_NUMBER -e GITHUB_RUN_ATTEMPT -e GITHUB_JOB -e GITHUB_ACTION -e GITHUB_EVENT_NAME -e GITHUB_EVENT_PATH -e GITHUB_ACTOR -e GITHUB_ACTOR_ID -e GITHUB_TRIGGERING_ACTOR -e GITHUB_WORKFLOW -e GITHUB_WORKFLOW_REF -e GITHUB_WORKFLOW_SHA -e GITHUB_REF -e GITHUB_REF_NAME -e GITHUB_REF_TYPE -e GITHUB_HEAD_REF -e GITHUB_BASE_REF -e GH_AW_SAFE
+Full docker command: docker run -i --rm --network host -v /var/run/docker.sock:/var/run/docker.sock -e MCP_GATEWAY_PORT -e MCP_GATEWAY_DOMAIN -e MCP_GATEWAY_API_KEY -e MCP_GATEWAY_PAYLOAD_DIR -e MCP_GATEWAY_PAYLOAD_SIZE_THRESHOLD -e DEBUG -e MCP_GATEWAY_LOG_DIR -e GH_AW_MCP_LOG_DIR -e GH_AW_SAFE_OUTPUTS -e GH_AW_SAFE_OUTPUTS_CONFIG_PATH -e GH_AW_SAFE_OUTPUTS_TOOLS_PATH -e GH_AW_ASSETS_BRANCH -e GH_AW_ASSETS_MAX_SIZE_KB -e GH_AW_ASSETS_ALLOWED_EXTS -e DEFAULT_BRANCH -e GITHUB_MCP_SERVER_TOKEN -e GITHUB_MCP_GUARD_MIN_INTEGRITY -e GITHUB_MCP_GUARD_REPOS -e GITHUB_REPOSITORY -e GITHUB_SERVER_URL -e GITHUB_SHA -e GITHUB_WORKSPACE -e GITHUB_TOKEN -e GITHUB_RUN_ID -e GITHUB_RUN_NUMBER -e GITHUB_RUN_ATTEMPT -e GITHUB_JOB -e GITHUB_ACTION -e GITHUB_EVENT_NAME -e GITHUB_EVENT_PATH -e GITHUB_ACTOR -e GITHUB_ACTOR_ID -e GITHUB_TRIGGERING_ACTOR -e GITHUB_WORKFLOW -e GITHUB_WORKFLOW_REF -e GITHUB_WORKFLOW_SHA -e GITHUB_REF -e GITHUB_REF_NAME -e GITHUB_REF_TYPE -e GITHUB_HEAD_REF -e GITHUB_BASE_REF -e GH_AW_SAFE_OUTPUTS_POR
+Gateway started with PID: 1595
+⏱️  TIMING: Gateway container launch took 2ms
+Verifying gateway process is running...
+Gateway process confirmed running (PID: 1595)
+Waiting for gateway to initialize...
+Checking if gateway process is still alive after initialization...
+Gateway process is still running (PID: 1595)
+Waiting for gateway to be ready...
+Health endpoint: http://localhost:80/health
+(Note: MCP_GATEWAY_DOMAIN is 'host.docker.internal' for container access)
+Retrying up to 120 times with 1s delay (120s total timeout)
+=== Health Check Progress ===
+Attempt 1/120 (0s elapsed)...
+Attempt 11/120 (10s elapsed)...
+Attempt 21/120 (20s elapsed)...
+Attempt 31/120 (30s elapsed)...
+Attempt 41/120 (40s elapsed)...
+Attempt 51/120 (50s elapsed)...
+Attempt 61/120 (61s elapsed)...
+Attempt 71/120 (71s elapsed)...
+Attempt 81/120 (81s elapsed)...
+Attempt 91/120 (91s elapsed)...
+Attempt 101/120 (101s elapsed)...
+Attempt 111/120 (111s elapsed)...
+=== End Health Check Progress ===
+Final curl exit code: 7
+Final HTTP code: 000
+Total attempts: 120
+Health response body: (empty)
+ERROR: Gateway failed to become ready
+Last HTTP code: 000
+Last health response: (empty)
+Checking if gateway process is still alive...
+Gateway process (PID: 1595) is still running
+Docker container status:
+CONTAINER ID   IMAGE                                      COMMAND                  CREATED         STATUS         PORTS      NAMES
+7a929c4834cc   ghcr.io/github/github-mcp-server:v0.32.0   "/server/github-mcp-…"   2 minutes ago   Up 2 minutes   8082/tcp   eager_knuth
+ec53fa51f0e6   ghcr.io/github/gh-aw-mcpg:v0.2.14          "/app/run_containeri…"   2 minutes ago   Up 2 minutes              gracious_ardinghelli
+3b1de900f5a8   ghcr.io/actions/actions-runner:latest      "/bin/bash -c 'cd /h…"   7 minutes ago   Up 7 minutes              gh-runner-enjoy-linux-3
+b88fcbe09339   ghcr.io/actions/actions-runner:latest      "/bin/bash -c 'cd /h…"   7 minutes ago   Up 7 minutes              gh-runner-enjoy-linux-2
+489b33365550   ghcr.io/actions/actions-runner:latest      "/bin/bash -c 'cd /h…"   8 minutes ago   Up 8 minutes              gh-runner-enjoy-linux-1
+a84f97fd3396   ghcr.io/actions/actions-runner:latest      "/bin/bash -c 'cd /h…"   8 minutes ago   Up 8 minutes              gh-runner-rune-linux-3
+c2ee283958e1   ghcr.io/actions/actions-runner:latest      "/bin/bash -c 'cd /h…"   8 minutes ago   Up 8 minutes              gh-runner-rune-linux-2
+2950266b433e   ghcr.io/actions/actions-runner:latest      "/bin/bash -c 'cd /h…"   8 minutes ago   Up 8 minutes              gh-runner-rune-linux-1
+Gateway stdout (errors are written here per MCP Gateway Specification):
+{
+  "mcpServers": {
+    "github": {
+      "headers": {
+        "Authorization": "***"
+      },
+      "type": "http",
+      "url": "http://127.0.0.1:80/mcp/github"
+    },
+    "safeoutputs": {
+      "headers": {
+        "Authorization": "***"
+      },
+      "type": "http",
+      "url": "http://127.0.0.1:80/mcp/safeoutputs"
+    }
+  }
+}
+Gateway stderr logs (debug output):
+[INFO] Starting MCP Gateway in containerized mode...
+[INFO] Auto-detected baked-in WASM guards at /guards
+[INFO] MCP_GATEWAY_WASM_GUARDS_DIR=/guards
+[INFO] Running in containerized environment
+[WARN] Invalid container ID format: docker-desktop
+[WARN] Could not determine container ID
+[INFO] Docker daemon is accessible
+[INFO] Required environment variables are set
+[INFO] Set DOCKER_API_VERSION=1.54 (server current)
+[INFO] Detecting host IP for container networking...
+[INFO] Method 1 (primary interface): 192.168.65.6
+[INFO] Using host IP: 192.168.65.6
+[INFO] Adding host.docker.internal mapping to /etc/hosts
+[INFO] DNS mapping configured: 192.168.65.6 -> host.docker.internal
+[INFO] Gateway will listen on 0.0.0.0:80
+[INFO] Log directory: /tmp/gh-aw/mcp-logs/
+[INFO] Command: ./awmg --routed --listen 0.0.0.0:80 --config-stdin --log-dir /tmp/gh-aw/mcp-logs/
+[INFO] Waiting for JSON configuration on stdin...
+[INFO] 
+[INFO] IMPORTANT: Configuration must be provided via stdin.
+[INFO] No default configuration is used in containerized mode.
+[INFO]
+
+---
+
+So if I want to run agentic workflow in self-hosted runner, it must be a native runner, not docker runner?
+
+---
+
+So if I want to run agentic workflow in self-hosted runner, it must be a native runner, not docker runner?
+
+---
+
+Could we make it happen in `ghr` domain? Running agentic workflow in self-hosted docker runner.
+
+---
+
+Review the design again. I want `ghr` could perfectly manage self-hosted  runners in all hosts(linux/macOS/windows) working well for agentic workflows.
+
+---
+
+Help me to implement it.
+
+---
+
+Help me to implement it.
