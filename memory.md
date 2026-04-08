@@ -33,35 +33,33 @@
 - `internal/tui`: status_test.go present
 
 ### Untested packages
-- `internal/ops`: ops.go, metrics.go, service.go — NO TESTS
-  - Highly integration-focused (SSH + GitHub API)
-  - `sortedHostNames` and `CollectHostMetrics` in metrics.go have testable pure logic
-  - `FilterRunners` is already tested in config package (ops just calls it)
-  - Opportunity: test `sortedHostNames` function in isolation
+- `internal/ops`: ops.go, service.go — NO TESTS (metrics_test.go added in PR)
+  - PR submitted for `sortedHostNames`
 
 ## Testing Backlog
 
-1. **ops/metrics.go** — `sortedHostNames` pure function (low difficulty, medium value)
-2. **ops/ops.go** — orchestration functions are integration-heavy; skip unless mock infra added
-3. **runner/runner.go** — `expectedGitHubRunnerOS` pure function (not tested)
-4. **autostart/sanitize.go** — edge cases (numbers-only, dots, etc.)
-5. **tui/status.go** — more status rendering tests
-
-Priority: #3 (`expectedGitHubRunnerOS`) and #1 (`sortedHostNames`) are pure functions with no dependencies; easy wins.
+1. **ops/metrics.go** — `sortedHostNames` ✅ PR submitted (test-assist/pure-function-tests)
+2. **runner/runner.go** — `expectedGitHubRunnerOS` ✅ PR submitted (test-assist/pure-function-tests)
+3. **autostart/sanitize.go** — edge cases (numbers-only, dots, etc.)
+4. **ops/ops.go** — orchestration functions are integration-heavy; skip unless mock infra added
 
 ## Task Schedule (Round-Robin)
 
-Last run: 2026-04-07 — Tasks 1 (discover), 2 (identify opportunities), 7 (activity summary)
-Next run should prioritize: Task 3 (implement tests), Task 4 (maintain PRs), Task 7
+Last run: 2026-04-08 — Tasks 3 (implement tests), 7 (activity summary)
+Next run should prioritize: Task 4 (maintain PRs), Task 5 (comment on issues), Task 7
 
 ## Completed Work
 
-None yet.
+None merged yet.
 
 ## Open PRs
 
-None.
+- **test-assist/pure-function-tests**: Tests for `expectedGitHubRunnerOS` and `sortedHostNames` pure functions (2026-04-08)
 
 ## Maintainer Priorities
 
 No maintainer comments yet.
+
+## Monthly Activity Issue
+
+- Issue #4: "[Test Improver] Monthly Activity 2026-04" — open
