@@ -1,1 +1,19 @@
 The repo has been renamed to `gh-wm`, review the codebase and documents. Update the `ghr` related code & doc, no need to compatible.
+
+---
+
+Commit the right changes for this branch.
+- If nothing relevant is staged yet, stage the right files first.
+- Ensure only relevant files are staged (unstage anything unrelated).
+- Write a concise commit message.
+- Do not push.
+
+Currently staged files:
+(none)
+
+Currently unstaged files:
+- .gitignore (modified)
+- README.md (modified)
+- docs/content/architecture.md (modified)
+- docs/content/introduction.md (modified)
+- ghr (added)
