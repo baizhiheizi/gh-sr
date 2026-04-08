@@ -1,0 +1,52 @@
+{
+  "cli_version": "dev",
+  "checkpoint_id": "55e908611212",
+  "session_id": "4f73c3be-b28d-481c-9f72-33836acc9825",
+  "strategy": "manual-commit",
+  "created_at": "2026-04-08T11:33:59.393456771Z",
+  "branch": "main",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "cmd/gh-sr/main.go",
+    "docs/content/commands.md",
+    "docs/content/pre-setup-scripts.md",
+    "internal/config/config.go",
+    "internal/runner/docker.go",
+    "internal/runner/runner.go",
+    "internal/runner/setup/loader.go",
+    "internal/runner/setup/remote.go",
+    "internal/runner/setup/scripts/base.yaml",
+    "internal/runner/setup/scripts/dotnet.yaml",
+    "internal/runner/setup/scripts/golang.yaml",
+    "internal/runner/setup/scripts/java.yaml",
+    "internal/runner/setup/scripts/nodejs.yaml",
+    "internal/runner/setup/scripts/python.yaml",
+    "internal/runner/setup/scripts/ruby.yaml",
+    "internal/runner/setup/scripts/rust.yaml",
+    "internal/runner/setup/types.go"
+  ],
+  "agent": "Claude Code",
+  "turn_id": "4d234dcb325c",
+  "token_usage": {
+    "input_tokens": 2633724,
+    "cache_creation_tokens": 126583,
+    "cache_read_tokens": 1889336,
+    "output_tokens": 26651,
+    "api_call_count": 71
+  },
+  "session_metrics": {
+    "turn_count": 1
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-04-08T11:33:59.067631549Z",
+    "agent_lines": 1311,
+    "agent_removed": 6,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 1311,
+    "total_lines_changed": 1317,
+    "agent_percentage": 100,
+    "metric_version": 2
+  }
+}

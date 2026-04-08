@@ -1,0 +1,1 @@
+Let's design a set of pre-setup scripts for classic different project, like nodejs/python/golang/ruby etc. User could config it along with extra pre-setup scripts. Design it well and list the tool set in detailed in documents.
