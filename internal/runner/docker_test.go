@@ -213,12 +213,43 @@ func Test_darwinDockerSockFlags_defaultSocket(t *testing.T) {
 
 func Test_darwinDockerSockFlags_customSocket(t *testing.T) {
 	t.Parallel()
-	got := darwinDockerSockFlags("/Users/me/.colima/default/docker.sock")
-	if !strings.Contains(got, "-v /Users/me/.colima/default/docker.sock:/var/run/docker.sock") {
+	// Non-Colima custom path is passed through unchanged by darwinDockerSockFlags alone.
+	got := darwinDockerSockFlags("/Users/me/.docker/run/docker.sock")
+	if !strings.Contains(got, "-v /Users/me/.docker/run/docker.sock:/var/run/docker.sock") {
 		t.Fatalf("expected custom socket mount, got %q", got)
 	}
 	if strings.Contains(got, "--group-add") {
 		t.Fatalf("macOS mount must not include --group-add, got %q", got)
+	}
+}
+
+func Test_darwinDockerBindSourcePath(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		in, want string
+	}{
+		{"", ""},
+		{"/var/run/docker.sock", "/var/run/docker.sock"},
+		{"/Users/me/.colima/default/docker.sock", "/var/run/docker.sock"},
+		{"/Users/me/.colima/myprofile/docker.sock", "/var/run/docker.sock"},
+		{"/Users/me/.docker/run/docker.sock", "/Users/me/.docker/run/docker.sock"},
+		{"/Users/me/.colima/default/other.sock", "/Users/me/.colima/default/other.sock"},
+	}
+	for _, tc := range cases {
+		if got := darwinDockerBindSourcePath(tc.in); got != tc.want {
+			t.Fatalf("darwinDockerBindSourcePath(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
+func Test_darwinDockerSockFlags_colimaSocketUsesVMBindPath(t *testing.T) {
+	t.Parallel()
+	got := darwinDockerSockFlags(darwinDockerBindSourcePath("/Users/me/.colima/default/docker.sock"))
+	if !strings.Contains(got, "-v /var/run/docker.sock:/var/run/docker.sock") {
+		t.Fatalf("Colima client socket should bind VM /var/run/docker.sock, got %q", got)
+	}
+	if strings.Contains(got, ".colima") {
+		t.Fatalf("mount must not use host Colima socket path, got %q", got)
 	}
 }
 
@@ -286,7 +317,7 @@ func Test_appendGroupAddForDockerSockGID(t *testing.T) {
 	}{
 		{"", mount},
 		{"   ", mount},
-		{"0", mount},
+		{"0", mount + "--group-add 0 "},
 		{"999", mount + "--group-add 999 "},
 		{"999\n", mount + "--group-add 999 "},
 		{"12ab", mount},

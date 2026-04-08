@@ -46,6 +46,8 @@ The first command checks non-interactive SSH (see also [All remote hosts](#all-r
 
 When `ghr` starts a docker-mode runner container on Linux or macOS, it bind-mounts the Docker socket into the container at `/var/run/docker.sock` so jobs can reach the Docker daemon. **Resolving the host socket:** if `docker_socket` is not set, ghr uses the first path that exists: `/var/run/docker.sock`; otherwise the `unix://` endpoint from the host’s current default Docker context (`docker context inspect`, which matches Colima and Linux rootless when that context is active); on **macOS** only, `~/.colima/default/docker.sock` as a last resort. Set `docker_socket` when your engine uses a different path (for example a named Colima profile that is not the default context).
 
+**Colima on macOS (virtiofs):** If that resolved path is under `~/.colima/…`, ghr still uses it to find the API over SSH, but for `docker run -v` it bind-mounts **`/var/run/docker.sock`** (the path inside the Colima VM) instead of the macOS host file under `~/.colima/…`. Bind-mounting the host Colima client socket fails on common setups with virtiofs (`operation not supported`; see [Colima #997](https://github.com/abiosoft/colima/issues/997)). If you need a manual workaround instead, you can start Colima with `colima start --mount-type sshfs`.
+
 On **Linux**, the **`runner` user inside the container** (uid 1001) must also have permission to use the socket — ghr handles this automatically by:
 
 1. Querying the socket's owning GID on the host with `stat -c '%g'` on the resolved host socket path.

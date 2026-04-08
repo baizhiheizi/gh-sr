@@ -168,6 +168,22 @@ func dockerEngineSockFlags(h *host.Host, socketPath string) string {
 	return mount + fmt.Sprintf("--group-add %s ", gid)
 }
 
+// darwinDockerBindSourcePath returns the filesystem path to use as the host side of
+// docker run -v …:/var/run/docker.sock on macOS. Colima exposes the API at
+// ~/.colima/.../docker.sock on the macOS host, but bind-mounting that path fails with
+// virtiofs (dockerd mkdir on the socket path: operation not supported; see
+// https://github.com/abiosoft/colima/issues/997). The same daemon accepts
+// /var/run/docker.sock (VM-local). Caller must only use this when h.OS == "darwin".
+func darwinDockerBindSourcePath(resolvedSocket string) string {
+	if resolvedSocket == "" {
+		return resolvedSocket
+	}
+	if strings.Contains(resolvedSocket, "/.colima/") && strings.HasSuffix(resolvedSocket, "docker.sock") {
+		return defaultDockerSocket
+	}
+	return resolvedSocket
+}
+
 // darwinDockerSockFlags returns the docker run flags to bind-mount the Docker socket on a macOS
 // host. On macOS (Docker Desktop, OrbStack, Colima) the socket is accessible to all processes
 // inside the VM — there is no docker group GID mismatch — so only the -v mount is needed.
@@ -194,10 +210,12 @@ func dockerWindowsSockGIDProbeCommand(image string) string {
 	)
 }
 
-// appendGroupAddForDockerSockGID appends --group-add when probe output is a non-zero numeric GID.
+// appendGroupAddForDockerSockGID appends --group-add when probe output is a non-empty numeric GID.
+// Even GID 0 (root) is added because the docker socket is often owned by root:root on Docker Desktop,
+// and adding GID 0 as a supplemental group grants the container's runner user access to it.
 func appendGroupAddForDockerSockGID(mount, gidProbeOutput string) string {
 	gid := strings.TrimSpace(gidProbeOutput)
-	if gid == "" || gid == "0" {
+	if gid == "" {
 		return mount
 	}
 	for _, c := range gid {
@@ -469,7 +487,7 @@ func (m *Manager) startDocker(h *host.Host, rc config.RunnerConfig, instanceName
 		if h.OS == "linux" {
 			sockFlags = dockerEngineSockFlags(h, sockPath)
 		} else {
-			sockFlags = darwinDockerSockFlags(sockPath)
+			sockFlags = darwinDockerSockFlags(darwinDockerBindSourcePath(sockPath))
 		}
 	case "windows":
 		// Docker Desktop (Linux containers mode): bind-mount the engine socket and match Linux
