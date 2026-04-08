@@ -1,0 +1,26 @@
+The linux runner(docker) in linux host fails when running agentic workflow. Help me to identify the root cause and fix it. Do not make work around.
+
+Run bash ${RUNNER_TEMP}/gh-aw/actions/install_awf_binary.sh v0.25.13
+Installing awf with checksum verification (version: v0.25.13, os: Linux, arch: x86_64)
+Downloading checksums from 'https://github.com/github/gh-aw-firewall/releases/download/v0.25.13/checksums.txt'...
+Node.js >= 20 detected (v24.14.1), using lightweight bundle...
+Downloading bundle from 'https://github.com/github/gh-aw-firewall/releases/download/v0.25.13/awf-bundle.js'...
+Verifying SHA256 checksum for awf-bundle.js...
+✓ Checksum verification passed for awf-bundle.js
+✓ Installed awf bundle to /usr/local/lib/awf/awf-bundle.js
+/usr/local/bin/awf: line 2: exec: node: not found
+Error: Process completed with exit code 127.
+
+The related script might be https://github.com/github/gh-aw/blob/main/actions/setup/sh/install_awf_binary.sh
+
+---
+
+It loos like a work around. How does GitHub hosted runner do? Could you gather more detail about that? We should make self-hosted runner do the same thing with GitHub hosted runner.
+
+---
+
+Could we just use the same image of GitHub hosted runner? From https://github.com/actions/runner-images ? We could make gh-sr configurable like the GitHub hosted runner workflow, like `ubuntu-latest`. Then we setup using the same image. How is that?
+
+---
+
+how about this? We use the minimal runner image, and make the pre-script configurable in gh-sr, using the workflow format.
