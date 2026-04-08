@@ -113,6 +113,30 @@ func Test_DefaultDockerSocket(t *testing.T) {
 	}
 }
 
+func Test_socketPathFromDockerContextHost(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		in      string
+		want    string
+		wantOK  bool
+	}{
+		{"", "", false},
+		{"  ", "", false},
+		{"tcp://127.0.0.1:2376", "", false},
+		{"unix:///var/run/docker.sock", "/var/run/docker.sock", true},
+		{"unix:///Users/me/.colima/default/docker.sock", "/Users/me/.colima/default/docker.sock", true},
+		{"  unix:///run/user/1000/docker.sock \n", "/run/user/1000/docker.sock", true},
+		{"unix://", "", false},
+		{"unix://relative.sock", "", false},
+	}
+	for _, tc := range cases {
+		got, ok := socketPathFromDockerContextHost(tc.in)
+		if ok != tc.wantOK || got != tc.want {
+			t.Errorf("socketPathFromDockerContextHost(%q): got (%q, %v) want (%q, %v)", tc.in, got, ok, tc.want, tc.wantOK)
+		}
+	}
+}
+
 func Test_dockerStartCommand_officialImageShape(t *testing.T) {
 	t.Parallel()
 	sockFlags := "-v /var/run/docker.sock:/var/run/docker.sock --group-add 999 "

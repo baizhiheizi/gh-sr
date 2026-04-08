@@ -138,7 +138,7 @@ func Run(w io.Writer, cfgPath, envPath string, cfg *config.Config, cfgErr error,
 			defer h.Close()
 			printLine(w, sevOK, hostName, fmt.Sprintf("connected (%s)", addrSummary(hcfg.Addr)))
 			if modes["docker"] {
-				checkDocker(w, hostName, h, hcfg, runners, &r)
+				checkDocker(w, hostName, h, runners, &r)
 			}
 			if modes["native"] {
 				checkNative(w, hostName, h, &r)
@@ -211,7 +211,7 @@ func modesForHost(runners []config.RunnerConfig, hostName, hostOS string) map[st
 	return m
 }
 
-func checkDocker(w io.Writer, hostName string, h *host.Host, hcfg config.HostConfig, runners []config.RunnerConfig, r *Result) {
+func checkDocker(w io.Writer, hostName string, h *host.Host, runners []config.RunnerConfig, r *Result) {
 	if h.OS == "windows" {
 		out, err := h.RunShell(`docker info --format "{{.ServerVersion}}"`)
 		out = strings.TrimSpace(out)
@@ -248,28 +248,16 @@ func checkDocker(w io.Writer, hostName string, h *host.Host, hcfg config.HostCon
 	printLine(w, sevOK, hostName, fmt.Sprintf("docker: server version %s (image %s)", out, runner.RunnerDockerImage))
 
 	if h.OS == "linux" || h.OS == "darwin" {
-		checkUnixDockerSocket(w, hostName, h, hcfg, runners, r)
+		checkUnixDockerSocket(w, hostName, h, runners, r)
 	}
 }
 
 // checkUnixDockerSocket verifies the Docker socket path on Linux/macOS hosts and, if any docker-mode
 // runner container is already running, checks that the socket is accessible inside it.
-func checkUnixDockerSocket(w io.Writer, hostName string, h *host.Host, hcfg config.HostConfig, runners []config.RunnerConfig, r *Result) {
-	socketPath := hcfg.DockerSocket
-	if socketPath == "" {
-		socketPath = runner.DefaultDockerSocket
-	}
-
-	// Verify the socket exists on the host.
-	out, err := h.Run(fmt.Sprintf("test -S %s && echo ok || echo missing", socketPath))
-	if err != nil || strings.TrimSpace(out) != "ok" {
-		hint := "ensure Docker daemon is running (rootless Docker? set docker_socket in config)"
-		if h.OS == "darwin" {
-			hint = "ensure Docker Desktop/OrbStack/Colima is running (non-default socket path? set docker_socket in config)"
-		}
-		printLine(w, sevFail, hostName, fmt.Sprintf(
-			"docker: socket not found at %s; %s", socketPath, hint,
-		))
+func checkUnixDockerSocket(w io.Writer, hostName string, h *host.Host, runners []config.RunnerConfig, r *Result) {
+	socketPath, err := runner.EffectiveDockerSocket(h)
+	if err != nil {
+		printLine(w, sevFail, hostName, fmt.Sprintf("docker: %v", err))
 		r.Fail++
 		return
 	}

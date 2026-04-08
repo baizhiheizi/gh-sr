@@ -60,7 +60,7 @@ func Up(w io.Writer, cfg *config.Config, mgr *runner.Manager, filterHost, filter
 		if err != nil {
 			return err
 		}
-		if err := mgr.Start(h, rc, hcfg); err != nil {
+		if err := mgr.Start(h, rc); err != nil {
 			h.Close()
 			return err
 		}
@@ -99,7 +99,7 @@ func Restart(w io.Writer, cfg *config.Config, mgr *runner.Manager, filterHost, f
 			return err
 		}
 		_ = mgr.Stop(h, rc)
-		if err := mgr.Start(h, rc, hcfg); err != nil {
+		if err := mgr.Start(h, rc); err != nil {
 			h.Close()
 			return err
 		}
@@ -123,7 +123,7 @@ func Update(w io.Writer, cfg *config.Config, mgr *runner.Manager, filterHost, fi
 			h.Close()
 			return err
 		}
-		if err := mgr.Start(h, rc, hcfg); err != nil {
+		if err := mgr.Start(h, rc); err != nil {
 			h.Close()
 			return err
 		}

@@ -55,14 +55,14 @@ func (m *Manager) Setup(h *host.Host, rc config.RunnerConfig) error {
 	}
 }
 
-func (m *Manager) Start(h *host.Host, rc config.RunnerConfig, hcfg config.HostConfig) error {
+func (m *Manager) Start(h *host.Host, rc config.RunnerConfig) error {
 	mode := rc.EffectiveMode(h.OS)
 
 	for _, name := range rc.InstanceNames() {
 		var err error
 		switch mode {
 		case "docker":
-			err = m.startDocker(h, hcfg, rc, name)
+			err = m.startDocker(h, rc, name)
 		case "native":
 			kind, derr := autostart.Detect(h, name)
 			if derr != nil {

@@ -44,11 +44,13 @@ The first command checks non-interactive SSH (see also [All remote hosts](#all-r
 
 ### Docker socket permissions (Linux/macOS)
 
-When `ghr` starts a docker-mode runner container on Linux or macOS, it bind-mounts the Docker socket into the container at `/var/run/docker.sock` so jobs can reach the Docker daemon. On **Linux**, the **`runner` user inside the container** (uid 1001) must also have permission to use the socket — ghr handles this automatically by:
+When `ghr` starts a docker-mode runner container on Linux or macOS, it bind-mounts the Docker socket into the container at `/var/run/docker.sock` so jobs can reach the Docker daemon. **Resolving the host socket:** if `docker_socket` is not set, ghr uses the first path that exists: `/var/run/docker.sock`; otherwise the `unix://` endpoint from the host’s current default Docker context (`docker context inspect`, which matches Colima and Linux rootless when that context is active); on **macOS** only, `~/.colima/default/docker.sock` as a last resort. Set `docker_socket` when your engine uses a different path (for example a named Colima profile that is not the default context).
 
-1. Querying the socket's owning GID on the host with `stat -c '%g' /var/run/docker.sock`.
+On **Linux**, the **`runner` user inside the container** (uid 1001) must also have permission to use the socket — ghr handles this automatically by:
+
+1. Querying the socket's owning GID on the host with `stat -c '%g'` on the resolved host socket path.
 2. Passing `--group-add <GID>` to `docker run` so the container's runner user becomes a member of that group.
-3. Running a pre-flight `test -S` check before starting the container to catch missing or mis-configured sockets early.
+3. Verifying the socket with `test -S` on the resolved path before starting the container.
 
 On **macOS** (Docker Desktop, OrbStack, Colima), the socket is accessible to all processes inside the VM — there is no docker group GID mismatch. ghr skips the `stat` query and `--group-add` on macOS hosts; only the bind-mount is applied.
 
@@ -59,7 +61,7 @@ ghr down <runner-name>
 ghr up <runner-name>
 ```
 
-**Rootless Docker** (Linux) uses a per-user socket such as `/run/user/1000/docker.sock` instead of the system default. On **macOS**, non-default Colima profiles also use alternate paths (e.g. `~/.colima/myprofile/docker.sock`). Set `docker_socket` in your host config to override (supported on Linux and macOS; not applicable on Windows):
+**Rootless Docker** (Linux) and **Colima** often use a non-default socket; ghr usually finds it via the default Docker context without extra config. If the active context does not point at the socket you want (for example a **named Colima profile** that is not selected in `docker context`), set `docker_socket` explicitly (supported on Linux and macOS; not applicable on Windows):
 
 ```yaml
 hosts:
@@ -104,7 +106,7 @@ Run **`ghr doctor`** (optionally with `--host` / `--repo`) to confirm connectivi
 
 For the full explanation of non-interactive SSH, the `ghr: remote Linux commands need root…` error, `NOPASSWD`, and verification commands, see [Linux SSH user and privileges](#linux-ssh-user-and-privileges) above.
 
-- **Docker mode (default on Linux):** If Docker is not installed, `ghr setup` can run Docker’s install script, which requires **root** or **passwordless sudo** (`sudo -n`) over SSH (see the section linked above). To avoid that path, install Docker yourself and ensure the SSH user can run `docker` (for example membership in the `docker` group). ghr automatically passes `--group-add` for the socket GID and runs a pre-flight socket check before starting containers; see [Docker socket permissions](#docker-socket-permissions-linuxmacos) above for details and the `docker_socket` override for rootless Docker.
+- **Docker mode (default on Linux):** If Docker is not installed, `ghr setup` can run Docker’s install script, which requires **root** or **passwordless sudo** (`sudo -n`) over SSH (see the section linked above). To avoid that path, install Docker yourself and ensure the SSH user can run `docker` (for example membership in the `docker` group). ghr automatically passes `--group-add` for the socket GID and verifies the socket before starting containers; see [Docker socket permissions](#docker-socket-permissions-linuxmacos) above for path resolution and the optional `docker_socket` override.
 - **Native mode:** Ensure `curl` and `tar` are on `PATH`. `ghr setup` may still invoke GitHub’s `installdependencies.sh` with **`sudo -n`** when the SSH user is not root and passwordless sudo is available.
 
 Run **`ghr doctor`** after the host is prepared.
@@ -112,7 +114,7 @@ Run **`ghr doctor`** after the host is prepared.
 ## macOS
 
 - **Native:** `curl` is usually sufficient; ghr downloads the Actions runner over HTTPS.
-- **Docker mode:** Install [Docker Desktop](https://www.docker.com/products/docker-desktop/), [OrbStack](https://orbstack.dev/), or [Colima](https://github.com/abiosoft/colima). The `docker` CLI must work in the **same** environment as your SSH session (user, `PATH`, and Docker socket). Start the Docker engine (app or `colima start`, etc.) before relying on docker mode. **Docker socket permissions:** macOS Docker Desktop, OrbStack, and Colima use a Unix socket inside the VM that is accessible to all processes; ghr does not need `--group-add` on macOS and skips the GID detection step. ghr bind-mounts the socket at `/var/run/docker.sock` inside the container (matching the Linux default). For non-default socket paths (e.g. a named Colima profile), set `docker_socket` in your host config — see [Docker socket permissions](#docker-socket-permissions-linuxmacos) below.
+- **Docker mode:** Install [Docker Desktop](https://www.docker.com/products/docker-desktop/), [OrbStack](https://orbstack.dev/), or [Colima](https://github.com/abiosoft/colima). The `docker` CLI must work in the **same** environment as your SSH session (user, `PATH`, and Docker context). Start the Docker engine (app or `colima start`, etc.) before relying on docker mode. **Docker socket permissions:** macOS Docker Desktop, OrbStack, and Colima use a Unix socket that is accessible to all processes; ghr does not need `--group-add` on macOS and skips the GID detection step. ghr bind-mounts the resolved host socket at `/var/run/docker.sock` inside the container (matching the Linux default). Override with `docker_socket` only when needed — see [Docker socket permissions](#docker-socket-permissions-linuxmacos) below.
 
 Run **`ghr doctor`** to confirm `docker info` from the SSH session.
 

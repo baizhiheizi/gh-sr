@@ -65,6 +65,83 @@ const DefaultDockerSocket = "/var/run/docker.sock"
 // defaultDockerSocket is an unexported alias kept for internal use within this package.
 const defaultDockerSocket = DefaultDockerSocket
 
+// socketPathFromDockerContextHost returns the filesystem path when endpoint is a unix:// Docker API URL.
+func socketPathFromDockerContextHost(endpoint string) (path string, ok bool) {
+	endpoint = strings.TrimSpace(endpoint)
+	if endpoint == "" {
+		return "", false
+	}
+	if !strings.HasPrefix(endpoint, "unix://") {
+		return "", false
+	}
+	path = strings.TrimPrefix(endpoint, "unix://")
+	if path == "" || path[0] != '/' {
+		return "", false
+	}
+	return path, true
+}
+
+func remoteDockerSocketOK(h *host.Host, path string) (bool, error) {
+	q := shellSingleQuote(path)
+	out, err := h.Run(fmt.Sprintf("test -S %s && echo ok || echo missing", q))
+	if err != nil {
+		return false, err
+	}
+	return strings.TrimSpace(out) == "ok", nil
+}
+
+// EffectiveDockerSocket returns the host-side Docker socket path for bind-mounting on Linux and macOS.
+// When HostConfig.DockerSocket is set, that path is used if it exists. Otherwise ghr probes, in order:
+// /var/run/docker.sock, the active docker context unix endpoint (Colima, rootless Docker, etc.),
+// and on macOS ~/.colima/default/docker.sock.
+func EffectiveDockerSocket(h *host.Host) (string, error) {
+	if h.OS != "linux" && h.OS != "darwin" {
+		return "", fmt.Errorf("EffectiveDockerSocket: unsupported OS %q", h.OS)
+	}
+	if p := strings.TrimSpace(h.DockerSocket); p != "" {
+		ok, err := remoteDockerSocketOK(h, p)
+		if err != nil {
+			return "", fmt.Errorf("checking docker_socket on host %s: %w", h.Name, err)
+		}
+		if !ok {
+			return "", fmt.Errorf("docker_socket not found or not a socket at %s on host %s", p, h.Name)
+		}
+		return p, nil
+	}
+	ok, err := remoteDockerSocketOK(h, defaultDockerSocket)
+	if err != nil {
+		return "", fmt.Errorf("checking Docker socket on host %s: %w", h.Name, err)
+	}
+	if ok {
+		return defaultDockerSocket, nil
+	}
+	ctxOut, derr := dockerRun(h, `docker context inspect -f '{{.Endpoints.docker.Host}}'`)
+	if derr == nil {
+		if p, parseOK := socketPathFromDockerContextHost(ctxOut); parseOK {
+			ok2, err2 := remoteDockerSocketOK(h, p)
+			if err2 != nil {
+				return "", fmt.Errorf("checking Docker socket from context on host %s: %w", h.Name, err2)
+			}
+			if ok2 {
+				return p, nil
+			}
+		}
+	}
+	if h.OS == "darwin" {
+		out, rerr := h.Run(prependDarwinDockerPATH(h, `p="$HOME/.colima/default/docker.sock"; if test -S "$p"; then printf '%s' "$p"; fi`))
+		if rerr == nil {
+			if p := strings.TrimSpace(out); p != "" {
+				return p, nil
+			}
+		}
+	}
+	hint := "ensure Docker is running (rootless Docker: ghr uses your default docker context; set docker_socket to override)"
+	if h.OS == "darwin" {
+		hint = "ensure Docker Desktop/OrbStack/Colima is running, or set docker_socket for a non-default socket path"
+	}
+	return "", fmt.Errorf("no usable Docker socket found on host %s; %s", h.Name, hint)
+}
+
 // dockerEngineSockFlags returns the docker run flags needed to expose the host Docker socket inside
 // a Linux actions-runner container and grant the container's runner user access to it.
 //
@@ -355,7 +432,7 @@ func (m *Manager) setupDockerUnix(h *host.Host) error {
 	return nil
 }
 
-func (m *Manager) startDocker(h *host.Host, hcfg config.HostConfig, rc config.RunnerConfig, instanceName string) error {
+func (m *Manager) startDocker(h *host.Host, rc config.RunnerConfig, instanceName string) error {
 	cname := containerName(instanceName)
 
 	if h.OS == "windows" {
@@ -384,20 +461,16 @@ func (m *Manager) startDocker(h *host.Host, hcfg config.HostConfig, rc config.Ru
 
 	var sockFlags string
 	switch h.OS {
-	case "linux":
-		if err := dockerEngineSockPreflightCheck(h, hcfg.DockerSocket); err != nil {
+	case "linux", "darwin":
+		sockPath, err := EffectiveDockerSocket(h)
+		if err != nil {
 			return err
 		}
-		sockFlags = dockerEngineSockFlags(h, hcfg.DockerSocket)
-	case "darwin":
-		sockPath := hcfg.DockerSocket
-		if sockPath == "" {
-			sockPath = defaultDockerSocket
+		if h.OS == "linux" {
+			sockFlags = dockerEngineSockFlags(h, sockPath)
+		} else {
+			sockFlags = darwinDockerSockFlags(sockPath)
 		}
-		if err := dockerEngineSockPreflightCheck(h, sockPath); err != nil {
-			return err
-		}
-		sockFlags = darwinDockerSockFlags(sockPath)
 	case "windows":
 		// Docker Desktop (Linux containers mode): bind-mount the engine socket and match Linux
 		// behavior by adding --group-add for the socket's GID when we can probe it from a disposable container.

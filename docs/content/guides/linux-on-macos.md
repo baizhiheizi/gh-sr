@@ -11,7 +11,7 @@ Set `mode: docker` on a runner that targets an `os: darwin` host to run the same
 
 - Docker Desktop, OrbStack, or Colima installed, with `docker` working in the environment where **ghr** runs commands (for example the same user over SSH).
 
-**Docker socket permissions:** macOS runtimes (Docker Desktop, OrbStack, Colima) expose a VM-internal socket that is accessible to all processes — there is no host `docker` group GID issue. ghr skips `--group-add` on macOS hosts. ghr bind-mounts the Docker socket into the container at `/var/run/docker.sock` (the same default path as on Linux) so jobs can reach the Docker daemon. By default ghr uses `/var/run/docker.sock`; if your runtime uses a non-standard path (e.g. Colima with a named profile), set `docker_socket` in your host config:
+**Docker socket permissions:** macOS runtimes (Docker Desktop, OrbStack, Colima) expose a socket that is accessible to all processes — there is no host `docker` group GID issue. ghr skips `--group-add` on macOS hosts. ghr bind-mounts the host socket into the container at `/var/run/docker.sock` so jobs can reach the Docker daemon. If `docker_socket` is unset, ghr picks `/var/run/docker.sock` when present, otherwise the `unix://` path from your default Docker context (typical for Colima), otherwise `~/.colima/default/docker.sock` on macOS. Set `docker_socket` only when the default Docker context does not match the engine you want (e.g. a named Colima profile):
 
 ```yaml
 hosts:
@@ -19,7 +19,7 @@ hosts:
     addr: user@192.168.1.50
     os: darwin
     arch: arm64
-    docker_socket: /Users/me/.colima/myprofile/docker.sock  # optional; omit for Docker Desktop/OrbStack/default Colima
+    docker_socket: /Users/me/.colima/myprofile/docker.sock  # optional; omit when default context points at your runtime
 ```
 
 ```yaml

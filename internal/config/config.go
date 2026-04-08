@@ -30,7 +30,7 @@ type HostConfig struct {
 	OS           string `yaml:"os"`
 	Arch         string `yaml:"arch"`
 	WindowsPS    string `yaml:"windows_ps"`    // powershell (default) or pwsh — which exe runs encoded remote scripts on Windows
-	DockerSocket string `yaml:"docker_socket"` // override Docker socket path (Linux/macOS; default /var/run/docker.sock)
+	DockerSocket string `yaml:"docker_socket"` // override Docker socket path (Linux/macOS; if empty, ghr probes default path, docker context, then Colima default on macOS)
 }
 
 type RunnerConfig struct {
