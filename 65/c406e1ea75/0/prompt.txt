@@ -1,0 +1,1 @@
+Since gh-wm is an extension of `gh`, we should only use gh to auth, not PAT and other methods. Let's clean them up.

@@ -1,0 +1,61 @@
+{
+  "cli_version": "dev",
+  "checkpoint_id": "65c406e1ea75",
+  "session_id": "1548074e-0bbc-40f8-8544-e1d3e47b6872",
+  "strategy": "manual-commit",
+  "created_at": "2026-04-08T08:32:24.003160543Z",
+  "branch": "main",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "README.md",
+    "cmd/gh-wm/main.go",
+    "config/runners.yml",
+    "docs/content/_index.md",
+    "docs/content/authentication.md",
+    "docs/content/commands.md",
+    "docs/content/configuration.md",
+    "docs/content/github-pat.md",
+    "docs/content/host-setup.md",
+    "docs/content/installation.md",
+    "docs/content/introduction.md",
+    "internal/config/config.go",
+    "internal/config/config_test.go",
+    "internal/config/ghauth.go",
+    "internal/config/ghauth_test.go",
+    "internal/config/mutate_test.go",
+    "internal/config/runners.yml.template",
+    "internal/config/template.go",
+    "internal/doctor/doctor.go",
+    "internal/doctor/doctor_test.go",
+    "internal/runner/github.go",
+    "internal/runner/runner_test.go",
+    "internal/tui/dashboard.go",
+    "internal/tui/status.go",
+    "internal/tui/status_test.go"
+  ],
+  "agent": "Claude Code",
+  "model": "composer-2",
+  "turn_id": "cb922117b56e",
+  "token_usage": {
+    "input_tokens": 0,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 0,
+    "output_tokens": 0,
+    "api_call_count": 0
+  },
+  "session_metrics": {
+    "turn_count": 4
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-04-08T08:32:23.942560357Z",
+    "agent_lines": 198,
+    "agent_removed": 349,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 198,
+    "total_lines_changed": 547,
+    "agent_percentage": 100,
+    "metric_version": 2
+  }
+}
