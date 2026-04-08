@@ -81,7 +81,7 @@ Linux defaults to **docker** if you don't specify. Windows and macOS default to 
 ### Config and secrets
 
 - **`~/.gh-wm/runners.yml`** — Declares all hosts and runners (OS, mode, count, labels, etc.)
-- **`~/.gh-wm/env`** — Contains environment variables, most importantly your GitHub PAT (`GHR_TOKEN`)
+- **`~/.gh-wm/env`** — Contains environment variables, most importantly your GitHub PAT (`GITHUB_PAT`)
 
 ### Instances
 

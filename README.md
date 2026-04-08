@@ -53,15 +53,6 @@ The resulting binary is named `gh-wm`. To invoke it as **`gh wm`**, install the 
 
 Requires a recent **Go** toolchain when building from source (see `go.mod` / CI for the exact version).
 
-### Migrating from the old `ghr` CLI
-
-If you previously used **`ghr`** with config under **`~/.ghr`** and **`GHR_CONFIG`**, move your data and update your environment:
-
-```bash
-mv ~/.ghr ~/.gh-wm
-# If you used GHR_CONFIG, set GH_WM_CONFIG to the same path instead.
-```
-
 ## Quick start
 
 ```bash

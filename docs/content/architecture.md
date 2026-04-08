@@ -73,13 +73,13 @@ flowchart TB
 ```mermaid
 sequenceDiagram
   participant User
-  participant Ghr as gh wm_CLI
+  participant GhWm as gh wm_CLI
   participant Host as Target_host
-  User->>Ghr: gh wm_up_runner_name
-  Ghr->>Ghr: Load_config_resolve_mode
-  Ghr->>Host: Connect_SSH_or_local
-  Ghr->>Host: Start_native_or_docker_per_instance
-  Host-->>Ghr: OK_or_error
+  User->>GhWm: gh wm_up_runner_name
+  GhWm->>GhWm: Load_config_resolve_mode
+  GhWm->>Host: Connect_SSH_or_local
+  GhWm->>Host: Start_native_or_docker_per_instance
+  Host-->>GhWm: OK_or_error
 ```
 
 ## Lifecycle commands (what they do)
