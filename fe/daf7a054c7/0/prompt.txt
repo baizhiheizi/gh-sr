@@ -1,0 +1,45 @@
+What is the different between the linux runner native and docker mode? Which one should we choose when running agentic workflows?
+
+---
+
+I think `gh sr` make things complecated. Could we remove the `profile: agentic` config, and make all runners works in agentic workflow as default?
+
+---
+
+I think `gh sr` make things complecated. Could we remove the `profile: agentic` config, and make all runners works in agentic workflow as default?
+
+---
+
+Tell me more about the effect that agentic applies. Can I run many runners at the same time in the same host?
+
+---
+
+Why agentic runner need to use docker mode? Could it run as native?
+
+---
+
+Why agentic runner need to use docker mode? Could it run as native?
+
+---
+
+Do some research about the GitHub agentic workflow. (https://github.github.com/gh-aw/guides/self-hosted-runners/) What's the best choice to run agentic workflow, native or docker?
+
+---
+
+Do some research about the GitHub agentic workflow. (https://github.github.com/gh-aw/guides/self-hosted-runners/) What's the best choice to run agentic workflow, native or docker?
+
+---
+
+If we run it natively, how could we ensure the `sudo` permission as required?
+
+---
+
+If we run it natively, how could we ensure the `sudo` permission as required?
+
+---
+
+Help me to impelment the improvements
+
+---
+
+Help me to impelment the improvements

@@ -1,0 +1,22 @@
+{
+  "cli_version": "dev",
+  "checkpoint_id": "fedaf7a054c7",
+  "strategy": "manual-commit",
+  "branch": "main",
+  "checkpoints_count": 8,
+  "files_touched": [
+    "docs/content/configuration.md",
+    "docs/content/guides/workflows.md",
+    "docs/content/host-setup.md",
+    "internal/doctor/doctor.go",
+    "internal/doctor/doctor_test.go"
+  ],
+  "sessions": [
+    {
+      "metadata": "/fe/daf7a054c7/0/metadata.json",
+      "transcript": "/fe/daf7a054c7/0/full.jsonl",
+      "content_hash": "/fe/daf7a054c7/0/content_hash.txt",
+      "prompt": "/fe/daf7a054c7/0/prompt.txt"
+    }
+  ]
+}
