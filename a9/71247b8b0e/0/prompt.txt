@@ -1,0 +1,1 @@
+we should release it in github repo so that users could install from it. But how should we manage the versions? Help me to design a pattern based on the best practice
