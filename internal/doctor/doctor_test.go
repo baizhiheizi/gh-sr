@@ -80,6 +80,22 @@ func TestEnsureDoctorHostOS_LocalFillsRuntimeGOOS(t *testing.T) {
 	}
 }
 
+func TestHasAgenticRunners_ghAWLabel(t *testing.T) {
+	t.Parallel()
+	runners := []config.RunnerConfig{
+		{Name: "n", Host: "h1", Repo: "o/r", Mode: "native", Labels: []string{"self-hosted", "Linux", "X64", "gh-aw"}},
+	}
+	if !hasAgenticRunners(runners, "h1") {
+		t.Fatal("expected hasAgenticRunners true for gh-aw label without profile")
+	}
+	runnersNo := []config.RunnerConfig{
+		{Name: "n", Host: "h1", Repo: "o/r", Mode: "native", Labels: []string{"self-hosted", "Linux", "X64"}},
+	}
+	if hasAgenticRunners(runnersNo, "h1") {
+		t.Fatal("expected hasAgenticRunners false without gh-aw label")
+	}
+}
+
 func TestModesForHost(t *testing.T) {
 	t.Parallel()
 	runners := []config.RunnerConfig{

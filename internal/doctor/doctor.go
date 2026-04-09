@@ -497,8 +497,17 @@ func checkNative(w io.Writer, hostName string, h *host.Host, r *Result) {
 
 func hasAgenticRunners(runners []config.RunnerConfig, hostName string) bool {
 	for _, rc := range runners {
-		if rc.Host == hostName && rc.IsAgentic() {
+		if rc.Host != hostName {
+			continue
+		}
+		if rc.IsAgentic() {
 			return true
+		}
+		// Native Linux setups for gh-aw use mode: native + labels including gh-aw (no profile).
+		for _, l := range rc.Labels {
+			if strings.EqualFold(strings.TrimSpace(l), "gh-aw") {
+				return true
+			}
 		}
 	}
 	return false
