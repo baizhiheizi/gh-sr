@@ -1,0 +1,36 @@
+{
+  "cli_version": "dev",
+  "checkpoint_id": "90f64f861f72",
+  "session_id": "bc3e274c-ce0a-419c-b6b9-d5e8cc0094e1",
+  "strategy": "manual-commit",
+  "created_at": "2026-04-09T03:21:51.212049182Z",
+  "branch": "main",
+  "checkpoints_count": 0,
+  "files_touched": [
+    "internal/doctor/doctor_test.go",
+    "docs/content/guides/linux-on-windows.md",
+    "docs/content/guides/workflows.md",
+    "internal/config/config.go",
+    "internal/config/config_test.go",
+    "internal/config/runners.yml.template",
+    "internal/doctor/doctor.go",
+    "cmd/gh-sr/main.go",
+    "docs/content/configuration.md",
+    "docs/content/host-setup.md"
+  ],
+  "agent": "Cursor",
+  "model": "composer-2",
+  "turn_id": "5ce5548fde4e",
+  "initial_attribution": {
+    "calculated_at": "2026-04-09T03:21:51.187446868Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 12,
+    "human_modified": 36,
+    "human_removed": 0,
+    "total_committed": 12,
+    "total_lines_changed": 48,
+    "agent_percentage": 0,
+    "metric_version": 2
+  }
+}

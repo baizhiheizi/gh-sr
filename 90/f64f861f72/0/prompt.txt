@@ -1,0 +1,20 @@
+Commit the right changes for this branch.
+- If nothing relevant is staged yet, stage the right files first.
+- Ensure only relevant files are staged (unstage anything unrelated).
+- Write a concise commit message.
+- Do not push.
+
+Currently staged files:
+- cmd/gh-sr/main.go (modified)
+- docs/content/configuration.md (modified)
+- docs/content/guides/linux-on-windows.md (modified)
+- docs/content/guides/workflows.md (modified)
+- docs/content/host-setup.md (modified)
+- internal/config/config.go (modified)
+- internal/config/config_test.go (modified)
+- internal/config/runners.yml.template (modified)
+- internal/doctor/doctor.go (modified)
+- internal/doctor/doctor_test.go (modified)
+
+Currently unstaged files:
+(none)
