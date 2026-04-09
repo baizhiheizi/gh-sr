@@ -109,9 +109,9 @@ flowchart TD
 
 **`gh sr status`** and **`gh sr dashboard`** both:
 
-1. Connect to each host (or mark instances **unreachable** if connection fails).
+1. Connect to each host **concurrently** (or mark instances **unreachable** if connection fails) — all SSH connections are opened in parallel so the command completes in roughly the time it takes to reach the slowest host.
 2. Ask the host whether each instance is **running** or **stopped** (native: PID file + process check; docker: `docker inspect`).
-3. Call the **GitHub API** to match runner **names** and the runner’s **OS** (from the API’s `os` field vs native vs docker mode) so two config rows with the same instance name on different platforms do not show each other’s GitHub state.
+3. Call the **GitHub API** for each repo **concurrently** to match runner **names** and the runner’s **OS** (from the API’s `os` field vs native vs docker mode) so two config rows with the same instance name on different platforms do not show each other’s GitHub state.
 
 **`gh sr logs <name>`** looks up the runner block by **base name** or a full **instance** name (`name-1`, `name-2`, …), connects to the host, then tails logs for that instance. Use **`--host`** when the same instance name exists on more than one machine.
 
