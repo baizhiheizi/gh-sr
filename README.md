@@ -49,6 +49,13 @@ From source with Go:
 go install github.com/an-lee/gh-sr/cmd/gh-sr@latest
 ```
 
+Pin a specific release (same `v*` tags as [GitHub Releases](https://github.com/an-lee/gh-sr/releases)):
+
+```bash
+gh extension install an-lee/gh-sr --pin v1.2.0
+go install github.com/an-lee/gh-sr/cmd/gh-sr@v1.2.0
+```
+
 The resulting binary is named `gh-sr`. To invoke it as **`gh sr`**, install the extension as above, or run `gh-sr` directly if it is on your `PATH`.
 
 Requires a recent **Go** toolchain when building from source (see `go.mod` / CI for the exact version).
