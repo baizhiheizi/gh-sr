@@ -402,14 +402,23 @@ func UnixDockerCLIInstalled(h *host.Host) (bool, error) {
 	}
 }
 
-func wrapDockerInfoErr(err error) error {
+func wrapDockerInfoErr(h *host.Host, err error) error {
 	if err == nil {
 		return nil
 	}
 	lower := strings.ToLower(err.Error())
 	switch {
 	case strings.Contains(lower, "permission denied") && strings.Contains(lower, "docker.sock"):
-		return fmt.Errorf("cannot access Docker socket (add the SSH user to the 'docker' group and reconnect SSH, or use root): %w", err)
+		userHint := "$USER"
+		if h != nil {
+			if u := h.SSHUser(); u != "" {
+				userHint = u
+			}
+		}
+		return fmt.Errorf(
+			"cannot access Docker socket (on the host as root: sudo usermod -aG docker %s; then reconnect SSH or run: newgrp docker; or use root in hosts.*.addr): %w",
+			userHint, err,
+		)
 	case strings.Contains(lower, "permission denied"):
 		return fmt.Errorf("permission denied talking to Docker: %w", err)
 	case strings.Contains(lower, "cannot connect to the docker daemon"),
@@ -432,7 +441,7 @@ func UnixDockerServerVersion(h *host.Host) (string, error) {
 		}
 		return out, nil
 	}
-	return "", wrapDockerInfoErr(err)
+	return "", wrapDockerInfoErr(h, err)
 }
 
 func (m *Manager) setupDockerUnix(h *host.Host) error {

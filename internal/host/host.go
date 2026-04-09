@@ -150,6 +150,15 @@ func (h *Host) PathSep() string {
 	return "/"
 }
 
+// SSHUser returns the SSH login from Addr when it uses user@host form; otherwise "" (e.g. local, bare hostname).
+func (h *Host) SSHUser() string {
+	if IsLocal(h.Addr) {
+		return ""
+	}
+	u, _ := parseAddr(h.Addr)
+	return u
+}
+
 func parseAddr(addr string) (user, host string) {
 	if i := strings.Index(addr, "@"); i >= 0 {
 		return addr[:i], addr[i+1:]

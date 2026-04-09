@@ -21,6 +21,26 @@ func Test_parseAddr(t *testing.T) {
 	}
 }
 
+func TestHost_SSHUser(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		addr string
+		want string
+	}{
+		{"an-lee@192.168.31.66", "an-lee"},
+		{"user@host.example:2222", "user"},
+		{"192.168.1.1", ""},
+		{"local", ""},
+		{"Local", ""},
+	}
+	for _, tc := range cases {
+		h := NewHost("h", config.HostConfig{Addr: tc.addr, OS: "linux", Arch: "amd64"})
+		if got := h.SSHUser(); got != tc.want {
+			t.Errorf("SSHUser(%q): got %q want %q", tc.addr, got, tc.want)
+		}
+	}
+}
+
 func TestEncodePowerShellScript_roundTrip(t *testing.T) {
 	t.Parallel()
 	script := "Write-Host \"a\"'\nline2"

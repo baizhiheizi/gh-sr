@@ -34,7 +34,11 @@ Linux hosts: gh sr setup and update may run package installs and similar steps o
 SSH user, gh sr uses sudo when the sudo binary exists on the remote PATH; SSH is non-interactive, so passwordless
 sudo (or SSH as root) is usually required for those steps to succeed. For docker mode without Docker installed,
 install Docker yourself or ensure sudo works; for native mode, pre-install curl/tar and runner OS dependencies
-if you cannot use sudo. See the README section "Linux SSH user and privileges".`
+if you cannot use sudo. See the README section "Linux SSH user and privileges".
+
+Docker mode on Linux requires the SSH user to run docker without sudo. If docker info fails with permission
+denied on the socket, on the host (as root) run: sudo usermod -aG docker <ssh-user>, then reconnect SSH or run
+newgrp docker so group membership applies.`
 
 // serviceLongHelp documents autostart behavior for the service subcommands.
 const serviceLongHelp = `

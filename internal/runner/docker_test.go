@@ -481,19 +481,33 @@ func Test_DockerWindowsSockGIDProbeCommand_shape(t *testing.T) {
 func Test_wrapDockerInfoErr_classifiesSocketPermission(t *testing.T) {
 	t.Parallel()
 	base := errors.New(`permission denied while trying to connect to the docker API at unix:///var/run/docker.sock`)
-	w := wrapDockerInfoErr(base)
+	h := host.NewHost("x", config.HostConfig{Addr: "alice@192.168.1.1", OS: "linux", Arch: "amd64"})
+	w := wrapDockerInfoErr(h, base)
 	if w == nil || !strings.Contains(w.Error(), "cannot access Docker socket") {
 		t.Fatalf("expected socket hint, got %v", w)
+	}
+	if !strings.Contains(w.Error(), "usermod -aG docker alice") {
+		t.Fatalf("expected concrete usermod for SSH user, got %v", w)
 	}
 	if !errors.Is(w, base) {
 		t.Fatalf("expected wrap to preserve base error")
 	}
 }
 
+func Test_wrapDockerInfoErr_socketPermission_noUserInAddr_usesUSER(t *testing.T) {
+	t.Parallel()
+	base := errors.New(`permission denied while trying to connect to the docker API at unix:///var/run/docker.sock`)
+	h := host.NewHost("x", config.HostConfig{Addr: "192.168.1.1", OS: "linux", Arch: "amd64"})
+	w := wrapDockerInfoErr(h, base)
+	if w == nil || !strings.Contains(w.Error(), "usermod -aG docker $USER") {
+		t.Fatalf("expected $USER placeholder when addr has no user, got %v", w)
+	}
+}
+
 func Test_wrapDockerInfoErr_classifiesDaemonUnreachable(t *testing.T) {
 	t.Parallel()
 	base := errors.New("Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?")
-	w := wrapDockerInfoErr(base)
+	w := wrapDockerInfoErr(nil, base)
 	if w == nil || !strings.Contains(w.Error(), "Docker daemon not reachable") {
 		t.Fatalf("expected daemon hint, got %v", w)
 	}
@@ -502,7 +516,7 @@ func Test_wrapDockerInfoErr_classifiesDaemonUnreachable(t *testing.T) {
 func Test_wrapDockerInfoErr_passesThroughUnknown(t *testing.T) {
 	t.Parallel()
 	base := errors.New("some other docker failure")
-	if got := wrapDockerInfoErr(base); !errors.Is(got, base) || got.Error() != base.Error() {
+	if got := wrapDockerInfoErr(nil, base); !errors.Is(got, base) || got.Error() != base.Error() {
 		t.Fatalf("expected same error, got %v", got)
 	}
 }
