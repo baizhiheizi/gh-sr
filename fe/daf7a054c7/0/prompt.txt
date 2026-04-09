@@ -43,3 +43,21 @@ Help me to impelment the improvements
 ---
 
 Help me to impelment the improvements
+
+---
+
+Commit the right changes for this branch.
+- If nothing relevant is staged yet, stage the right files first.
+- Ensure only relevant files are staged (unstage anything unrelated).
+- Write a concise commit message.
+- Do not push.
+
+Currently staged files:
+(none)
+
+Currently unstaged files:
+- docs/content/configuration.md (modified)
+- docs/content/guides/workflows.md (modified)
+- docs/content/host-setup.md (modified)
+- internal/doctor/doctor.go (modified)
+- internal/doctor/doctor_test.go (modified)
