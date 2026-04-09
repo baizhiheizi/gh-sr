@@ -520,3 +520,69 @@ func Test_wrapDockerInfoErr_passesThroughUnknown(t *testing.T) {
 		t.Fatalf("expected same error, got %v", got)
 	}
 }
+
+func Test_shellSingleQuote(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		in   string
+		want string
+	}{
+		{"", "''"},
+		{"hello", "'hello'"},
+		{"hello world", "'hello world'"},
+		{"it's", "'it'\\''s'"},
+		{"'quoted'", "''\\''quoted'\\'''"},
+		{"a'b'c", "'a'\\''b'\\''c'"},
+	}
+	for _, tc := range cases {
+		if got := shellSingleQuote(tc.in); got != tc.want {
+			t.Errorf("shellSingleQuote(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
+func Test_dockerRunnerEntryScript_noPreSetup(t *testing.T) {
+	t.Parallel()
+	got := dockerRunnerEntryScript("")
+	const wantSuffix = "cd /home/runner && if [ ! -f .runner ]; then ./config.sh --unattended --replace; fi && exec ./run.sh"
+	if got != wantSuffix {
+		t.Fatalf("expected standard script, got %q", got)
+	}
+}
+
+func Test_dockerRunnerEntryScript_withPreSetup(t *testing.T) {
+	t.Parallel()
+	preSetup := "apt-get install -y nodejs"
+	got := dockerRunnerEntryScript(preSetup)
+	if !strings.HasPrefix(got, preSetup+" && ") {
+		t.Fatalf("expected script to start with preSetup, got %q", got)
+	}
+	if !strings.HasSuffix(got, "&& exec ./run.sh") {
+		t.Fatalf("expected script to end with exec ./run.sh, got %q", got)
+	}
+	if !strings.Contains(got, "./config.sh --unattended --replace") {
+		t.Fatalf("expected config.sh in script, got %q", got)
+	}
+}
+
+func Test_dockerStartCommand_includesPreSetupInEntryScript(t *testing.T) {
+	t.Parallel()
+	preSetup := "apt-get install -y nodejs"
+	cmd := dockerStartCommand(dockerStartOpts{
+		ContainerName: "gh-runner-app-1",
+		InstanceName:  "app-1",
+		RegToken:      "REGTOKEN",
+		RepoURL:       "https://github.com/o/r",
+		Labels:        "self-hosted,linux",
+		SockMount:     "-v /var/run/docker.sock:/var/run/docker.sock ",
+		Image:         "ghcr.io/actions/actions-runner:latest",
+		NetworkMode:   "bridge",
+		PreSetup:      preSetup,
+	})
+	if !strings.Contains(cmd, preSetup) {
+		t.Fatalf("docker start command should include pre-setup script, got:\n%s", cmd)
+	}
+	if !strings.Contains(cmd, "./config.sh --unattended --replace") {
+		t.Fatalf("docker start command should include config.sh after pre-setup, got:\n%s", cmd)
+	}
+}
