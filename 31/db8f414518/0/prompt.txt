@@ -1,0 +1,6 @@
+When `gh sr setup`, the error: 
+Setting up on x1 (an-lee@192.168.31.66)...
+Error: docker on host x1 is not usable: cannot access Docker socket (add the SSH user to the 'docker' group and reconnect SSH, or use root): running "docker info --format '{{.ServerVersion}}'": Process exited with status 1
+stderr: permission denied while trying to connect to the docker API at unix:///var/run/docker.sock
+
+We should enrich the help text, provide a command to help user config it correctly.
