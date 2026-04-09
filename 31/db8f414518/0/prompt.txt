@@ -4,3 +4,39 @@ Error: docker on host x1 is not usable: cannot access Docker socket (add the SSH
 stderr: permission denied while trying to connect to the docker API at unix:///var/run/docker.sock
 
 We should enrich the help text, provide a command to help user config it correctly.
+
+---
+
+Commit the right changes for this branch.
+- If nothing relevant is staged yet, stage the right files first.
+- Ensure only relevant files are staged (unstage anything unrelated).
+- Write a concise commit message.
+- Do not push.
+
+Currently staged files:
+(none)
+
+Currently unstaged files:
+- cmd/gh-sr/main.go (modified)
+- internal/host/host.go (modified)
+- internal/host/host_test.go (modified)
+- internal/runner/docker.go (modified)
+- internal/runner/docker_test.go (modified)
+
+---
+
+Commit the right changes for this branch.
+- If nothing relevant is staged yet, stage the right files first.
+- Ensure only relevant files are staged (unstage anything unrelated).
+- Write a concise commit message.
+- Do not push.
+
+Currently staged files:
+(none)
+
+Currently unstaged files:
+- cmd/gh-sr/main.go (modified)
+- internal/host/host.go (modified)
+- internal/host/host_test.go (modified)
+- internal/runner/docker.go (modified)
+- internal/runner/docker_test.go (modified)
