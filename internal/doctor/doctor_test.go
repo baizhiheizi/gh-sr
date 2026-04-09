@@ -80,19 +80,25 @@ func TestEnsureDoctorHostOS_LocalFillsRuntimeGOOS(t *testing.T) {
 	}
 }
 
-func TestHasAgenticRunners_ghAWLabel(t *testing.T) {
+func TestHasAgenticRunners_agenticLabel(t *testing.T) {
 	t.Parallel()
 	runners := []config.RunnerConfig{
-		{Name: "n", Host: "h1", Repo: "o/r", Mode: "native", Labels: []string{"self-hosted", "Linux", "X64", "gh-aw"}},
+		{Name: "n", Host: "h1", Repo: "o/r", Mode: "native", Labels: []string{"self-hosted", "Linux", "X64", "agentic"}},
 	}
 	if !hasAgenticRunners(runners, "h1") {
-		t.Fatal("expected hasAgenticRunners true for gh-aw label without profile")
+		t.Fatal("expected hasAgenticRunners true for agentic label without profile")
+	}
+	runnersLegacy := []config.RunnerConfig{
+		{Name: "n", Host: "h1", Repo: "o/r", Mode: "native", Labels: []string{"self-hosted", "Linux", "X64", "gh-aw"}},
+	}
+	if !hasAgenticRunners(runnersLegacy, "h1") {
+		t.Fatal("expected hasAgenticRunners true for legacy gh-aw label without profile")
 	}
 	runnersNo := []config.RunnerConfig{
 		{Name: "n", Host: "h1", Repo: "o/r", Mode: "native", Labels: []string{"self-hosted", "Linux", "X64"}},
 	}
 	if hasAgenticRunners(runnersNo, "h1") {
-		t.Fatal("expected hasAgenticRunners false without gh-aw label")
+		t.Fatal("expected hasAgenticRunners false without agentic or gh-aw label")
 	}
 }
 
@@ -130,7 +136,7 @@ func TestCheckAgenticWorkflowDockerHint(t *testing.T) {
 		t.Fatalf("expected WARN only for bridge docker runner zebra, got:\n%s", out)
 	}
 	if !strings.Contains(out, "agentic workflows") {
-		t.Fatalf("expected gh-aw hint: %s", out)
+		t.Fatalf("expected agentic workflows hint: %s", out)
 	}
 	if !strings.Contains(out, "set docker_network_mode: host") {
 		t.Fatalf("expected docker_network_mode hint: %s", out)

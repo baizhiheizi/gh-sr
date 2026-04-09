@@ -690,33 +690,33 @@ func TestAgenticProfile_preservesExplicitValues(t *testing.T) {
 	}
 }
 
-func TestAgenticProfile_effectiveLabelsIncludesGhAw(t *testing.T) {
+func TestAgenticProfile_effectiveLabelsIncludesAgentic(t *testing.T) {
 	t.Parallel()
 	rc := RunnerConfig{Name: "aw", Repo: "o/r", Host: "h", Profile: "agentic", Mode: "docker"}
 	labels := rc.EffectiveLabels("linux", "amd64")
 	found := false
 	for _, l := range labels {
-		if l == "gh-aw" {
+		if l == "agentic" {
 			found = true
 		}
 	}
 	if !found {
-		t.Errorf("agentic profile should add gh-aw label, got %v", labels)
+		t.Errorf("agentic profile should add agentic label, got %v", labels)
 	}
 }
 
 func TestAgenticProfile_effectiveLabelsDoesNotDuplicate(t *testing.T) {
 	t.Parallel()
-	rc := RunnerConfig{Name: "aw", Repo: "o/r", Host: "h", Profile: "agentic", Mode: "docker", Labels: []string{"custom", "gh-aw"}}
+	rc := RunnerConfig{Name: "aw", Repo: "o/r", Host: "h", Profile: "agentic", Mode: "docker", Labels: []string{"custom", "agentic"}}
 	labels := rc.EffectiveLabels("linux", "amd64")
 	count := 0
 	for _, l := range labels {
-		if l == "gh-aw" {
+		if l == "agentic" {
 			count++
 		}
 	}
 	if count != 1 {
-		t.Errorf("should not duplicate gh-aw label, got %v", labels)
+		t.Errorf("should not duplicate agentic label, got %v", labels)
 	}
 }
 

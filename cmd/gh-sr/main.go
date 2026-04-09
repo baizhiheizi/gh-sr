@@ -250,7 +250,7 @@ func runQuickInit(runnersPath string, force bool) error {
 		count = 1
 	}
 
-	agenticAnswer := prompt("Use GitHub Agentic Workflows (gh-aw) profile? (y/n)", "n")
+	agenticAnswer := prompt("Use GitHub Agentic Workflows profile? (y/n)", "n")
 	agentic := strings.ToLower(strings.TrimSpace(agenticAnswer)) == "y"
 
 	var profileLine string
@@ -294,7 +294,7 @@ runners:
 	fmt.Printf("  Host:   %s (%s)\n", hostName, addr)
 	fmt.Printf("  Runner: %s -> %s (x%d)\n", runnerName, repo, count)
 	if agentic {
-		fmt.Println("  Profile: agentic (docker, host network, NET_ADMIN, gh-aw label)")
+		fmt.Println("  Profile: agentic (docker, host network, NET_ADMIN, agentic label)")
 	} else {
 		fmt.Println("  Mode:   auto-detected at runtime")
 	}
@@ -356,8 +356,8 @@ func addRunnerCmd() *cobra.Command {
 		Short: "Add a runner entry (labels auto-generated if omitted)",
 		Long: `Adds a runner to runners.yml. Labels are auto-generated from host os/arch if not specified.
 
-Use --profile agentic to auto-configure for GitHub Agentic Workflows (gh-aw):
-sets docker mode, host networking, NET_ADMIN capability, and a gh-aw label.
+Use --profile agentic to auto-configure for GitHub Agentic Workflows:
+sets docker mode, host networking, NET_ADMIN capability, and an agentic label.
 
 Use --org instead of --repo for organization-level runners, and --group
 to assign the runner to a runner group.`,

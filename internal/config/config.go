@@ -45,7 +45,7 @@ type RunnerConfig struct {
 	Profile           string   `yaml:"profile"`
 	Ephemeral         bool     `yaml:"ephemeral"`
 	DockerNetworkMode string   `yaml:"docker_network_mode"` // bridge (default) or host; only for docker-mode Linux runners
-	// DockerCapAdd lists Linux capability names passed to docker run --cap-add (e.g. NET_ADMIN for gh-aw AWF iptables).
+	// DockerCapAdd lists Linux capability names passed to docker run --cap-add (e.g. NET_ADMIN for Agent Workflow Firewall iptables).
 	DockerCapAdd []string `yaml:"docker_cap_add"`
 	// DockerPreSetup is a bash script that runs inside the container before the runner starts.
 	// Use this to install tools needed for your workflows (e.g., Node.js for awf).
@@ -135,7 +135,7 @@ func DefaultLabels(mode, hostOS, arch string) []string {
 }
 
 // EffectiveLabels returns the runner's labels, auto-generating them from host info if empty.
-// Agentic-profile runners automatically get a "gh-aw" label appended.
+// Agentic-profile runners automatically get an "agentic" label appended.
 func (rc *RunnerConfig) EffectiveLabels(hostOS, arch string) []string {
 	var labels []string
 	if len(rc.Labels) > 0 {
@@ -144,8 +144,8 @@ func (rc *RunnerConfig) EffectiveLabels(hostOS, arch string) []string {
 		mode := rc.EffectiveMode(hostOS)
 		labels = DefaultLabels(mode, hostOS, arch)
 	}
-	if rc.IsAgentic() && !hasLabel(labels, "gh-aw") {
-		labels = append(labels, "gh-aw")
+	if rc.IsAgentic() && !hasLabel(labels, "agentic") {
+		labels = append(labels, "agentic")
 	}
 	return labels
 }

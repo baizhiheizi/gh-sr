@@ -55,12 +55,12 @@ runners:
   #   mode: native
   #
   # GitHub Agentic Workflows (gh-aw) — use profile: agentic to auto-configure
-  # docker mode, host networking, NET_ADMIN, and a gh-aw label in one line:
+  # docker mode, host networking, NET_ADMIN, and an agentic label in one line:
   #
   # - name: my-aw-runner
   #   repo: owner/repo
   #   host: vps-1
-  #   profile: agentic   # sets mode: docker, docker_network_mode: host, docker_cap_add: [NET_ADMIN], label: gh-aw
+  #   profile: agentic   # sets mode: docker, docker_network_mode: host, docker_cap_add: [NET_ADMIN], label: agentic
   #   count: 2
   #
   # Organization-level runner with runner group:

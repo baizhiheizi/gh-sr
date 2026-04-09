@@ -97,7 +97,7 @@ runners:
     count: 2
 ```
 
-This automatically configures docker mode, host networking, `NET_ADMIN` capability, and a `gh-aw` label. You can also add it from the CLI:
+This automatically configures docker mode, host networking, `NET_ADMIN` capability, and an `agentic` label. You can also add it from the CLI:
 
 ```bash
 gh sr add runner aw-runner --repo owner/repo --host vps-1 --profile agentic
@@ -143,7 +143,7 @@ Workflows that run the [Agent Workflow Firewall](https://github.com/github/gh-aw
 
 **Verification (optional):** Keep Docker’s default iptables integration (do not set **`"iptables": false"`** in the engine `daemon.json`). On Docker Desktop, you can open a shell in the Linux engine (for example the **`docker-desktop`** WSL distro) and run **`sudo iptables -L DOCKER-USER -n`** — when the daemon is healthy, that chain is normally present. Then run a workflow that uses `awf` to confirm the job completes past firewall setup.
 
-**`gh sr doctor`** checks hosts used by **`profile: agentic`** runners or by runners whose **`labels`** include **`gh-aw`** for port 80 availability, iptables presence, and sudo access, in addition to the standard bridge-network warning.
+**`gh sr doctor`** checks hosts used by **`profile: agentic`** runners or by runners whose **`labels`** include **`agentic`** (or the legacy **`gh-aw`**) for port 80 availability, iptables presence, and sudo access, in addition to the standard bridge-network warning.
 
 ### Native Linux runners and `sudo` (gh-aw) {#native-linux-runners-and-sudo-gh-aw}
 
@@ -154,7 +154,7 @@ Workflows that run the [Agent Workflow Firewall](https://github.com/github/gh-aw
 1. **Passwordless sudo** — On the host, configure **`sudo -n`** to succeed for that user, for example a drop-in under `/etc/sudoers.d/` with **`NOPASSWD`** (a dedicated CI user with `runner ALL=(ALL) NOPASSWD: ALL` is common; tighten with command-scoped rules only if you can maintain them for whatever `sudo` lines gh-aw runs).
 2. **Verify as that user** — `sudo -n true` must exit **0** (see also [Linux SSH user and privileges](#linux-ssh-user-and-privileges)). Over SSH:  
    `ssh -o BatchMode=yes user@host 'sudo -n true'`
-3. **`gh sr doctor`** — With **`profile: agentic`** or **`labels`** including **`gh-aw`**, doctor reports whether passwordless sudo is available for AWF firewall setup on Linux.
+3. **`gh sr doctor`** — With **`profile: agentic`** or **`labels`** including **`agentic`** (or legacy **`gh-aw`**), doctor reports whether passwordless sudo is available for AWF firewall setup on Linux.
 
 Docker must still be installed on the machine for gh-aw’s containers (MCP gateway, AWF, etc.); native mode only means the **Actions runner** is not inside a container.
 

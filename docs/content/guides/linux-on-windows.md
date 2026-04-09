@@ -34,7 +34,7 @@ runners:
     labels: [self-hosted, Linux, X64]
 
   # Same Linux runner, tuned for GitHub Agentic Workflows (MCP gateway + awf firewall)
-  - name: myapp-linux-gh-aw
+  - name: myapp-linux-agentic
     repo: owner/repo
     host: win-pc
     mode: docker

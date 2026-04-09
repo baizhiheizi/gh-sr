@@ -503,14 +503,20 @@ func hasAgenticRunners(runners []config.RunnerConfig, hostName string) bool {
 		if rc.IsAgentic() {
 			return true
 		}
-		// Native Linux setups for gh-aw use mode: native + labels including gh-aw (no profile).
+		// Native Linux setups use mode: native + labels including agentic (no profile).
+		// Legacy configs may still use the gh-aw label name.
 		for _, l := range rc.Labels {
-			if strings.EqualFold(strings.TrimSpace(l), "gh-aw") {
+			if isAgenticRunnerLabel(l) {
 				return true
 			}
 		}
 	}
 	return false
+}
+
+func isAgenticRunnerLabel(l string) bool {
+	s := strings.TrimSpace(l)
+	return strings.EqualFold(s, "agentic") || strings.EqualFold(s, "gh-aw")
 }
 
 // checkAgenticPrereqs verifies host prerequisites specific to GitHub Agentic Workflows:
@@ -521,7 +527,7 @@ func checkAgenticPrereqs(w io.Writer, hostName string, h *host.Host, r *Result) 
 		if err == nil {
 			status := strings.TrimSpace(out)
 			if status == "in-use" {
-				printLine(w, sevWarn, hostName, "agentic: port 80 is in use; gh-aw MCP gateway needs port 80 free on the host network")
+				printLine(w, sevWarn, hostName, "agentic: port 80 is in use; Agentic Workflows MCP gateway needs port 80 free on the host network")
 				r.Warn++
 			} else {
 				printLine(w, sevOK, hostName, "agentic: port 80 is free (MCP gateway)")

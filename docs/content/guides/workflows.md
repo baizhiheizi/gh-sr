@@ -34,11 +34,11 @@ runners:
     count: 2
 ```
 
-This automatically sets docker mode, host networking, `NET_ADMIN` capability, and adds a `gh-aw` label. See the [host setup docs](../host-setup.md#github-agentic-workflows-gh-aw) for details.
+This automatically sets docker mode, host networking, `NET_ADMIN` capability, and adds an `agentic` label. See the [host setup docs](../host-setup.md#github-agentic-workflows-gh-aw) for details.
 
 ### Native Linux (`mode: native`)
 
-Alternatively, use a **native** Linux runner and add **`gh-aw`** to `labels` yourself (no `profile: agentic`). The machine still needs **Docker** for gh-aw’s containers; the runner user needs **non-interactive `sudo`** for the Agent Workflow Firewall. See [Native Linux runners and sudo](../host-setup.md#native-linux-runners-and-sudo-gh-aw).
+Alternatively, use a **native** Linux runner and add **`agentic`** to `labels` yourself (no `profile: agentic`). The machine still needs **Docker** for gh-aw’s containers; the runner user needs **non-interactive `sudo`** for the Agent Workflow Firewall. See [Native Linux runners and sudo](../host-setup.md#native-linux-runners-and-sudo-gh-aw).
 
 ```yaml
 runners:
@@ -46,7 +46,7 @@ runners:
     repo: owner/repo
     host: vps-1
     mode: native
-    labels: [self-hosted, Linux, X64, gh-aw]
+    labels: [self-hosted, Linux, X64, agentic]
 ```
 
 Reference the runner in your agentic workflow Markdown frontmatter:
@@ -54,7 +54,7 @@ Reference the runner in your agentic workflow Markdown frontmatter:
 ```yaml
 ---
 on: issues
-runs-on: [self-hosted, Linux, X64, gh-aw]
+runs-on: [self-hosted, Linux, X64, agentic]
 engine: copilot
 ---
 Triage this issue.
