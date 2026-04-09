@@ -1,1 +1,35 @@
 we should release it in github repo so that users could install from it. But how should we manage the versions? Help me to design a pattern based on the best practice
+
+---
+
+Commit the right changes for this branch.
+- If nothing relevant is staged yet, stage the right files first.
+- Ensure only relevant files are staged (unstage anything unrelated).
+- Write a concise commit message.
+- Do not push.
+
+Currently staged files:
+(none)
+
+Currently unstaged files:
+- .github/workflows/release.yml (modified)
+- README.md (modified)
+- CHANGELOG.md (added)
+- scripts/gh-extension-release-build.sh (added)
+
+---
+
+Commit the right changes for this branch.
+- If nothing relevant is staged yet, stage the right files first.
+- Ensure only relevant files are staged (unstage anything unrelated).
+- Write a concise commit message.
+- Do not push.
+
+Currently staged files:
+(none)
+
+Currently unstaged files:
+- .github/workflows/release.yml (modified)
+- README.md (modified)
+- CHANGELOG.md (added)
+- scripts/gh-extension-release-build.sh (added)
