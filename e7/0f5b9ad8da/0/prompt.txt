@@ -1,0 +1,6 @@
+I tried to `gh auth login` with token, but it throw:
+open /home/an-lee/.config/gh/hosts.yml: permission denied
+
+---
+
+How should `GH_TOKEN` set in an agentic workflow? Do some research and document it.
