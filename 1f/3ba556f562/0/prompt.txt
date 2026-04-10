@@ -1,0 +1,134 @@
+I started a agentic runner using `gh sr`, it fails at a step, here is the full logs. Help me to identify the root cause and fix it.
+
+Error logs:
+
+[INFO] Auto-detected DNS servers from /run/systemd/resolve/resolv.conf: 192.168.31.1
+[WARN] ⚠️  Using --env-all: All host environment variables will be passed to container
+[WARN]    This may expose sensitive credentials if logs or configs are shared
+[WARN] ⚠️  Host access enabled with host.docker.internal in allowed domains
+[WARN]    Containers can access ANY service running on the host machine
+[WARN]    Only use this for trusted workloads (e.g., MCP gateways)
+[INFO] API proxy enabled: OpenAI=false, Anthropic=true, Copilot=false
+[INFO] Allowed domains: *.githubusercontent.com, *.gradle-enterprise.cloud, *.pythonhosted.org, *.vsblob.vsassets.io, adoptium.net, anaconda.org, anthropic.com, api.adoptium.net, api.anthropic.com, api.foojay.io, api.github.com, api.npms.io, api.nuget.org, api.snapcraft.io, archive.apache.org, archive.ubuntu.com, azure.archive.ubuntu.com, azuresearch-usnc.nuget.org, azuresearch-ussc.nuget.org, binstar.org, bootstrap.pypa.io, builds.dotnet.microsoft.com, bun.sh, cdn.azul.com, cdn.jsdelivr.net, cdn.playwright.dev, central.sonatype.com, ci.dot.net, codeload.github.com, conda.anaconda.org, conda.binstar.org, crates.io, crl.geotrust.com, crl.globalsign.com, crl.identrust.com, crl.sectigo.com, crl.thawte.com, crl.usertrust.com, crl.verisign.com, crl3.digicert.com, crl4.digicert.com, crls.ssl.com, dc.services.visualstudio.com, deb.nodesource.com, deno.land, develocity.apache.org, dist.nuget.org, dl.google.com, dlcdn.apache.org, dot.net, dotnet.microsoft.com, dotnetcli.blob.core.windows.net, download.eclipse.org, dow
+[INFO] Setting up host-level firewall network and iptables rules...
+[INFO] Setting up host-level iptables rules...
+[INFO] Host access enabled: allowing traffic to gateway IPs 172.30.0.1, 172.17.0.1 on ports 80, 443
+[SUCCESS] Host-level iptables rules configured successfully
+[INFO] Generating configuration files...
+[INFO] API proxy sidecar enabled - API keys will be held securely in sidecar container
+[INFO] API proxy will route through Squid to respect domain whitelisting
+[INFO] Starting containers...
+ Container awf-api-proxy Creating 
+ Container awf-squid Creating 
+ Container awf-api-proxy Created 
+ Container awf-squid Created 
+ Container awf-agent Creating 
+ Container awf-agent Created 
+ Container awf-iptables-init Creating 
+ Container awf-iptables-init Created 
+ Container awf-squid Starting 
+ Container awf-api-proxy Starting 
+ Container awf-api-proxy Started 
+ Container awf-squid Started 
+ Container awf-squid Waiting 
+ Container awf-api-proxy Waiting 
+ Container awf-squid Healthy 
+ Container awf-api-proxy Healthy 
+ Container awf-agent Starting 
+ Container awf-agent Started 
+ Container awf-agent Waiting 
+ Container awf-agent Healthy 
+ Container awf-iptables-init Starting 
+ Container awf-iptables-init Started 
+[SUCCESS] Containers started successfully
+[INFO] Executing agent command...
+[entrypoint] Agentic Workflow Firewall - Agent Container
+[entrypoint] ==================================
+[entrypoint] Configuring DNS...
+[entrypoint] DNS configured with Docker embedded DNS (127.0.0.11) only
+[entrypoint] Waiting for iptables initialization from init container...
+[entrypoint] iptables initialization complete
+[health-check] API Proxy Pre-flight Check
+[health-check] ==========================================
+[health-check] Checking Anthropic API proxy configuration...
+[health-check] ✓ Anthropic credentials NOT in agent environment (correct)
+[health-check] ✓ ANTHROPIC_AUTH_TOKEN is placeholder value (correct)
+[health-check] Testing connectivity to Anthropic API proxy at http://172.30.0.30:10001...
+[health-check] ✓ Anthropic API proxy is reachable at http://172.30.0.30:10001
+[health-check] ==========================================
+[health-check] ✓ All API proxy health checks passed
+[health-check] ✓ Credential isolation verified
+[health-check] ✓ Connectivity established
+[health-check] ==========================================
+[entrypoint] Claude Code API key helper configured: /usr/local/bin/get-claude-key.sh
+[entrypoint] Creating /host/home/an-lee/.claude.json with apiKeyHelper...
+[entrypoint] ✓ Created /host/home/an-lee/.claude.json with apiKeyHelper: /usr/local/bin/get-claude-key.sh
+[entrypoint] Creating /host/home/an-lee/.claude/settings.json with apiKeyHelper...
+[entrypoint] ✓ Created /host/home/an-lee/.claude/settings.json with apiKeyHelper: /usr/local/bin/get-claude-key.sh
+[entrypoint] Pre-seeding JVM build tool proxy configuration (squid-proxy:3128)...
+[entrypoint] ✓ Created Maven proxy config (/host/home/an-lee/.m2/settings.xml)
+[entrypoint] ✓ Created Gradle proxy config (/host/home/an-lee/.gradle/gradle.properties)
+[entrypoint] ✓ Set JAVA_TOOL_OPTIONS with proxy and nonProxyHosts flags
+[entrypoint] Proxy configuration:
+[entrypoint]   HTTP_PROXY=http://172.30.0.10:3128
+[entrypoint]   HTTPS_PROXY=http://172.30.0.10:3128
+[entrypoint] Network information:
+[entrypoint]   IP address: 172.30.0.20 
+[entrypoint]   Hostname: 0c80ab6f125a
+[entrypoint] ==================================
+[entrypoint] Chroot mode enabled - dropping CAP_SYS_CHROOT and CAP_SYS_ADMIN
+[entrypoint] Switching to awfuser (UID: 1000, GID: 1000)
+[entrypoint] Executing command: /bin/bash -c /bin/bash -c 'export PATH="$(find /opt/hostedtoolcache -maxdepth 4 -type d -name bin 2>/dev/null | tr '\''\n'\'' '\'':'\'')$PATH"; [ -n "$GOROOT" ] && export PATH="$GOROOT/bin:$PATH" || true && claude --print --no-chrome --mcp-config /tmp/gh-aw/mcp-config/mcp-servers.json --allowed-tools Bash,BashOutput,Edit,ExitPlanMode,Glob,Grep,KillBash,LS,MultiEdit,NotebookEdit,NotebookRead,Read,Task,TodoWrite,WebFetch,Write,mcp__github__download_workflow_run_artifact,mcp__github__get_code_scanning_alert,mcp__github__get_commit,mcp__github__get_dependabot_alert,mcp__github__get_discussion,mcp__github__get_discussion_comments,mcp__github__get_file_contents,mcp__github__get_job_logs,mcp__github__get_label,mcp__github__get_latest_release,mcp__github__get_me,mcp__github__get_notification_details,mcp__github__get_pull_request,mcp__github__get_pull_request_comments,mcp__github__get_pull_request_diff,mcp__github__get_pull_request_files,mcp__github__get_pull_request_review_comments,mcp
+[entrypoint] Chroot mode: running command inside host filesystem (/host)
+[entrypoint] Mounted procfs at /host/proc (nosuid,nodev,noexec)
+[entrypoint] One-shot token library copied to chroot at /tmp/awf-lib/one-shot-token.so
+[entrypoint] Claude key helper copied to chroot at /tmp/awf-lib/get-claude-key.sh
+[entrypoint] ✓ Updated apiKeyHelper path in /host/home/an-lee/.claude.json
+[entrypoint] ✓ Updated apiKeyHelper path in /host/home/an-lee/.claude/settings.json
+[entrypoint] DNS configuration created in chroot (/host/etc/resolv.conf)
+[entrypoint] Chroot working directory: /home/an-lee/.gh-sr/runners/enjoy-x1-1/_work/enjoy/enjoy
+[entrypoint] Running as host user: an-lee (UID: 1000)
+[entrypoint] Using host PATH for chroot
+[entrypoint] DNS configuration will be removed on exit
+/bin/bash: line 1: claude: command not found
+[entrypoint] Unsetting sensitive tokens from parent shell environment...
+[INFO] Stopping containers...
+ Container awf-iptables-init Stopping 
+ Container awf-iptables-init Stopped 
+ Container awf-iptables-init Removing 
+ Container awf-iptables-init Removed 
+ Container awf-agent Stopping 
+ Container awf-agent Stopped 
+ Container awf-agent Removing 
+ Container awf-agent Removed 
+ Container awf-squid Stopping 
+ Container awf-api-proxy Stopping 
+ Container awf-api-proxy Stopped 
+ Container awf-api-proxy Removing 
+ Container awf-api-proxy Removed 
+ Container awf-squid Stopped 
+ Container awf-squid Removing 
+ Container awf-squid Removed 
+[SUCCESS] Containers stopped successfully
+[INFO] API proxy logs available at: /tmp/gh-aw/sandbox/firewall/logs/api-proxy-logs
+[INFO] Squid logs available at: /tmp/gh-aw/sandbox/firewall/logs
+[INFO] Audit artifacts available at: /tmp/gh-aw/sandbox/firewall/audit
+[WARN] Command completed with exit code: 127
+Process exiting with code: 127
+Error: Process completed with exit code 127.
+
+Full logs link:
+
+https://productionresultssa13.blob.core.windows.net/actions-results/0aabb271-2e09-413d-8001-69c55d3f7169/workflow-job-run-2cd9f16c-04df-5c85-8c47-9e0cbc4b2dae/logs/job/job-logs.txt?rsct=text%2Fplain&se=2026-04-10T08%3A07%3A02Z&REDACTED%2F1Lxd67iaQQ%3D&ske=2026-04-10T11%3A04%3A30Z&skoid=ca7593d4-ee42-46cd-af88-8b886a2f84eb&sks=b&skt=2026-04-10T07%3A04%3A30Z&sktid=398a6654-997b-47e9-b12b-9515b896b4de&skv=2025-11-05&sp=r&spr=https&sr=b&st=2026-04-10T07%3A56%3A57Z&sv=2025-11-05
+
+---
+
+It works now! Finally. Review it again, must we make the symlink in host? This should be fixed by gh-aw side, do some research about it. Any open issue about this on the gh-aw? Or this is by design? We have to do it in self-hosted runner.
+
+---
+
+We should make the self-hosted runner aligned to it in `gh sr`
+
+---
+
+And we should document it in detailed.
