@@ -3,7 +3,7 @@
   "checkpoint_id": "ffadb2d847e6",
   "strategy": "manual-commit",
   "branch": "main",
-  "checkpoints_count": 1,
+  "checkpoints_count": 4,
   "files_touched": [
     "cmd/gh-sr/main.go",
     "config/runners.yml",
@@ -36,6 +36,12 @@
       "transcript": "/ff/adb2d847e6/1/full.jsonl",
       "content_hash": "/ff/adb2d847e6/1/content_hash.txt",
       "prompt": "/ff/adb2d847e6/1/prompt.txt"
+    },
+    {
+      "metadata": "/ff/adb2d847e6/2/metadata.json",
+      "transcript": "/ff/adb2d847e6/2/full.jsonl",
+      "content_hash": "/ff/adb2d847e6/2/content_hash.txt",
+      "prompt": "/ff/adb2d847e6/2/prompt.txt"
     }
   ],
   "token_usage": {

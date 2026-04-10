@@ -1,0 +1,8 @@
+Help me to review the agentic runner setup in this project. We occured many issues when running in real workflows. But GitHub hosted runner works well. We need to make self-hosted works well as GitHub runner. Here is some related documents: https://github.github.com/gh-aw/guides/self-hosted-runners/
+https://docs.github.com/en/actions/reference/runners/self-hosted-runners
+
+How should we make our self-hosted runner works better? Should it be ran in native or in docker(current implement)? Give me some advises.
+
+---
+
+GitHub agentic worflow only works in Ubuntu VPS right? Do some research about it, and help me to make a list about how to make a VPS agentic-workflow-ready.
