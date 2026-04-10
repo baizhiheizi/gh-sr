@@ -1,8 +1,8 @@
-# Test Improver Memory - an-lee/ghr
+# Test Improver Memory - an-lee/gh-sr
 
 ## Build/Test/Coverage Commands
 
-- **Build**: `go build -o ghr ./cmd/ghr/`
+- **Build**: `go build -o gh-sr ./cmd/gh-sr/`
 - **Test**: `go test ./... -race -count=1` (via `make test`)
 - **Vet**: `go vet ./...` (via `make vet`)
 - **Coverage**: No dedicated coverage pipeline; can use `go test ./... -coverprofile=cov.out && go tool cover -html=cov.out`
@@ -10,7 +10,7 @@
 
 ### Known Infrastructure Issues
 - `go.mod` requires `go 1.25.0` but Go proxy is blocked in the agent sandbox (Forbidden).
-- Only `go 1.24.13` is available locally; `GOTOOLCHAIN=local` fails with version mismatch.
+- Only `go 1.24.13` is available locally; GOTOOLCHAIN=local fails with version mismatch.
 - **Tests cannot be run in this sandbox** — infrastructure limitation. Note in PRs as "Infrastructure failure".
 
 ## Testing Notes
@@ -26,35 +26,37 @@
 
 ### Well-tested packages
 - `internal/config`: extensive tests (validate, load, filter, resolve env)
-- `internal/runner`: tests for github client, enrich status, OS mismatch
+- `internal/runner`: tests for github client, enrich status, OS mismatch, docker functions
 - `internal/host`: tests for SSH parsing, PowerShell encoding, metrics
 - `internal/autostart`: tests for sanitize and generate
 - `internal/doctor`: tests for exit code, uniqueRepos
 - `internal/tui`: status_test.go present
+- `internal/ops`: metrics_test.go (sortedHostNames)
 
-### Untested packages
-- `internal/ops`: ops.go, service.go — NO TESTS (metrics_test.go added in PR)
-  - PR submitted for `sortedHostNames`
+### Potential gaps
+- `internal/autostart/sanitize.go` — edge cases (numbers-only, dots, etc.) — low priority
+- `internal/ops/ops.go`, `service.go` — orchestration-heavy, needs mocks
 
 ## Testing Backlog
 
-1. **ops/metrics.go** — `sortedHostNames` ✅ PR submitted (test-assist/pure-function-tests)
-2. **runner/runner.go** — `expectedGitHubRunnerOS` ✅ PR submitted (test-assist/pure-function-tests)
-3. **autostart/sanitize.go** — edge cases (numbers-only, dots, etc.)
-4. **ops/ops.go** — orchestration functions are integration-heavy; skip unless mock infra added
+1. **ops/metrics.go** — `sortedHostNames` MERGED (PR #8)
+2. **runner/runner.go** — `expectedGitHubRunnerOS` MERGED (PR #8)
+3. **runner/docker.go** — `shellSingleQuote`, `dockerRunnerEntryScript` PR #11 (open draft)
+4. **autostart/sanitize.go** — edge cases (numbers-only, dots, etc.) — low priority
+5. **ops/ops.go** — orchestration functions are integration-heavy; skip unless mock infra added
 
 ## Task Schedule (Round-Robin)
 
-Last run: 2026-04-08 — Tasks 3 (implement tests), 7 (activity summary)
-Next run should prioritize: Task 4 (maintain PRs), Task 5 (comment on issues), Task 7
+Last run: 2026-04-10 — Tasks 4 (maintain PRs), 7 (activity summary)
+Next run should prioritize: Task 2 (identify opportunities), Task 3 (implement tests), Task 7
 
 ## Completed Work
 
-None merged yet.
+- PR #8 [MERGED 2026-04-09]: Tests for `expectedGitHubRunnerOS` and `sortedHostNames` pure functions
 
 ## Open PRs
 
-- **test-assist/pure-function-tests**: Tests for `expectedGitHubRunnerOS` and `sortedHostNames` pure functions (2026-04-08)
+- PR #11: Tests for `shellSingleQuote`, `dockerRunnerEntryScript`, `docker_pre_setup` — draft, awaiting review
 
 ## Maintainer Priorities
 
