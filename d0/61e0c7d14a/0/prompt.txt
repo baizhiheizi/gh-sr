@@ -1,0 +1,3 @@
+totally wrong, we dont' define `job` in agentic workflow, check the document: https://github.github.com/gh-aw/introduction/how-they-work/
+
+And `gh` don't support `--insecure-stdin-token`
