@@ -290,6 +290,50 @@ func (m *Manager) setupNative(h *host.Host, rc config.RunnerConfig) error {
 				fmt.Fprintf(m.out(), "  %s: gh-aw: %s\n", rc.Name, strings.TrimSpace(out))
 			}
 		}
+
+		// Set up /opt/hostedtoolcache for gh-aw agent containers.
+		// gh-aw searches for tools (e.g., claude) in /opt/hostedtoolcache, which exists on
+		// GitHub Hosted Runners but not on self-hosted runners. We create a bind mount so
+		// agent containers can find npm-installed tools.
+		fmt.Fprintf(m.out(), "  %s: setting up /opt/hostedtoolcache for agentic workflows...\n", rc.Name)
+		npmPrefixCmd := `npm config get prefix 2>/dev/null || echo "/usr/local"`
+		npmPrefix, err := h.Run(npmPrefixCmd)
+		if err != nil {
+			fmt.Fprintf(m.out(), "  %s: warning: failed to detect npm prefix: %v\n", rc.Name, err)
+		} else {
+			npmPrefix = strings.TrimSpace(npmPrefix)
+			hostedtoolcacheSetup := fmt.Sprintf(`%s
+			if [ -d /opt/hostedtoolcache ]; then
+				if [ -L /opt/hostedtoolcache ]; then
+					if [ "$(readlink -f /opt/hostedtoolcache)" != "%s" ]; then
+						echo "Updating /opt/hostedtoolcache symlink to %s"
+						$SUDO rm -f /opt/hostedtoolcache
+						$SUDO mkdir -p /opt/hostedtoolcache
+						$SUDO mount --bind %s /opt/hostedtoolcache
+					else
+						echo "/opt/hostedtoolcache already correctly configured"
+					fi
+				else
+					echo "/opt/hostedtoolcache already exists as a directory"
+				fi
+			else
+				echo "Creating /opt/hostedtoolcache -> %s"
+				$SUDO mkdir -p /opt/hostedtoolcache
+				$SUDO mount --bind %s /opt/hostedtoolcache
+				if ! grep -q "^%s" /etc/fstab 2>/dev/null; then
+					echo "%s /opt/hostedtoolcache none defaults,bind 0 0" | $SUDO tee -a /etc/fstab
+				fi
+			fi`, linuxElevatePrelude, npmPrefix, npmPrefix, npmPrefix, npmPrefix, npmPrefix, npmPrefix, npmPrefix)
+			out, err := h.Run(hostedtoolcacheSetup)
+			if err != nil {
+				fmt.Fprintf(m.out(), "  %s: warning: failed to set up /opt/hostedtoolcache: %v\n", rc.Name, err)
+			} else {
+				fmt.Fprintf(m.out(), "  %s: /opt/hostedtoolcache configured\n", rc.Name)
+				if out != "" {
+					fmt.Fprintf(m.out(), "  %s: hostedtoolcache: %s\n", rc.Name, strings.TrimSpace(out))
+				}
+			}
+		}
 	}
 
 	return nil

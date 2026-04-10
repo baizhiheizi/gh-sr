@@ -158,6 +158,48 @@ Workflows that run the [Agent Workflow Firewall](https://github.com/github/gh-aw
 
 Docker must still be installed on the machine for gh-aw’s containers (MCP gateway, AWF, etc.); native mode only means the **Actions runner** is not inside a container.
 
+### `/opt/hostedtoolcache` (npm global tools)
+
+gh-aw’s Agent Workflow Firewall (AWF) containers search for tools like `claude` in `/opt/hostedtoolcache/*/bin`. This directory structure exists on **GitHub Hosted Runners** (created by GitHub’s infrastructure) but **not on self-hosted runners** by default.
+
+When you install npm global tools (e.g., `npm install -g @anthropic-ai/claude-code`), they are installed to npm’s global prefix (e.g., `/home/user/.npm-global` or `/usr/local`), which is **not** automatically accessible to gh-aw containers.
+
+**gh-sr handles this automatically** during `gh sr setup` for agentic runners:
+
+1. Detects your npm global prefix via `npm config get prefix`
+2. Creates `/opt/hostedtoolcache` as a **bind mount** to your npm prefix
+3. Adds the mount to `/etc/fstab` for persistence across reboots
+
+This allows gh-aw containers to find `claude`, `codex`, and other npm-installed tools via the same PATH search used on GitHub Hosted Runners.
+
+**Manual verification** (on the runner host):
+
+```bash
+# Check if hostedtoolcache is configured
+mount | grep hostedtoolcache
+
+# Should show something like:
+# /dev/nvme0n1p2 on /opt/hostedtoolcache type ext4 (rw,relatime)
+
+# Or check if it’s a symlink/bind mount to your npm prefix
+ls -la /opt/hostedtoolcache
+# Should point to your npm prefix (e.g., /home/user/.npm-global)
+```
+
+**Manual setup** (if needed):
+
+```bash
+# Find your npm global prefix
+npm config get prefix
+
+# Create the bind mount (requires root/sudo)
+sudo mkdir -p /opt/hostedtoolcache
+sudo mount --bind /home/your-user/.npm-global /opt/hostedtoolcache
+
+# Add to /etc/fstab for persistence
+echo "/home/your-user/.npm-global /opt/hostedtoolcache none defaults,bind 0 0" | sudo tee -a /etc/fstab
+```
+
 ## Windows (OpenSSH and Docker)
 
 - **Windows** — OpenSSH Server enabled; Docker Desktop if you want Linux container runners (`mode: docker`):
