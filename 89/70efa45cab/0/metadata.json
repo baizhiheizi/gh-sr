@@ -1,0 +1,45 @@
+{
+  "cli_version": "dev",
+  "checkpoint_id": "8970efa45cab",
+  "session_id": "5c5a0a02-e6bc-4caf-925c-024b4a684b3c",
+  "strategy": "manual-commit",
+  "created_at": "2026-04-10T05:55:51.288256733Z",
+  "branch": "main",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "cmd/gh-sr/main.go",
+    "config/runners.yml",
+    "internal/config/config.go",
+    "internal/config/mutate.go",
+    "internal/config/runners.yml.template",
+    "internal/doctor/doctor.go",
+    "internal/runner/native.go"
+  ],
+  "agent": "Claude Code",
+  "model": "MiniMax-M2.7",
+  "turn_id": "32de8443b2b5",
+  "checkpoint_transcript_start": 324,
+  "transcript_lines_at_start": 324,
+  "token_usage": {
+    "input_tokens": 12200445,
+    "cache_creation_tokens": 200432,
+    "cache_read_tokens": 3792378,
+    "output_tokens": 26898,
+    "api_call_count": 139
+  },
+  "session_metrics": {
+    "turn_count": 3
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-04-10T05:55:50.062892914Z",
+    "agent_lines": 179,
+    "agent_removed": 5,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 179,
+    "total_lines_changed": 184,
+    "agent_percentage": 100,
+    "metric_version": 2
+  }
+}
