@@ -11,3 +11,7 @@ Do I have to build and push it? Could `gh sr` handle it? Build it locally and us
 ---
 
 We should also check the dockerfile version, rebuild it if it's updated.
+
+---
+
+Yes, commit it first. But why do I need to copy the dockerfile and build it manually? Shouldn't I just rebuild the gh sr and `gh sr down` and `gh sr up`?
