@@ -1,0 +1,68 @@
+Why it still not working?
+
+gh-sr on  main [+] via 🐹 v1.26.1
+➜  make build
+go build -ldflags "-X main.version=v0.1.0-8-g40a4077" -o gh-sr ./cmd/gh-sr/
+
+gh-sr on  main [⇡] via 🐹 v1.26.1
+➜  gh extension remove sr
+no extension found: "/home/an-lee/.local/share/gh/extensions/gh-sr"
+
+gh-sr on  main [⇡] via 🐹 v1.26.1
+➜  gh extension install .
+
+gh-sr on  main [⇡] via 🐹 v1.26.1
+➜  gh sr down --host x1
+Detecting OS/arch for host x1 (an-lee@192.168.31.66)...
+  x1: detected os=linux arch=amd64
+Detecting OS/arch for host r1 (an-lee@10.0.0.132)...
+  r1: detected os=linux arch=amd64
+  r1: auto-detected mode=docker
+Stopping enjoy-x1 on x1...
+  enjoy-x1-1: stopped
+  enjoy-x1-2: stopped
+Stopping rune-x1 on x1...
+  rune-x1-1: stopped
+  rune-x1-2: stopped
+Stopping enjoy-web-x1 on x1...
+  enjoy-web-x1-1: stopped
+  enjoy-web-x1-2: stopped
+Stopping ohmyxin-web-x1 on x1...
+  ohmyxin-web-x1-1: stopped
+  ohmyxin-web-x1-2: stopped
+
+gh-sr on  main [⇡] via 🐹 v1.26.1 took 14s
+➜  gh sr up --host x1
+Detecting OS/arch for host r1 (an-lee@10.0.0.132)...
+  r1: detected os=linux arch=amd64
+Detecting OS/arch for host x1 (an-lee@192.168.31.66)...
+  x1: detected os=linux arch=amd64
+  r1: auto-detected mode=docker
+Starting enjoy-x1 on x1...
+  enjoy-x1-1: started (container fa98597746c3)
+  enjoy-x1-2: started (container 2593b343b520)
+Starting rune-x1 on x1...
+  rune-x1-1: started (container 6e7f91f88a77)
+  rune-x1-2: started (container d4fd8f077ab4)
+Starting enjoy-web-x1 on x1...
+  enjoy-web-x1-1: started (container f72053cfa13d)
+  enjoy-web-x1-2: started (container 83f89e2d72d4)
+Starting ohmyxin-web-x1 on x1...
+  ohmyxin-web-x1-1: started (container c254e162d0ee)
+  ohmyxin-web-x1-2: started (container b76c0cb8a310)
+
+gh-sr on  main [⇡] via 🐹 v1.26.1 took 10s
+➜  gh sr doctor --host x1 | grep agentic
+OK    [x1          ] agentic: port 80 is free (MCP gateway)
+OK    [x1          ] agentic: iptables available (AWF firewall)
+OK    [x1          ] agentic: DOCKER-USER chain exists and is modifiable
+OK    [x1          ] agentic: Docker iptables rules present
+OK    [x1          ] agentic: sudo available for AWF firewall setup
+WARN  [x1          ] agentic: gh-runner-enjoy-x1-1 missing docker compose plugin (needed for AWF sidecars)
+OK    [x1          ] agentic: gh-runner-enjoy-x1-1 has iptables and docker compose plugin (AWF tools)
+WARN  [x1          ] agentic: gh-runner-rune-x1-1 missing docker compose plugin (needed for AWF sidecars)
+OK    [x1          ] agentic: gh-runner-rune-x1-1 has iptables and docker compose plugin (AWF tools)
+WARN  [x1          ] agentic: gh-runner-enjoy-web-x1-1 missing docker compose plugin (needed for AWF sidecars)
+OK    [x1          ] agentic: gh-runner-enjoy-web-x1-1 has iptables and docker compose plugin (AWF tools)
+WARN  [x1          ] agentic: gh-runner-ohmyxin-web-x1-1 missing docker compose plugin (needed for AWF sidecars)
+OK    [x1          ] agentic: gh-runner-ohmyxin-web-x1-1 has iptables and docker compose plugin (AWF tools)
