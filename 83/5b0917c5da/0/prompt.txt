@@ -1,0 +1,85 @@
+The agentic runner is still failling. The logs are as follow:
+
+Run set -o pipefail
+[WARN] Could not detect host DNS servers; falling back to 8.8.8.8, 8.8.4.4
+[WARN] ⚠️  Using --env-all: All host environment variables will be passed to container
+[WARN]    This may expose sensitive credentials if logs or configs are shared
+[WARN] ⚠️  Host access enabled with host.docker.internal in allowed domains
+[WARN]    Containers can access ANY service running on the host machine
+[WARN]    Only use this for trusted workloads (e.g., MCP gateways)
+[INFO] API proxy enabled: OpenAI=false, Anthropic=true, Copilot=false
+[INFO] Allowed domains: *.githubusercontent.com, *.gradle-enterprise.cloud, *.pythonhosted.org, *.vsblob.vsassets.io, adoptium.net, anaconda.org, anthropic.com, api.adoptium.net, api.anthropic.com, api.foojay.io, api.github.com, api.npms.io, api.nuget.org, api.snapcraft.io, archive.apache.org, archive.ubuntu.com, azure.archive.ubuntu.com, azuresearch-usnc.nuget.org, azuresearch-ussc.nuget.org, binstar.org, bootstrap.pypa.io, builds.dotnet.microsoft.com, bun.sh, cdn.azul.com, cdn.jsdelivr.net, cdn.playwright.dev, central.sonatype.com, ci.dot.net, codeload.github.com, conda.anaconda.org, conda.binstar.org, crates.io, crl.geotrust.com, crl.globalsign.com, crl.identrust.com, crl.sectigo.com, crl.thawte.com, crl.usertrust.com, crl.verisign.com, crl3.digicert.com, crl4.digicert.com, crls.ssl.com, dc.services.visualstudio.com, deb.nodesource.com, deno.land, develocity.apache.org, dist.nuget.org, dl.google.com, dlcdn.apache.org, dot.net, dotnet.microsoft.com, dotnetcli.blob.core.windows.net, download.eclipse.org, download.java.net, download.oracle.com, downloads.gradle-dn.com, esm.sh, files.pythonhosted.org, ge.spockframework.org, get.pnpm.io, ghcr.io, github-cloud.githubusercontent.com, github-cloud.s3.amazonaws.com, github.com, googleapis.deno.dev, googlechromelabs.github.io, gradle.org, host.docker.internal, index.crates.io, jcenter.bintray.com, jdk.java.net, json-schema.org, json.schemastore.org, jsr.io, keyserver.ubuntu.com, lfs.github.com, maven-central.storage-download.googleapis.com, maven.apache.org, maven.google.com, maven.oracle.com, maven.pkg.github.com, nodejs.org, npm.pkg.github.com, npmjs.com, npmjs.org, nuget.org, nuget.pkg.github.com, nugetregistryv2prod.blob.core.windows.net, objects.githubusercontent.com, ocsp.digicert.com, ocsp.geotrust.com, ocsp.globalsign.com, ocsp.identrust.com, ocsp.sectigo.com, ocsp.ssl.com, ocsp.thawte.com, ocsp.usertrust.com, ocsp.verisign.com, oneocsp.microsoft.com, packagecloud.io, packages.cloud.google.com, packages.microsoft.com, pip.pypa.io, pkgs.dev.azure.com, playwright.download.prss.microsoft.com, plugins-artifacts.gradle.org, plugins.gradle.org, ppa.launchpad.net, pypi.org, pypi.python.org, raw.githubusercontent.com, registry.bower.io, registry.npmjs.com, registry.npmjs.org, registry.yarnpkg.com, repo.anaconda.com, repo.continuum.io, repo.gradle.org, repo.grails.org, repo.maven.apache.org, repo.spring.io, repo.yarnpkg.com, repo1.maven.org, repository.apache.org, s.symcb.com, s.symcd.com, scans-in.gradle.com, security.ubuntu.com, sentry.io, services.gradle.org, sh.rustup.rs, skimdb.npmjs.com, static.crates.io, static.rust-lang.org, statsig.anthropic.com, storage.googleapis.com, telemetry.vercel.com, ts-crl.ws.symantec.com, ts-ocsp.ws.symantec.com, www.googleapis.com, www.java.com, www.microsoft.com, www.npmjs.com, www.npmjs.org, yarnpkg.com, api.minimaxi.com, https://api.minimaxi.com
+[INFO] Setting up host-level firewall network and iptables rules...
+[INFO] Setting up host-level iptables rules...
+[INFO] Host access enabled: allowing traffic to gateway IPs 172.30.0.1, 172.17.0.1 on ports 80, 443
+[SUCCESS] Host-level iptables rules configured successfully
+[INFO] Generating configuration files...
+[INFO] API proxy sidecar enabled - API keys will be held securely in sidecar container
+[INFO] API proxy will route through Squid to respect domain whitelisting
+[INFO] Starting containers...
+unknown shorthand flag: 'd' in -d
+
+Usage:  docker [OPTIONS] COMMAND [ARG...]
+
+Run 'docker --help' for more information
+Error:  Failed to start containers: Error: Command failed with exit code 125: docker compose up -d --pull never
+    at Nm (/usr/local/lib/awf/awf-bundle.js:62:57)
+    at /usr/local/lib/awf/awf-bundle.js:62:10481
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at async Object.v0 [as startContainers] (/usr/local/lib/awf/awf-bundle.js:676:929)
+    at async j0 (/usr/local/lib/awf/awf-bundle.js:679:1595)
+    at async e.<anonymous> (/usr/local/lib/awf/awf-bundle.js:751:11093) {
+  shortMessage: 'Command failed with exit code 125: docker compose up -d --pull never',
+  command: 'docker compose up -d --pull never',
+  escapedCommand: 'docker compose up -d --pull never',
+  exitCode: 125,
+  signal: undefined,
+  signalDescription: undefined,
+  stdout: undefined,
+  stderr: undefined,
+  failed: true,
+  timedOut: false,
+  isCanceled: false,
+  killed: false
+}
+Error: [ERROR] Fatal error: Error: Command failed with exit code 125: docker compose up -d --pull never
+    at Nm (/usr/local/lib/awf/awf-bundle.js:62:57)
+    at /usr/local/lib/awf/awf-bundle.js:62:10481
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at async Object.v0 [as startContainers] (/usr/local/lib/awf/awf-bundle.js:676:929)
+    at async j0 (/usr/local/lib/awf/awf-bundle.js:679:1595)
+    at async e.<anonymous> (/usr/local/lib/awf/awf-bundle.js:751:11093) {
+  shortMessage: 'Command failed with exit code 125: docker compose up -d --pull never',
+  command: 'docker compose up -d --pull never',
+  escapedCommand: 'docker compose up -d --pull never',
+  exitCode: 125,
+  signal: undefined,
+  signalDescription: undefined,
+  stdout: undefined,
+  stderr: undefined,
+  failed: true,
+  timedOut: false,
+  isCanceled: false,
+  killed: false
+}
+[INFO] API proxy logs available at: /tmp/gh-aw/sandbox/firewall/logs/api-proxy-logs
+[INFO] Squid logs available at: /tmp/gh-aw/sandbox/firewall/logs
+[INFO] Audit artifacts available at: /tmp/gh-aw/sandbox/firewall/audit
+Process exiting with code: 1
+Error: Process completed with exit code 1.
+
+The `gh sr doctor` result:
+
+➜  gh sr doctor --host x1 | grep agentic
+OK    [x1          ] agentic: port 80 is free (MCP gateway)
+OK    [x1          ] agentic: iptables available (AWF firewall)
+OK    [x1          ] agentic: DOCKER-USER chain exists and is modifiable
+OK    [x1          ] agentic: Docker iptables rules present
+OK    [x1          ] agentic: sudo available for AWF firewall setup
+OK    [x1          ] agentic: gh-runner-enjoy-x1-1 has iptables and docker-compose (AWF tools)
+OK    [x1          ] agentic: gh-runner-rune-x1-1 has iptables and docker-compose (AWF tools)
+OK    [x1          ] agentic: gh-runner-enjoy-web-x1-1 has iptables and docker-compose (AWF tools)
+OK    [x1          ] agentic: gh-runner-ohmyxin-web-x1-1 has iptables and docker-compose (AWF tools)
+
+
+Help me to identify the root cause and fix it. It maybe caused by the docker version plugin etc.
