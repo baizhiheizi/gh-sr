@@ -14,13 +14,9 @@ func ServiceInstall(w io.Writer, cfg *config.Config, filterHost, filterRepo stri
 	if err := ResolveHostInfo(w, cfg); err != nil {
 		return err
 	}
-	if err := ResolveModes(w, cfg); err != nil {
-		return err
-	}
 	runners := config.FilterRunners(cfg, filterHost, filterRepo, nameArgs)
 	for _, rc := range runners {
 		hcfg := cfg.Hosts[rc.Host]
-		mode := rc.EffectiveMode(hcfg.OS)
 		if system && hcfg.OS != "linux" {
 			return fmt.Errorf("--system applies only to Linux hosts (host %q is %s)", rc.Host, hcfg.OS)
 		}
@@ -34,10 +30,6 @@ func ServiceInstall(w io.Writer, cfg *config.Config, filterHost, filterRepo stri
 			return err
 		}
 		for _, inst := range rc.InstanceNames() {
-			if mode == "docker" {
-				fmt.Fprintf(w, "  %s: skipped (docker mode; container uses --restart unless-stopped)\n", inst)
-				continue
-			}
 			ok, err := runner.NativeRunnerConfigPresent(h, inst)
 			if err != nil {
 				h.Close()
@@ -63,13 +55,9 @@ func ServiceUninstall(w io.Writer, cfg *config.Config, filterHost, filterRepo st
 	if err := ResolveHostInfo(w, cfg); err != nil {
 		return err
 	}
-	if err := ResolveModes(w, cfg); err != nil {
-		return err
-	}
 	runners := config.FilterRunners(cfg, filterHost, filterRepo, nameArgs)
 	for _, rc := range runners {
 		hcfg := cfg.Hosts[rc.Host]
-		mode := rc.EffectiveMode(hcfg.OS)
 		if config.IsLocalAddr(hcfg.Addr) {
 			fmt.Fprintf(w, "Removing autostart for %s on %s (local)...\n", rc.Name, rc.Host)
 		} else {
@@ -80,10 +68,6 @@ func ServiceUninstall(w io.Writer, cfg *config.Config, filterHost, filterRepo st
 			return err
 		}
 		for _, inst := range rc.InstanceNames() {
-			if mode == "docker" {
-				fmt.Fprintf(w, "  %s: skipped (docker mode)\n", inst)
-				continue
-			}
 			kind, err := autostart.Detect(h, inst)
 			if err != nil {
 				h.Close()
@@ -109,19 +93,15 @@ func ServiceStatus(w io.Writer, cfg *config.Config, filterHost, filterRepo strin
 	if err := ResolveHostInfo(w, cfg); err != nil {
 		return err
 	}
-	if err := ResolveModes(w, cfg); err != nil {
-		return err
-	}
 	runners := config.FilterRunners(cfg, filterHost, filterRepo, nameArgs)
 	for _, rc := range runners {
 		hcfg := cfg.Hosts[rc.Host]
-		mode := rc.EffectiveMode(hcfg.OS)
 		h, err := ConnectHost(rc.Host, hcfg)
 		if err != nil {
 			return err
 		}
 		for _, inst := range rc.InstanceNames() {
-			row, err := autostart.Status(h, rc.Host, inst, mode)
+			row, err := autostart.Status(h, rc.Host, inst, "native")
 			if err != nil {
 				h.Close()
 				return fmt.Errorf("%s: %w", inst, err)

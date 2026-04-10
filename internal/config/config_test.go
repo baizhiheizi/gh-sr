@@ -10,43 +10,15 @@ import (
 func TestRunnerConfig_EffectiveMode(t *testing.T) {
 	t.Parallel()
 	rc := RunnerConfig{}
-	if got := rc.EffectiveMode("linux"); got != "docker" {
-		t.Errorf("linux default: got %q want docker", got)
+	// EffectiveMode always returns "native" (docker mode removed).
+	if got := rc.EffectiveMode("linux"); got != "native" {
+		t.Errorf("linux: got %q want native", got)
 	}
 	if got := rc.EffectiveMode("darwin"); got != "native" {
-		t.Errorf("darwin default: got %q want native", got)
+		t.Errorf("darwin: got %q want native", got)
 	}
 	if got := rc.EffectiveMode("windows"); got != "native" {
-		t.Errorf("windows default: got %q want native", got)
-	}
-	rc.Mode = "native"
-	if got := rc.EffectiveMode("linux"); got != "native" {
-		t.Errorf("explicit mode: got %q want native", got)
-	}
-	rc.Mode = "docker"
-	if got := rc.EffectiveMode("windows"); got != "docker" {
-		t.Errorf("explicit docker on windows: got %q want docker", got)
-	}
-}
-
-func TestRunnerConfig_EffectiveDockerNetworkMode(t *testing.T) {
-	t.Parallel()
-	rc := RunnerConfig{Mode: "docker", DockerNetworkMode: "host"}
-	if got := rc.EffectiveDockerNetworkMode("linux"); got != "host" {
-		t.Errorf("docker host: got %q want host", got)
-	}
-	rc.DockerNetworkMode = "bridge"
-	if got := rc.EffectiveDockerNetworkMode("linux"); got != "bridge" {
-		t.Errorf("explicit bridge: got %q want bridge", got)
-	}
-	rc.DockerNetworkMode = ""
-	if got := rc.EffectiveDockerNetworkMode("linux"); got != "bridge" {
-		t.Errorf("empty: got %q want bridge", got)
-	}
-	rc.Mode = "native"
-	rc.DockerNetworkMode = "host"
-	if got := rc.EffectiveDockerNetworkMode("linux"); got != "bridge" {
-		t.Errorf("native mode ignores host: got %q want bridge", got)
+		t.Errorf("windows: got %q want native", got)
 	}
 }
 
@@ -215,15 +187,6 @@ func TestValidate_errors(t *testing.T) {
 			frag: "not found in hosts",
 		},
 		{
-			name: "bad_mode",
-			cfg: Config{
-				GitHub:  GitHubConfig{},
-				Hosts:   map[string]HostConfig{"h": {Addr: "a@b", OS: "linux", Arch: "amd64"}},
-				Runners: []RunnerConfig{{Name: "r", Repo: "o/r", Host: "h", Mode: "k8s"}},
-			},
-			frag: "mode must be",
-		},
-		{
 			name: "windows_ps_on_linux",
 			cfg: Config{
 				GitHub: GitHubConfig{},
@@ -245,61 +208,6 @@ func TestValidate_errors(t *testing.T) {
 			},
 			frag: "windows_ps must be powershell or pwsh",
 		},
-		{
-			name: "docker_network_mode_invalid",
-			cfg: Config{
-				GitHub: GitHubConfig{},
-				Hosts:  map[string]HostConfig{"h": {Addr: "a@b", OS: "linux", Arch: "amd64"}},
-				Runners: []RunnerConfig{{
-					Name: "r", Repo: "o/r", Host: "h", Mode: "docker", DockerNetworkMode: "overlay",
-				}},
-			},
-			frag: "docker_network_mode must be",
-		},
-		{
-			name: "docker_network_mode_with_native",
-			cfg: Config{
-				GitHub: GitHubConfig{},
-				Hosts:  map[string]HostConfig{"h": {Addr: "a@b", OS: "linux", Arch: "amd64"}},
-				Runners: []RunnerConfig{{
-					Name: "r", Repo: "o/r", Host: "h", Mode: "native", DockerNetworkMode: "bridge",
-				}},
-			},
-			frag: "docker_network_mode applies only when mode is docker",
-		},
-		{
-			name: "docker_cap_add_with_native",
-			cfg: Config{
-				GitHub: GitHubConfig{},
-				Hosts:  map[string]HostConfig{"h": {Addr: "a@b", OS: "linux", Arch: "amd64"}},
-				Runners: []RunnerConfig{{
-					Name: "r", Repo: "o/r", Host: "h", Mode: "native", DockerCapAdd: []string{"NET_ADMIN"},
-				}},
-			},
-			frag: "docker_cap_add applies only when mode is docker",
-		},
-		{
-			name: "docker_cap_add_invalid_char",
-			cfg: Config{
-				GitHub: GitHubConfig{},
-				Hosts:  map[string]HostConfig{"h": {Addr: "a@b", OS: "linux", Arch: "amd64"}},
-				Runners: []RunnerConfig{{
-					Name: "r", Repo: "o/r", Host: "h", Mode: "docker", DockerCapAdd: []string{"NET-ADMIN"},
-				}},
-			},
-			frag: "docker_cap_add invalid capability",
-		},
-		{
-			name: "docker_cap_add_empty_string",
-			cfg: Config{
-				GitHub: GitHubConfig{},
-				Hosts:  map[string]HostConfig{"h": {Addr: "a@b", OS: "linux", Arch: "amd64"}},
-				Runners: []RunnerConfig{{
-					Name: "r", Repo: "o/r", Host: "h", Mode: "docker", DockerCapAdd: []string{"NET_ADMIN", ""},
-				}},
-			},
-			frag: "docker_cap_add contains an empty entry",
-		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -318,25 +226,24 @@ func TestValidate_errors(t *testing.T) {
 func TestDefaultLabels(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
-		mode, os, arch string
-		want           []string
+		os, arch string
+		want      []string
 	}{
-		{"docker", "linux", "amd64", []string{"self-hosted", "Linux", "X64"}},
-		{"docker", "darwin", "arm64", []string{"self-hosted", "Linux", "ARM64"}},
-		{"docker", "windows", "amd64", []string{"self-hosted", "Linux", "X64"}},
-		{"native", "linux", "amd64", []string{"self-hosted", "Linux", "X64"}},
-		{"native", "darwin", "arm64", []string{"self-hosted", "macOS", "ARM64"}},
-		{"native", "windows", "amd64", []string{"self-hosted", "Windows", "X64"}},
+		{"linux", "amd64", []string{"self-hosted", "Linux", "X64"}},
+		{"linux", "arm64", []string{"self-hosted", "Linux", "ARM64"}},
+		{"darwin", "amd64", []string{"self-hosted", "macOS", "X64"}},
+		{"darwin", "arm64", []string{"self-hosted", "macOS", "ARM64"}},
+		{"windows", "amd64", []string{"self-hosted", "Windows", "X64"}},
 	}
 	for _, tc := range cases {
-		got := DefaultLabels(tc.mode, tc.os, tc.arch)
+		got := DefaultLabels(tc.os, tc.arch)
 		if len(got) != len(tc.want) {
-			t.Errorf("DefaultLabels(%s,%s,%s): got %v want %v", tc.mode, tc.os, tc.arch, got, tc.want)
+			t.Errorf("DefaultLabels(%s,%s): got %v want %v", tc.os, tc.arch, got, tc.want)
 			continue
 		}
 		for i := range tc.want {
 			if got[i] != tc.want[i] {
-				t.Errorf("DefaultLabels(%s,%s,%s)[%d]: got %q want %q", tc.mode, tc.os, tc.arch, i, got[i], tc.want[i])
+				t.Errorf("DefaultLabels(%s,%s)[%d]: got %q want %q", tc.os, tc.arch, i, got[i], tc.want[i])
 			}
 		}
 	}
@@ -387,96 +294,6 @@ func TestNeedsDetection(t *testing.T) {
 	}
 }
 
-func TestValidate_dockerSocketOnDarwin(t *testing.T) {
-	t.Parallel()
-	cfg := Config{
-		GitHub: GitHubConfig{},
-		Hosts: map[string]HostConfig{
-			"mac": {Addr: "user@mac", OS: "darwin", Arch: "arm64", DockerSocket: "/Users/me/.colima/default/docker.sock"},
-		},
-		Runners: []RunnerConfig{{Name: "r", Repo: "o/r", Host: "mac", Mode: "docker"}},
-	}
-	if err := cfg.Validate(); err != nil {
-		t.Fatalf("docker_socket on darwin should be valid, got: %v", err)
-	}
-}
-
-func TestValidate_dockerSocketOnWindows_rejected(t *testing.T) {
-	t.Parallel()
-	cfg := Config{
-		GitHub: GitHubConfig{},
-		Hosts: map[string]HostConfig{
-			"win": {Addr: "user@win", OS: "windows", Arch: "amd64", DockerSocket: "/var/run/docker.sock"},
-		},
-		Runners: []RunnerConfig{{Name: "r", Repo: "o/r", Host: "win", Mode: "docker"}},
-	}
-	err := cfg.Validate()
-	if err == nil {
-		t.Fatal("docker_socket on windows should be rejected")
-	}
-	if !strings.Contains(err.Error(), "docker_socket is only supported") {
-		t.Errorf("unexpected error: %v", err)
-	}
-}
-
-
-func TestValidate_dockerOnWindowsHost(t *testing.T) {
-	t.Parallel()
-	cfg := Config{
-		GitHub: GitHubConfig{},
-		Hosts:  map[string]HostConfig{"w": {Addr: "a@b", OS: "windows", Arch: "amd64"}},
-		Runners: []RunnerConfig{
-			{Name: "linux-on-win", Repo: "o/r", Host: "w", Mode: "docker"},
-		},
-	}
-	if err := cfg.Validate(); err != nil {
-		t.Fatalf("mode: docker on windows host should be valid, got: %v", err)
-	}
-}
-
-func TestValidate_dockerNetworkModeHostOnWindows(t *testing.T) {
-	t.Parallel()
-	cfg := Config{
-		GitHub: GitHubConfig{},
-		Hosts:  map[string]HostConfig{"w": {Addr: "a@b", OS: "windows", Arch: "amd64"}},
-		Runners: []RunnerConfig{{
-			Name: "r", Repo: "o/r", Host: "w", Mode: "docker", DockerNetworkMode: "host",
-		}},
-	}
-	if err := cfg.Validate(); err != nil {
-		t.Fatalf("docker_network_mode: host on Windows should be valid, got: %v", err)
-	}
-}
-
-func TestValidate_dockerNetworkModeHostOnDarwin(t *testing.T) {
-	t.Parallel()
-	cfg := Config{
-		GitHub: GitHubConfig{},
-		Hosts:  map[string]HostConfig{"m": {Addr: "a@b", OS: "darwin", Arch: "arm64"}},
-		Runners: []RunnerConfig{{
-			Name: "r", Repo: "o/r", Host: "m", Mode: "docker", DockerNetworkMode: "host",
-		}},
-	}
-	if err := cfg.Validate(); err != nil {
-		t.Fatalf("docker_network_mode: host on macOS should be valid, got: %v", err)
-	}
-}
-
-func TestValidate_docker_cap_add_ok(t *testing.T) {
-	t.Parallel()
-	cfg := Config{
-		GitHub: GitHubConfig{},
-		Hosts:  map[string]HostConfig{"w": {Addr: "a@b", OS: "windows", Arch: "amd64"}},
-		Runners: []RunnerConfig{{
-			Name: "r", Repo: "o/r", Host: "w", Mode: "docker",
-			DockerNetworkMode: "host", DockerCapAdd: []string{"NET_ADMIN"},
-		}},
-	}
-	if err := cfg.Validate(); err != nil {
-		t.Fatalf("docker_cap_add with docker mode should be valid, got: %v", err)
-	}
-}
-
 func TestValidate_windows_ps_pwsh(t *testing.T) {
 	t.Parallel()
 	cfg := Config{
@@ -510,8 +327,8 @@ func TestIsLocalAddr(t *testing.T) {
 func TestValidate_localHost(t *testing.T) {
 	t.Parallel()
 	cfg := Config{
-		GitHub: GitHubConfig{},
-		Hosts:  map[string]HostConfig{"laptop": {Addr: "local", OS: "linux", Arch: "amd64"}},
+		GitHub:  GitHubConfig{},
+		Hosts:   map[string]HostConfig{"laptop": {Addr: "local", OS: "linux", Arch: "amd64"}},
 		Runners: []RunnerConfig{
 			{Name: "r", Repo: "o/r", Host: "laptop"},
 		},
@@ -524,8 +341,8 @@ func TestValidate_localHost(t *testing.T) {
 func TestApplyDefaults_localHostAutoDetect(t *testing.T) {
 	t.Parallel()
 	cfg := Config{
-		GitHub: GitHubConfig{},
-		Hosts:  map[string]HostConfig{"laptop": {Addr: "local"}},
+		GitHub:  GitHubConfig{},
+		Hosts:   map[string]HostConfig{"laptop": {Addr: "local"}},
 		Runners: []RunnerConfig{
 			{Name: "r", Repo: "o/r", Host: "laptop"},
 		},
@@ -658,78 +475,6 @@ func TestFindRunnerForLogs_and_ResolveRunnerInstance(t *testing.T) {
 	}
 }
 
-func TestAgenticProfile_applyDefaults(t *testing.T) {
-	t.Parallel()
-	rc := RunnerConfig{Name: "aw", Repo: "o/r", Host: "h", Profile: "agentic"}
-	rc.applyAgenticDefaults()
-	if rc.Mode != "docker" {
-		t.Errorf("mode: got %q want docker", rc.Mode)
-	}
-	if rc.DockerNetworkMode != "host" {
-		t.Errorf("docker_network_mode: got %q want host", rc.DockerNetworkMode)
-	}
-	if len(rc.DockerCapAdd) != 1 || rc.DockerCapAdd[0] != "NET_ADMIN" {
-		t.Errorf("docker_cap_add: got %v want [NET_ADMIN]", rc.DockerCapAdd)
-	}
-	if rc.DockerPreSetup == "" {
-		t.Errorf("docker_pre_setup: got empty want iptables install")
-	}
-	if !strings.Contains(rc.DockerPreSetup, "iptables") {
-		t.Errorf("docker_pre_setup: got %q want to contain iptables", rc.DockerPreSetup)
-	}
-}
-
-func TestAgenticProfile_preservesExplicitValues(t *testing.T) {
-	t.Parallel()
-	rc := RunnerConfig{
-		Name:              "aw",
-		Repo:              "o/r",
-		Host:              "h",
-		Profile:           "agentic",
-		Mode:              "docker",
-		DockerNetworkMode: "host",
-		DockerCapAdd:      []string{"NET_ADMIN", "SYS_PTRACE"},
-		DockerPreSetup:    "custom setup script",
-	}
-	rc.applyAgenticDefaults()
-	if len(rc.DockerCapAdd) != 2 {
-		t.Errorf("should not duplicate NET_ADMIN: got %v", rc.DockerCapAdd)
-	}
-	if rc.DockerPreSetup != "custom setup script" {
-		t.Errorf("docker_pre_setup: got %q want preserved custom value", rc.DockerPreSetup)
-	}
-}
-
-func TestAgenticProfile_effectiveLabelsIncludesAgentic(t *testing.T) {
-	t.Parallel()
-	rc := RunnerConfig{Name: "aw", Repo: "o/r", Host: "h", Profile: "agentic", Mode: "docker"}
-	labels := rc.EffectiveLabels("linux", "amd64")
-	found := false
-	for _, l := range labels {
-		if l == "agentic" {
-			found = true
-		}
-	}
-	if !found {
-		t.Errorf("agentic profile should add agentic label, got %v", labels)
-	}
-}
-
-func TestAgenticProfile_effectiveLabelsDoesNotDuplicate(t *testing.T) {
-	t.Parallel()
-	rc := RunnerConfig{Name: "aw", Repo: "o/r", Host: "h", Profile: "agentic", Mode: "docker", Labels: []string{"custom", "agentic"}}
-	labels := rc.EffectiveLabels("linux", "amd64")
-	count := 0
-	for _, l := range labels {
-		if l == "agentic" {
-			count++
-		}
-	}
-	if count != 1 {
-		t.Errorf("should not duplicate agentic label, got %v", labels)
-	}
-}
-
 func TestRunnerConfig_Scope(t *testing.T) {
 	t.Parallel()
 	rc := RunnerConfig{Repo: "o/r"}
@@ -792,50 +537,6 @@ func TestValidate_groupRequiresOrg(t *testing.T) {
 	}
 }
 
-func TestValidate_profileInvalid(t *testing.T) {
-	t.Parallel()
-	cfg := Config{
-		GitHub: GitHubConfig{},
-		Hosts:  map[string]HostConfig{"h": {Addr: "a@b", OS: "linux", Arch: "amd64"}},
-		Runners: []RunnerConfig{{
-			Name: "r", Repo: "o/r", Host: "h", Profile: "unknown",
-		}},
-	}
-	err := cfg.Validate()
-	if err == nil || !strings.Contains(err.Error(), "profile must be") {
-		t.Fatalf("expected error about profile: %v", err)
-	}
-}
-
-func TestValidate_agenticWithNativeMode(t *testing.T) {
-	t.Parallel()
-	cfg := Config{
-		GitHub: GitHubConfig{},
-		Hosts:  map[string]HostConfig{"h": {Addr: "a@b", OS: "linux", Arch: "amd64"}},
-		Runners: []RunnerConfig{{
-			Name: "r", Repo: "o/r", Host: "h", Profile: "agentic", Mode: "native",
-		}},
-	}
-	err := cfg.Validate()
-	if err == nil || !strings.Contains(err.Error(), "requires docker mode") {
-		t.Fatalf("expected error about native mode: %v", err)
-	}
-}
-
-func TestValidate_agenticProfileValid(t *testing.T) {
-	t.Parallel()
-	cfg := Config{
-		GitHub: GitHubConfig{},
-		Hosts:  map[string]HostConfig{"h": {Addr: "a@b", OS: "linux", Arch: "amd64"}},
-		Runners: []RunnerConfig{{
-			Name: "r", Repo: "o/r", Host: "h", Profile: "agentic",
-		}},
-	}
-	if err := cfg.Validate(); err != nil {
-		t.Fatalf("agentic profile should be valid: %v", err)
-	}
-}
-
 func TestValidate_ephemeralRunner(t *testing.T) {
 	t.Parallel()
 	cfg := Config{
@@ -847,40 +548,6 @@ func TestValidate_ephemeralRunner(t *testing.T) {
 	}
 	if err := cfg.Validate(); err != nil {
 		t.Fatalf("ephemeral runner should be valid: %v", err)
-	}
-}
-
-func TestLoad_agenticProfile(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "runners.yml")
-	content := `
-hosts:
-  h1:
-    addr: a@b
-    os: linux
-    arch: amd64
-runners:
-  - name: aw
-    repo: o/r
-    host: h1
-    profile: agentic
-`
-	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	cfg, err := Load(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	rc := cfg.Runners[0]
-	if rc.Mode != "docker" {
-		t.Errorf("mode should be docker, got %q", rc.Mode)
-	}
-	if rc.DockerNetworkMode != "host" {
-		t.Errorf("docker_network_mode should be host, got %q", rc.DockerNetworkMode)
-	}
-	if len(rc.DockerCapAdd) != 1 || rc.DockerCapAdd[0] != "NET_ADMIN" {
-		t.Errorf("docker_cap_add should be [NET_ADMIN], got %v", rc.DockerCapAdd)
 	}
 }
 

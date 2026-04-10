@@ -32,13 +32,8 @@ const linuxSetupPrivilegesHelp = `
 
 Linux hosts: gh sr setup and update may run package installs and similar steps on the remote host. For a non-root
 SSH user, gh sr uses sudo when the sudo binary exists on the remote PATH; SSH is non-interactive, so passwordless
-sudo (or SSH as root) is usually required for those steps to succeed. For docker mode without Docker installed,
-install Docker yourself or ensure sudo works; for native mode, pre-install curl/tar and runner OS dependencies
-if you cannot use sudo. See the README section "Linux SSH user and privileges".
-
-Docker mode on Linux requires the SSH user to run docker without sudo. If docker info fails with permission
-denied on the socket, on the host (as root) run: sudo usermod -aG docker <ssh-user>, then reconnect SSH or run
-newgrp docker so group membership applies.`
+sudo (or SSH as root) is usually required for those steps to succeed. For native mode, pre-install curl/tar and
+runner OS dependencies if you cannot use sudo. See the README section "Linux SSH user and privileges".`
 
 // serviceLongHelp documents autostart behavior for the service subcommands.
 const serviceLongHelp = `
@@ -48,9 +43,7 @@ gh sr up and gh sr down start and stop the same supervisor (systemd, launchd, or
 
 Linux user units (default) require loginctl enable-linger <user> on many headless servers so systemd --user
 starts at boot without an interactive login. Use --system on Linux only for a system-wide unit in
-/etc/systemd/system (needs passwordless sudo or root SSH).
-
-Docker mode uses the container restart policy unless-stopped; gh sr service install skips docker runners.`
+/etc/systemd/system (needs passwordless sudo or root SSH).`
 
 func main() {
 	root := &cobra.Command{
@@ -218,7 +211,7 @@ func runQuickInit(runnersPath string, force bool) error {
 	}
 
 	fmt.Println("=== gh sr quick setup ===")
-	fmt.Println("This will create a working config. OS, arch, mode, and labels are all auto-detected.")
+	fmt.Println("This will create a working config. OS, arch, and labels are auto-detected.")
 	fmt.Println()
 
 	repo := prompt("GitHub repo (owner/repo)", "")
@@ -254,12 +247,10 @@ func runQuickInit(runnersPath string, force bool) error {
 		count = 1
 	}
 
-	agenticAnswer := prompt("Use GitHub Agentic Workflows profile? (y/n)", "n")
-	agentic := strings.ToLower(strings.TrimSpace(agenticAnswer)) == "y"
-
-	var profileLine string
-	if agentic {
-		profileLine = "\n    profile: agentic"
+	profileStr := prompt(`Runner profile ("agentic" for GitHub Agentic Workflows, or empty)`, "")
+	profileLine := ""
+	if profileStr == "agentic" {
+		profileLine = "    profile: agentic\n"
 	}
 
 	seed := fmt.Sprintf(`github: {}
@@ -270,8 +261,8 @@ runners:
   - name: %s
     repo: %s
     host: %s
-    count: %d%s
-`, hostName, addr, runnerName, repo, hostName, count, profileLine)
+    count: %d
+%s`, hostName, addr, runnerName, repo, hostName, count, profileLine)
 
 	if _, err := os.Stat(runnersPath); err == nil && !force {
 		fmt.Printf("\n%s already exists. Overwrite? [y/N]: ", runnersPath)
@@ -297,12 +288,10 @@ runners:
 	fmt.Println("Config generated! Summary:")
 	fmt.Printf("  Host:   %s (%s)\n", hostName, addr)
 	fmt.Printf("  Runner: %s -> %s (x%d)\n", runnerName, repo, count)
-	if agentic {
-		fmt.Println("  Profile: agentic (docker, host network, NET_ADMIN, agentic label)")
-	} else {
-		fmt.Println("  Mode:   auto-detected at runtime")
-	}
 	fmt.Println("  Labels: auto-generated from host os/arch")
+	if profileStr == "agentic" {
+		fmt.Println("  Profile: agentic (GitHub Agentic Workflows)")
+	}
 	fmt.Println()
 	fmt.Println("Next steps:")
 	fmt.Println("  gh sr doctor   # verify config, GitHub access, and host connectivity")
@@ -351,20 +340,17 @@ func addRunnerCmd() *cobra.Command {
 		host      string
 		count     int
 		labels    []string
-		mode      string
-		profile   string
 		ephemeral bool
+		profile   string
 	)
 	cmd := &cobra.Command{
 		Use:   "runner <name>",
 		Short: "Add a runner entry (labels auto-generated if omitted)",
 		Long: `Adds a runner to runners.yml. Labels are auto-generated from host os/arch if not specified.
 
-Use --profile agentic to auto-configure for GitHub Agentic Workflows:
-sets docker mode, host networking, NET_ADMIN capability, and an agentic label.
-
 Use --org instead of --repo for organization-level runners, and --group
-to assign the runner to a runner group.`,
+to assign the runner to a runner group. Use --profile agentic for GitHub
+Agentic Workflows (gh-aw) runners.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfgPath, err := config.ResolveConfigPath(cfgFile)
@@ -381,6 +367,9 @@ to assign the runner to a runner group.`,
 			if host == "" {
 				return fmt.Errorf("--host is required")
 			}
+			if profile != "" && profile != "agentic" {
+				return fmt.Errorf("--profile must be empty or \"agentic\"")
+			}
 			opts := config.AddRunnerOpts{
 				Name:      name,
 				Repo:      repo,
@@ -389,9 +378,8 @@ to assign the runner to a runner group.`,
 				Host:      host,
 				Count:     count,
 				Labels:    labels,
-				Mode:      mode,
-				Profile:   profile,
 				Ephemeral: ephemeral,
+				Profile:   profile,
 			}
 			if err := config.AddRunnerFull(cfgPath, opts); err != nil {
 				return err
@@ -410,9 +398,8 @@ to assign the runner to a runner group.`,
 	cmd.Flags().StringVar(&host, "host", "", "host name from config (required)")
 	cmd.Flags().IntVar(&count, "count", 1, "number of parallel instances")
 	cmd.Flags().StringSliceVar(&labels, "labels", nil, "runner labels (auto-generated if empty)")
-	cmd.Flags().StringVar(&mode, "mode", "", "runner mode: docker or native (auto-detected if empty)")
-	cmd.Flags().StringVar(&profile, "profile", "", "runner profile: 'agentic' for GitHub Agentic Workflows")
 	cmd.Flags().BoolVar(&ephemeral, "ephemeral", false, "register as ephemeral (one job then deregister)")
+	cmd.Flags().StringVar(&profile, "profile", "", `runner profile: "agentic" for GitHub Agentic Workflows (gh-aw)`)
 	return cmd
 }
 
@@ -778,7 +765,7 @@ func serviceCmd() *cobra.Command {
 	status := &cobra.Command{
 		Use:   "status [runner-names...]",
 		Short: "Show autostart state per runner instance",
-		Long:  "Reports whether gh sr autostart is installed and the service state (native), or docker restart policy notes (docker)." + serviceLongHelp,
+		Long:  "Reports whether gh sr autostart is installed and the service state." + serviceLongHelp,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, err := loadConfig()
 			if err != nil {

@@ -80,97 +80,13 @@ func TestEnsureDoctorHostOS_LocalFillsRuntimeGOOS(t *testing.T) {
 	}
 }
 
-func TestHasAgenticRunners_agenticLabel(t *testing.T) {
-	t.Parallel()
-	runners := []config.RunnerConfig{
-		{Name: "n", Host: "h1", Repo: "o/r", Mode: "native", Labels: []string{"self-hosted", "Linux", "X64", "agentic"}},
-	}
-	if !hasAgenticRunners(runners, "h1") {
-		t.Fatal("expected hasAgenticRunners true for agentic label without profile")
-	}
-	runnersLegacy := []config.RunnerConfig{
-		{Name: "n", Host: "h1", Repo: "o/r", Mode: "native", Labels: []string{"self-hosted", "Linux", "X64", "gh-aw"}},
-	}
-	if !hasAgenticRunners(runnersLegacy, "h1") {
-		t.Fatal("expected hasAgenticRunners true for legacy gh-aw label without profile")
-	}
-	runnersNo := []config.RunnerConfig{
-		{Name: "n", Host: "h1", Repo: "o/r", Mode: "native", Labels: []string{"self-hosted", "Linux", "X64"}},
-	}
-	if hasAgenticRunners(runnersNo, "h1") {
-		t.Fatal("expected hasAgenticRunners false without agentic or gh-aw label")
-	}
-}
-
-func TestModesForHost(t *testing.T) {
-	t.Parallel()
-	runners := []config.RunnerConfig{
-		{Name: "r1", Host: "h1", Repo: "o/r", Mode: "docker"},
-		{Name: "r2", Host: "h1", Repo: "o/r", Mode: "native"},
-		{Name: "r3", Host: "h2", Repo: "o/r"},
-	}
-	m := modesForHost(runners, "h1", "linux")
-	if !m["docker"] || !m["native"] {
-		t.Fatalf("h1 linux: got %#v", m)
-	}
-	m2 := modesForHost(runners, "h2", "linux")
-	if !m2["docker"] || len(m2) != 1 {
-		t.Fatalf("h2 linux default docker: got %#v", m2)
-	}
-}
-
-func TestCheckAgenticWorkflowDockerHint(t *testing.T) {
-	t.Parallel()
-	var buf strings.Builder
-	var r Result
-	runners := []config.RunnerConfig{
-		{Name: "zebra", Host: "h1", Repo: "o/r", Mode: "docker"},
-		{Name: "alpha", Host: "h1", Repo: "o/r", Mode: "docker", DockerNetworkMode: "host"},
-	}
-	checkAgenticWorkflowDockerHint(&buf, "h1", "linux", runners, &r)
-	out := buf.String()
-	if r.Warn != 1 {
-		t.Fatalf("expected 1 warning, got %d", r.Warn)
-	}
-	if !strings.Contains(out, "zebra") || strings.Contains(out, "alpha") {
-		t.Fatalf("expected WARN only for bridge docker runner zebra, got:\n%s", out)
-	}
-	if !strings.Contains(out, "agentic workflows") {
-		t.Fatalf("expected agentic workflows hint: %s", out)
-	}
-	if !strings.Contains(out, "set docker_network_mode: host") {
-		t.Fatalf("expected docker_network_mode hint: %s", out)
-	}
-}
-
-func TestCheckAgenticWorkflowDockerHint_Windows(t *testing.T) {
-	t.Parallel()
-	var buf strings.Builder
-	var r Result
-	runners := []config.RunnerConfig{
-		{Name: "win-runner", Host: "w1", Repo: "o/r", Mode: "docker"},
-	}
-	checkAgenticWorkflowDockerHint(&buf, "w1", "windows", runners, &r)
-	out := buf.String()
-	if r.Warn != 1 {
-		t.Fatalf("expected 1 warning, got %d", r.Warn)
-	}
-	if !strings.Contains(out, "win-runner") {
-		t.Fatalf("expected WARN for bridge docker runner on Windows, got:\n%s", out)
-	}
-	if !strings.Contains(out, "set docker_network_mode: host") {
-		t.Fatalf("expected docker_network_mode hint for Windows: %s", out)
-	}
-}
-
 func TestNativeInstallTargetsForHost(t *testing.T) {
 	t.Parallel()
 	runners := []config.RunnerConfig{
-		{Name: "a", Host: "h1", Repo: "o/r", Mode: "native", Count: 2},
-		{Name: "b", Host: "h1", Repo: "o/r", Mode: "docker"},
-		{Name: "c", Host: "h2", Repo: "o/r", Mode: "native", Count: 1},
+		{Name: "a", Host: "h1", Repo: "o/r", Count: 2},
+		{Name: "b", Host: "h2", Repo: "o/r", Count: 1},
 	}
-	got := nativeInstallTargetsForHost(runners, "h1", "linux")
+	got := nativeInstallTargetsForHost(runners, "h1")
 	want := [][2]string{{"a-1", "a"}, {"a-2", "a"}}
 	if len(got) != len(want) {
 		t.Fatalf("len %d, want %d: %#v", len(got), len(want), got)
@@ -180,14 +96,8 @@ func TestNativeInstallTargetsForHost(t *testing.T) {
 			t.Fatalf("idx %d: got %#v want %#v", i, got[i], want[i])
 		}
 	}
-	if len(nativeInstallTargetsForHost(runners, "h2", "linux")) != 1 {
-		t.Fatalf("h2 should have one native target")
-	}
-	// On linux host, default mode for unspecified Mode is docker — no native targets for h2 if we use docker-only name
-	if nativeInstallTargetsForHost([]config.RunnerConfig{
-		{Name: "x", Host: "hx", Repo: "o/r", Count: 1},
-	}, "hx", "linux") != nil {
-		t.Fatalf("default docker on linux should yield no native install targets")
+	if len(nativeInstallTargetsForHost(runners, "h2")) != 1 {
+		t.Fatalf("h2 should have one target")
 	}
 }
 
@@ -239,7 +149,7 @@ func TestRun_GitHubListRunnersUsesAPI(t *testing.T) {
 			"localh": {Addr: config.LocalAddr, OS: "linux", Arch: "amd64"},
 		},
 		Runners: []config.RunnerConfig{
-			{Name: "only-gh", Repo: "o/r", Host: "localh", Labels: []string{"x"}, Mode: "native"},
+			{Name: "only-gh", Repo: "o/r", Host: "localh", Labels: []string{"x"}},
 		},
 	}
 	gh := runner.NewGitHubClientWithHTTP("test-token", srv.Client(), srv.URL)

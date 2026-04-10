@@ -23,14 +23,11 @@ func Setup(w io.Writer, cfg *config.Config, mgr *runner.Manager, filterHost, fil
 	if err := ResolveHostInfo(w, cfg); err != nil {
 		return err
 	}
-	if err := ResolveModes(w, cfg); err != nil {
-		return err
-	}
 	runners := config.FilterRunners(cfg, filterHost, filterRepo, nameArgs)
 	hostsDone := map[string]bool{}
 	for _, rc := range runners {
 		hcfg := cfg.Hosts[rc.Host]
-		if hostsDone[rc.Host] && rc.EffectiveMode(hcfg.OS) == "docker" {
+		if hostsDone[rc.Host] {
 			continue
 		}
 
@@ -61,9 +58,6 @@ func Up(w io.Writer, cfg *config.Config, mgr *runner.Manager, filterHost, filter
 	if err := ResolveHostInfo(w, cfg); err != nil {
 		return err
 	}
-	if err := ResolveModes(w, cfg); err != nil {
-		return err
-	}
 	runners := config.FilterRunners(cfg, filterHost, filterRepo, nameArgs)
 	for _, rc := range runners {
 		hcfg := cfg.Hosts[rc.Host]
@@ -90,9 +84,6 @@ func Down(w io.Writer, cfg *config.Config, mgr *runner.Manager, filterHost, filt
 	if err := ResolveHostInfo(w, cfg); err != nil {
 		return err
 	}
-	if err := ResolveModes(w, cfg); err != nil {
-		return err
-	}
 	runners := config.FilterRunners(cfg, filterHost, filterRepo, nameArgs)
 	for _, rc := range runners {
 		hcfg := cfg.Hosts[rc.Host]
@@ -113,9 +104,6 @@ func Down(w io.Writer, cfg *config.Config, mgr *runner.Manager, filterHost, filt
 // Restart stops then starts runners.
 func Restart(w io.Writer, cfg *config.Config, mgr *runner.Manager, filterHost, filterRepo string, nameArgs []string) error {
 	if err := ResolveHostInfo(w, cfg); err != nil {
-		return err
-	}
-	if err := ResolveModes(w, cfg); err != nil {
 		return err
 	}
 	runners := config.FilterRunners(cfg, filterHost, filterRepo, nameArgs)
@@ -139,9 +127,6 @@ func Restart(w io.Writer, cfg *config.Config, mgr *runner.Manager, filterHost, f
 // Update removes, sets up, and starts runners again.
 func Update(w io.Writer, cfg *config.Config, mgr *runner.Manager, filterHost, filterRepo string, nameArgs []string) error {
 	if err := ResolveHostInfo(w, cfg); err != nil {
-		return err
-	}
-	if err := ResolveModes(w, cfg); err != nil {
 		return err
 	}
 	runners := config.FilterRunners(cfg, filterHost, filterRepo, nameArgs)
@@ -173,9 +158,6 @@ func CollectStatus(w io.Writer, cfg *config.Config, mgr *runner.Manager, filterH
 	if err := ResolveHostInfo(w, cfg); err != nil {
 		return nil, err
 	}
-	if err := ResolveModes(w, cfg); err != nil {
-		return nil, err
-	}
 	runners := config.FilterRunners(cfg, filterHost, filterRepo, nameArgs)
 	var allStatuses []runner.RunnerStatus
 	for _, rc := range runners {
@@ -194,7 +176,7 @@ func CollectStatus(w io.Writer, cfg *config.Config, mgr *runner.Manager, filterH
 					Instance: name,
 					Host:     rc.Host,
 					Repo:     repoDisplay,
-					Mode:     rc.EffectiveMode(hcfg.OS),
+					Mode:     "native",
 					Local:    "unreachable",
 				})
 			}
@@ -215,9 +197,6 @@ func CollectStatus(w io.Writer, cfg *config.Config, mgr *runner.Manager, filterH
 // Logs returns recent log lines for a runner instance or base name.
 func Logs(cfg *config.Config, mgr *runner.Manager, filterHost, target string) (string, error) {
 	if err := ResolveHostInfo(nil, cfg); err != nil {
-		return "", err
-	}
-	if err := ResolveModes(nil, cfg); err != nil {
 		return "", err
 	}
 	rc, err := cfg.FindRunnerForLogs(target, filterHost)

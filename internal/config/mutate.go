@@ -76,20 +76,18 @@ type AddRunnerOpts struct {
 	Host      string
 	Count     int
 	Labels    []string
-	Mode      string
-	Profile   string
 	Ephemeral bool
+	Profile   string // "agentic" for GitHub Agentic Workflows
 }
 
 // AddRunner adds a runner entry to the config file at cfgPath.
-func AddRunner(cfgPath, name, repo, hostName string, count int, labels []string, mode string) error {
+func AddRunner(cfgPath, name, repo, hostName string, count int, labels []string) error {
 	return AddRunnerFull(cfgPath, AddRunnerOpts{
 		Name:   name,
 		Repo:   repo,
 		Host:   hostName,
 		Count:  count,
 		Labels: labels,
-		Mode:   mode,
 	})
 }
 
@@ -172,10 +170,10 @@ func AddRunnerFull(cfgPath string, opts AddRunnerOpts) error {
 		)
 	}
 
-	if opts.Mode != "" {
+	if opts.Ephemeral {
 		entry.Content = append(entry.Content,
-			&yaml.Node{Kind: yaml.ScalarNode, Value: "mode"},
-			&yaml.Node{Kind: yaml.ScalarNode, Value: opts.Mode},
+			&yaml.Node{Kind: yaml.ScalarNode, Value: "ephemeral"},
+			&yaml.Node{Kind: yaml.ScalarNode, Value: "true", Tag: "!!bool"},
 		)
 	}
 
@@ -183,13 +181,6 @@ func AddRunnerFull(cfgPath string, opts AddRunnerOpts) error {
 		entry.Content = append(entry.Content,
 			&yaml.Node{Kind: yaml.ScalarNode, Value: "profile"},
 			&yaml.Node{Kind: yaml.ScalarNode, Value: opts.Profile},
-		)
-	}
-
-	if opts.Ephemeral {
-		entry.Content = append(entry.Content,
-			&yaml.Node{Kind: yaml.ScalarNode, Value: "ephemeral"},
-			&yaml.Node{Kind: yaml.ScalarNode, Value: "true", Tag: "!!bool"},
 		)
 	}
 

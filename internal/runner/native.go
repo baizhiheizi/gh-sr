@@ -10,12 +10,14 @@ import (
 )
 
 // NativeRunnerConfigPresent reports whether the remote instance directory contains
-// a configured runner (.runner), matching the check used by setup and doctor.
+// a fully-configured runner: the directory exists, run.sh/run.cmd is present, and .runner exists.
+// This prevents EnsureSetup from skipping setup when only the .runner file exists but
+// the runner binaries (run.sh) or directory are missing.
 func NativeRunnerConfigPresent(h *host.Host, instanceName string) (bool, error) {
 	dir := h.RunnerDir(instanceName)
 	if h.OS == "windows" {
 		out, err := h.RunShell(fmt.Sprintf(
-			"%s; if (Test-Path (Join-Path $runnerDir '.runner')) { Write-Output 'yes' } else { Write-Output 'no' }",
+			"%s; if ((Test-Path $runnerDir -PathType Container) -and (Test-Path (Join-Path $runnerDir 'run.cmd')) -and (Test-Path (Join-Path $runnerDir '.runner'))) { Write-Output 'yes' } else { Write-Output 'no' }",
 			windowsRunnerDirAssignment(h, "runnerDir", instanceName),
 		))
 		if err != nil {
@@ -23,7 +25,7 @@ func NativeRunnerConfigPresent(h *host.Host, instanceName string) (bool, error) 
 		}
 		return strings.TrimSpace(out) == "yes", nil
 	}
-	out, err := h.Run(fmt.Sprintf("test -f %s/.runner && echo yes || echo no", dir))
+	out, err := h.Run(fmt.Sprintf("test -d %s && test -f %s/run.sh && test -f %s/.runner && echo yes || echo no", dir, dir, dir))
 	if err != nil {
 		return false, err
 	}
@@ -202,23 +204,33 @@ func (m *Manager) setupNative(h *host.Host, rc config.RunnerConfig) error {
 		}
 
 		if h.OS == "windows" {
+			fmt.Fprintf(m.out(), "  %s: downloading runner package...\n", name)
 			if _, err := h.RunShell(windowsNativeInstallScript(h, name, version, url)); err != nil {
 				return fmt.Errorf("installing runner on Windows: %w", err)
 			}
 		} else {
 			tarball := fmt.Sprintf("%s/ghsr-runner-%s-%s.tar.gz", h.TempDir(), name, version)
+			fmt.Fprintf(m.out(), "  %s: downloading runner v%s...\n", name, version)
+			if _, err := h.Run(fmt.Sprintf("mkdir -p %s", dir)); err != nil {
+				return fmt.Errorf("creating runner directory: %w", err)
+			}
 			cmds := fmt.Sprintf(
-				"mkdir -p %s && cd %s && tarball=%s && rm -f \"$tarball\" && "+
-					"curl -fSL --retry 3 --retry-delay 2 -o \"$tarball\" '%s' && "+
-					"tar xzf \"$tarball\" && rm -f \"$tarball\"",
-				dir, dir, tarball, url,
+				"cd %s && tarball=%s && rm -f \"$tarball\" && "+
+					"curl -fSL --retry 3 --retry-delay 2 -o \"$tarball\" '%s'",
+				dir, tarball, url,
 			)
 			if _, err := h.Run(cmds); err != nil {
-				return fmt.Errorf("installing runner: %w", err)
+				return fmt.Errorf("downloading runner: %w", err)
+			}
+			fmt.Fprintf(m.out(), "  %s: extracting runner...\n", name)
+			cmds = fmt.Sprintf("cd %s && tarball=%s && tar xzf \"$tarball\" && rm -f \"$tarball\"", dir, tarball)
+			if _, err := h.Run(cmds); err != nil {
+				return fmt.Errorf("extracting runner: %w", err)
 			}
 		}
 
 		if h.OS == "linux" {
+			fmt.Fprintf(m.out(), "  %s: installing runner dependencies...\n", name)
 			depsCmd := fmt.Sprintf(
 				"cd %s && %s && $SUDO ./bin/installdependencies.sh",
 				dir, strings.TrimSpace(linuxElevatePrelude),
@@ -235,6 +247,7 @@ func (m *Manager) setupNative(h *host.Host, rc config.RunnerConfig) error {
 
 		labels := strings.Join(rc.EffectiveLabels(h.OS, h.Arch), ",")
 
+		fmt.Fprintf(m.out(), "  %s: registering runner with GitHub...\n", name)
 		if h.OS == "windows" {
 			if _, err := h.RunShell(windowsNativeConfigScript(h, rc, name, regToken)); err != nil {
 				return fmt.Errorf("configuring runner on Windows: %w", err)
@@ -259,6 +272,26 @@ func (m *Manager) setupNative(h *host.Host, rc config.RunnerConfig) error {
 		fmt.Fprintf(m.out(), "  %s: configured\n", name)
 	}
 
+	// For agentic runners, install gh-aw CLI on the host.
+	// gh-aw (GitHub Agentic Workflows) uses Docker on the host for AWF sandbox containers.
+	if rc.IsAgentic() && h.OS == "linux" {
+		fmt.Fprintf(m.out(), "  %s: installing gh-aw CLI for agentic profile...\n", rc.Name)
+		installGHAWCmd := `if [ -d ~/.local/share/gh/extensions/gh-aw ]; then
+			echo "gh-aw already installed"
+		else
+			curl -sL https://raw.githubusercontent.com/github/gh-aw/main/install-gh-aw.sh | bash
+		fi`
+		out, err := h.Run(installGHAWCmd)
+		if err != nil {
+			fmt.Fprintf(m.out(), "  %s: warning: failed to install gh-aw CLI: %v\n", rc.Name, err)
+		} else {
+			fmt.Fprintf(m.out(), "  %s: gh-aw CLI installed\n", rc.Name)
+			if out != "" {
+				fmt.Fprintf(m.out(), "  %s: gh-aw: %s\n", rc.Name, strings.TrimSpace(out))
+			}
+		}
+	}
+
 	return nil
 }
 
@@ -277,7 +310,7 @@ func (m *Manager) startNativeOnce(h *host.Host, rc config.RunnerConfig, instance
 		return fmt.Errorf("checking runner install at %s: %w", dir, err)
 	}
 	if !ok {
-		fmt.Fprintf(m.out(), "  %s: not installed, running setup...\n", instanceName)
+		fmt.Fprintf(m.out(), "  %s: not installed, running setup (this takes a few minutes)...\n", instanceName)
 		if setupErr := m.setupNative(h, rc); setupErr != nil {
 			return fmt.Errorf("auto-setup for %s: %w", instanceName, setupErr)
 		}
@@ -291,6 +324,7 @@ func (m *Manager) startNativeOnce(h *host.Host, rc config.RunnerConfig, instance
 		fmt.Fprintf(m.out(), "  %s: %s\n", instanceName, strings.TrimSpace(out))
 
 		if retryOnStale {
+			fmt.Fprintf(m.out(), "  %s: waiting for runner to initialize...\n", instanceName)
 			checkOut, _ := h.RunShell(windowsCheckStaleRegistration(h, instanceName))
 			if strings.TrimSpace(checkOut) == "stale" {
 				return m.handleStaleRegistration(h, rc, instanceName)
@@ -301,9 +335,9 @@ func (m *Manager) startNativeOnce(h *host.Host, rc config.RunnerConfig, instance
 
 	// Unix (Linux / macOS)
 	cmd := fmt.Sprintf(
-		`cd %s && pid_file=".runner_pid" && `+
-			`if [ -f "$pid_file" ] && kill -0 "$(cat "$pid_file")" 2>/dev/null; then echo "already running"; exit 0; fi && `+
-			`nohup ./run.sh > runner.log 2>&1 & echo $! > "$pid_file" && echo "started PID $!"`,
+		`cd %s; pid_file=".runner_pid"; `+
+			`if [ -f "$pid_file" ] && kill -0 "$(cat "$pid_file")" 2>/dev/null; then echo "already running"; exit 0; fi; `+
+			`nohup ./run.sh > runner.log 2>&1 & { echo $!; } > "$pid_file"; echo "started PID $!"`,
 		dir,
 	)
 	out, err := h.Run(cmd)
@@ -313,8 +347,9 @@ func (m *Manager) startNativeOnce(h *host.Host, rc config.RunnerConfig, instance
 	fmt.Fprintf(m.out(), "  %s: %s\n", instanceName, strings.TrimSpace(out))
 
 	if retryOnStale {
+		fmt.Fprintf(m.out(), "  %s: waiting for runner to initialize...\n", instanceName)
 		checkCmd := fmt.Sprintf(
-			`cd %s && sleep 5 && pid=$(cat .runner_pid 2>/dev/null) && `+
+			`sleep 5 && cd %s && pid=$(cat .runner_pid 2>/dev/null) && `+
 				`if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then echo ok; `+
 				`elif grep -q %q runner.log 2>/dev/null; then echo stale; `+
 				`else echo ok; fi`,

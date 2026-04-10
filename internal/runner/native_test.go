@@ -153,6 +153,10 @@ func TestNativeRunnerConfigPresent_local(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(base, ".runner"), []byte("{}"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	// run.sh is required by the NeedsSetup check
+	if err := os.WriteFile(filepath.Join(base, "run.sh"), []byte("#!/bin/sh\necho hi"), 0o755); err != nil {
+		t.Fatal(err)
+	}
 
 	h := host.NewHost("local-test", config.HostConfig{Addr: config.LocalAddr, OS: "linux", Arch: "amd64"})
 	if err := h.Connect(); err != nil {
