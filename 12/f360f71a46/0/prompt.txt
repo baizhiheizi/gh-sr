@@ -1,0 +1,13 @@
+I think we should make it simple, use Docker's official `docker-compose-plugin` directly. And also, we do too much things in the docker_pre_setup, could we make it an base image to run, based on the runner image from GitHub, we could add more dependencies in it.
+
+---
+
+Yes. let's do it.
+
+---
+
+Do I have to build and push it? Could `gh sr` handle it? Build it locally and use it directly.
+
+---
+
+We should also check the dockerfile version, rebuild it if it's updated.
