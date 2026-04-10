@@ -1,0 +1,7 @@
+<task-notification>
+<task-id>bhpgdk96l</task-id>
+<tool-use-id>call_function_elqi2zi7z3oq_1</tool-use-id>
+<output-file>/tmp/claude-1000/-home-an-lee-projects-gh-sr/d9f62cce-abae-45bf-b6e1-32b4a4c3776a/tasks/bhpgdk96l.output</output-file>
+<status>completed</status>
+<summary>Background command "ssh x1 'cd /home/an-lee/.gh-sr/runners/enjoy-x1-1 &amp;&amp; nohup ./run.sh &gt; runner.log 2&gt;&amp;1 &amp; echo $!'" completed (exit code 0)</summary>
+</task-notification>
