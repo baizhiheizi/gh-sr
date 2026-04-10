@@ -49,6 +49,7 @@ type RunnerConfig struct {
 	DockerCapAdd []string `yaml:"docker_cap_add"`
 	// DockerPreSetup is a bash script that runs inside the container before the runner starts.
 	// Use this to install tools needed for your workflows (e.g., Node.js for awf).
+	// For profile: agentic, this defaults to installing iptables for the Agent Workflow Firewall.
 	DockerPreSetup string `yaml:"docker_pre_setup"`
 }
 
@@ -246,6 +247,13 @@ func (rc *RunnerConfig) applyAgenticDefaults() {
 	}
 	if !hasCapability(rc.DockerCapAdd, "NET_ADMIN") {
 		rc.DockerCapAdd = append(rc.DockerCapAdd, "NET_ADMIN")
+	}
+	// Install iptables and docker-compose for Agent Workflow Firewall (awf).
+	// awf needs iptables to manage DOCKER-USER chain and docker-compose to start sidecar containers.
+	// Only add the default if the user hasn't specified a custom pre_setup script.
+	// Uses sudo since the actions-runner container runs as non-root by default.
+	if rc.DockerPreSetup == "" {
+		rc.DockerPreSetup = "(command -v iptables >/dev/null 2>&1 || sudo apt-get update && sudo apt-get install -y iptables) && (command -v docker-compose >/dev/null 2>&1 || sudo apt-get update && sudo apt-get install -y docker-compose) || true"
 	}
 }
 

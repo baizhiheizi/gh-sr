@@ -97,7 +97,7 @@ runners:
     count: 2
 ```
 
-This automatically configures docker mode, host networking, `NET_ADMIN` capability, and an `agentic` label. You can also add it from the CLI:
+This automatically configures docker mode, host networking, `NET_ADMIN` capability, an `agentic` label, and installs `iptables` in the runner container for the Agent Workflow Firewall. You can also add it from the CLI:
 
 ```bash
 gh sr add runner aw-runner --repo owner/repo --host vps-1 --profile agentic

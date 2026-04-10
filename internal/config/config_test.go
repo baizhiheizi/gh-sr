@@ -671,6 +671,12 @@ func TestAgenticProfile_applyDefaults(t *testing.T) {
 	if len(rc.DockerCapAdd) != 1 || rc.DockerCapAdd[0] != "NET_ADMIN" {
 		t.Errorf("docker_cap_add: got %v want [NET_ADMIN]", rc.DockerCapAdd)
 	}
+	if rc.DockerPreSetup == "" {
+		t.Errorf("docker_pre_setup: got empty want iptables install")
+	}
+	if !strings.Contains(rc.DockerPreSetup, "iptables") {
+		t.Errorf("docker_pre_setup: got %q want to contain iptables", rc.DockerPreSetup)
+	}
 }
 
 func TestAgenticProfile_preservesExplicitValues(t *testing.T) {
@@ -683,10 +689,14 @@ func TestAgenticProfile_preservesExplicitValues(t *testing.T) {
 		Mode:              "docker",
 		DockerNetworkMode: "host",
 		DockerCapAdd:      []string{"NET_ADMIN", "SYS_PTRACE"},
+		DockerPreSetup:    "custom setup script",
 	}
 	rc.applyAgenticDefaults()
 	if len(rc.DockerCapAdd) != 2 {
 		t.Errorf("should not duplicate NET_ADMIN: got %v", rc.DockerCapAdd)
+	}
+	if rc.DockerPreSetup != "custom setup script" {
+		t.Errorf("docker_pre_setup: got %q want preserved custom value", rc.DockerPreSetup)
 	}
 }
 

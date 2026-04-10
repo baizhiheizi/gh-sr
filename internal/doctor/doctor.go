@@ -169,7 +169,7 @@ func Run(w io.Writer, cfgPath, envPath string, cfg *config.Config, cfgErr error,
 				checkLinuxSudo(w, hostName, h, &r)
 			}
 			if hasAgenticRunners(runners, hostName) {
-				checkAgenticPrereqs(w, hostName, h, &r)
+				checkAgenticPrereqs(w, hostName, h, runners, &r)
 			}
 		}()
 	}
@@ -520,8 +520,8 @@ func isAgenticRunnerLabel(l string) bool {
 }
 
 // checkAgenticPrereqs verifies host prerequisites specific to GitHub Agentic Workflows:
-// port 80 availability (MCP gateway), iptables (AWF firewall), and sudo access.
-func checkAgenticPrereqs(w io.Writer, hostName string, h *host.Host, r *Result) {
+// port 80 availability (MCP gateway), iptables (AWF firewall), sudo access, and runner container tools.
+func checkAgenticPrereqs(w io.Writer, hostName string, h *host.Host, runners []config.RunnerConfig, r *Result) {
 	if h.OS == "linux" || h.OS == "darwin" {
 		out, err := h.Run("ss -tlnp 2>/dev/null | grep -q ':80 ' && echo in-use || echo free")
 		if err == nil {
@@ -544,6 +544,39 @@ func checkAgenticPrereqs(w io.Writer, hostName string, h *host.Host, r *Result) 
 			r.Warn++
 		}
 
+		// Check Docker daemon iptables setting (daemon.json absence means default iptables=true)
+		out, err = h.Run("cat /etc/docker/daemon.json")
+		if err == nil && strings.Contains(out, `"iptables": false`) {
+			printLine(w, sevWarn, hostName, "agentic: Docker iptables is disabled; AWF requires iptables integration")
+			r.Warn++
+		}
+
+		// Check if DOCKER-USER chain is modifiable (try appending a RETURN rule)
+		out, err = h.Run("sudo iptables -A DOCKER-USER -j RETURN")
+		if err == nil {
+			// Rule added successfully - remove the test rule
+			h.Run("sudo iptables -D DOCKER-USER -j RETURN")
+			printLine(w, sevOK, hostName, "agentic: DOCKER-USER chain exists and is modifiable")
+		} else {
+			// Check if error indicates chain doesn't exist vs. permission denied
+			errOut, _ := h.Run("sudo iptables -L DOCKER-USER -n")
+			if errOut != "" && strings.Contains(errOut, "Chain doesn't exist") {
+				printLine(w, sevWarn, hostName, "agentic: DOCKER-USER chain missing; Docker iptables may be disabled")
+			} else {
+				printLine(w, sevWarn, hostName, "agentic: DOCKER-USER chain not modifiable; sudo may be needed for AWF")
+			}
+			r.Warn++
+		}
+
+		// Check Docker's iptables filter chain list (look for DOCKER chain)
+		out, err = h.Run("sudo iptables -L -n")
+		if err == nil && strings.Contains(out, "DOCKER") {
+			printLine(w, sevOK, hostName, "agentic: Docker iptables rules present")
+		} else {
+			printLine(w, sevWarn, hostName, "agentic: No Docker iptables rules found; Docker may not be managing iptables")
+			r.Warn++
+		}
+
 		uid, err := h.Run("id -u")
 		if err == nil && strings.TrimSpace(uid) != "0" {
 			out, err := h.Run("sudo -n true 2>/dev/null && echo ok || echo no")
@@ -552,6 +585,35 @@ func checkAgenticPrereqs(w io.Writer, hostName string, h *host.Host, r *Result) 
 				r.Warn++
 			} else {
 				printLine(w, sevOK, hostName, "agentic: sudo available for AWF firewall setup")
+			}
+		}
+
+		// Check if iptables and docker-compose are installed in running agentic runner containers
+		for _, rc := range runners {
+			if rc.Host != hostName || !rc.IsAgentic() {
+				continue
+			}
+			for _, inst := range rc.InstanceNames() {
+				cname := runner.ContainerName(inst)
+				running, rerr := h.Run(fmt.Sprintf("docker inspect -f '{{.State.Running}}' %s 2>/dev/null", cname))
+				if rerr != nil || strings.TrimSpace(running) != "true" {
+					continue
+				}
+				// Check iptables in container
+				out, ierr := h.Run(fmt.Sprintf("docker exec %s which iptables 2>/dev/null", cname))
+				if ierr != nil || strings.TrimSpace(out) == "" {
+					printLine(w, sevWarn, hostName, fmt.Sprintf("agentic: %s missing iptables (needed for AWF firewall)", cname))
+					r.Warn++
+				}
+				// Check docker-compose in container
+				out, cerr := h.Run(fmt.Sprintf("docker exec %s which docker-compose 2>/dev/null", cname))
+				if cerr != nil || strings.TrimSpace(out) == "" {
+					printLine(w, sevWarn, hostName, fmt.Sprintf("agentic: %s missing docker-compose (needed for AWF sidecars)", cname))
+					r.Warn++
+				}
+				// Only check first running instance per runner config; if we get here, tools are present
+				printLine(w, sevOK, hostName, fmt.Sprintf("agentic: %s has iptables and docker-compose (AWF tools)", cname))
+				break
 			}
 		}
 	}
