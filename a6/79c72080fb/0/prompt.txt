@@ -1,0 +1,38 @@
+I think we should make it simple, use Docker's official `docker-compose-plugin` directly. And also, we do too much things in the docker_pre_setup, could we make it an base image to run, based on the runner image from GitHub, we could add more dependencies in it.
+
+---
+
+Yes. let's do it.
+
+---
+
+Do I have to build and push it? Could `gh sr` handle it? Build it locally and use it directly.
+
+---
+
+We should also check the dockerfile version, rebuild it if it's updated.
+
+---
+
+Yes, commit it first. But why do I need to copy the dockerfile and build it manually? Shouldn't I just rebuild the gh sr and `gh sr down` and `gh sr up`?
+
+---
+
+➜  gh sr up
+Detecting OS/arch for host r1 (an-lee@10.0.0.132)...
+  r1: detected os=linux arch=amd64
+Detecting OS/arch for host x1 (an-lee@192.168.31.66)...
+  x1: detected os=linux arch=amd64
+  r1: auto-detected mode=docker
+Starting enjoy-r1 on r1...
+  enjoy-r1-1: already running
+Starting enjoy-x1 on x1...
+  building agentic runner image (hash: 6d5f4627)
+Error: starting enjoy-x1-1: building agentic runner image: building agentic runner image: running "docker build --build-arg REDACTED -t ghcr.io/an-lee/agentic-runner:latest -f $HOME/.config/gh-sr/Dockerfile.agentic-runner $HOME/.config/gh-sr": Process exited with status 100
+stderr: DEPRECATED: The legacy builder is deprecated and will be removed in a future release.
+            Install the buildx component to build images with BuildKit:
+            https://docs.docker.com/go/buildx/
+
+The command '/bin/sh -c apt-get update && apt-get install -y ca-certificates curl' returned a non-zero code: 100
+
+It fails
