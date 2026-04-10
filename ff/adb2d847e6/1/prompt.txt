@@ -1,0 +1,93 @@
+<task-notification>
+<task-id>bjyyejx7a</task-id>
+<tool-use-id>call_10e78b0e74de4b1e9668fc87</tool-use-id>
+<output-file>/tmp/claude-1000/-home-an-lee-projects-gh-sr/7b82ced9-6bd6-4fb9-b226-2ac151699a0a/tasks/bjyyejx7a.output</output-file>
+<status>completed</status>
+<summary>Background command "gh sr down --host x1 &amp;&amp; sleep 2 &amp;&amp; gh sr up --host x1 2&gt;&amp;1 | grep -E "(building|started|Error)" | head -15" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+The workflow still fails.
+
+[WARN] Could not detect host DNS servers; falling back to 8.8.8.8, 8.8.4.4
+[WARN] ⚠️  Using --env-all: All host environment variables will be passed to container
+[WARN]    This may expose sensitive credentials if logs or configs are shared
+[WARN] ⚠️  Host access enabled with host.docker.internal in allowed domains
+[WARN]    Containers can access ANY service running on the host machine
+[WARN]    Only use this for trusted workloads (e.g., MCP gateways)
+[INFO] API proxy enabled: OpenAI=false, Anthropic=true, Copilot=false
+[INFO] Allowed domains: *.githubusercontent.com, *.gradle-enterprise.cloud, *.pythonhosted.org, *.vsblob.vsassets.io, adoptium.net, anaconda.org, anthropic.com, api.adoptium.net, api.anthropic.com, api.foojay.io, api.github.com, api.npms.io, api.nuget.org, api.snapcraft.io, archive.apache.org, archive.ubuntu.com, azure.archive.ubuntu.com, azuresearch-usnc.nuget.org, azuresearch-ussc.nuget.org, binstar.org, bootstrap.pypa.io, builds.dotnet.microsoft.com, bun.sh, cdn.azul.com, cdn.jsdelivr.net, cdn.playwright.dev, central.sonatype.com, ci.dot.net, codeload.github.com, conda.anaconda.org, conda.binstar.org, crates.io, crl.geotrust.com, crl.globalsign.com, crl.identrust.com, crl.sectigo.com, crl.thawte.com, crl.usertrust.com, crl.verisign.com, crl3.digicert.com, crl4.digicert.com, crls.ssl.com, dc.services.visualstudio.com, deb.nodesource.com, deno.land, develocity.apache.org, dist.nuget.org, dl.google.com, dlcdn.apache.org, dot.net, dotnet.microsoft.com, dotnetcli.blob.core.windows.net, download.eclipse.org, dow
+[INFO] Setting up host-level firewall network and iptables rules...
+[INFO] Setting up host-level iptables rules...
+[INFO] Host access enabled: allowing traffic to gateway IPs 172.30.0.1, 172.17.0.1 on ports 80, 443
+[SUCCESS] Host-level iptables rules configured successfully
+[INFO] Generating configuration files...
+[INFO] API proxy sidecar enabled - API keys will be held securely in sidecar container
+[INFO] API proxy will route through Squid to respect domain whitelisting
+[INFO] Starting containers...
+ Container awf-api-proxy Creating 
+ Container awf-squid Creating 
+ Container awf-api-proxy Created 
+ Container awf-squid Created 
+ Container awf-agent Creating 
+ Container awf-agent Created 
+ Container awf-iptables-init Creating 
+ Container awf-iptables-init Created 
+ Container awf-squid Starting 
+ Container awf-api-proxy Starting 
+ Container awf-squid Started 
+ Container awf-api-proxy Started 
+ Container awf-api-proxy Waiting 
+ Container awf-squid Waiting 
+ Container awf-squid Error dependency squid-proxy failed to start
+dependency failed to start: container awf-squid exited (1)
+Error:  Failed to start containers: Error: Command failed with exit code 1: docker compose up -d --pull never
+    at Nm (/usr/local/lib/awf/awf-bundle.js:62:57)
+    at /usr/local/lib/awf/awf-bundle.js:62:10481
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at async Object.v0 [as startContainers] (/usr/local/lib/awf/awf-bundle.js:676:929)
+    at async j0 (/usr/local/lib/awf/awf-bundle.js:679:1595)
+    at async e.<anonymous> (/usr/local/lib/awf/awf-bundle.js:751:11093) {
+  shortMessage: 'Command failed with exit code 1: docker compose up -d --pull never',
+  command: 'docker compose up -d --pull never',
+  escapedCommand: 'docker compose up -d --pull never',
+  exitCode: 1,
+  signal: undefined,
+  signalDescription: undefined,
+  stdout: undefined,
+  stderr: undefined,
+  failed: true,
+  timedOut: false,
+  isCanceled: false,
+  killed: false
+}
+Error: [ERROR] Fatal error: Error: Command failed with exit code 1: docker compose up -d --pull never
+    at Nm (/usr/local/lib/awf/awf-bundle.js:62:57)
+    at /usr/local/lib/awf/awf-bundle.js:62:10481
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at async Object.v0 [as startContainers] (/usr/local/lib/awf/awf-bundle.js:676:929)
+    at async j0 (/usr/local/lib/awf/awf-bundle.js:679:1595)
+    at async e.<anonymous> (/usr/local/lib/awf/awf-bundle.js:751:11093) {
+  shortMessage: 'Command failed with exit code 1: docker compose up -d --pull never',
+  command: 'docker compose up -d --pull never',
+  escapedCommand: 'docker compose up -d --pull never',
+  exitCode: 1,
+  signal: undefined,
+  signalDescription: undefined,
+  stdout: undefined,
+  stderr: undefined,
+  failed: true,
+  timedOut: false,
+  isCanceled: false,
+  killed: false
+}
+[INFO] API proxy logs available at: /tmp/gh-aw/sandbox/firewall/logs/api-proxy-logs
+[INFO] Squid logs available at: /tmp/gh-aw/sandbox/firewall/logs
+[INFO] Audit artifacts available at: /tmp/gh-aw/sandbox/firewall/audit
+Process exiting with code: 1
+Error: Process completed with exit code 1.
+
+---
+
+The GitHub hosted runne works well. So we should make our self-hosted runne works too. Help me to identify the root cause and fix it, make it work.
