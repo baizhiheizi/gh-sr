@@ -1,0 +1,38 @@
+{
+  "cli_version": "dev",
+  "checkpoint_id": "a1ea046b10f3",
+  "session_id": "d9f62cce-abae-45bf-b6e1-32b4a4c3776a",
+  "strategy": "manual-commit",
+  "created_at": "2026-04-10T06:47:00.003060687Z",
+  "branch": "main",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "internal/runner/native.go",
+    "internal/runner/native_test.go"
+  ],
+  "agent": "Claude Code",
+  "model": "MiniMax-M2.7",
+  "turn_id": "1b457ed8fa53",
+  "token_usage": {
+    "input_tokens": 1174100,
+    "cache_creation_tokens": 72590,
+    "cache_read_tokens": 836544,
+    "output_tokens": 20187,
+    "api_call_count": 31
+  },
+  "session_metrics": {
+    "turn_count": 1
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-04-10T06:46:59.805262925Z",
+    "agent_lines": 9,
+    "agent_removed": 3,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 9,
+    "total_lines_changed": 12,
+    "agent_percentage": 100,
+    "metric_version": 2
+  }
+}

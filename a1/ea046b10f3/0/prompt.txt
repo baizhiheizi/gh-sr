@@ -1,0 +1,25 @@
+`gh sr up` stuck. Help me to identify the root cause and fix it.
+
+gh-sr on  main [⇡] via 🐹 v1.26.1 took 8s
+➜  gh sr setup --host x1
+Detecting OS/arch for host r1 (an-lee@10.0.0.132)...
+  r1: detected os=linux arch=amd64
+Detecting OS/arch for host x1 (an-lee@192.168.31.66)...
+  x1: detected os=linux arch=amd64
+Setting up on x1 (an-lee@192.168.31.66)...
+  enjoy-x1-1: already installed, skipping
+  enjoy-x1-2: already installed, skipping
+  enjoy-x1: installing gh-aw CLI for agentic profile...
+  enjoy-x1: gh-aw CLI installed
+  enjoy-x1: gh-aw: gh-aw already installed
+
+Setup complete.
+Start runners with: gh sr up [runner-names...] (setup registers the runner; up launches the listener.)
+
+gh-sr on  main [⇡] via 🐹 v1.26.1 took 2s
+➜  gh sr up --host x1
+Detecting OS/arch for host r1 (an-lee@10.0.0.132)...
+  r1: detected os=linux arch=amd64
+Detecting OS/arch for host x1 (an-lee@192.168.31.66)...
+  x1: detected os=linux arch=amd64
+Starting enjoy-x1 on x1...
