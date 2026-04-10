@@ -1,0 +1,1 @@
+Let's make everything simple. We remove the `docker` mode, always use native, no `docker in docker` things. And also, no `agentic` profile, make things clean and clear.

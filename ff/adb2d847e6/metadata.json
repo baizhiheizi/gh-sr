@@ -1,0 +1,42 @@
+{
+  "cli_version": "dev",
+  "checkpoint_id": "ffadb2d847e6",
+  "strategy": "manual-commit",
+  "branch": "main",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "cmd/gh-sr/main.go",
+    "config/runners.yml",
+    "internal/config/config.go",
+    "internal/config/config_test.go",
+    "internal/config/mutate.go",
+    "internal/config/mutate_test.go",
+    "internal/config/runners.yml.template",
+    "internal/doctor/doctor.go",
+    "internal/doctor/doctor_test.go",
+    "internal/ops/detect.go",
+    "internal/ops/ops.go",
+    "internal/ops/service.go",
+    "internal/runner/agentic_dockerfile.go",
+    "internal/runner/docker.go",
+    "internal/runner/docker_test.go",
+    "internal/runner/expected_os_test.go",
+    "internal/runner/runner.go",
+    "internal/tui/status.go"
+  ],
+  "sessions": [
+    {
+      "metadata": "/ff/adb2d847e6/0/metadata.json",
+      "transcript": "/ff/adb2d847e6/0/full.jsonl",
+      "content_hash": "/ff/adb2d847e6/0/content_hash.txt",
+      "prompt": "/ff/adb2d847e6/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 5435434,
+    "cache_creation_tokens": 118964,
+    "cache_read_tokens": 2220264,
+    "output_tokens": 35776,
+    "api_call_count": 81
+  }
+}

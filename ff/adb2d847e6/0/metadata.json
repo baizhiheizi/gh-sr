@@ -1,0 +1,53 @@
+{
+  "cli_version": "dev",
+  "checkpoint_id": "ffadb2d847e6",
+  "session_id": "5c5a0a02-e6bc-4caf-925c-024b4a684b3c",
+  "strategy": "manual-commit",
+  "created_at": "2026-04-10T04:48:30.709423375Z",
+  "branch": "main",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "cmd/gh-sr/main.go",
+    "config/runners.yml",
+    "internal/config/config.go",
+    "internal/config/config_test.go",
+    "internal/config/mutate.go",
+    "internal/config/mutate_test.go",
+    "internal/config/runners.yml.template",
+    "internal/doctor/doctor.go",
+    "internal/doctor/doctor_test.go",
+    "internal/ops/detect.go",
+    "internal/ops/ops.go",
+    "internal/ops/service.go",
+    "internal/runner/agentic_dockerfile.go",
+    "internal/runner/docker.go",
+    "internal/runner/docker_test.go",
+    "internal/runner/expected_os_test.go",
+    "internal/runner/runner.go",
+    "internal/tui/status.go"
+  ],
+  "agent": "Claude Code",
+  "turn_id": "f5834acb088f",
+  "token_usage": {
+    "input_tokens": 5435434,
+    "cache_creation_tokens": 118964,
+    "cache_read_tokens": 2220264,
+    "output_tokens": 35776,
+    "api_call_count": 81
+  },
+  "session_metrics": {
+    "turn_count": 1
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-04-10T04:48:30.152476968Z",
+    "agent_lines": 107,
+    "agent_removed": 2546,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 107,
+    "total_lines_changed": 2653,
+    "agent_percentage": 100,
+    "metric_version": 2
+  }
+}
