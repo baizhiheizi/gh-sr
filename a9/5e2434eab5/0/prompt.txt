@@ -1,0 +1,1 @@
+So the root cause is about `sudo`? we should change it back to use the official docker install.
