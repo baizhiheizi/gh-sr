@@ -418,4 +418,35 @@ func checkAgenticPrereqs(w io.Writer, hostName string, h *host.Host, r *Result) 
 		}
 		printLine(w, sevOK, hostName, "agentic: passwordless sudo for iptables available")
 	}
+
+	// Check host.docker.internal resolution inside containers.
+	// gh-aw relies on host.docker.internal to reach the MCP gateway from agent containers.
+	out, err = h.Run(`docker run --rm alpine sh -c "getent hosts host.docker.internal || echo failed" 2>/dev/null`)
+	out = strings.TrimSpace(out)
+	if err != nil || out == "failed" || out == "" {
+		printLine(w, sevFail, hostName, "agentic: host.docker.internal does not resolve inside containers; configure Docker DNS (see README)")
+		r.Fail++
+	} else if strings.Contains(out, "127.0.0.1") {
+		printLine(w, sevFail, hostName, "agentic: host.docker.internal resolves to 127.0.0.1 inside containers; this breaks gh-aw MCP gateway (see README)")
+		r.Fail++
+	} else {
+		fields := strings.Fields(out)
+		ip := ""
+		if len(fields) > 0 {
+			ip = fields[0]
+		}
+		printLine(w, sevOK, hostName, fmt.Sprintf("agentic: host.docker.internal resolves correctly inside containers (%s)", ip))
+	}
+
+	// Check general DNS resolution inside containers.
+	// If dnsmasq is configured without upstream servers, it only answers static records
+	// and REFUSES everything else, breaking external API access (model providers, etc.).
+	out, err = h.Run(`docker run --rm alpine sh -c "nslookup github.com >/dev/null 2>&1 && echo ok || echo failed" 2>/dev/null`)
+	out = strings.TrimSpace(out)
+	if err != nil || out != "ok" {
+		printLine(w, sevFail, hostName, "agentic: external DNS (github.com) does not resolve inside containers; check Docker DNS / dnsmasq upstream server config (see README)")
+		r.Fail++
+	} else {
+		printLine(w, sevOK, hostName, "agentic: external DNS resolves inside containers")
+	}
 }

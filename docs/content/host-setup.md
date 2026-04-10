@@ -145,6 +145,40 @@ Workflows that run the [Agent Workflow Firewall](https://github.com/github/gh-aw
 
 **`gh sr doctor`** checks hosts used by **`profile: agentic`** runners or by runners whose **`labels`** include **`agentic`** (or the legacy **`gh-aw`**) for port 80 availability, iptables presence, and sudo access, in addition to the standard bridge-network warning.
 
+### Linux Docker DNS (`host.docker.internal`) {#linux-docker-dns}
+
+Agentic workflows use `host.docker.internal` from inside agent containers to reach the MCP Gateway (which runs on the host network). On **macOS** and **Windows** Docker Desktop, this name resolves automatically to the host IP. 
+
+On **Linux**, Docker does not resolve this address by default, which causes the agent to fail with `ERR_API: MCP server(s) failed to launch`. 
+
+**Do NOT add `127.0.0.1 host.docker.internal` to your host's `/etc/hosts`**. This will cause the MCP Gateway to bind to localhost, and agent containers will receive a `Connection refused` error because their own `127.0.0.1` is isolated from the host.
+
+**To fix this on Linux:** configure a local DNS resolver (such as `dnsmasq` or `systemd-resolved`) to resolve `host.docker.internal` to the `docker0` bridge IP (usually `172.17.0.1`), and tell Docker to use it.
+
+**Example with dnsmasq:**
+```bash
+sudo apt-get install dnsmasq
+
+# Configure dnsmasq: resolve host.docker.internal to docker bridge IP,
+# listen on docker0, and forward all other queries upstream.
+sudo tee /etc/dnsmasq.d/docker.conf > /dev/null <<'EOF'
+address=/host.docker.internal/172.17.0.1
+listen-address=172.17.0.1
+bind-interfaces
+server=127.0.0.53
+server=8.8.8.8
+EOF
+sudo systemctl restart dnsmasq
+
+# Tell Docker to use the bridge IP as a DNS server
+echo '{"dns": ["172.17.0.1", "8.8.8.8"]}' | sudo tee /etc/docker/daemon.json
+sudo systemctl restart docker
+```
+
+The `server=` lines are critical: without them, dnsmasq can only answer its static records (`host.docker.internal`) and **refuses all other queries**, breaking external API access (e.g. your model provider) from inside agent containers. `server=127.0.0.53` forwards to `systemd-resolved`; `server=8.8.8.8` is a fallback.
+
+Run **`gh sr doctor`** to verify that `host.docker.internal` resolves to a non-loopback IP inside containers.
+
 ### Native Linux runners and `sudo` (gh-aw) {#native-linux-runners-and-sudo-gh-aw}
 
 [GitHub Agentic Workflows self-hosted guidance](https://github.github.com/gh-aw/guides/self-hosted-runners/) requires a **`sudo`-capable environment** (non-sudo-only setups are not supported). With **`mode: native`**, the [Agent Workflow Firewall](https://github.com/github/gh-aw-firewall) and related tooling may invoke **`sudo` during jobs** (for example iptables rules). That must work **without a password prompt**, because Actions job steps are not interactive.
