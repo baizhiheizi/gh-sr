@@ -200,6 +200,49 @@ sudo mount --bind /home/your-user/.npm-global /opt/hostedtoolcache
 echo "/home/your-user/.npm-global /opt/hostedtoolcache none defaults,bind 0 0" | sudo tee -a /etc/fstab
 ```
 
+### GitHub CLI authentication (gh)
+
+Agentic workflows that use `gh` CLI commands (e.g., `gh pr list`, `gh issue list`, `gh api`) require GitHub authentication on the runner host. **GitHub Hosted Runners** have this built-in, but **self-hosted runners need manual setup**.
+
+**Symptoms:** Workflow steps using `gh` fail with errors like:
+- `gh: You are not logged into any GitHub hosts`
+- `gh: To use GitHub CLI in a GitHub Actions workflow, set the GH_TOKEN environment variable`
+- `Bad credentials` from the GitHub API
+
+**Solution:** Set the `GH_TOKEN` environment variable in the workflow, or authenticate `gh` on the runner host.
+
+**Option 1 — Pass `GH_TOKEN` in the workflow** (recommended for most cases):
+
+```yaml
+jobs:
+  agentic:
+    runs-on: self-hosted
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: List PRs
+        run: gh pr list
+```
+
+**Option 2 — Authenticate `gh` on the runner host** (for local `gh` commands outside workflow steps):
+
+```bash
+# On the runner host, authenticate gh with a Personal Access Token
+gh auth login --hostname github.com --token <your-PAT>
+```
+
+> **Note:** `gh auth login` is interactive by default. For non-interactive setup, use:
+> ```bash
+> printf '<your-token>' | gh auth login --hostname github.com --insecure-stdin-token
+> ```
+
+**Verify on the runner host:**
+
+```bash
+gh auth status
+```
+
 ## Windows (OpenSSH and Docker)
 
 - **Windows** — OpenSSH Server enabled; Docker Desktop if you want Linux container runners (`mode: docker`):
