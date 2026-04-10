@@ -1,0 +1,266 @@
+When running https://github.com/githubnext/agentics/blob/main/workflows/daily-perf-improver.md in self-hosted/agentic runner, it always fails at the step of `Execute Claude Code CLI`, the logs are:
+
+[WARN] Could not detect host DNS servers; falling back to 8.8.8.8, 8.8.4.4
+[WARN] ⚠️  Using --env-all: All host environment variables will be passed to container
+[WARN]    This may expose sensitive credentials if logs or configs are shared
+[WARN] ⚠️  Host access enabled with host.docker.internal in allowed domains
+[WARN]    Containers can access ANY service running on the host machine
+[WARN]    Only use this for trusted workloads (e.g., MCP gateways)
+[INFO] API proxy enabled: OpenAI=false, Anthropic=true, Copilot=false
+[INFO] Allowed domains: *.githubusercontent.com, *.gradle-enterprise.cloud, *.pythonhosted.org, *.vsblob.vsassets.io, adoptium.net, anaconda.org, anthropic.com, api.adoptium.net, api.anthropic.com, api.foojay.io, api.github.com, api.npms.io, api.nuget.org, api.snapcraft.io, archive.apache.org, archive.ubuntu.com, azure.archive.ubuntu.com, azuresearch-usnc.nuget.org, azuresearch-ussc.nuget.org, binstar.org, bootstrap.pypa.io, builds.dotnet.microsoft.com, bun.sh, cdn.azul.com, cdn.jsdelivr.net, cdn.playwright.dev, central.sonatype.com, ci.dot.net, codeload.github.com, conda.anaconda.org, conda.binstar.org, crates.io, crl.geotrust.com, crl.globalsign.com, crl.identrust.com, crl.sectigo.com, crl.thawte.com, crl.usertrust.com, crl.verisign.com, crl3.digicert.com, crl4.digicert.com, crls.ssl.com, dc.services.visualstudio.com, deb.nodesource.com, deno.land, develocity.apache.org, dist.nuget.org, dl.google.com, dlcdn.apache.org, dot.net, dotnet.microsoft.com, dotnetcli.blob.core.windows.net, download.eclipse.org, download.java.net, download.oracle.com, downloads.gradle-dn.com, esm.sh, files.pythonhosted.org, ge.spockframework.org, get.pnpm.io, ghcr.io, github-cloud.githubusercontent.com, github-cloud.s3.amazonaws.com, github.com, googleapis.deno.dev, googlechromelabs.github.io, gradle.org, host.docker.internal, index.crates.io, jcenter.bintray.com, jdk.java.net, json-schema.org, json.schemastore.org, jsr.io, keyserver.ubuntu.com, lfs.github.com, maven-central.storage-download.googleapis.com, maven.apache.org, maven.google.com, maven.oracle.com, maven.pkg.github.com, nodejs.org, npm.pkg.github.com, npmjs.com, npmjs.org, nuget.org, nuget.pkg.github.com, nugetregistryv2prod.blob.core.windows.net, objects.githubusercontent.com, ocsp.digicert.com, ocsp.geotrust.com, ocsp.globalsign.com, ocsp.identrust.com, ocsp.sectigo.com, ocsp.ssl.com, ocsp.thawte.com, ocsp.usertrust.com, ocsp.verisign.com, oneocsp.microsoft.com, packagecloud.io, packages.cloud.google.com, packages.microsoft.com, pip.pypa.io, pkgs.dev.azure.com, playwright.download.prss.microsoft.com, plugins-artifacts.gradle.org, plugins.gradle.org, ppa.launchpad.net, pypi.org, pypi.python.org, raw.githubusercontent.com, registry.bower.io, registry.npmjs.com, registry.npmjs.org, registry.yarnpkg.com, repo.anaconda.com, repo.continuum.io, repo.gradle.org, repo.grails.org, repo.maven.apache.org, repo.spring.io, repo.yarnpkg.com, repo1.maven.org, repository.apache.org, s.symcb.com, s.symcd.com, scans-in.gradle.com, security.ubuntu.com, sentry.io, services.gradle.org, sh.rustup.rs, skimdb.npmjs.com, static.crates.io, static.rust-lang.org, statsig.anthropic.com, storage.googleapis.com, telemetry.vercel.com, ts-crl.ws.symantec.com, ts-ocsp.ws.symantec.com, www.googleapis.com, www.java.com, www.microsoft.com, www.npmjs.com, www.npmjs.org, yarnpkg.com, api.minimaxi.com, https://api.minimaxi.com
+[INFO] Setting up host-level firewall network and iptables rules...
+[INFO] Setting up host-level iptables rules...
+[WARN] DOCKER-USER chain does not exist, which is unexpected. Attempting to create it...
+Error: [ERROR] Fatal error: Error: Failed to create DOCKER-USER chain. This may indicate a permission or Docker installation issue.
+    at Object.D0 [as setupHostIptables] (/usr/local/lib/awf/awf-bundle.js:676:10612)
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at async j0 (/usr/local/lib/awf/awf-bundle.js:679:1471)
+    at async e.<anonymous> (/usr/local/lib/awf/awf-bundle.js:751:11093)
+Process exiting with code: 1
+Error: Process completed with exit code 1.
+
+Help me to identify the root cause and fix it.
+
+---
+
+an-lee@local-vm:~$ cat /etc/docker/daemon.json | grep -i iptables
+cat: /etc/docker/daemon.json: No such file or directory
+
+an-lee@local-vm:~$ sudo iptables -L DOCKER-USER -n
+Chain DOCKER-USER (1 references)
+target     prot opt source               destination
+
+
+The result are as above. Coul we make `gh sr` to do this config? And the `gh sr docker` should check it too.
+
+---
+
+=== Hosts ===
+Docker mode uses image: ghcr.io/actions/actions-runner:latest
+
+OK    [r1          ] connected (ssh an-lee@10.0.0.132)
+OK    [r1          ] docker: server version 29.4.0 (image ghcr.io/actions/actions-runner:latest)
+OK    [r1          ] docker: socket present at /var/run/docker.sock
+OK    [r1          ] docker: container gh-runner-enjoy-r1-1 has /var/run/docker.sock accessible
+OK    [r1          ] docker: container gh-runner-rune-r1-1 has /var/run/docker.sock accessible
+OK    [r1          ] docker: container gh-runner-enjoy-web-r1-1 has /var/run/docker.sock accessible
+OK    [r1          ] docker: container gh-runner-ohmyxin-r1-1 has /var/run/docker.sock accessible
+WARN  [r1          ] agentic workflows: bridge-network docker runners (enjoy-r1, enjoy-web-r1, ohmyxin-r1, rune-r1) may fail MCP gateway health checks; set docker_network_mode: host or use mode: native — see host setup documentation
+OK    [r1          ] linux: non-root user has passwordless sudo
+OK    [x1          ] connected (ssh an-lee@192.168.31.66)
+OK    [x1          ] docker: server version 29.1.3 (image ghcr.io/actions/actions-runner:latest)
+OK    [x1          ] docker: socket present at /var/run/docker.sock
+OK    [x1          ] docker: container gh-runner-enjoy-x1-1 has /var/run/docker.sock accessible
+OK    [x1          ] docker: container gh-runner-enjoy-x1-2 has /var/run/docker.sock accessible
+OK    [x1          ] docker: container gh-runner-rune-x1-1 has /var/run/docker.sock accessible
+OK    [x1          ] docker: container gh-runner-rune-x1-2 has /var/run/docker.sock accessible
+OK    [x1          ] docker: container gh-runner-enjoy-web-x1-1 has /var/run/docker.sock accessible
+OK    [x1          ] docker: container gh-runner-enjoy-web-x1-2 has /var/run/docker.sock accessible
+OK    [x1          ] docker: container gh-runner-ohmyxin-web-x1-1 has /var/run/docker.sock accessible
+OK    [x1          ] docker: container gh-runner-ohmyxin-web-x1-2 has /var/run/docker.sock accessible
+WARN  [x1          ] linux: passwordless sudo not available; gh sr setup/update may fail for package installs or Docker install
+OK    [x1          ] agentic: port 80 is free (MCP gateway)
+OK    [x1          ] agentic: iptables available (AWF firewall)
+WARN  [x1          ] agentic: passwordless sudo not available; AWF requires sudo for iptables/firewall setup
+
+--- Summary ---
+0 failed, 3 warnings
+
+---
+
+The `gh sr doctor` goes well, but the workflow still fails:
+
+[WARN] Could not detect host DNS servers; falling back to 8.8.8.8, 8.8.4.4
+[WARN] ⚠️  Using --env-all: All host environment variables will be passed to container
+[WARN]    This may expose sensitive credentials if logs or configs are shared
+[WARN] ⚠️  Host access enabled with host.docker.internal in allowed domains
+[WARN]    Containers can access ANY service running on the host machine
+[WARN]    Only use this for trusted workloads (e.g., MCP gateways)
+[INFO] API proxy enabled: OpenAI=false, Anthropic=true, Copilot=false
+[INFO] Allowed domains: *.githubusercontent.com, *.gradle-enterprise.cloud, *.pythonhosted.org, *.vsblob.vsassets.io, adoptium.net, anaconda.org, anthropic.com, api.adoptium.net, api.anthropic.com, api.foojay.io, api.github.com, api.npms.io, api.nuget.org, api.snapcraft.io, archive.apache.org, archive.ubuntu.com, azure.archive.ubuntu.com, azuresearch-usnc.nuget.org, azuresearch-ussc.nuget.org, binstar.org, bootstrap.pypa.io, builds.dotnet.microsoft.com, bun.sh, cdn.azul.com, cdn.jsdelivr.net, cdn.playwright.dev, central.sonatype.com, ci.dot.net, codeload.github.com, conda.anaconda.org, conda.binstar.org, crates.io, crl.geotrust.com, crl.globalsign.com, crl.identrust.com, crl.sectigo.com, crl.thawte.com, crl.usertrust.com, crl.verisign.com, crl3.digicert.com, crl4.digicert.com, crls.ssl.com, dc.services.visualstudio.com, deb.nodesource.com, deno.land, develocity.apache.org, dist.nuget.org, dl.google.com, dlcdn.apache.org, dot.net, dotnet.microsoft.com, dotnetcli.blob.core.windows.net, download.eclipse.org, dow
+[INFO] Setting up host-level firewall network and iptables rules...
+[INFO] Setting up host-level iptables rules...
+[WARN] DOCKER-USER chain does not exist, which is unexpected. Attempting to create it...
+Error: [ERROR] Fatal error: Error: Failed to create DOCKER-USER chain. This may indicate a permission or Docker installation issue.
+    at Object.D0 [as setupHostIptables] (/usr/local/lib/awf/awf-bundle.js:676:10612)
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at async j0 (/usr/local/lib/awf/awf-bundle.js:679:1471)
+    at async e.<anonymous> (/usr/local/lib/awf/awf-bundle.js:751:11093)
+Process exiting with code: 1
+Error: Process completed with exit code 1.
+
+
+Try harder to figure out the root cause.
+
+---
+
+an-lee@x1:~$ cat /etc/docker/daemon.json 2>/dev/null || echo "No daemon.json found"
+No daemon.json found
+an-lee@x1:~$ sudo docker info 2>/dev/null | grep -i iptables
+ Firewall Backend: iptables
+
+Yes, the runner is running in docker, this is the default config for `gh sr` for linux runner. check the codebase.
+
+---
+
+yes. make it default
+
+---
+
+The agentic runners cannot start now
+
+---
+
+The agentic runners cannot start now
+
+  E: List directory /var/lib/apt/lists/partial is missing. - Acquire (13: Permission denied)
+  Reading package lists...
+  E: List directory /var/lib/apt/lists/partial is missing. - Acquire (13: Permission denied)
+  Reading package lists...
+  E: List directory /var/lib/apt/lists/partial is missing. - Acquire (13: Permission denied)
+  Reading package lists...
+  E: List directory /var/lib/apt/lists/partial is missing. - Acquire (13: Permission denied)
+  Reading package lists...
+  E: List directory /var/lib/apt/lists/partial is missing. - Acquire (13: Permission denied)
+  Reading package lists...
+  E: List directory /var/lib/apt/lists/partial is missing. - Acquire (13: Permission denied)
+  Reading package lists...
+  E: List directory /var/lib/apt/lists/partial is missing. - Acquire (13: Permission denied)
+  Reading package lists...
+  E: List directory /var/lib/apt/lists/partial is missing. - Acquire (13: Permission denied)
+  Reading package lists...
+  E: List directory /var/lib/apt/lists/partial is missing. - Acquire (13: Permission denied)
+  Reading package lists...
+  E: List directory /var/lib/apt/lists/partial is missing. - Acquire (13: Permission denied)
+
+---
+
+Now we have a new error:
+
+Run set -o pipefail
+[WARN] Could not detect host DNS servers; falling back to 8.8.8.8, 8.8.4.4
+[WARN] ⚠️  Using --env-all: All host environment variables will be passed to container
+[WARN]    This may expose sensitive credentials if logs or configs are shared
+[WARN] ⚠️  Host access enabled with host.docker.internal in allowed domains
+[WARN]    Containers can access ANY service running on the host machine
+[WARN]    Only use this for trusted workloads (e.g., MCP gateways)
+[INFO] API proxy enabled: OpenAI=false, Anthropic=true, Copilot=false
+[INFO] Allowed domains: *.githubusercontent.com, anthropic.com, api.anthropic.com, api.github.com, api.snapcraft.io, archive.ubuntu.com, azure.archive.ubuntu.com, cdn.playwright.dev, codeload.github.com, crl.geotrust.com, crl.globalsign.com, crl.identrust.com, crl.sectigo.com, crl.thawte.com, crl.usertrust.com, crl.verisign.com, crl3.digicert.com, crl4.digicert.com, crls.ssl.com, files.pythonhosted.org, ghcr.io, github-cloud.githubusercontent.com, github-cloud.s3.amazonaws.com, github.com, host.docker.internal, json-schema.org, json.schemastore.org, keyserver.ubuntu.com, lfs.github.com, objects.githubusercontent.com, ocsp.digicert.com, ocsp.geotrust.com, ocsp.globalsign.com, ocsp.identrust.com, ocsp.sectigo.com, ocsp.ssl.com, ocsp.thawte.com, ocsp.usertrust.com, ocsp.verisign.com, packagecloud.io, packages.cloud.google.com, packages.microsoft.com, playwright.download.prss.microsoft.com, ppa.launchpad.net, pypi.org, raw.githubusercontent.com, registry.npmjs.org, s.symcb.com, s.symcd.com, security.ubuntu.com, s
+[INFO] Setting up host-level firewall network and iptables rules...
+[INFO] Setting up host-level iptables rules...
+[INFO] Host access enabled: allowing traffic to gateway IPs 172.30.0.1, 172.17.0.1 on ports 80, 443
+[SUCCESS] Host-level iptables rules configured successfully
+[INFO] Generating configuration files...
+[INFO] API proxy sidecar enabled - API keys will be held securely in sidecar container
+[INFO] API proxy will route through Squid to respect domain whitelisting
+[INFO] Starting containers...
+unknown shorthand flag: 'd' in -d
+Usage:  docker [OPTIONS] COMMAND [ARG...]
+Run 'docker --help' for more information
+Error:  Failed to start containers: Error: Command failed with exit code 125: docker compose up -d --pull never
+    at Nm (/usr/local/lib/awf/awf-bundle.js:62:57)
+    at /usr/local/lib/awf/awf-bundle.js:62:10481
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at async Object.v0 [as startContainers] (/usr/local/lib/awf/awf-bundle.js:676:929)
+    at async j0 (/usr/local/lib/awf/awf-bundle.js:679:1595)
+    at async e.<anonymous> (/usr/local/lib/awf/awf-bundle.js:751:11093) {
+  shortMessage: 'Command failed with exit code 125: docker compose up -d --pull never',
+  command: 'docker compose up -d --pull never',
+  escapedCommand: 'docker compose up -d --pull never',
+  exitCode: 125,
+  signal: undefined,
+  signalDescription: undefined,
+  stdout: undefined,
+  stderr: undefined,
+  failed: true,
+  timedOut: false,
+  isCanceled: false,
+  killed: false
+}
+Error: [ERROR] Fatal error: Error: Command failed with exit code 125: docker compose up -d --pull never
+    at Nm (/usr/local/lib/awf/awf-bundle.js:62:57)
+    at /usr/local/lib/awf/awf-bundle.js:62:10481
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at async Object.v0 [as startContainers] (/usr/local/lib/awf/awf-bundle.js:676:929)
+    at async j0 (/usr/local/lib/awf/awf-bundle.js:679:1595)
+    at async e.<anonymous> (/usr/local/lib/awf/awf-bundle.js:751:11093) {
+  shortMessage: 'Command failed with exit code 125: docker compose up -d --pull never',
+  command: 'docker compose up -d --pull never',
+  escapedCommand: 'docker compose up -d --pull never',
+  exitCode: 125,
+  signal: undefined,
+  signalDescription: undefined,
+  stdout: undefined,
+  stderr: undefined,
+  failed: true,
+  timedOut: false,
+  isCanceled: false,
+  killed: false
+}
+[INFO] API proxy logs available at: /tmp/gh-aw/sandbox/firewall/logs/api-proxy-logs
+[INFO] Squid logs available at: /tmp/gh-aw/sandbox/firewall/logs
+[INFO] Audit artifacts available at: /tmp/gh-aw/sandbox/firewall/audit
+Process exiting with code: 1
+Error: Process completed with exit code 1.
+
+---
+
+gh sr doctor
+
+---
+
+Could `gh sr doctor` check the runner has iptables/docker installed?
+
+---
+
+Is this result normal? I cannot find the info about the `docker-compose`:
+
+gh-sr on  main [!+] via 🐹 v1.26.1
+➜  gh extension remove sr
+✓ Removed extension sr
+
+gh-sr on  main [!+] via 🐹 v1.26.1
+➜  gh extension install .
+
+gh-sr on  main [!+] via 🐹 v1.26.1
+➜  gh sr doctor --host x1
+=== Local environment ===
+OK    [local       ] config file exists: /home/an-lee/.gh-sr/runners.yml
+OK    [local       ] env file present: /home/an-lee/.gh-sr/env
+OK    [local       ] GitHub token: from gh CLI (gh auth login)
+OK    [local       ] SSH client auth available (agent or default ~/.ssh keys)
+
+=== Configuration ===
+OK    [config      ] YAML valid and constraints satisfied
+
+=== GitHub API ===
+OK    [github      ] an-lee/enjoy: list runners OK (3 registered)
+OK    [github      ] an-lee/enjoy_web: list runners OK (3 registered)
+OK    [github      ] an-lee/ohmyxin: list runners OK (3 registered)
+OK    [github      ] an-lee/rune: list runners OK (3 registered)
+
+=== Hosts ===
+Docker mode uses image: ghcr.io/actions/actions-runner:latest
+
+OK    [x1          ] connected (ssh an-lee@192.168.31.66)
+OK    [x1          ] docker: server version 29.1.3 (image ghcr.io/actions/actions-runner:latest)
+OK    [x1          ] docker: socket present at /var/run/docker.sock
+OK    [x1          ] docker: container gh-runner-enjoy-x1-1 has /var/run/docker.sock accessible
+OK    [x1          ] docker: container gh-runner-enjoy-x1-2 has /var/run/docker.sock accessible
+OK    [x1          ] docker: container gh-runner-rune-x1-1 has /var/run/docker.sock accessible
+OK    [x1          ] docker: container gh-runner-rune-x1-2 has /var/run/docker.sock accessible
+OK    [x1          ] docker: container gh-runner-enjoy-web-x1-1 has /var/run/docker.sock accessible
+OK    [x1          ] docker: container gh-runner-enjoy-web-x1-2 has /var/run/docker.sock accessible
+OK    [x1          ] docker: container gh-runner-ohmyxin-web-x1-1 has /var/run/docker.sock accessible
+OK    [x1          ] docker: container gh-runner-ohmyxin-web-x1-2 has /var/run/docker.sock accessible
+OK    [x1          ] linux: non-root user has passwordless sudo
+OK    [x1          ] agentic: port 80 is free (MCP gateway)
+OK    [x1          ] agentic: iptables available (AWF firewall)
+OK    [x1          ] agentic: DOCKER-USER chain exists and is modifiable
+OK    [x1          ] agentic: Docker iptables rules present
+OK    [x1          ] agentic: sudo available for AWF firewall setup
+
+--- Summary ---
+0 failed, 0 warnings
+
+gh-sr on  main [!+] via 🐹 v1.26.1 took 4s
