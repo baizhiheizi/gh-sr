@@ -1,0 +1,1 @@
+We should provide more logs when installing runner. It will take a few minutes, making user confused.

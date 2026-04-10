@@ -1,0 +1,25 @@
+{
+  "cli_version": "dev",
+  "checkpoint_id": "4ac924f373ba",
+  "strategy": "manual-commit",
+  "branch": "main",
+  "checkpoints_count": 0,
+  "files_touched": [
+    "internal/runner/native.go"
+  ],
+  "sessions": [
+    {
+      "metadata": "/4a/c924f373ba/0/metadata.json",
+      "transcript": "/4a/c924f373ba/0/full.jsonl",
+      "content_hash": "/4a/c924f373ba/0/content_hash.txt",
+      "prompt": "/4a/c924f373ba/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 337363,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 265174,
+    "output_tokens": 1707,
+    "api_call_count": 8
+  }
+}
