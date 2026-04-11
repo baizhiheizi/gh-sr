@@ -647,19 +647,20 @@ bind-interfaces
 server=127.0.0.53
 server=8.8.8.8
 `, bridgeIP, bridgeIP)
-	confWrite := fmt.Sprintf(`%s
-CONTENT='%s'
+	// Use linuxElevatePrelude once at the top to set $SUDO, then use $SUDO throughout.
+	confWrite := linuxElevatePrelude + fmt.Sprintf(`
 CONF=/etc/dnsmasq.d/gh-sr-docker.conf
-# Only write if content differs to avoid unnecessary service restart.
-CURRENT=""
-[ -f "$CONF" ] && CURRENT=$(cat "$CONF")
-if [ "$CURRENT" != "$CONTENT" ]; then
-    printf '%s' "$CONTENT" | $SUDO tee "$CONF" > /dev/null
+TMPCONF=$(mktemp)
+cat > "$TMPCONF" << 'GHSREOF'
+%sGHSREOF
+if ! cmp -s "$TMPCONF" "$CONF" 2>/dev/null; then
+    $SUDO cp "$TMPCONF" "$CONF"
     $SUDO systemctl restart dnsmasq
     echo "dnsmasq configured"
 else
     echo "dnsmasq config unchanged"
-fi`, linuxElevatePrelude, dnsmasqConf)
+fi
+rm -f "$TMPCONF"`, dnsmasqConf)
 	out, err = h.Run(confWrite)
 	if err != nil {
 		return fmt.Errorf("writing dnsmasq config: %w", err)
@@ -669,12 +670,13 @@ fi`, linuxElevatePrelude, dnsmasqConf)
 	}
 
 	// Step 7: Configure Docker daemon DNS if not already set to use our dnsmasq.
-	daemonDNSConfigured, err := h.Run(fmt.Sprintf(`
+	// linuxElevatePrelude is prepended once to set $SUDO; all elevated ops use $SUDO thereafter.
+	daemonDNSConfigured, err := h.Run(linuxElevatePrelude + fmt.Sprintf(`
 DOCKER_CONF=/etc/docker/daemon.json
 BRIDGE_IP='%s'
 if [ ! -f "$DOCKER_CONF" ]; then
-    printf '{"dns":["%s","8.8.8.8"]}\n' "$BRIDGE_IP" | %s tee "$DOCKER_CONF" > /dev/null
-    %s systemctl restart docker
+    printf '{"dns":["%s","8.8.8.8"]}\n' "$BRIDGE_IP" | $SUDO tee "$DOCKER_CONF" > /dev/null
+    $SUDO systemctl restart docker
     echo "daemon.json created with DNS"
 else
     # Check if our dnsmasq IP is already in the dns list.
@@ -700,19 +702,19 @@ data['dns'] = dns
 with open(path, 'w') as f:
     json.dump(data, f, indent=2)
 print('daemon.json DNS merged')
-" 2>/dev/null && %s systemctl restart docker && echo "daemon.json DNS updated"
+" 2>/dev/null && $SUDO systemctl restart docker && echo "daemon.json DNS updated"
         else
             # Fallback: use jq if available, otherwise just overwrite dns array safely.
             if command -v jq >/dev/null 2>&1; then
-                %s jq '.dns = ["'"'"'$BRIDGE_IP'"'"'", (.dns // [])[0:5]] | .dns += ["8.8.8.8"] | .dns = (.dns | unique)' "$DOCKER_CONF" > "${DOCKER_CONF}.new" && %s mv "${DOCKER_CONF}.new" "$DOCKER_CONF" && %s systemctl restart docker && echo "daemon.json DNS updated via jq"
+                $SUDO jq '.dns = ["'"'"'$BRIDGE_IP'"'"'", (.dns // [])[0:5]] | .dns += ["8.8.8.8"] | .dns = (.dns | unique)' "$DOCKER_CONF" > "${DOCKER_CONF}.new" && $SUDO mv "${DOCKER_CONF}.new" "$DOCKER_CONF" && $SUDO systemctl restart docker && echo "daemon.json DNS updated via jq"
             else
-                # Last resort: read existing content, use sed to replace the dns array.
-                # This is fragile but works on minimal systems.
-                %s sh -c 'grep -v dns "$DOCKER_CONF" > "${DOCKER_CONF}.new" && printf '"'"'"  \\"dns\\": [\\""'"'"'"$BRIDGE_IP"'"'"'\\"",\\"8.8.8.8\\"]\\n}"\\n'"'"' >> "${DOCKER_CONF}.new" && %s mv "${DOCKER_CONF}.new" "$DOCKER_CONF" && %s systemctl restart docker && echo "daemon.json DNS updated via shell"
+                # Last resort: read existing content and rebuild the dns array.
+                # This is fragile but works on minimal systems without python3 or jq.
+                $SUDO sh -c 'grep -v dns "$1" > "${1}.new"' -- "$DOCKER_CONF" && echo "  \"dns\": [\"$BRIDGE_IP\",\"8.8.8.8\"]" | $SUDO tee -a "${DOCKER_CONF}.new" > /dev/null && echo "}" | $SUDO tee -a "${DOCKER_CONF}.new" > /dev/null && $SUDO mv "${DOCKER_CONF}.new" "$DOCKER_CONF" && $SUDO systemctl restart docker && echo "daemon.json DNS updated via shell"
             fi
         fi
     fi
-fi`, bridgeIP, bridgeIP, linuxElevatePrelude, linuxElevatePrelude, linuxElevatePrelude, linuxElevatePrelude, linuxElevatePrelude, linuxElevatePrelude))
+fi`, bridgeIP, bridgeIP))
 	if err != nil && !strings.Contains(daemonDNSConfigured, "already configured") && !strings.Contains(daemonDNSConfigured, "configured") && !strings.Contains(daemonDNSConfigured, "updated") {
 		// Non-fatal: docker restart may fail if there are running containers.
 		fmt.Fprintf(m.out(), "  %s: warning: Docker daemon DNS merge failed: %v\n", runnerName, err)

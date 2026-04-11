@@ -61,12 +61,12 @@ func BenchmarkInstanceNames(b *testing.B) {
 func BenchmarkDefaultLabels(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		DefaultLabels("docker", "linux", "amd64")
+		DefaultLabels("linux", "amd64")
 	}
 }
 
 func BenchmarkEffectiveLabels_Generated(b *testing.B) {
-	rc := RunnerConfig{Mode: "docker"}
+	rc := RunnerConfig{}
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		rc.EffectiveLabels("linux", "amd64")
