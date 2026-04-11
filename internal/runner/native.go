@@ -2,6 +2,7 @@ package runner
 
 import (
 	"fmt"
+	"io"
 	"strings"
 
 	"github.com/an-lee/gh-sr/internal/autostart"
@@ -275,6 +276,25 @@ func (m *Manager) setupNative(h *host.Host, rc config.RunnerConfig) error {
 	// For agentic runners, install gh-aw CLI on the host.
 	// gh-aw (GitHub Agentic Workflows) uses Docker on the host for AWF sandbox containers.
 	if rc.IsAgentic() && h.OS == "linux" {
+		// Pre-flight check: warn if the runner user lacks passwordless sudo.
+		// gh-aw requires sudo to manage iptables (DOCKER-USER chain) and awf-net bridge.
+		warnAgenticSudoPrereqs(h, m.out(), rc.Name)
+
+		// Clean up zombie Docker resources from previously crashed gh-aw jobs.
+		// If a job crashes, orphaned gh-aw containers and networks block the next job.
+		fmt.Fprintf(m.out(), "  %s: cleaning up zombie gh-aw Docker resources...\n", rc.Name)
+		cleanupOut, cleanupErr := h.Run(`
+docker ps -a --filter "name=gh-aw" --format '{{.ID}}' 2>/dev/null | xargs -r docker rm -f 2>/dev/null
+docker network ls --filter "name=gh-aw" --format '{{.ID}}' 2>/dev/null | xargs -r docker network rm 2>/dev/null
+docker network prune -f 2>/dev/null
+echo "cleanup done"
+`)
+		if cleanupErr != nil {
+			fmt.Fprintf(m.out(), "  %s: warning: Docker cleanup failed: %v\n", rc.Name, cleanupErr)
+		} else if strings.TrimSpace(cleanupOut) != "" {
+			fmt.Fprintf(m.out(), "  %s: Docker cleanup: %s\n", rc.Name, strings.TrimSpace(cleanupOut))
+		}
+
 		fmt.Fprintf(m.out(), "  %s: installing gh-aw CLI for agentic profile...\n", rc.Name)
 		installGHAWCmd := `if [ -d ~/.local/share/gh/extensions/gh-aw ]; then
 			echo "gh-aw already installed"
@@ -344,6 +364,21 @@ func (m *Manager) setupNative(h *host.Host, rc config.RunnerConfig) error {
 		fmt.Fprintf(m.out(), "  %s: setting up Docker DNS for agentic workflows...\n", rc.Name)
 		if err := m.setupAgenticDNS(h, rc.Name); err != nil {
 			fmt.Fprintf(m.out(), "  %s: warning: Docker DNS setup failed: %v\n", rc.Name, err)
+		}
+
+		// Pre-pull critical gh-aw images to reduce first-job startup latency.
+		// These images are required by every agentic workflow run and can be several hundred MB.
+		fmt.Fprintf(m.out(), "  %s: pre-pulling gh-aw images (this may take a few minutes)...\n", rc.Name)
+		for _, img := range []string{
+			"ghcr.io/github/gh-aw-firewall/agent:latest",
+			"ghcr.io/github/gh-aw-mcpg:latest",
+		} {
+			pullOut, pullErr := h.Run(fmt.Sprintf("docker pull %s 2>&1 | tail -1", img))
+			if pullErr != nil {
+				fmt.Fprintf(m.out(), "  %s: warning: failed to pull %s: %v\n", rc.Name, img, pullErr)
+			} else {
+				fmt.Fprintf(m.out(), "  %s: pulled %s: %s\n", rc.Name, img, strings.TrimSpace(pullOut))
+			}
 		}
 	}
 
@@ -732,4 +767,28 @@ fi`, bridgeIP, bridgeIP))
 	}
 
 	return nil
+}
+
+// warnAgenticSudoPrereqs checks whether the runner user has passwordless sudo and, if not,
+// prints a warning with remediation instructions. gh-aw requires sudo to manage iptables
+// (DOCKER-USER chain) and the awf-net Docker bridge. This is a non-blocking warning: setup
+// continues regardless so that the user can fix sudo and re-run without restarting from scratch.
+func warnAgenticSudoPrereqs(h *host.Host, w io.Writer, runnerName string) {
+	uid, err := h.Run(`id -u`)
+	if err != nil {
+		return // cannot determine, skip silently
+	}
+	if strings.TrimSpace(uid) == "0" {
+		return // running as root, no sudo needed
+	}
+	out, err := h.Run(`sudo -n true 2>/dev/null && echo ok || echo no`)
+	if err != nil || strings.TrimSpace(out) != "ok" {
+		userName, _ := h.Run(`id -un`)
+		userName = strings.TrimSpace(userName)
+		fmt.Fprintf(w, "  %s: WARNING: passwordless sudo not available for user %q\n", runnerName, userName)
+		fmt.Fprintf(w, "  %s:   gh-aw requires passwordless sudo to manage iptables and Docker bridge networks.\n", runnerName)
+		fmt.Fprintf(w, "  %s:   To fix, run as root on the host:\n", runnerName)
+		fmt.Fprintf(w, "  %s:     echo \"%s ALL=(ALL) NOPASSWD:ALL\" > /etc/sudoers.d/gh-sr-%s\n", runnerName, userName, userName)
+		fmt.Fprintf(w, "  %s:     chmod 0440 /etc/sudoers.d/gh-sr-%s\n", runnerName, userName)
+	}
 }
