@@ -3,6 +3,7 @@ package ops
 import (
 	"fmt"
 	"io"
+	"sync"
 
 	"github.com/an-lee/gh-sr/internal/config"
 	"github.com/an-lee/gh-sr/internal/host"
@@ -154,40 +155,94 @@ func Update(w io.Writer, cfg *config.Config, mgr *runner.Manager, filterHost, fi
 }
 
 // CollectStatus gathers runner status rows like gh sr status.
+//
+// Runners are grouped by host so that each host requires only one SSH connection.
+// All host groups are queried concurrently, reducing wall-clock time from
+// O(N_hosts × SSH_latency) to O(SSH_latency) for multi-host configurations.
 func CollectStatus(w io.Writer, cfg *config.Config, mgr *runner.Manager, filterHost, filterRepo string, nameArgs []string) ([]runner.RunnerStatus, error) {
 	if err := ResolveHostInfo(w, cfg); err != nil {
 		return nil, err
 	}
 	runners := config.FilterRunners(cfg, filterHost, filterRepo, nameArgs)
-	var allStatuses []runner.RunnerStatus
+
+	// Group runners by host, preserving original order for deterministic output.
+	type hostGroup struct {
+		name    string
+		runners []config.RunnerConfig
+	}
+	var groups []hostGroup
+	groupIdx := make(map[string]int)
 	for _, rc := range runners {
-		hcfg := cfg.Hosts[rc.Host]
-		h, err := ConnectHost(rc.Host, hcfg)
-		if err != nil {
-			if w != nil {
-				fmt.Fprintf(w, "Warning: cannot connect to %s: %v\n", rc.Host, err)
-			}
-			for _, name := range rc.InstanceNames() {
-				repoDisplay := rc.Repo
-				if rc.Org != "" {
-					repoDisplay = "org:" + rc.Org
+		if i, ok := groupIdx[rc.Host]; ok {
+			groups[i].runners = append(groups[i].runners, rc)
+		} else {
+			groupIdx[rc.Host] = len(groups)
+			groups = append(groups, hostGroup{name: rc.Host, runners: []config.RunnerConfig{rc}})
+		}
+	}
+
+	type groupResult struct {
+		statuses []runner.RunnerStatus
+		err      error
+	}
+	results := make([]groupResult, len(groups))
+
+	var wg sync.WaitGroup
+	var wMu sync.Mutex // guards writes to w
+
+	for i, g := range groups {
+		wg.Add(1)
+		go func(i int, g hostGroup) {
+			defer wg.Done()
+			hcfg := cfg.Hosts[g.name]
+			h, err := ConnectHost(g.name, hcfg)
+			if err != nil {
+				if w != nil {
+					wMu.Lock()
+					fmt.Fprintf(w, "Warning: cannot connect to %s: %v\n", g.name, err)
+					wMu.Unlock()
 				}
-				allStatuses = append(allStatuses, runner.RunnerStatus{
-					Instance: name,
-					Host:     rc.Host,
-					Repo:     repoDisplay,
-					Mode:     "native",
-					Local:    "unreachable",
-				})
+				var unreachable []runner.RunnerStatus
+				for _, rc := range g.runners {
+					for _, name := range rc.InstanceNames() {
+						repoDisplay := rc.Repo
+						if rc.Org != "" {
+							repoDisplay = "org:" + rc.Org
+						}
+						unreachable = append(unreachable, runner.RunnerStatus{
+							Instance: name,
+							Host:     rc.Host,
+							Repo:     repoDisplay,
+							Mode:     "native",
+							Local:    "unreachable",
+						})
+					}
+				}
+				results[i] = groupResult{statuses: unreachable}
+				return
 			}
-			continue
+			defer h.Close()
+
+			var statuses []runner.RunnerStatus
+			for _, rc := range g.runners {
+				s, err := mgr.Status(h, rc)
+				if err != nil {
+					results[i] = groupResult{err: err}
+					return
+				}
+				statuses = append(statuses, s...)
+			}
+			results[i] = groupResult{statuses: statuses}
+		}(i, g)
+	}
+	wg.Wait()
+
+	var allStatuses []runner.RunnerStatus
+	for _, r := range results {
+		if r.err != nil {
+			return nil, r.err
 		}
-		statuses, err := mgr.Status(h, rc)
-		h.Close()
-		if err != nil {
-			return nil, err
-		}
-		allStatuses = append(allStatuses, statuses...)
+		allStatuses = append(allStatuses, r.statuses...)
 	}
 
 	mgr.EnrichWithGitHubStatus(allStatuses, cfg)
