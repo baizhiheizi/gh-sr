@@ -14,7 +14,7 @@ CMD_DIR := ./cmd/gh-sr
 
 GIT_TAG := $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 
-.PHONY: all build test vet check clean install uninstall
+.PHONY: all build test bench vet check clean install uninstall
 
 all: build
 
@@ -23,6 +23,9 @@ build:
 
 test:
 	go test ./... -race -count=1
+
+bench:
+	go test ./... -run='^$$' -bench=. -benchmem -count=3
 
 vet:
 	go vet ./...
