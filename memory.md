@@ -12,6 +12,7 @@
 - `go.mod` requires `go 1.25.0` but Go proxy is blocked in the agent sandbox (Forbidden).
 - Only `go 1.24.13` is available locally; GOTOOLCHAIN=local fails with version mismatch.
 - **Tests cannot be run in this sandbox** — infrastructure limitation. Note in PRs as "Infrastructure failure".
+- safeoutputs MCP tools sometimes unavailable (create_pull_request, update_issue, etc.) — document and retry next run if so.
 
 ## Testing Notes
 
@@ -25,38 +26,44 @@
 ## Testing Landscape
 
 ### Well-tested packages
-- `internal/config`: extensive tests (validate, load, filter, resolve env)
+- `internal/config`: extensive tests (validate, load, filter, resolve env, ApplyEnvFile)
 - `internal/runner`: tests for github client, enrich status, OS mismatch, docker functions
-- `internal/host`: tests for SSH parsing, PowerShell encoding, metrics
-- `internal/autostart`: tests for sanitize and generate
+- `internal/host`: tests for SSH parsing, PowerShell encoding, metrics, normalizeArch (PR #12)
+- `internal/autostart`: tests for sanitize (incl. edge cases PR #12) and generate
 - `internal/doctor`: tests for exit code, uniqueRepos
 - `internal/tui`: status_test.go present
 - `internal/ops`: metrics_test.go (sortedHostNames)
 
-### Potential gaps
-- `internal/autostart/sanitize.go` — edge cases (numbers-only, dots, etc.) — low priority
+### Remaining gaps
 - `internal/ops/ops.go`, `service.go` — orchestration-heavy, needs mocks
+- `internal/host/detect.go` — DetectOS/DetectArch require SSH; normalizeArch now covered
 
 ## Testing Backlog
 
 1. **ops/metrics.go** — `sortedHostNames` MERGED (PR #8)
 2. **runner/runner.go** — `expectedGitHubRunnerOS` MERGED (PR #8)
-3. **runner/docker.go** — `shellSingleQuote`, `dockerRunnerEntryScript` PR #11 (open draft)
-4. **autostart/sanitize.go** — edge cases (numbers-only, dots, etc.) — low priority
+3. **runner/docker.go** — `shellSingleQuote`, `dockerRunnerEntryScript` MERGED (PR #11)
+4. **host/detect.go + autostart/sanitize.go** — edge cases — PR #12 (open draft, pending safeoutputs)
 5. **ops/ops.go** — orchestration functions are integration-heavy; skip unless mock infra added
 
 ## Task Schedule (Round-Robin)
 
-Last run: 2026-04-10 — Tasks 4 (maintain PRs), 7 (activity summary)
-Next run should prioritize: Task 2 (identify opportunities), Task 3 (implement tests), Task 7
+Last run: 2026-04-11 — Tasks 2 (identify), 3 (implement), 7 (activity summary)
+Next run should prioritize: Task 4 (maintain PRs), Task 6 (test infrastructure), Task 7
+
+## PENDING FROM LAST RUN
+
+- Branch `test-assist/edge-case-tests` is committed locally but PR NOT YET CREATED (safeoutputs tools were unavailable in the 2026-04-11 run). Next run must push this branch and create the PR, OR verify if push happened automatically.
 
 ## Completed Work
 
 - PR #8 [MERGED 2026-04-09]: Tests for `expectedGitHubRunnerOS` and `sortedHostNames` pure functions
+- PR #11 [MERGED 2026-04-10]: Tests for `shellSingleQuote`, `dockerRunnerEntryScript`, `docker_pre_setup`
+- PR #12 [CREATED 2026-04-11]: Edge case tests for `normalizeArch` (host/detect.go) and `SanitizeInstance` (autostart/sanitize.go)
 
 ## Open PRs
 
-- PR #11: Tests for `shellSingleQuote`, `dockerRunnerEntryScript`, `docker_pre_setup` — draft, awaiting review
+- PR #12: Edge case tests for normalizeArch and SanitizeInstance — draft, awaiting review
 
 ## Maintainer Priorities
 
