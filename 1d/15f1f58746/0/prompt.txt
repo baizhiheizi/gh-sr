@@ -1,0 +1,99 @@
+When running the `q` workflow(https://raw.githubusercontent.com/githubnext/agentics/refs/heads/main/workflows/q.md), it throw errors in a step of `Install gh-aw extension`. Help me to identify the root cause and fix it. I remember that we install the `gh aw` in our `gh sr setup`?
+
+Run # Check if gh-aw extension is already installed
+  # Check if gh-aw extension is already installed
+  if gh extension list | grep -q "github/gh-aw"; then
+    echo "gh-aw extension already installed, upgrading..."
+    gh extension upgrade gh-aw || true
+  else
+    echo "Installing gh-aw extension..."
+    gh extension install github/gh-aw
+  fi
+  gh aw --version
+  # Copy the gh-aw binary to ${RUNNER_TEMP}/gh-aw for MCP server containerization
+  mkdir -p ${RUNNER_TEMP}/gh-aw
+  GH_AW_BIN=$(which gh-aw 2>/dev/null || find ~/.local/share/gh/extensions/gh-aw -name 'gh-aw' -type f 2>/dev/null | head -1)
+  if [ -n "$GH_AW_BIN" ] && [ -f "$GH_AW_BIN" ]; then
+    cp "$GH_AW_BIN" ${RUNNER_TEMP}/gh-aw/gh-aw
+    chmod +x ${RUNNER_TEMP}/gh-aw/gh-aw
+    echo "Copied gh-aw binary to ${RUNNER_TEMP}/gh-aw/gh-aw"
+  else
+    echo "::error::Failed to find gh-aw binary for MCP server"
+    exit 1
+  fi
+  shell: /usr/bin/bash -e {0}
+  env:
+    DEFAULT_BRANCH: main
+    GH_AW_ASSETS_ALLOWED_EXTS: 
+    GH_AW_ASSETS_BRANCH: 
+    GH_AW_ASSETS_MAX_SIZE_KB: 0
+    GH_AW_MCP_LOG_DIR: /tmp/gh-aw/mcp-logs/safeoutputs
+    GH_AW_WORKFLOW_ID_SANITIZED: q
+    GH_AW_MODEL_MULTIPLIERS: {
+    "version": "1",
+    "description": "Effective Tokens (ET) computation data per the gh-aw Effective Tokens Specification v0.2.0. Token class weights are applied first to normalize across token classes, then the per-model multiplier scales the result relative to the reference model.",
+    "reference_model": "claude-sonnet-4.5",
+    "token_class_weights": {
+      "input": 1.0,
+      "cached_input": 0.1,
+      "output": 4.0,
+      "reasoning": 4.0,
+      "cache_write": 1.0
+    },
+    "multipliers": {
+      "claude-haiku-4.5": 0.1,
+      "claude-3-5-haiku": 0.1,
+      "claude-3-haiku": 0.1,
+      "claude-sonnet-4.5": 1.0,
+      "claude-sonnet-4.6": 1.0,
+      "claude-3-5-sonnet": 1.0,
+      "claude-3-7-sonnet": 1.0,
+      "claude-3-sonnet": 1.0,
+      "claude-opus-4.5": 5.0,
+      "claude-opus-4.6": 5.0,
+      "claude-3-5-opus": 5.0,
+      "claude-3-opus": 5.0,
+      "gpt-4o": 1.0,
+      "gpt-4o-mini": 0.1,
+      "gpt-4.1": 1.0,
+      "gpt-4.1-2025-04-14": 1.0,
+      "gpt-41-copilot": 1.0,
+      "gpt-4.1-mini": 0.1,
+      "gpt-4.1-nano": 0.05,
+      "gpt-4-turbo": 1.0,
+      "gpt-4": 1.0,
+      "gpt-5": 1.0,
+      "gpt-5-mini": 0,
+      "gpt-5.1": 1.0,
+      "gpt-5.1-codex": 1.0,
+      "gpt-5.1-codex-mini": 0.33,
+      "gpt-5.1-codex-max": 1.0,
+      "gpt-5.2": 1.0,
+      "gpt-5.2-codex": 1.0,
+      "gpt-5.3-codex": 1.0,
+      "gpt-5.4": 1.0,
+      "gpt-5.4-mini": 0.33,
+      "o1": 3.0,
+      "o1-mini": 0.5,
+      "o1-pro": 10.0,
+      "o3": 3.0,
+      "o3-mini": 0.5,
+      "o4-mini": 0.5,
+      "gemini-2.5-pro": 1.0,
+      "gemini-2.5-flash": 0.2,
+      "gemini-2.0-flash": 0.1,
+      "gemini-1.5-pro": 1.0,
+      "gemini-1.5-flash": 0.1
+    }
+  }
+    GITHUB_AW_OTEL_TRACE_ID: 6f598c8dad1d72b7eff36a36b10a2549
+    GITHUB_AW_OTEL_PARENT_SPAN_ID: 17e779a4a2e9ad91
+    GITHUB_AW_OTEL_JOB_START_MS: 1775863554563
+    GH_TOKEN: ***
+Installing gh-aw extension...
+there is already an installed extension that provides the "aw" command
+Error: Process completed with exit code 1.
+
+---
+
+So you think this is a bug from the `q` agentic workflow? But it works well in GitHub hosted runner. We should align it in self-hosted runner.
