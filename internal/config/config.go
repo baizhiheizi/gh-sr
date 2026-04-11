@@ -26,30 +26,27 @@ type GitHubConfig struct {
 }
 
 type HostConfig struct {
-	Addr         string `yaml:"addr"`
-	OS           string `yaml:"os"`
-	Arch         string `yaml:"arch"`
-	WindowsPS    string `yaml:"windows_ps"`    // powershell (default) or pwsh — which exe runs encoded remote scripts on Windows
-	DockerSocket string `yaml:"docker_socket"` // override Docker socket path (Linux/macOS; if empty, gh sr probes default path, docker context, then Colima default on macOS)
+	Addr      string `yaml:"addr"`
+	OS        string `yaml:"os"`
+	Arch      string `yaml:"arch"`
+	WindowsPS string `yaml:"windows_ps"` // powershell (default) or pwsh — which exe runs encoded remote scripts on Windows
 }
 
 type RunnerConfig struct {
-	Name              string   `yaml:"name"`
-	Repo              string   `yaml:"repo"`
-	Org               string   `yaml:"org"`
-	Group             string   `yaml:"group"`
-	Host              string   `yaml:"host"`
-	Count             int      `yaml:"count"`
-	Labels            []string `yaml:"labels"`
-	Mode              string   `yaml:"mode"`
-	Profile           string   `yaml:"profile"`
-	Ephemeral         bool     `yaml:"ephemeral"`
-	DockerNetworkMode string   `yaml:"docker_network_mode"` // bridge (default) or host; only for docker-mode Linux runners
-	// DockerCapAdd lists Linux capability names passed to docker run --cap-add (e.g. NET_ADMIN for Agent Workflow Firewall iptables).
-	DockerCapAdd []string `yaml:"docker_cap_add"`
-	// DockerPreSetup is a bash script that runs inside the container before the runner starts.
-	// Use this to install tools needed for your workflows (e.g., Node.js for awf).
-	DockerPreSetup string `yaml:"docker_pre_setup"`
+	Name      string   `yaml:"name"`
+	Repo      string   `yaml:"repo"`
+	Org       string   `yaml:"org"`
+	Group     string   `yaml:"group"`
+	Host      string   `yaml:"host"`
+	Count     int      `yaml:"count"`
+	Labels    []string `yaml:"labels"`
+	Ephemeral bool     `yaml:"ephemeral"`
+	Profile   string   `yaml:"profile"` // "agentic" for GitHub Agentic Workflows
+}
+
+// IsAgentic returns true if the runner uses the agentic profile.
+func (rc *RunnerConfig) IsAgentic() bool {
+	return rc.Profile == "agentic"
 }
 
 // Scope returns "repo" or "org" depending on how the runner is registered.
@@ -68,53 +65,23 @@ func (rc *RunnerConfig) ScopeTarget() string {
 	return rc.Repo
 }
 
-// IsAgentic reports whether the runner uses the agentic workflow profile.
-func (rc *RunnerConfig) IsAgentic() bool {
-	return strings.EqualFold(strings.TrimSpace(rc.Profile), "agentic")
-}
-
-func (rc *RunnerConfig) EffectiveMode(hostOS string) string {
-	if rc.Mode != "" {
-		return rc.Mode
-	}
-	if hostOS == "linux" {
-		return "docker"
-	}
+// EffectiveMode always returns "native" (docker mode has been removed).
+func (rc *RunnerConfig) EffectiveMode(_ string) string {
 	return "native"
 }
 
-// EffectiveDockerNetworkMode returns bridge or host for docker run --network.
-// Only docker-mode runners may use host; everything else resolves to bridge.
-func (rc *RunnerConfig) EffectiveDockerNetworkMode(hostOS string) string {
-	if rc.EffectiveMode(hostOS) != "docker" {
-		return "bridge"
-	}
-	switch strings.ToLower(strings.TrimSpace(rc.DockerNetworkMode)) {
-	case "host":
-		return "host"
-	default:
-		return "bridge"
-	}
-}
-
-// DefaultLabels generates standard GitHub Actions labels based on mode, host OS, and arch.
-// Docker-mode runners always report as Linux regardless of host OS.
-func DefaultLabels(mode, hostOS, arch string) []string {
+// DefaultLabels generates standard GitHub Actions labels based on host OS and arch.
+func DefaultLabels(hostOS, arch string) []string {
 	labels := []string{"self-hosted"}
 
 	osLabel := ""
-	switch mode {
-	case "docker":
+	switch hostOS {
+	case "linux":
 		osLabel = "Linux"
-	default:
-		switch hostOS {
-		case "linux":
-			osLabel = "Linux"
-		case "darwin":
-			osLabel = "macOS"
-		case "windows":
-			osLabel = "Windows"
-		}
+	case "darwin":
+		osLabel = "macOS"
+	case "windows":
+		osLabel = "Windows"
 	}
 	if osLabel != "" {
 		labels = append(labels, osLabel)
@@ -135,14 +102,13 @@ func DefaultLabels(mode, hostOS, arch string) []string {
 }
 
 // EffectiveLabels returns the runner's labels, auto-generating them from host info if empty.
-// Agentic-profile runners automatically get an "agentic" label appended.
+// For agentic profile runners, "agentic" label is always appended.
 func (rc *RunnerConfig) EffectiveLabels(hostOS, arch string) []string {
 	var labels []string
 	if len(rc.Labels) > 0 {
 		labels = rc.Labels
 	} else {
-		mode := rc.EffectiveMode(hostOS)
-		labels = DefaultLabels(mode, hostOS, arch)
+		labels = DefaultLabels(hostOS, arch)
 	}
 	if rc.IsAgentic() && !hasLabel(labels, "agentic") {
 		labels = append(labels, "agentic")
@@ -233,29 +199,14 @@ func (c *Config) applyDefaults() {
 	}
 }
 
-// applyAgenticDefaults fills in the Docker configuration implied by profile: agentic.
 func (rc *RunnerConfig) applyAgenticDefaults() {
 	if !rc.IsAgentic() {
 		return
 	}
-	if rc.Mode == "" {
-		rc.Mode = "docker"
+	// Agentic runners get "agentic" label auto-added if not present.
+	if !hasLabel(rc.Labels, "agentic") {
+		rc.Labels = append(rc.Labels, "agentic")
 	}
-	if rc.DockerNetworkMode == "" {
-		rc.DockerNetworkMode = "host"
-	}
-	if !hasCapability(rc.DockerCapAdd, "NET_ADMIN") {
-		rc.DockerCapAdd = append(rc.DockerCapAdd, "NET_ADMIN")
-	}
-}
-
-func hasCapability(caps []string, target string) bool {
-	for _, c := range caps {
-		if strings.EqualFold(c, target) {
-			return true
-		}
-	}
-	return false
 }
 
 func (c *Config) Validate() error {
@@ -296,14 +247,6 @@ func (c *Config) Validate() error {
 				return fmt.Errorf("host %q: windows_ps must be powershell or pwsh (got %q)", name, h.WindowsPS)
 			}
 		}
-		if h.DockerSocket != "" {
-			if h.OS != "" && h.OS != "linux" && h.OS != "darwin" {
-				return fmt.Errorf("host %q: docker_socket is only supported on Linux and macOS hosts", name)
-			}
-			if !strings.HasPrefix(h.DockerSocket, "/") {
-				return fmt.Errorf("host %q: docker_socket must be an absolute path (got %q)", name, h.DockerSocket)
-			}
-		}
 	}
 
 	if len(c.Runners) == 0 {
@@ -326,59 +269,14 @@ func (c *Config) Validate() error {
 		if r.Host == "" {
 			return fmt.Errorf("runner %q: host is required", r.Name)
 		}
-		hcfg, ok := c.Hosts[r.Host]
-		if !ok {
+		if _, ok := c.Hosts[r.Host]; !ok {
 			return fmt.Errorf("runner %q: host %q not found in hosts", r.Name, r.Host)
 		}
-		if r.Profile != "" && !strings.EqualFold(r.Profile, "agentic") {
-			return fmt.Errorf("runner %q: profile must be 'agentic' (got %q)", r.Name, r.Profile)
-		}
-		if r.IsAgentic() && r.Mode == "native" {
-			return fmt.Errorf("runner %q: profile 'agentic' requires docker mode (AWF sandbox needs Docker)", r.Name)
-		}
-		if r.Mode != "" && r.Mode != "docker" && r.Mode != "native" {
-			return fmt.Errorf("runner %q: mode must be 'docker' or 'native' (got %q)", r.Name, r.Mode)
-		}
-		netMode := strings.ToLower(strings.TrimSpace(r.DockerNetworkMode))
-		if netMode != "" && netMode != "bridge" && netMode != "host" {
-			return fmt.Errorf("runner %q: docker_network_mode must be 'bridge' or 'host' (got %q)", r.Name, r.DockerNetworkMode)
-		}
-		if netMode != "" {
-			if r.EffectiveMode(hcfg.OS) != "docker" {
-				return fmt.Errorf("runner %q: docker_network_mode applies only when mode is docker", r.Name)
-			}
-		}
-		if err := validateDockerCapAdd(&r, hcfg.OS); err != nil {
-			return err
+		if r.Profile != "" && r.Profile != "agentic" {
+			return fmt.Errorf("runner %q: profile must be empty or \"agentic\" (got %q)", r.Name, r.Profile)
 		}
 	}
 
-	return nil
-}
-
-func validateDockerCapAdd(r *RunnerConfig, hostOS string) error {
-	if len(r.DockerCapAdd) == 0 {
-		return nil
-	}
-	if r.EffectiveMode(hostOS) != "docker" {
-		return fmt.Errorf("runner %q: docker_cap_add applies only when mode is docker", r.Name)
-	}
-	for _, cap := range r.DockerCapAdd {
-		c := strings.TrimSpace(cap)
-		if c == "" {
-			return fmt.Errorf("runner %q: docker_cap_add contains an empty entry", r.Name)
-		}
-		if c != cap {
-			return fmt.Errorf("runner %q: docker_cap_add entries must not have leading or trailing spaces (got %q)", r.Name, cap)
-		}
-		for _, ch := range c {
-			isLetter := (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z')
-			isDigit := ch >= '0' && ch <= '9'
-			if !isLetter && !isDigit && ch != '_' {
-				return fmt.Errorf("runner %q: docker_cap_add invalid capability name %q (use letters, digits, underscore only)", r.Name, c)
-			}
-		}
-	}
 	return nil
 }
 

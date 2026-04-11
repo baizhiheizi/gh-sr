@@ -34,7 +34,7 @@ runners:
     count: 2
 ```
 
-This automatically sets docker mode, host networking, `NET_ADMIN` capability, and adds an `agentic` label. See the [host setup docs](../host-setup.md#github-agentic-workflows-gh-aw) for details.
+This automatically sets docker mode, host networking, `NET_ADMIN` capability, installs `iptables` in the container for the Agent Workflow Firewall, and adds an `agentic` label. See the [host setup docs](../host-setup.md#github-agentic-workflows-gh-aw) for details.
 
 ### Native Linux (`mode: native`)
 

@@ -80,6 +80,27 @@ gh sr up                              # auto-setup + start
 
 Then run `gh sr` on a terminal for the interactive dashboard, or use `gh sr status`, `gh sr logs <name>`, etc.
 
+## GitHub Agentic Workflows (gh-aw)
+
+To run [GitHub Agentic Workflows](https://github.github.com/gh-aw/guides/self-hosted-runners/) on your self-hosted runners, use the `agentic` profile:
+
+```yaml
+runners:
+  - name: aw-runner
+    repo: owner/repo
+    host: my-vps
+    profile: agentic
+```
+
+This configures `gh sr` to install `gh-aw` on the host, set up the necessary tooling cache, and perform advanced Doctor checks.
+
+**Linux Docker DNS Requirement:**
+`gh-aw` agents rely on `host.docker.internal` to reach the MCP gateway running on the host. On macOS and Windows Docker Desktop, this is automatic. On Linux, you must configure a local DNS resolver (e.g., `dnsmasq`) to resolve `host.docker.internal` to the `docker0` bridge IP (usually `172.17.0.1`), and instruct Docker to use it. The dnsmasq config **must include upstream `server=` directives** (e.g., `server=127.0.0.53` and `server=8.8.8.8`), otherwise only static records are answered and all external DNS (model provider APIs, etc.) is refused from inside containers.
+**Do not** map it to `127.0.0.1` in your host's `/etc/hosts`, or the connection will be refused inside agent containers!
+Run `gh sr doctor` to automatically verify both internal and external DNS resolution from containers.
+
+For detailed configuration instructions, see the [Host Setup Documentation](https://an-lee.github.io/gh-sr/host-setup/#linux-docker-dns).
+
 ## Development
 
 ```bash

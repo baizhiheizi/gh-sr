@@ -1,5 +1,6 @@
 .env
 /gh-sr
+/gh-sr-test
 dist/
 site/
 docs/public/

@@ -61,7 +61,7 @@ tools:
   bash: true
   repo-memory: true
 
-source: githubnext/agentics/workflows/daily-perf-improver.md@7c7feb61a52b662eb2089aa2945588b7a200d404
+source: githubnext/agentics/workflows/daily-perf-improver.md@97143ac59cb3a13ef2a77581f929f06719c7402a
 ---
 
 # Daily Perf Improver

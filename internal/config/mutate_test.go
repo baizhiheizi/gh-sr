@@ -88,7 +88,7 @@ runners:
 	if err := os.WriteFile(cfgPath, []byte(initial), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := AddRunner(cfgPath, "r2", "o/r2", "h1", 2, nil, "docker"); err != nil {
+	if err := AddRunner(cfgPath, "r2", "o/r2", "h1", 2, nil); err != nil {
 		t.Fatal(err)
 	}
 
@@ -100,7 +100,7 @@ runners:
 		t.Fatalf("expected 2 runners, got %d", len(cfg.Runners))
 	}
 	r2 := cfg.Runners[1]
-	if r2.Name != "r2" || r2.Repo != "o/r2" || r2.Host != "h1" || r2.Count != 2 || r2.Mode != "docker" {
+	if r2.Name != "r2" || r2.Repo != "o/r2" || r2.Host != "h1" || r2.Count != 2 {
 		t.Errorf("unexpected runner: %+v", r2)
 	}
 }

@@ -135,7 +135,6 @@ func Run(w io.Writer, cfgPath, envPath string, cfg *config.Config, cfgErr error,
 	}
 
 	fmt.Fprintln(w, "\n=== Hosts ===")
-	fmt.Fprintf(w, "Docker mode uses image: %s\n\n", runner.RunnerDockerImage)
 	hostOrder := uniqueHostNames(runners)
 	for _, hostName := range hostOrder {
 		hcfg := cfg.Hosts[hostName]
@@ -152,23 +151,16 @@ func Run(w io.Writer, cfgPath, envPath string, cfg *config.Config, cfgErr error,
 			_ = h.Close()
 			continue
 		}
-		modes := modesForHost(runners, hostName, h.OS)
 
 		func() {
 			defer h.Close()
 			printLine(w, sevOK, hostName, fmt.Sprintf("connected (%s)", addrSummary(hcfg.Addr)))
-			if modes["docker"] {
-				checkDocker(w, hostName, h, runners, &r)
-				checkAgenticWorkflowDockerHint(w, hostName, h.OS, runners, &r)
-			}
-			if modes["native"] {
-				checkNative(w, hostName, h, &r)
-				checkNativeRunnerInstall(w, hostName, h, runners, &r)
-			}
+			checkNative(w, hostName, h, &r)
+			checkNativeRunnerInstall(w, hostName, h, runners, &r)
 			if h.OS == "linux" {
 				checkLinuxSudo(w, hostName, h, &r)
 			}
-			if hasAgenticRunners(runners, hostName) {
+			if hasAgenticRunners(cfg.RunnersForHost(hostName)) {
 				checkAgenticPrereqs(w, hostName, h, &r)
 			}
 		}()
@@ -258,180 +250,11 @@ func uniqueHostNames(runners []config.RunnerConfig) []string {
 	return out
 }
 
-func modesForHost(runners []config.RunnerConfig, hostName, hostOS string) map[string]bool {
-	m := make(map[string]bool)
-	for _, rc := range runners {
-		if rc.Host != hostName {
-			continue
-		}
-		m[rc.EffectiveMode(hostOS)] = true
-	}
-	return m
-}
-
-// checkAgenticWorkflowDockerHint warns when docker-mode runners use the default bridge network,
-// which breaks GitHub Agentic Workflows MCP gateway localhost health checks unless gh-aw is fixed upstream.
-func checkAgenticWorkflowDockerHint(w io.Writer, hostName string, hostOS string, runners []config.RunnerConfig, r *Result) {
-	var names []string
-	for _, rc := range runners {
-		if rc.Host != hostName {
-			continue
-		}
-		if rc.EffectiveMode(hostOS) != "docker" {
-			continue
-		}
-		if rc.EffectiveDockerNetworkMode(hostOS) != "bridge" {
-			continue
-		}
-		names = append(names, rc.Name)
-	}
-	if len(names) == 0 {
-		return
-	}
-	sort.Strings(names)
-	printLine(w, sevWarn, hostName, fmt.Sprintf(
-		"agentic workflows: bridge-network docker runners (%s) may fail MCP gateway health checks; set docker_network_mode: host or use mode: native — see host setup documentation",
-		strings.Join(names, ", "),
-	))
-	r.Warn++
-}
-
-func checkDocker(w io.Writer, hostName string, h *host.Host, runners []config.RunnerConfig, r *Result) {
-	if h.OS == "windows" {
-		out, err := h.RunShell(`docker info --format "{{.ServerVersion}}"`)
-		out = strings.TrimSpace(out)
-		if err != nil || out == "" {
-			reason := "docker info did not return a server version"
-			if err != nil {
-				reason = err.Error()
-			}
-			printLine(w, sevFail, hostName, fmt.Sprintf("docker: daemon/CLI not usable (%s); install and start Docker (see README \"Host setup\")", reason))
-			r.Fail++
-			return
-		}
-		printLine(w, sevOK, hostName, fmt.Sprintf("docker: server version %s (image %s)", out, runner.RunnerDockerImage))
-		checkWindowsDockerSocket(w, hostName, h, runners, r)
-		return
-	}
-
-	ok, err := runner.UnixDockerCLIInstalled(h)
-	if err != nil {
-		printLine(w, sevFail, hostName, fmt.Sprintf("docker: could not check CLI: %v", err))
-		r.Fail++
-		return
-	}
-	if !ok {
-		printLine(w, sevFail, hostName, "docker: CLI not on PATH; install Docker (see README \"Host setup\")")
-		r.Fail++
-		return
-	}
-	out, verr := runner.UnixDockerServerVersion(h)
-	if verr != nil {
-		printLine(w, sevFail, hostName, fmt.Sprintf("docker: %v", verr))
-		r.Fail++
-		return
-	}
-	printLine(w, sevOK, hostName, fmt.Sprintf("docker: server version %s (image %s)", out, runner.RunnerDockerImage))
-
-	if h.OS == "linux" || h.OS == "darwin" {
-		checkUnixDockerSocket(w, hostName, h, runners, r)
-	}
-}
-
-// checkWindowsDockerSocket probes the Docker Desktop socket GID and checks that any running
-// docker-mode runner containers have the correct --group-add flag for it.
-func checkWindowsDockerSocket(w io.Writer, hostName string, h *host.Host, runners []config.RunnerConfig, r *Result) {
-	probeCmd := runner.DockerWindowsSockGIDProbeCommand(runner.RunnerDockerImage) + ` 2>$null`
-	out, err := h.RunShell(probeCmd)
-	if err != nil {
-		printLine(w, sevWarn, hostName, fmt.Sprintf(
-			"docker: could not probe socket GID; bind-mount may lack --group-add; jobs may fail with permission denied; recreate containers after fixing",
-		))
-		r.Warn++
-		return
-	}
-	gid := strings.TrimSpace(out)
-	printLine(w, sevOK, hostName, fmt.Sprintf("docker: socket GID=%s", gid))
-
-	// Check each docker-mode runner container that is already running.
-	for _, rc := range runners {
-		if rc.Host != hostName || rc.EffectiveMode(h.OS) != "docker" {
-			continue
-		}
-		for _, inst := range rc.InstanceNames() {
-			cname := runner.ContainerName(inst)
-			running, rerr := h.RunShell(fmt.Sprintf(`docker inspect -f "{{.State.Running}}" %s 2>$null`, cname))
-			if rerr != nil || strings.TrimSpace(running) != "true" {
-				continue
-			}
-			// Get the supplemental groups the container was started with.
-			groups, gerr := h.RunShell(fmt.Sprintf(`docker inspect -f "{{.HostConfig.Groups}}" %s 2>$null`, cname))
-			groups = strings.TrimSpace(groups)
-			if gerr != nil || groups == "" || groups == "[]" {
-				printLine(w, sevFail, hostName, fmt.Sprintf(
-					"docker: container %s has no --group-add for socket GID %s; jobs will fail with permission denied; fix with: gh sr down %s && gh sr up %s",
-					cname, gid, rc.Name, rc.Name,
-				))
-				r.Fail++
-				continue
-			}
-			// groups is like "[999]" or "[0 999]"; check if socket GID is present.
-			if !strings.Contains(groups, gid) {
-				printLine(w, sevFail, hostName, fmt.Sprintf(
-					"docker: container %s groups=%s, socket GID=%s not included; jobs will fail with permission denied; fix with: gh sr down %s && gh sr up %s",
-					cname, groups, gid, rc.Name, rc.Name,
-				))
-				r.Fail++
-			} else {
-				printLine(w, sevOK, hostName, fmt.Sprintf("docker: container %s has socket GID %s in groups %s", cname, gid, groups))
-			}
-		}
-	}
-}
-
-// checkUnixDockerSocket verifies the Docker socket path on Linux/macOS hosts and, if any docker-mode
-// runner container is already running, checks that the socket is accessible inside it.
-func checkUnixDockerSocket(w io.Writer, hostName string, h *host.Host, runners []config.RunnerConfig, r *Result) {
-	socketPath, err := runner.EffectiveDockerSocket(h)
-	if err != nil {
-		printLine(w, sevFail, hostName, fmt.Sprintf("docker: %v", err))
-		r.Fail++
-		return
-	}
-	printLine(w, sevOK, hostName, fmt.Sprintf("docker: socket present at %s", socketPath))
-
-	// For each docker-mode runner container that is already running, verify the socket is
-	// accessible inside it (catches containers started without the mount or without --group-add).
-	for _, rc := range runners {
-		if rc.Host != hostName || rc.EffectiveMode(h.OS) != "docker" {
-			continue
-		}
-		for _, inst := range rc.InstanceNames() {
-			cname := runner.ContainerName(inst)
-			running, rerr := h.Run(fmt.Sprintf("docker inspect -f '{{.State.Running}}' %s 2>/dev/null", cname))
-			if rerr != nil || strings.TrimSpace(running) != "true" {
-				continue
-			}
-			// Container is running; check that the socket is accessible inside.
-			res, execErr := h.Run(fmt.Sprintf("docker exec %s test -S /var/run/docker.sock && echo ok || echo missing", cname))
-			if execErr != nil || strings.TrimSpace(res) != "ok" {
-				printLine(w, sevWarn, hostName, fmt.Sprintf(
-					"docker: container %s is running but /var/run/docker.sock is not accessible inside it; recreate with: gh sr down %s && gh sr up %s",
-					cname, rc.Name, rc.Name,
-				))
-				r.Warn++
-			} else {
-				printLine(w, sevOK, hostName, fmt.Sprintf("docker: container %s has /var/run/docker.sock accessible", cname))
-			}
-		}
-	}
-}
-
 // nativeInstallTargetsForHost lists (instanceName, runnerConfigName) for native-mode runners on hostName.
-func nativeInstallTargetsForHost(runners []config.RunnerConfig, hostName, hostOS string) [][2]string {
+func nativeInstallTargetsForHost(runners []config.RunnerConfig, hostName string) [][2]string {
 	var out [][2]string
 	for _, rc := range runners {
-		if rc.Host != hostName || rc.EffectiveMode(hostOS) != "native" {
+		if rc.Host != hostName {
 			continue
 		}
 		for _, inst := range rc.InstanceNames() {
@@ -442,7 +265,7 @@ func nativeInstallTargetsForHost(runners []config.RunnerConfig, hostName, hostOS
 }
 
 func checkNativeRunnerInstall(w io.Writer, hostName string, h *host.Host, runners []config.RunnerConfig, r *Result) {
-	for _, pair := range nativeInstallTargetsForHost(runners, hostName, h.OS) {
+	for _, pair := range nativeInstallTargetsForHost(runners, hostName) {
 		inst, runnerName := pair[0], pair[1]
 		dir := h.RunnerDir(inst)
 		ok, err := runner.NativeRunnerConfigPresent(h, inst)
@@ -495,68 +318,6 @@ func checkNative(w io.Writer, hostName string, h *host.Host, r *Result) {
 	}
 }
 
-func hasAgenticRunners(runners []config.RunnerConfig, hostName string) bool {
-	for _, rc := range runners {
-		if rc.Host != hostName {
-			continue
-		}
-		if rc.IsAgentic() {
-			return true
-		}
-		// Native Linux setups use mode: native + labels including agentic (no profile).
-		// Legacy configs may still use the gh-aw label name.
-		for _, l := range rc.Labels {
-			if isAgenticRunnerLabel(l) {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-func isAgenticRunnerLabel(l string) bool {
-	s := strings.TrimSpace(l)
-	return strings.EqualFold(s, "agentic") || strings.EqualFold(s, "gh-aw")
-}
-
-// checkAgenticPrereqs verifies host prerequisites specific to GitHub Agentic Workflows:
-// port 80 availability (MCP gateway), iptables (AWF firewall), and sudo access.
-func checkAgenticPrereqs(w io.Writer, hostName string, h *host.Host, r *Result) {
-	if h.OS == "linux" || h.OS == "darwin" {
-		out, err := h.Run("ss -tlnp 2>/dev/null | grep -q ':80 ' && echo in-use || echo free")
-		if err == nil {
-			status := strings.TrimSpace(out)
-			if status == "in-use" {
-				printLine(w, sevWarn, hostName, "agentic: port 80 is in use; Agentic Workflows MCP gateway needs port 80 free on the host network")
-				r.Warn++
-			} else {
-				printLine(w, sevOK, hostName, "agentic: port 80 is free (MCP gateway)")
-			}
-		}
-	}
-
-	if h.OS == "linux" {
-		out, err := h.Run("command -v iptables >/dev/null 2>&1 && echo yes || echo no")
-		if err == nil && strings.TrimSpace(out) == "yes" {
-			printLine(w, sevOK, hostName, "agentic: iptables available (AWF firewall)")
-		} else {
-			printLine(w, sevWarn, hostName, "agentic: iptables not found; AWF sandbox may fail (install iptables or ensure it is on PATH)")
-			r.Warn++
-		}
-
-		uid, err := h.Run("id -u")
-		if err == nil && strings.TrimSpace(uid) != "0" {
-			out, err := h.Run("sudo -n true 2>/dev/null && echo ok || echo no")
-			if err != nil || strings.TrimSpace(out) != "ok" {
-				printLine(w, sevWarn, hostName, "agentic: passwordless sudo not available; AWF requires sudo for iptables/firewall setup")
-				r.Warn++
-			} else {
-				printLine(w, sevOK, hostName, "agentic: sudo available for AWF firewall setup")
-			}
-		}
-	}
-}
-
 func checkLinuxSudo(w io.Writer, hostName string, h *host.Host, r *Result) {
 	uid, err := h.Run(`id -u`)
 	if err != nil {
@@ -570,9 +331,135 @@ func checkLinuxSudo(w io.Writer, hostName string, h *host.Host, r *Result) {
 	out, err := h.Run(`sudo -n true 2>/dev/null && echo ok || echo no`)
 	out = strings.TrimSpace(out)
 	if err != nil || out != "ok" {
-		printLine(w, sevWarn, hostName, "linux: passwordless sudo not available; gh sr setup/update may fail for package installs or Docker install")
+		printLine(w, sevWarn, hostName, "linux: passwordless sudo not available; gh sr setup/update may fail for package installs")
 		r.Warn++
 		return
 	}
 	printLine(w, sevOK, hostName, "linux: non-root user has passwordless sudo")
+}
+
+// hasAgenticRunners returns true if any runner in the list uses the agentic profile.
+func hasAgenticRunners(runners []config.RunnerConfig) bool {
+	for _, rc := range runners {
+		if rc.IsAgentic() {
+			return true
+		}
+	}
+	return false
+}
+
+// checkAgenticPrereqs verifies Docker is available on the host for agentic workflow containers.
+// gh-aw (GitHub Agentic Workflows) uses Docker on the host for AWF sandbox containers.
+func checkAgenticPrereqs(w io.Writer, hostName string, h *host.Host, r *Result) {
+	if h.OS != "linux" {
+		printLine(w, sevFail, hostName, "agentic: gh-aw only supported on Linux hosts")
+		r.Fail++
+		return
+	}
+
+	// Check docker CLI.
+	out, err := h.Run(`docker --version 2>/dev/null`)
+	if err != nil || !strings.Contains(out, "Docker version") {
+		printLine(w, sevFail, hostName, "agentic: docker CLI not found on PATH; gh-aw requires Docker to be pre-installed on the host")
+		r.Fail++
+		return
+	}
+	printLine(w, sevOK, hostName, fmt.Sprintf("agentic: docker CLI %s", strings.TrimSpace(out)))
+
+	// Check docker daemon is running.
+	out, err = h.Run(`docker info 2>/dev/null`)
+	if err != nil {
+		printLine(w, sevFail, hostName, "agentic: docker daemon not running (docker info failed); start docker or ensure it starts at boot")
+		r.Fail++
+		return
+	}
+	printLine(w, sevOK, hostName, "agentic: docker daemon running")
+
+	// Check docker compose plugin.
+	out, err = h.Run(`docker compose version 2>/dev/null`)
+	if err != nil {
+		printLine(w, sevWarn, hostName, "agentic: docker compose plugin not found (docker compose version failed); gh-aw may need it for multi-container setup")
+		r.Warn++
+	} else {
+		printLine(w, sevOK, hostName, fmt.Sprintf("agentic: docker compose %s", strings.TrimSpace(out)))
+	}
+
+	// Check iptables is available.
+	out, err = h.Run(`command -v iptables >/dev/null 2>&1 && echo ok || echo missing`)
+	if err != nil || strings.TrimSpace(out) != "ok" {
+		printLine(w, sevFail, hostName, "agentic: iptables not found on PATH; gh-aw needs it for network egress control (DOCKER-USER chain)")
+		r.Fail++
+		return
+	}
+	printLine(w, sevOK, hostName, "agentic: iptables available")
+
+	// Check DOCKER-USER chain exists (gh-aw creates it).
+	out, err = h.Run(`iptables -L DOCKER-USER 2>/dev/null && echo exists || echo missing`)
+	if err != nil || strings.TrimSpace(out) != "exists" {
+		printLine(w, sevWarn, hostName, "agentic: DOCKER-USER chain not found; gh-aw creates it on first run; ensure passwordless sudo for iptables")
+		r.Warn++
+	} else {
+		printLine(w, sevOK, hostName, "agentic: DOCKER-USER chain exists")
+	}
+
+	// Check RUNNER_TEMP for agentic runners.
+	// gh-aw uses /tmp/gh-aw for its runtime tree. If the runner's RUNNER_TEMP is /tmp,
+	// bind mounts and security isolation will conflict with gh-aw's own files.
+	out, err = h.Run(`echo "${RUNNER_TEMP:-}"`)
+	if err == nil {
+		rt := strings.TrimSpace(out)
+		if rt == "/tmp" {
+			printLine(w, sevWarn, hostName, "agentic: RUNNER_TEMP=/tmp conflicts with gh-aw runtime tree at /tmp/gh-aw (mount and isolation conflicts)")
+			printLine(w, sevWarn, hostName, "agentic: fix: set RUNNER_TEMP to a path under the runner work directory, e.g. ~/.gh-sr/runners/<name>/_work/_temp")
+			r.Warn++
+		}
+	}
+
+	// Check passwordless sudo for iptables (needed for gh-aw egress rules).
+	uid, err := h.Run(`id -u`)
+	if err != nil {
+		printLine(w, sevWarn, hostName, fmt.Sprintf("agentic: could not check uid for iptables sudo: %v", err))
+		r.Warn++
+		return
+	}
+	if strings.TrimSpace(uid) != "0" {
+		out, err = h.Run(`sudo -n iptables -L DOCKER-USER >/dev/null 2>&1 && echo ok || echo no`)
+		if err != nil || strings.TrimSpace(out) != "ok" {
+			printLine(w, sevWarn, hostName, "agentic: passwordless sudo for iptables not available; gh-aw may fail to set egress rules")
+			r.Warn++
+			return
+		}
+		printLine(w, sevOK, hostName, "agentic: passwordless sudo for iptables available")
+	}
+
+	// Check host.docker.internal resolution inside containers.
+	// gh-aw relies on host.docker.internal to reach the MCP gateway from agent containers.
+	out, err = h.Run(`docker run --rm alpine sh -c "getent hosts host.docker.internal || echo failed" 2>/dev/null`)
+	out = strings.TrimSpace(out)
+	if err != nil || out == "failed" || out == "" {
+		printLine(w, sevFail, hostName, "agentic: host.docker.internal does not resolve inside containers; configure Docker DNS (see README)")
+		r.Fail++
+	} else if strings.Contains(out, "127.0.0.1") {
+		printLine(w, sevFail, hostName, "agentic: host.docker.internal resolves to 127.0.0.1 inside containers; this breaks gh-aw MCP gateway (see README)")
+		r.Fail++
+	} else {
+		fields := strings.Fields(out)
+		ip := ""
+		if len(fields) > 0 {
+			ip = fields[0]
+		}
+		printLine(w, sevOK, hostName, fmt.Sprintf("agentic: host.docker.internal resolves correctly inside containers (%s)", ip))
+	}
+
+	// Check general DNS resolution inside containers.
+	// If dnsmasq is configured without upstream servers, it only answers static records
+	// and REFUSES everything else, breaking external API access (model providers, etc.).
+	out, err = h.Run(`docker run --rm alpine sh -c "nslookup github.com >/dev/null 2>&1 && echo ok || echo failed" 2>/dev/null`)
+	out = strings.TrimSpace(out)
+	if err != nil || out != "ok" {
+		printLine(w, sevFail, hostName, "agentic: external DNS (github.com) does not resolve inside containers; check Docker DNS / dnsmasq upstream server config (see README)")
+		r.Fail++
+	} else {
+		printLine(w, sevOK, hostName, "agentic: external DNS resolves inside containers")
+	}
 }

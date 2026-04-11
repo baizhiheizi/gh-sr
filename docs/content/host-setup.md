@@ -86,6 +86,8 @@ docker exec gh-runner-<instance> test -S /var/run/docker.sock && echo ok || echo
 
 ## GitHub Agentic Workflows (gh-aw)
 
+> **For a complete guide** to agentic workflows on self-hosted runners -- architecture, DNS setup, troubleshooting, and what `profile: agentic` automates -- see [Agentic Workflows]({{< ref "agentic-workflows" >}}).
+
 The easiest way to set up a runner for [GitHub Agentic Workflows](https://github.github.com/gh-aw/guides/self-hosted-runners/) is `profile: agentic`:
 
 ```yaml
@@ -97,7 +99,7 @@ runners:
     count: 2
 ```
 
-This automatically configures docker mode, host networking, `NET_ADMIN` capability, and an `agentic` label. You can also add it from the CLI:
+This automatically configures docker mode, host networking, `NET_ADMIN` capability, an `agentic` label, and installs `iptables` in the runner container for the Agent Workflow Firewall. You can also add it from the CLI:
 
 ```bash
 gh sr add runner aw-runner --repo owner/repo --host vps-1 --profile agentic
@@ -145,6 +147,16 @@ Workflows that run the [Agent Workflow Firewall](https://github.com/github/gh-aw
 
 **`gh sr doctor`** checks hosts used by **`profile: agentic`** runners or by runners whose **`labels`** include **`agentic`** (or the legacy **`gh-aw`**) for port 80 availability, iptables presence, and sudo access, in addition to the standard bridge-network warning.
 
+### Linux Docker DNS (`host.docker.internal`) {#linux-docker-dns}
+
+> **For the full explanation** -- the two-layer DNS failure we debugged, architecture diagrams, and a complete troubleshooting table -- see [Agentic Workflows: Linux Docker DNS]({{< ref "agentic-workflows" >}}#linux-docker-dns).
+
+Agentic workflows use `host.docker.internal` from inside agent containers to reach the MCP Gateway (which runs on the host network). On **macOS** and **Windows** Docker Desktop, this name resolves automatically to the host IP.
+
+On **Linux**, Docker does not resolve this address by default. gh-sr configures dnsmasq automatically during `gh sr setup`. **Do NOT add `127.0.0.1 host.docker.internal` to your host's `/etc/hosts`** -- this causes agent containers to resolve it to their own loopback instead of the host.
+
+Run **`gh sr doctor`** to verify that `host.docker.internal` resolves to a non-loopback IP inside containers.
+
 ### Native Linux runners and `sudo` (gh-aw) {#native-linux-runners-and-sudo-gh-aw}
 
 [GitHub Agentic Workflows self-hosted guidance](https://github.github.com/gh-aw/guides/self-hosted-runners/) requires a **`sudo`-capable environment** (non-sudo-only setups are not supported). With **`mode: native`**, the [Agent Workflow Firewall](https://github.com/github/gh-aw-firewall) and related tooling may invoke **`sudo` during jobs** (for example iptables rules). That must work **without a password prompt**, because Actions job steps are not interactive.
@@ -157,6 +169,91 @@ Workflows that run the [Agent Workflow Firewall](https://github.com/github/gh-aw
 3. **`gh sr doctor`** — With **`profile: agentic`** or **`labels`** including **`agentic`** (or legacy **`gh-aw`**), doctor reports whether passwordless sudo is available for AWF firewall setup on Linux.
 
 Docker must still be installed on the machine for gh-aw’s containers (MCP gateway, AWF, etc.); native mode only means the **Actions runner** is not inside a container.
+
+### `/opt/hostedtoolcache` (npm global tools)
+
+gh-aw’s Agent Workflow Firewall (AWF) containers search for tools like `claude` in `/opt/hostedtoolcache/*/bin`. This directory structure exists on **GitHub Hosted Runners** (created by GitHub’s infrastructure) but **not on self-hosted runners** by default.
+
+When you install npm global tools (e.g., `npm install -g @anthropic-ai/claude-code`), they are installed to npm’s global prefix (e.g., `/home/user/.npm-global` or `/usr/local`), which is **not** automatically accessible to gh-aw containers.
+
+**gh-sr handles this automatically** during `gh sr setup` for agentic runners:
+
+1. Detects your npm global prefix via `npm config get prefix`
+2. Creates `/opt/hostedtoolcache` as a **bind mount** to your npm prefix
+3. Adds the mount to `/etc/fstab` for persistence across reboots
+
+This allows gh-aw containers to find `claude`, `codex`, and other npm-installed tools via the same PATH search used on GitHub Hosted Runners.
+
+**Manual verification** (on the runner host):
+
+```bash
+# Check if hostedtoolcache is configured
+mount | grep hostedtoolcache
+
+# Should show something like:
+# /dev/nvme0n1p2 on /opt/hostedtoolcache type ext4 (rw,relatime)
+
+# Or check if it’s a symlink/bind mount to your npm prefix
+ls -la /opt/hostedtoolcache
+# Should point to your npm prefix (e.g., /home/user/.npm-global)
+```
+
+**Manual setup** (if needed):
+
+```bash
+# Find your npm global prefix
+npm config get prefix
+
+# Create the bind mount (requires root/sudo)
+sudo mkdir -p /opt/hostedtoolcache
+sudo mount --bind /home/your-user/.npm-global /opt/hostedtoolcache
+
+# Add to /etc/fstab for persistence
+echo "/home/your-user/.npm-global /opt/hostedtoolcache none defaults,bind 0 0" | sudo tee -a /etc/fstab
+```
+
+### GitHub CLI authentication (gh)
+
+Agentic workflows that use `gh` CLI commands (e.g., `gh pr list`, `gh issue list`, `gh api`) require GitHub authentication on the runner host. **GitHub Hosted Runners** have this built-in, but **self-hosted runners need manual setup**.
+
+**Symptoms:** Workflow steps using `gh` fail with errors like:
+- `gh: You are not logged into any GitHub hosts`
+- `gh: To use GitHub CLI in a GitHub Actions workflow, set the GH_TOKEN environment variable`
+- `Bad credentials` from the GitHub API
+
+**Solution:** Set the `GH_TOKEN` environment variable in the workflow, or authenticate `gh` on the runner host.
+
+**Option 1 — Pass `GH_TOKEN` in the workflow** (recommended for most cases):
+
+```yaml
+jobs:
+  agentic:
+    runs-on: self-hosted
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: List PRs
+        run: gh pr list
+```
+
+**Option 2 — Authenticate `gh` on the runner host** (for local `gh` commands outside workflow steps):
+
+```bash
+# On the runner host, authenticate gh with a Personal Access Token
+gh auth login --hostname github.com --token <your-PAT>
+```
+
+> **Note:** `gh auth login` is interactive by default. For non-interactive setup, use:
+> ```bash
+> printf '<your-token>' | gh auth login --hostname github.com --insecure-stdin-token
+> ```
+
+**Verify on the runner host:**
+
+```bash
+gh auth status
+```
 
 ## Windows (OpenSSH and Docker)
 

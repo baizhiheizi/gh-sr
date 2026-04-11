@@ -46,8 +46,6 @@ runners:
   #   host: vps-1
   #   count: 2
   #   labels: [self-hosted, Linux, X64]
-  #   mode: docker  # "docker" (default on linux) or "native"
-  #   # docker_network_mode: host   # host network for e.g. GitHub Agentic Workflows; works on Linux, macOS, and Windows docker-mode runners (see docs host-setup.md)
   #
   # Runner on the local machine:
   #
@@ -56,13 +54,12 @@ runners:
   #   host: my-laptop
   #   count: 1
   #   labels: [self-hosted, Linux, X64]
-  #   mode: native
   #
-  # Linux runner on a Windows host (requires Docker Desktop):
+  # Agentic Workflow runner (GitHub Agentic Workflows with gh-aw):
+  # Docker must be pre-installed on the host. gh-aw CLI is auto-installed on setup.
   #
-  # - name: my-project-linux-on-win
+  # - name: agentic-runner
   #   repo: owner/repo
-  #   host: win-pc
-  #   mode: docker   # Linux container via Docker Desktop
-  #   count: 1
-  #   labels: [self-hosted, Linux, X64]
+  #   host: vps-1
+  #   profile: agentic   # enables gh-aw CLI setup and agentic label
+  #   # labels are auto-generated with "agentic" appended
