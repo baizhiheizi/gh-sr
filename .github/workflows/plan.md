@@ -26,7 +26,7 @@ safe-outputs:
   close-discussion:
     required-category: "Ideas"
 timeout-minutes: 10
-source: githubnext/agentics/workflows/plan.md@7c7feb61a52b662eb2089aa2945588b7a200d404
+source: githubnext/agentics/workflows/plan.md@97143ac59cb3a13ef2a77581f929f06719c7402a
 ---
 
 # Planning Assistant
