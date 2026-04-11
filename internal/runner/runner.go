@@ -77,7 +77,22 @@ func (m *Manager) Start(h *host.Host, rc config.RunnerConfig) error {
 		if kind != autostart.KindNone {
 			err = autostart.Start(h, name)
 		} else {
-			err = m.startNative(h, rc, name)
+			// Auto-install autostart for non-ephemeral runners so the runner
+			// auto-restarts on crash and starts on boot.
+			if !rc.Ephemeral {
+				fmt.Fprintf(m.out(), "  %s: installing autostart for always-on...\n", name)
+				if ierr := autostart.Install(h, name, autostart.InstallOpts{}); ierr != nil {
+					fmt.Fprintf(m.out(), "  %s: warning: failed to install autostart: %v\n", name, ierr)
+					// Fall back to direct start; autostart install failure is non-fatal.
+				}
+				// Re-detect after install attempt.
+				kind, _ = autostart.Detect(h, name)
+			}
+			if kind != autostart.KindNone {
+				err = autostart.Start(h, name)
+			} else {
+				err = m.startNative(h, rc, name)
+			}
 		}
 		if err != nil {
 			return fmt.Errorf("starting %s: %w", name, err)
