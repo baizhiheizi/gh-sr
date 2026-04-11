@@ -409,7 +409,8 @@ func checkAgenticPrereqs(w io.Writer, hostName string, h *host.Host, r *Result) 
 	if err == nil {
 		rt := strings.TrimSpace(out)
 		if rt == "/tmp" {
-			printLine(w, sevWarn, hostName, "agentic: RUNNER_TEMP=/tmp in host environment; gh-aw uses /tmp/gh-aw and this will cause mount/isolation conflicts; set RUNNER_TEMP to a path inside the runner work directory (e.g. ~/.gh-sr/runners/<name>/_work/_temp)")
+			printLine(w, sevWarn, hostName, "agentic: RUNNER_TEMP=/tmp conflicts with gh-aw runtime tree at /tmp/gh-aw (mount and isolation conflicts)")
+			printLine(w, sevWarn, hostName, "agentic: fix: set RUNNER_TEMP to a path under the runner work directory, e.g. ~/.gh-sr/runners/<name>/_work/_temp")
 			r.Warn++
 		}
 	}

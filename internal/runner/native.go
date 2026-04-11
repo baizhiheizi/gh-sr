@@ -373,11 +373,24 @@ echo "cleanup done"
 			"ghcr.io/github/gh-aw-firewall/agent:latest",
 			"ghcr.io/github/gh-aw-mcpg:latest",
 		} {
-			pullOut, pullErr := h.Run(fmt.Sprintf("docker pull %s 2>&1 | tail -1", img))
+			pullOut, pullErr := h.Run(fmt.Sprintf("docker pull %s 2>&1", img))
+			pullOut = strings.TrimSpace(pullOut)
 			if pullErr != nil {
 				fmt.Fprintf(m.out(), "  %s: warning: failed to pull %s: %v\n", rc.Name, img, pullErr)
+				if pullOut != "" {
+					fmt.Fprintf(m.out(), "  %s:   %s\n", rc.Name, pullOut)
+				}
 			} else {
-				fmt.Fprintf(m.out(), "  %s: pulled %s: %s\n", rc.Name, img, strings.TrimSpace(pullOut))
+				// Show the final status line (e.g. "Status: Image is up to date for ...")
+				lines := strings.Split(pullOut, "\n")
+				statusLine := pullOut
+				for i := len(lines) - 1; i >= 0; i-- {
+					if l := strings.TrimSpace(lines[i]); l != "" {
+						statusLine = l
+						break
+					}
+				}
+				fmt.Fprintf(m.out(), "  %s: pulled %s: %s\n", rc.Name, img, statusLine)
 			}
 		}
 	}
