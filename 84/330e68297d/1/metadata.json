@@ -1,0 +1,37 @@
+{
+  "cli_version": "dev",
+  "checkpoint_id": "84330e68297d",
+  "session_id": "813d61b5-d535-41bb-a25b-ca36abc57c57",
+  "strategy": "manual-commit",
+  "created_at": "2026-04-11T01:23:00.568145024Z",
+  "branch": "main",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "internal/runner/runner.go"
+  ],
+  "agent": "Claude Code",
+  "model": "MiniMax-M2.7",
+  "turn_id": "a589ecd7b081",
+  "token_usage": {
+    "input_tokens": 339521,
+    "cache_creation_tokens": 32112,
+    "cache_read_tokens": 384846,
+    "output_tokens": 4946,
+    "api_call_count": 15
+  },
+  "session_metrics": {
+    "turn_count": 1
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-04-11T01:23:00.476450291Z",
+    "agent_lines": 16,
+    "agent_removed": 1,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 16,
+    "total_lines_changed": 17,
+    "agent_percentage": 100,
+    "metric_version": 2
+  }
+}

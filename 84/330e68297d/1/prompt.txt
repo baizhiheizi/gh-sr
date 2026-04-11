@@ -1,0 +1,1 @@
+We should ensure the native runner always running after started.
