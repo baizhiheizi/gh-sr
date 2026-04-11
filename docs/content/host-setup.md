@@ -86,6 +86,8 @@ docker exec gh-runner-<instance> test -S /var/run/docker.sock && echo ok || echo
 
 ## GitHub Agentic Workflows (gh-aw)
 
+> **For a complete guide** to agentic workflows on self-hosted runners -- architecture, DNS setup, troubleshooting, and what `profile: agentic` automates -- see [Agentic Workflows]({{< ref "agentic-workflows" >}}).
+
 The easiest way to set up a runner for [GitHub Agentic Workflows](https://github.github.com/gh-aw/guides/self-hosted-runners/) is `profile: agentic`:
 
 ```yaml
@@ -147,35 +149,11 @@ Workflows that run the [Agent Workflow Firewall](https://github.com/github/gh-aw
 
 ### Linux Docker DNS (`host.docker.internal`) {#linux-docker-dns}
 
-Agentic workflows use `host.docker.internal` from inside agent containers to reach the MCP Gateway (which runs on the host network). On **macOS** and **Windows** Docker Desktop, this name resolves automatically to the host IP. 
+> **For the full explanation** -- the two-layer DNS failure we debugged, architecture diagrams, and a complete troubleshooting table -- see [Agentic Workflows: Linux Docker DNS]({{< ref "agentic-workflows" >}}#linux-docker-dns).
 
-On **Linux**, Docker does not resolve this address by default, which causes the agent to fail with `ERR_API: MCP server(s) failed to launch`. 
+Agentic workflows use `host.docker.internal` from inside agent containers to reach the MCP Gateway (which runs on the host network). On **macOS** and **Windows** Docker Desktop, this name resolves automatically to the host IP.
 
-**Do NOT add `127.0.0.1 host.docker.internal` to your host's `/etc/hosts`**. This will cause the MCP Gateway to bind to localhost, and agent containers will receive a `Connection refused` error because their own `127.0.0.1` is isolated from the host.
-
-**To fix this on Linux:** configure a local DNS resolver (such as `dnsmasq` or `systemd-resolved`) to resolve `host.docker.internal` to the `docker0` bridge IP (usually `172.17.0.1`), and tell Docker to use it.
-
-**Example with dnsmasq:**
-```bash
-sudo apt-get install dnsmasq
-
-# Configure dnsmasq: resolve host.docker.internal to docker bridge IP,
-# listen on docker0, and forward all other queries upstream.
-sudo tee /etc/dnsmasq.d/docker.conf > /dev/null <<'EOF'
-address=/host.docker.internal/172.17.0.1
-listen-address=172.17.0.1
-bind-interfaces
-server=127.0.0.53
-server=8.8.8.8
-EOF
-sudo systemctl restart dnsmasq
-
-# Tell Docker to use the bridge IP as a DNS server
-echo '{"dns": ["172.17.0.1", "8.8.8.8"]}' | sudo tee /etc/docker/daemon.json
-sudo systemctl restart docker
-```
-
-The `server=` lines are critical: without them, dnsmasq can only answer its static records (`host.docker.internal`) and **refuses all other queries**, breaking external API access (e.g. your model provider) from inside agent containers. `server=127.0.0.53` forwards to `systemd-resolved`; `server=8.8.8.8` is a fallback.
+On **Linux**, Docker does not resolve this address by default. gh-sr configures dnsmasq automatically during `gh sr setup`. **Do NOT add `127.0.0.1 host.docker.internal` to your host's `/etc/hosts`** -- this causes agent containers to resolve it to their own loopback instead of the host.
 
 Run **`gh sr doctor`** to verify that `host.docker.internal` resolves to a non-loopback IP inside containers.
 
