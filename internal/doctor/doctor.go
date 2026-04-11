@@ -402,6 +402,19 @@ func checkAgenticPrereqs(w io.Writer, hostName string, h *host.Host, r *Result) 
 		printLine(w, sevOK, hostName, "agentic: DOCKER-USER chain exists")
 	}
 
+	// Check RUNNER_TEMP for agentic runners.
+	// gh-aw uses /tmp/gh-aw for its runtime tree. If the runner's RUNNER_TEMP is /tmp,
+	// bind mounts and security isolation will conflict with gh-aw's own files.
+	out, err = h.Run(`echo "${RUNNER_TEMP:-}"`)
+	if err == nil {
+		rt := strings.TrimSpace(out)
+		if rt == "/tmp" {
+			printLine(w, sevWarn, hostName, "agentic: RUNNER_TEMP=/tmp conflicts with gh-aw runtime tree at /tmp/gh-aw (mount and isolation conflicts)")
+			printLine(w, sevWarn, hostName, "agentic: fix: set RUNNER_TEMP to a path under the runner work directory, e.g. ~/.gh-sr/runners/<name>/_work/_temp")
+			r.Warn++
+		}
+	}
+
 	// Check passwordless sudo for iptables (needed for gh-aw egress rules).
 	uid, err := h.Run(`id -u`)
 	if err != nil {

@@ -2,6 +2,7 @@ package runner
 
 import (
 	"fmt"
+	"io"
 	"strings"
 
 	"github.com/an-lee/gh-sr/internal/autostart"
@@ -275,6 +276,25 @@ func (m *Manager) setupNative(h *host.Host, rc config.RunnerConfig) error {
 	// For agentic runners, install gh-aw CLI on the host.
 	// gh-aw (GitHub Agentic Workflows) uses Docker on the host for AWF sandbox containers.
 	if rc.IsAgentic() && h.OS == "linux" {
+		// Pre-flight check: warn if the runner user lacks passwordless sudo.
+		// gh-aw requires sudo to manage iptables (DOCKER-USER chain) and awf-net bridge.
+		warnAgenticSudoPrereqs(h, m.out(), rc.Name)
+
+		// Clean up zombie Docker resources from previously crashed gh-aw jobs.
+		// If a job crashes, orphaned gh-aw containers and networks block the next job.
+		fmt.Fprintf(m.out(), "  %s: cleaning up zombie gh-aw Docker resources...\n", rc.Name)
+		cleanupOut, cleanupErr := h.Run(`
+docker ps -a --filter "name=gh-aw" --format '{{.ID}}' 2>/dev/null | xargs -r docker rm -f 2>/dev/null
+docker network ls --filter "name=gh-aw" --format '{{.ID}}' 2>/dev/null | xargs -r docker network rm 2>/dev/null
+docker network prune -f 2>/dev/null
+echo "cleanup done"
+`)
+		if cleanupErr != nil {
+			fmt.Fprintf(m.out(), "  %s: warning: Docker cleanup failed: %v\n", rc.Name, cleanupErr)
+		} else if strings.TrimSpace(cleanupOut) != "" {
+			fmt.Fprintf(m.out(), "  %s: Docker cleanup: %s\n", rc.Name, strings.TrimSpace(cleanupOut))
+		}
+
 		fmt.Fprintf(m.out(), "  %s: installing gh-aw CLI for agentic profile...\n", rc.Name)
 		installGHAWCmd := `if [ -d ~/.local/share/gh/extensions/gh-aw ]; then
 			echo "gh-aw already installed"
@@ -344,6 +364,34 @@ func (m *Manager) setupNative(h *host.Host, rc config.RunnerConfig) error {
 		fmt.Fprintf(m.out(), "  %s: setting up Docker DNS for agentic workflows...\n", rc.Name)
 		if err := m.setupAgenticDNS(h, rc.Name); err != nil {
 			fmt.Fprintf(m.out(), "  %s: warning: Docker DNS setup failed: %v\n", rc.Name, err)
+		}
+
+		// Pre-pull critical gh-aw images to reduce first-job startup latency.
+		// These images are required by every agentic workflow run and can be several hundred MB.
+		fmt.Fprintf(m.out(), "  %s: pre-pulling gh-aw images (this may take a few minutes)...\n", rc.Name)
+		for _, img := range []string{
+			"ghcr.io/github/gh-aw-firewall/agent:latest",
+			"ghcr.io/github/gh-aw-mcpg:latest",
+		} {
+			pullOut, pullErr := h.Run(fmt.Sprintf("docker pull %s 2>&1", img))
+			pullOut = strings.TrimSpace(pullOut)
+			if pullErr != nil {
+				fmt.Fprintf(m.out(), "  %s: warning: failed to pull %s: %v\n", rc.Name, img, pullErr)
+				if pullOut != "" {
+					fmt.Fprintf(m.out(), "  %s:   %s\n", rc.Name, pullOut)
+				}
+			} else {
+				// Show the final status line (e.g. "Status: Image is up to date for ...")
+				lines := strings.Split(pullOut, "\n")
+				statusLine := pullOut
+				for i := len(lines) - 1; i >= 0; i-- {
+					if l := strings.TrimSpace(lines[i]); l != "" {
+						statusLine = l
+						break
+					}
+				}
+				fmt.Fprintf(m.out(), "  %s: pulled %s: %s\n", rc.Name, img, statusLine)
+			}
 		}
 	}
 
@@ -647,19 +695,20 @@ bind-interfaces
 server=127.0.0.53
 server=8.8.8.8
 `, bridgeIP, bridgeIP)
-	confWrite := fmt.Sprintf(`%s
-CONTENT='%s'
+	// Use linuxElevatePrelude once at the top to set $SUDO, then use $SUDO throughout.
+	confWrite := linuxElevatePrelude + fmt.Sprintf(`
 CONF=/etc/dnsmasq.d/gh-sr-docker.conf
-# Only write if content differs to avoid unnecessary service restart.
-CURRENT=""
-[ -f "$CONF" ] && CURRENT=$(cat "$CONF")
-if [ "$CURRENT" != "$CONTENT" ]; then
-    printf '%s' "$CONTENT" | $SUDO tee "$CONF" > /dev/null
+TMPCONF=$(mktemp)
+cat > "$TMPCONF" << 'GHSREOF'
+%sGHSREOF
+if ! cmp -s "$TMPCONF" "$CONF" 2>/dev/null; then
+    $SUDO cp "$TMPCONF" "$CONF"
     $SUDO systemctl restart dnsmasq
     echo "dnsmasq configured"
 else
     echo "dnsmasq config unchanged"
-fi`, linuxElevatePrelude, dnsmasqConf)
+fi
+rm -f "$TMPCONF"`, dnsmasqConf)
 	out, err = h.Run(confWrite)
 	if err != nil {
 		return fmt.Errorf("writing dnsmasq config: %w", err)
@@ -669,12 +718,13 @@ fi`, linuxElevatePrelude, dnsmasqConf)
 	}
 
 	// Step 7: Configure Docker daemon DNS if not already set to use our dnsmasq.
-	daemonDNSConfigured, err := h.Run(fmt.Sprintf(`
+	// linuxElevatePrelude is prepended once to set $SUDO; all elevated ops use $SUDO thereafter.
+	daemonDNSConfigured, err := h.Run(linuxElevatePrelude + fmt.Sprintf(`
 DOCKER_CONF=/etc/docker/daemon.json
 BRIDGE_IP='%s'
 if [ ! -f "$DOCKER_CONF" ]; then
-    printf '{"dns":["%s","8.8.8.8"]}\n' "$BRIDGE_IP" | %s tee "$DOCKER_CONF" > /dev/null
-    %s systemctl restart docker
+    printf '{"dns":["%s","8.8.8.8"]}\n' "$BRIDGE_IP" | $SUDO tee "$DOCKER_CONF" > /dev/null
+    $SUDO systemctl restart docker
     echo "daemon.json created with DNS"
 else
     # Check if our dnsmasq IP is already in the dns list.
@@ -700,19 +750,19 @@ data['dns'] = dns
 with open(path, 'w') as f:
     json.dump(data, f, indent=2)
 print('daemon.json DNS merged')
-" 2>/dev/null && %s systemctl restart docker && echo "daemon.json DNS updated"
+" 2>/dev/null && $SUDO systemctl restart docker && echo "daemon.json DNS updated"
         else
             # Fallback: use jq if available, otherwise just overwrite dns array safely.
             if command -v jq >/dev/null 2>&1; then
-                %s jq '.dns = ["'"'"'$BRIDGE_IP'"'"'", (.dns // [])[0:5]] | .dns += ["8.8.8.8"] | .dns = (.dns | unique)' "$DOCKER_CONF" > "${DOCKER_CONF}.new" && %s mv "${DOCKER_CONF}.new" "$DOCKER_CONF" && %s systemctl restart docker && echo "daemon.json DNS updated via jq"
+                $SUDO jq '.dns = ["'"'"'$BRIDGE_IP'"'"'", (.dns // [])[0:5]] | .dns += ["8.8.8.8"] | .dns = (.dns | unique)' "$DOCKER_CONF" > "${DOCKER_CONF}.new" && $SUDO mv "${DOCKER_CONF}.new" "$DOCKER_CONF" && $SUDO systemctl restart docker && echo "daemon.json DNS updated via jq"
             else
-                # Last resort: read existing content, use sed to replace the dns array.
-                # This is fragile but works on minimal systems.
-                %s sh -c 'grep -v dns "$DOCKER_CONF" > "${DOCKER_CONF}.new" && printf '"'"'"  \\"dns\\": [\\""'"'"'"$BRIDGE_IP"'"'"'\\"",\\"8.8.8.8\\"]\\n}"\\n'"'"' >> "${DOCKER_CONF}.new" && %s mv "${DOCKER_CONF}.new" "$DOCKER_CONF" && %s systemctl restart docker && echo "daemon.json DNS updated via shell"
+                # Last resort: read existing content and rebuild the dns array.
+                # This is fragile but works on minimal systems without python3 or jq.
+                $SUDO sh -c 'grep -v dns "$1" > "${1}.new"' -- "$DOCKER_CONF" && echo "  \"dns\": [\"$BRIDGE_IP\",\"8.8.8.8\"]" | $SUDO tee -a "${DOCKER_CONF}.new" > /dev/null && echo "}" | $SUDO tee -a "${DOCKER_CONF}.new" > /dev/null && $SUDO mv "${DOCKER_CONF}.new" "$DOCKER_CONF" && $SUDO systemctl restart docker && echo "daemon.json DNS updated via shell"
             fi
         fi
     fi
-fi`, bridgeIP, bridgeIP, linuxElevatePrelude, linuxElevatePrelude, linuxElevatePrelude, linuxElevatePrelude, linuxElevatePrelude, linuxElevatePrelude))
+fi`, bridgeIP, bridgeIP))
 	if err != nil && !strings.Contains(daemonDNSConfigured, "already configured") && !strings.Contains(daemonDNSConfigured, "configured") && !strings.Contains(daemonDNSConfigured, "updated") {
 		// Non-fatal: docker restart may fail if there are running containers.
 		fmt.Fprintf(m.out(), "  %s: warning: Docker daemon DNS merge failed: %v\n", runnerName, err)
@@ -730,4 +780,28 @@ fi`, bridgeIP, bridgeIP, linuxElevatePrelude, linuxElevatePrelude, linuxElevateP
 	}
 
 	return nil
+}
+
+// warnAgenticSudoPrereqs checks whether the runner user has passwordless sudo and, if not,
+// prints a warning with remediation instructions. gh-aw requires sudo to manage iptables
+// (DOCKER-USER chain) and the awf-net Docker bridge. This is a non-blocking warning: setup
+// continues regardless so that the user can fix sudo and re-run without restarting from scratch.
+func warnAgenticSudoPrereqs(h *host.Host, w io.Writer, runnerName string) {
+	uid, err := h.Run(`id -u`)
+	if err != nil {
+		return // cannot determine, skip silently
+	}
+	if strings.TrimSpace(uid) == "0" {
+		return // running as root, no sudo needed
+	}
+	out, err := h.Run(`sudo -n true 2>/dev/null && echo ok || echo no`)
+	if err != nil || strings.TrimSpace(out) != "ok" {
+		userName, _ := h.Run(`id -un`)
+		userName = strings.TrimSpace(userName)
+		fmt.Fprintf(w, "  %s: WARNING: passwordless sudo not available for user %q\n", runnerName, userName)
+		fmt.Fprintf(w, "  %s:   gh-aw requires passwordless sudo to manage iptables and Docker bridge networks.\n", runnerName)
+		fmt.Fprintf(w, "  %s:   To fix, run as root on the host:\n", runnerName)
+		fmt.Fprintf(w, "  %s:     echo \"%s ALL=(ALL) NOPASSWD:ALL\" > /etc/sudoers.d/gh-sr-%s\n", runnerName, userName, userName)
+		fmt.Fprintf(w, "  %s:     chmod 0440 /etc/sudoers.d/gh-sr-%s\n", runnerName, userName)
+	}
 }
