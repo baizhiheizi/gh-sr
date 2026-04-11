@@ -1,0 +1,25 @@
+{
+  "cli_version": "dev",
+  "checkpoint_id": "84330e68297d",
+  "strategy": "manual-commit",
+  "branch": "main",
+  "checkpoints_count": 0,
+  "files_touched": [
+    "internal/runner/runner.go"
+  ],
+  "sessions": [
+    {
+      "metadata": "/84/330e68297d/0/metadata.json",
+      "transcript": "/84/330e68297d/0/full.jsonl",
+      "content_hash": "/84/330e68297d/0/content_hash.txt",
+      "prompt": "/84/330e68297d/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 182,
+    "cache_creation_tokens": 31913,
+    "cache_read_tokens": 0,
+    "output_tokens": 194,
+    "api_call_count": 1
+  }
+}
