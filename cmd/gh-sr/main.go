@@ -439,16 +439,14 @@ func doctorCmd() *cobra.Command {
 
 			cfg, cfgErr := config.LoadFromPath(cfgPath)
 			var gh *runner.GitHubClient
-			hasGitHubToken := false
 			if cfg != nil {
 				tok, tokErr := config.ResolveToken(cfg)
 				if tokErr == nil {
 					gh = runner.NewGitHubClient(tok)
-					hasGitHubToken = true
 				}
 			}
 
-			res := doctor.Run(cmd.OutOrStdout(), cfgPath, envPath, cfg, cfgErr, gh, hasGitHubToken, filterHost, filterRepo, strict)
+			res := doctor.Run(cmd.OutOrStdout(), cfgPath, envPath, cfg, cfgErr, gh, filterHost, filterRepo, strict)
 			if code := doctor.ExitCode(res, strict); code != 0 {
 				os.Exit(code)
 			}

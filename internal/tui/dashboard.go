@@ -501,15 +501,13 @@ func (m *dashboardModel) updateGlobalMenu(key string) tea.Cmd {
 			return func() tea.Msg {
 				var buf bytes.Buffer
 				var gh *runner.GitHubClient
-				hasGitHubToken := false
 				if cfg != nil {
 					tok, tokErr := config.ResolveToken(cfg)
 					if tokErr == nil {
 						gh = runner.NewGitHubClient(tok)
-						hasGitHubToken = true
 					}
 				}
-				doctor.Run(&buf, cfgPath, envPath, cfg, nil, gh, hasGitHubToken, hostF, repoF, false)
+				doctor.Run(&buf, cfgPath, envPath, cfg, nil, gh, hostF, repoF, false)
 				return doctorDoneMsg{out: buf.String()}
 			}
 		case 1:

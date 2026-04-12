@@ -37,9 +37,8 @@ func ExitCode(res Result, strict bool) int {
 }
 
 // Run prints diagnostics to w. cfg and cfgErr come from config.LoadFromPath (or Load) after BootstrapEnv.
-// hasGitHubToken is true when gh CLI credentials yielded a token for github.com.
 // If cfg is nil (load error), GitHub and host checks are skipped after the configuration section.
-func Run(w io.Writer, cfgPath, envPath string, cfg *config.Config, cfgErr error, gh *runner.GitHubClient, hasGitHubToken bool, filterHost, filterRepo string, strict bool) Result {
+func Run(w io.Writer, cfgPath, envPath string, cfg *config.Config, cfgErr error, gh *runner.GitHubClient, filterHost, filterRepo string, strict bool) Result {
 	var r Result
 
 	fmt.Fprintln(w, "=== Local environment ===")
@@ -60,13 +59,6 @@ func Run(w io.Writer, cfgPath, envPath string, cfg *config.Config, cfgErr error,
 		r.Warn++
 	default:
 		printLine(w, sevOK, "local", fmt.Sprintf("env file present: %s", envPath))
-	}
-
-	if hasGitHubToken {
-		printLine(w, sevOK, "local", "GitHub token: from gh CLI (gh auth login)")
-	} else {
-		printLine(w, sevFail, "local", "GitHub token: not found; run `gh auth login`")
-		r.Fail++
 	}
 
 	needSSH := cfg == nil
@@ -387,10 +379,10 @@ func checkAgenticPrereqs(w io.Writer, hostName string, h *host.Host, r *Result) 
 	// Check Docker-in-Docker: MCP gateway spawns containers via Docker socket.
 	out, err = h.Run(`docker run --rm -v /var/run/docker.sock:/var/run/docker.sock docker:cli docker ps 2>/dev/null`)
 	if err != nil {
-		printLine(w, sevFail, hostName, "agentic: cannot spawn containers via Docker socket; MCP gateway will fail to launch (see README §4c)")
+		printLine(w, sevFail, hostName, "agentic: cannot spawn containers via Docker socket; MCP gateway will fail to launch (see docs agentic-workflows.md §4c)")
 		r.Fail++
 	} else {
-		printLine(w, sevOK, hostName, "agentic: can spawn containers via Docker socket (DinD)")
+		printLine(w, sevOK, hostName, "agentic: can spawn containers via Docker socket")
 	}
 
 	// Check iptables is available.
