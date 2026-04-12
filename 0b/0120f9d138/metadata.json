@@ -1,0 +1,27 @@
+{
+  "cli_version": "dev",
+  "checkpoint_id": "0b0120f9d138",
+  "strategy": "manual-commit",
+  "branch": "main",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "internal/doctor/doctor.go",
+    "internal/runner/agentic.go",
+    "internal/runner/native.go"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0b/0120f9d138/0/metadata.json",
+      "transcript": "/0b/0120f9d138/0/full.jsonl",
+      "content_hash": "/0b/0120f9d138/0/content_hash.txt",
+      "prompt": "/0b/0120f9d138/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 1223043,
+    "cache_creation_tokens": 157344,
+    "cache_read_tokens": 769748,
+    "output_tokens": 15259,
+    "api_call_count": 30
+  }
+}
