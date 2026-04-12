@@ -19,6 +19,80 @@ func ConnectHost(hostName string, hcfg config.HostConfig) (*host.Host, error) {
 	return h, nil
 }
 
+// lockedWriter serialises concurrent writes to an underlying io.Writer.
+type lockedWriter struct {
+	mu sync.Mutex
+	w  io.Writer
+}
+
+func (lw *lockedWriter) Write(p []byte) (int, error) {
+	lw.mu.Lock()
+	defer lw.mu.Unlock()
+	return lw.w.Write(p)
+}
+
+// runPerHostParallel groups runners by host and executes fn for each runner concurrently
+// across hosts. Within each host group runners are processed sequentially using a single
+// SSH connection, reducing connection overhead from O(N_runners) to O(N_hosts).
+// All host groups run in parallel, so total latency is O(SSH_latency) regardless of
+// the number of hosts. Writes to w are serialised; pass nil to discard output.
+func runPerHostParallel(
+	w io.Writer,
+	cfg *config.Config,
+	runners []config.RunnerConfig,
+	fn func(w io.Writer, h *host.Host, rc config.RunnerConfig) error,
+) error {
+	type hostGroup struct {
+		name    string
+		runners []config.RunnerConfig
+	}
+	var groups []hostGroup
+	groupIdx := make(map[string]int)
+	for _, rc := range runners {
+		if i, ok := groupIdx[rc.Host]; ok {
+			groups[i].runners = append(groups[i].runners, rc)
+		} else {
+			groupIdx[rc.Host] = len(groups)
+			groups = append(groups, hostGroup{name: rc.Host, runners: []config.RunnerConfig{rc}})
+		}
+	}
+
+	var out io.Writer = io.Discard
+	if w != nil {
+		out = &lockedWriter{w: w}
+	}
+
+	errs := make([]error, len(groups))
+	var wg sync.WaitGroup
+	for i, g := range groups {
+		wg.Add(1)
+		go func(i int, g hostGroup) {
+			defer wg.Done()
+			hcfg := cfg.Hosts[g.name]
+			h, err := ConnectHost(g.name, hcfg)
+			if err != nil {
+				errs[i] = err
+				return
+			}
+			defer h.Close()
+			for _, rc := range g.runners {
+				if err := fn(out, h, rc); err != nil {
+					errs[i] = err
+					return
+				}
+			}
+		}(i, g)
+	}
+	wg.Wait()
+
+	for _, err := range errs {
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // Setup installs and configures runners, mirroring the gh sr setup command.
 func Setup(w io.Writer, cfg *config.Config, mgr *runner.Manager, filterHost, filterRepo string, nameArgs []string) error {
 	if err := ResolveHostInfo(w, cfg); err != nil {
@@ -55,99 +129,76 @@ func Setup(w io.Writer, cfg *config.Config, mgr *runner.Manager, filterHost, fil
 }
 
 // Up starts runners, automatically running setup first if needed.
+//
+// Runners are grouped by host so that each host requires only one SSH connection.
+// All host groups are started concurrently, reducing wall-clock time from
+// O(N_hosts × SSH_latency) to O(SSH_latency) for multi-host configurations.
 func Up(w io.Writer, cfg *config.Config, mgr *runner.Manager, filterHost, filterRepo string, nameArgs []string) error {
 	if err := ResolveHostInfo(w, cfg); err != nil {
 		return err
 	}
 	runners := config.FilterRunners(cfg, filterHost, filterRepo, nameArgs)
-	for _, rc := range runners {
-		hcfg := cfg.Hosts[rc.Host]
+	return runPerHostParallel(w, cfg, runners, func(w io.Writer, h *host.Host, rc config.RunnerConfig) error {
 		fmt.Fprintf(w, "Starting %s on %s...\n", rc.Name, rc.Host)
-		h, err := ConnectHost(rc.Host, hcfg)
-		if err != nil {
-			return err
-		}
 		if err := mgr.EnsureSetup(h, rc); err != nil {
-			h.Close()
 			return err
 		}
-		if err := mgr.Start(h, rc); err != nil {
-			h.Close()
-			return err
-		}
-		h.Close()
-	}
-	return nil
+		return mgr.Start(h, rc)
+	})
 }
 
 // Down stops runners.
+//
+// Runners are grouped by host so that each host requires only one SSH connection.
+// All host groups are stopped concurrently, reducing wall-clock time from
+// O(N_hosts × SSH_latency) to O(SSH_latency) for multi-host configurations.
 func Down(w io.Writer, cfg *config.Config, mgr *runner.Manager, filterHost, filterRepo string, nameArgs []string) error {
 	if err := ResolveHostInfo(w, cfg); err != nil {
 		return err
 	}
 	runners := config.FilterRunners(cfg, filterHost, filterRepo, nameArgs)
-	for _, rc := range runners {
-		hcfg := cfg.Hosts[rc.Host]
+	return runPerHostParallel(w, cfg, runners, func(w io.Writer, h *host.Host, rc config.RunnerConfig) error {
 		fmt.Fprintf(w, "Stopping %s on %s...\n", rc.Name, rc.Host)
-		h, err := ConnectHost(rc.Host, hcfg)
-		if err != nil {
-			return err
-		}
-		if err := mgr.Stop(h, rc); err != nil {
-			h.Close()
-			return err
-		}
-		h.Close()
-	}
-	return nil
+		return mgr.Stop(h, rc)
+	})
 }
 
 // Restart stops then starts runners.
+//
+// Runners are grouped by host so that each host requires only one SSH connection.
+// All host groups are restarted concurrently, reducing wall-clock time from
+// O(N_hosts × SSH_latency) to O(SSH_latency) for multi-host configurations.
 func Restart(w io.Writer, cfg *config.Config, mgr *runner.Manager, filterHost, filterRepo string, nameArgs []string) error {
 	if err := ResolveHostInfo(w, cfg); err != nil {
 		return err
 	}
 	runners := config.FilterRunners(cfg, filterHost, filterRepo, nameArgs)
-	for _, rc := range runners {
-		hcfg := cfg.Hosts[rc.Host]
+	return runPerHostParallel(w, cfg, runners, func(w io.Writer, h *host.Host, rc config.RunnerConfig) error {
 		fmt.Fprintf(w, "Restarting %s on %s...\n", rc.Name, rc.Host)
-		h, err := ConnectHost(rc.Host, hcfg)
-		if err != nil {
-			return err
-		}
 		_ = mgr.Stop(h, rc)
-		if err := mgr.Start(h, rc); err != nil {
-			h.Close()
-			return err
-		}
-		h.Close()
-	}
-	return nil
+		return mgr.Start(h, rc)
+	})
 }
 
 // Update removes, sets up, and starts runners again.
+//
+// Runners are grouped by host so that each host requires only one SSH connection.
+// All host groups are updated concurrently, reducing wall-clock time from
+// O(N_hosts × SSH_latency) to O(SSH_latency) for multi-host configurations.
 func Update(w io.Writer, cfg *config.Config, mgr *runner.Manager, filterHost, filterRepo string, nameArgs []string) error {
 	if err := ResolveHostInfo(w, cfg); err != nil {
 		return err
 	}
 	runners := config.FilterRunners(cfg, filterHost, filterRepo, nameArgs)
-	for _, rc := range runners {
-		hcfg := cfg.Hosts[rc.Host]
+	if err := runPerHostParallel(w, cfg, runners, func(w io.Writer, h *host.Host, rc config.RunnerConfig) error {
 		fmt.Fprintf(w, "Updating %s on %s...\n", rc.Name, rc.Host)
-		h, err := ConnectHost(rc.Host, hcfg)
-		if err != nil {
-			return err
-		}
 		_ = mgr.Remove(h, rc)
 		if err := mgr.Setup(h, rc); err != nil {
-			h.Close()
 			return err
 		}
-		if err := mgr.Start(h, rc); err != nil {
-			h.Close()
-			return err
-		}
-		h.Close()
+		return mgr.Start(h, rc)
+	}); err != nil {
+		return err
 	}
 
 	fmt.Fprintln(w, "\nUpdate complete.")
