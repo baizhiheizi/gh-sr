@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/an-lee/gh-sr/internal/agentic"
 	"github.com/an-lee/gh-sr/internal/autostart"
 	"github.com/an-lee/gh-sr/internal/config"
 	"github.com/an-lee/gh-sr/internal/host"
@@ -275,14 +276,41 @@ func (m *Manager) setupNative(h *host.Host, rc config.RunnerConfig) error {
 	// For agentic runners, install gh-aw CLI on the host.
 	// gh-aw (GitHub Agentic Workflows) uses Docker on the host for AWF sandbox containers.
 	if rc.IsAgentic() && h.OS == "linux" {
-		// Hard prerequisite check: fail fast before modifying the host.
-		if err := m.validateAgenticPrereqs(h, rc); err != nil {
-			return fmt.Errorf("agentic prerequisite check failed: %w", err)
+		// Collect all prerequisite failures instead of failing on the first one.
+		// This lets us attempt auto-fix for some issues and report all problems at the end.
+		prereqFailures := agentic.ValidatePrereqs(h)
+
+		// Separate blocking errors from warnings
+		var blockingFailures []agentic.PrereqFailure
+		for _, f := range prereqFailures {
+			if f.Severity == agentic.SeverityError {
+				blockingFailures = append(blockingFailures, f)
+			}
 		}
 
-		// Pre-flight check: warn if the runner user lacks passwordless sudo.
-		// gh-aw requires sudo to manage iptables (DOCKER-USER chain) and awf-net bridge.
-		warnAgenticSudoPrereqs(h, m.out(), rc.Name)
+		// If there are blocking failures that we cannot auto-fix, fail immediately.
+		// These are things like "not Linux" or "Docker not installed at all".
+		if len(blockingFailures) > 0 {
+			fmt.Fprintf(m.out(), "  %s: agentic prerequisites have blocking failures:\n", rc.Name)
+			for _, f := range blockingFailures {
+				fmt.Fprintf(m.out(), "  %s:   - %s\n", rc.Name, f.Message)
+			}
+			fmt.Fprintf(m.out(), "\n%s\n", agentic.FormatAllRemediations(blockingFailures))
+			return fmt.Errorf("agentic prerequisite check failed: %d blocking failure(s)", len(blockingFailures))
+		}
+
+		// Attempt auto-fix for non-blocking issues (sudo for iptables, RUNNER_TEMP).
+		// Set up passwordless sudo for iptables if missing.
+		if err := m.setupAgenticSudoConfigure(h, rc.Name); err != nil {
+			fmt.Fprintf(m.out(), "  %s: warning: could not configure passwordless sudo for iptables: %v\n", rc.Name, err)
+		}
+
+		// Set RUNNER_TEMP if wrong or unset.
+		for _, instName := range rc.InstanceNames() {
+			if err := m.setupRunnerTemp(h, instName); err != nil {
+				fmt.Fprintf(m.out(), "  %s: warning: could not configure RUNNER_TEMP: %v\n", instName, err)
+			}
+		}
 
 		// Clean up zombie Docker resources from previously crashed gh-aw jobs.
 		// If a job crashes, orphaned gh-aw containers and networks block the next job.
@@ -396,6 +424,20 @@ echo "cleanup done"
 				}
 				fmt.Fprintf(m.out(), "  %s: pulled %s: %s\n", rc.Name, img, statusLine)
 			}
+		}
+
+		// Report any remaining unfixed prerequisite failures (warnings only at this point).
+		// We only report failures that were NOT auto-fixed. The setupAgenticSudoConfigure
+		// and setupRunnerTemp functions already output success/failure messages, so we
+		// don't re-report them here if they succeeded.
+		var remainingWarnings []agentic.PrereqFailure
+		for _, f := range prereqFailures {
+			if f.Severity == agentic.SeverityWarning {
+				remainingWarnings = append(remainingWarnings, f)
+			}
+		}
+		if len(remainingWarnings) > 0 {
+			fmt.Fprintf(m.out(), "\n%s\n", agentic.FormatAllRemediations(remainingWarnings))
 		}
 	}
 

@@ -233,3 +233,121 @@ func (m *Manager) verifyAgenticDNS(h *host.Host) error {
 	}
 	return nil
 }
+
+// setupAgenticSudoConfigure sets up passwordless sudo for iptables if missing.
+// Idempotent: safe to re-run. Returns nil if already configured or if running as root.
+func (m *Manager) setupAgenticSudoConfigure(h *host.Host, runnerName string) error {
+	uid, err := h.Run(`id -u`)
+	if err != nil {
+		return fmt.Errorf("checking user id: %w", err)
+	}
+	if strings.TrimSpace(uid) == "0" {
+		// Running as root, no sudo needed
+		return nil
+	}
+
+	// Check if already configured
+	out, err := h.Run(`sudo -n iptables -L DOCKER-USER >/dev/null 2>&1 && echo ok || echo no`)
+	if err == nil && strings.TrimSpace(out) == "ok" {
+		fmt.Fprintf(m.out(), "  %s: passwordless sudo for iptables already configured\n", runnerName)
+		return nil
+	}
+
+	// Get username
+	userName, err := h.Run(`id -un`)
+	if err != nil {
+		return fmt.Errorf("getting username: %w", err)
+	}
+	userName = strings.TrimSpace(userName)
+
+	fmt.Fprintf(m.out(), "  %s: configuring passwordless sudo for iptables...\n", runnerName)
+
+	setupScript := linuxElevatePrelude + fmt.Sprintf(`
+SUDOERS_FILE="/etc/sudoers.d/gh-sr-iptables"
+RULE="%s ALL=(ALL) NOPASSWD:/usr/sbin/iptables,/usr/sbin/ip6tables"
+if [ ! -f "$SUDOERS_FILE" ]; then
+    echo "$RULE" | $SUDO tee "$SUDOERS_FILE" > /dev/null
+    $SUDO chmod 0440 "$SUDOERS_FILE"
+    echo "sudoers rule created"
+else
+    # Check if our rule is already present
+    if grep -qF "NOPASSWD:/usr/sbin/iptables" "$SUDOERS_FILE" 2>/dev/null; then
+        echo "sudoers rule already present"
+    else
+        echo "$RULE" | $SUDO tee -a "$SUDOERS_FILE" > /dev/null
+        echo "sudoers rule appended"
+    fi
+fi`, userName)
+
+	out, err = h.Run(setupScript)
+	if err != nil {
+		return fmt.Errorf("writing sudoers rule: %w", err)
+	}
+
+	// Verify it works
+	verifyOut, verifyErr := h.Run(`sudo -n iptables -L DOCKER-USER >/dev/null 2>&1 && echo ok || echo no`)
+	if verifyErr != nil || strings.TrimSpace(verifyOut) != "ok" {
+		return fmt.Errorf("sudoers rule written but passwordless sudo for iptables still not working")
+	}
+
+	fmt.Fprintf(m.out(), "  %s: passwordless sudo for iptables configured\n", runnerName)
+	return nil
+}
+
+// setupRunnerTemp ensures RUNNER_TEMP is set to a non-/tmp path in the runner's .env file.
+// gh-aw writes its runtime tree to /tmp/gh-aw, which conflicts with RUNNER_TEMP=/tmp.
+func (m *Manager) setupRunnerTemp(h *host.Host, instanceName string) error {
+	runnerDir := h.RunnerDir(instanceName)
+	envFile := runnerDir + "/.env"
+
+	// Check current value
+	out, err := h.Run(`echo "${RUNNER_TEMP:-}"`)
+	if err != nil {
+		return fmt.Errorf("checking RUNNER_TEMP: %w", err)
+	}
+	currentVal := strings.TrimSpace(out)
+
+	// Determine the correct path
+	// Use the runner work directory as the base
+	correctTemp := runnerDir + "/_work/_temp"
+
+	// If already set to something other than /tmp, it's fine
+	if currentVal != "" && currentVal != "/tmp" {
+		fmt.Fprintf(m.out(), "  %s: RUNNER_TEMP=%s (already configured)\n", instanceName, currentVal)
+		return nil
+	}
+
+	fmt.Fprintf(m.out(), "  %s: configuring RUNNER_TEMP (currently: %s)...\n", instanceName, func() string {
+		if currentVal == "" {
+			return "<unset>"
+		}
+		return currentVal
+	}())
+
+	// Ensure the directory exists
+	mkdirScript := fmt.Sprintf(`mkdir -p %s`, correctTemp)
+	if _, err := h.Run(mkdirScript); err != nil {
+		return fmt.Errorf("creating RUNNER_TEMP directory: %w", err)
+	}
+
+	// Write or update .env file
+	setupScript := fmt.Sprintf(`
+ENV_FILE="%s"
+CORRECT_TEMP="%s"
+# Remove any existing RUNNER_TEMP line
+if [ -f "$ENV_FILE" ]; then
+    grep -v "^RUNNER_TEMP=" "$ENV_FILE" > "${ENV_FILE}.tmp" 2>/dev/null || true
+    mv "${ENV_FILE}.tmp" "$ENV_FILE"
+fi
+# Append the correct value
+echo "RUNNER_TEMP=$CORRECT_TEMP" >> "$ENV_FILE"
+echo "RUNNER_TEMP configured to $CORRECT_TEMP"`, envFile, correctTemp)
+
+	out, err = h.Run(setupScript)
+	if err != nil {
+		return fmt.Errorf("configuring RUNNER_TEMP: %w", err)
+	}
+
+	fmt.Fprintf(m.out(), "  %s: RUNNER_TEMP configured to %s\n", instanceName, correctTemp)
+	return nil
+}

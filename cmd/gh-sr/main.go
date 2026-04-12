@@ -420,6 +420,7 @@ func configCmd() *cobra.Command {
 
 func doctorCmd() *cobra.Command {
 	var strict bool
+	var fix bool
 	cmd := &cobra.Command{
 		Use:   "doctor",
 		Short: "Check config, GitHub API access, and host prerequisites",
@@ -447,6 +448,19 @@ func doctorCmd() *cobra.Command {
 			}
 
 			res := doctor.Run(cmd.OutOrStdout(), cfgPath, envPath, cfg, cfgErr, gh, filterHost, filterRepo, strict)
+			if fix && res.Fail > 0 {
+				fmt.Fprintln(cmd.OutOrStdout(), "\n--- Running `gh sr setup` to attempt fixes ---")
+				// Re-run setup for affected runners - this will auto-fix what it can.
+				// The setup command already handles agentic prereq auto-fix internally.
+				mgr, err := newManager(cfg, cmd.OutOrStdout())
+				if err != nil {
+					fmt.Fprintf(cmd.OutOrStdout(), "\ncannot create runner manager: %v\n", err)
+				} else if err := ops.Setup(cmd.OutOrStdout(), cfg, mgr, filterHost, filterRepo, args); err != nil {
+					fmt.Fprintf(cmd.OutOrStdout(), "\nfix attempt completed with errors: %v\n", err)
+				} else {
+					fmt.Fprintln(cmd.OutOrStdout(), "\nfix attempt completed successfully.")
+				}
+			}
 			if code := doctor.ExitCode(res, strict); code != 0 {
 				os.Exit(code)
 			}
@@ -454,6 +468,7 @@ func doctorCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&strict, "strict", false, "non-zero exit if any check is WARN (default: only FAIL fails the run)")
+	cmd.Flags().BoolVar(&fix, "fix", false, "automatically attempt to fix failures by re-running setup")
 	return cmd
 }
 
