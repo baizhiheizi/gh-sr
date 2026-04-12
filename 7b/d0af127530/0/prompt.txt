@@ -1,0 +1,1 @@
+@docs/content/guides/agentic-workflows.md Based on the document, review and refactor `gh sr setup` and `gh sr check`. We should setup all the prequirsties in `gh sr setup`, if we cannot finish it, we should display detaied help text to guide user to manually set it up.
