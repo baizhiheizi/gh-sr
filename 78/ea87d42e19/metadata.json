@@ -1,0 +1,32 @@
+{
+  "cli_version": "dev",
+  "checkpoint_id": "78ea87d42e19",
+  "strategy": "manual-commit",
+  "branch": "main",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "cmd/gh-sr/main.go",
+    "internal/config/mutate.go",
+    "internal/ops/ops.go",
+    "internal/runner/actions.runner.service.template",
+    "internal/runner/assets.go",
+    "internal/runner/native.go",
+    "internal/runner/runner.go",
+    "internal/runner/svc.sh"
+  ],
+  "sessions": [
+    {
+      "metadata": "/78/ea87d42e19/0/metadata.json",
+      "transcript": "/78/ea87d42e19/0/full.jsonl",
+      "content_hash": "/78/ea87d42e19/0/content_hash.txt",
+      "prompt": "/78/ea87d42e19/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 3767412,
+    "cache_creation_tokens": 90892,
+    "cache_read_tokens": 1808502,
+    "output_tokens": 22733,
+    "api_call_count": 66
+  }
+}

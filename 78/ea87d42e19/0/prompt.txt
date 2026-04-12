@@ -1,0 +1,1 @@
+Review the `gh sr up` command, we should use the built-in `svc.sh` to install/start/stop/status/uninstall the runner, make it stable. And also, we need to add a `gh sr remove` command to remove a runner.

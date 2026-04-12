@@ -1,0 +1,43 @@
+{
+  "cli_version": "dev",
+  "checkpoint_id": "78ea87d42e19",
+  "session_id": "8f81a12d-3fc6-4f2a-a94f-23203829825c",
+  "strategy": "manual-commit",
+  "created_at": "2026-04-12T22:47:30.001802556Z",
+  "branch": "main",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "cmd/gh-sr/main.go",
+    "internal/config/mutate.go",
+    "internal/ops/ops.go",
+    "internal/runner/actions.runner.service.template",
+    "internal/runner/assets.go",
+    "internal/runner/native.go",
+    "internal/runner/runner.go",
+    "internal/runner/svc.sh"
+  ],
+  "agent": "Claude Code",
+  "turn_id": "4c1511a747ea",
+  "token_usage": {
+    "input_tokens": 3767412,
+    "cache_creation_tokens": 90892,
+    "cache_read_tokens": 1808502,
+    "output_tokens": 22733,
+    "api_call_count": 66
+  },
+  "session_metrics": {
+    "turn_count": 1
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-04-12T22:47:29.649960371Z",
+    "agent_lines": 418,
+    "agent_removed": 0,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 418,
+    "total_lines_changed": 418,
+    "agent_percentage": 100,
+    "metric_version": 2
+  }
+}
