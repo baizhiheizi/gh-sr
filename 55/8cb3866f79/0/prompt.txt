@@ -1,0 +1,17 @@
+When `gh sr setup`, does `gh sr` automatically check and setup all the prerequisites needed?
+
+---
+
+I don't think `gh auth login` is needed. Do some research in https://github.com/github/gh-aw
+
+---
+
+Why WARN it? We does not need it.
+
+---
+
+Remove the auth check
+
+---
+
+Why we need `docker in docker`? @docs/content/guides/agentic-workflows.md never mention it

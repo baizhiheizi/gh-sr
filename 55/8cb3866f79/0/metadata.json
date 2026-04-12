@@ -1,0 +1,40 @@
+{
+  "cli_version": "dev",
+  "checkpoint_id": "558cb3866f79",
+  "session_id": "64f39147-afa4-4c87-8312-b102659a9e1a",
+  "strategy": "manual-commit",
+  "created_at": "2026-04-12T22:09:09.999682781Z",
+  "branch": "main",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "cmd/gh-sr/main.go",
+    "docs/content/guides/agentic-workflows.md",
+    "internal/doctor/doctor.go",
+    "internal/tui/dashboard.go"
+  ],
+  "agent": "Claude Code",
+  "model": "MiniMax-M2.7",
+  "turn_id": "790ed3234bb1",
+  "token_usage": {
+    "input_tokens": 1291905,
+    "cache_creation_tokens": 172382,
+    "cache_read_tokens": 1176990,
+    "output_tokens": 7629,
+    "api_call_count": 41
+  },
+  "session_metrics": {
+    "turn_count": 5
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-04-12T22:09:09.754503447Z",
+    "agent_lines": 15,
+    "agent_removed": 19,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 15,
+    "total_lines_changed": 34,
+    "agent_percentage": 100,
+    "metric_version": 2
+  }
+}
