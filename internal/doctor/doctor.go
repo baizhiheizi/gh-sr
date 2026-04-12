@@ -384,6 +384,15 @@ func checkAgenticPrereqs(w io.Writer, hostName string, h *host.Host, r *Result) 
 		printLine(w, sevOK, hostName, fmt.Sprintf("agentic: docker compose %s", strings.TrimSpace(out)))
 	}
 
+	// Check Docker-in-Docker: MCP gateway spawns containers via Docker socket.
+	out, err = h.Run(`docker run --rm -v /var/run/docker.sock:/var/run/docker.sock docker:cli docker ps 2>/dev/null`)
+	if err != nil {
+		printLine(w, sevFail, hostName, "agentic: cannot spawn containers via Docker socket; MCP gateway will fail to launch (see README §4c)")
+		r.Fail++
+	} else {
+		printLine(w, sevOK, hostName, "agentic: can spawn containers via Docker socket (DinD)")
+	}
+
 	// Check iptables is available.
 	out, err = h.Run(`command -v iptables >/dev/null 2>&1 && echo ok || echo missing`)
 	if err != nil || strings.TrimSpace(out) != "ok" {
@@ -461,5 +470,16 @@ func checkAgenticPrereqs(w io.Writer, hostName string, h *host.Host, r *Result) 
 		r.Fail++
 	} else {
 		printLine(w, sevOK, hostName, "agentic: external DNS resolves inside containers")
+	}
+
+	// Check container → host TCP reachability via host.docker.internal.
+	// The MCP gateway listens on the host; agent containers must be able to TCP-connect to it.
+	tcpCheck, err := h.Run(`docker run --rm --add-host=host.docker.internal:host-gateway alpine sh -c "(echo > /dev/tcp/host.docker.internal/80) 2>/dev/null && echo ok || echo failed" 2>/dev/null`)
+	tcpCheck = strings.TrimSpace(tcpCheck)
+	if err != nil || tcpCheck == "failed" {
+		printLine(w, sevFail, hostName, "agentic: container cannot TCP-connect to host via host.docker.internal:80; MCP gateway will be unreachable (see README §4b)")
+		r.Fail++
+	} else {
+		printLine(w, sevOK, hostName, "agentic: container can reach host via host.docker.internal:80")
 	}
 }
