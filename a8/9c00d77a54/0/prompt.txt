@@ -1,0 +1,5 @@
+Review the logs when `gh sr setup` and fix it.
+
+  rune-agentic-1: warning: failed to install svc.sh service: running "cd $HOME/.gh-sr/runners/rune-agentic-1 && SUDO=''\nif [ \"$(id -u)\" -ne 0 ]; then\n\tif command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then\n\t\tSUDO='sudo -n'\n\telse\n\t\techo 'gh sr: remote Linux commands need root SSH or passwordless sudo (non-interactive); SSH has no TTY for sudo passwords. Use NOPASSWD, connect as root, or install software manually. Run: gh sr doctor' >&2\n\t\texit 1\n\tfi\nfi ./svc.sh install": Process exited with status 2
+stderr: bash: -c: line 9: syntax error near unexpected token `./svc.sh'
+bash: -c: line 9: `fi ./svc.sh install'
