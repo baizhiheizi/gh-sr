@@ -72,7 +72,7 @@ func (m *Manager) Start(h *host.Host, rc config.RunnerConfig) error {
 		// Prefer svc.sh for Linux if it's deployed
 		if h.OS == "linux" && svcShPresent(h, name) {
 			dir := h.RunnerDir(name)
-			cmd := fmt.Sprintf("cd %s && %s ./svc.sh start", dir, strings.TrimSpace(linuxElevatePrelude))
+			cmd := fmt.Sprintf("cd %s && %s\n./svc.sh start", dir, strings.TrimSpace(linuxElevatePrelude))
 			out, err := h.Run(cmd)
 			if err != nil {
 				return fmt.Errorf("starting %s via svc.sh: %w", name, err)
@@ -118,7 +118,7 @@ func (m *Manager) Stop(h *host.Host, rc config.RunnerConfig) error {
 		// Prefer svc.sh for Linux if it's deployed
 		if h.OS == "linux" && svcShPresent(h, name) {
 			dir := h.RunnerDir(name)
-			cmd := fmt.Sprintf("cd %s && %s ./svc.sh stop", dir, strings.TrimSpace(linuxElevatePrelude))
+			cmd := fmt.Sprintf("cd %s && %s\n./svc.sh stop", dir, strings.TrimSpace(linuxElevatePrelude))
 			out, err := h.Run(cmd)
 			if err != nil {
 				return fmt.Errorf("stopping %s via svc.sh: %w", name, err)

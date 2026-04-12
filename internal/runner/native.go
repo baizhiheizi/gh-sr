@@ -328,7 +328,7 @@ func (m *Manager) setupNative(h *host.Host, rc config.RunnerConfig) error {
 			}
 
 			// Install svc.sh as a systemd service (requires root)
-			installSvcCmd := fmt.Sprintf("cd %s && %s ./svc.sh install", dir, strings.TrimSpace(linuxElevatePrelude))
+			installSvcCmd := fmt.Sprintf("cd %s && %s\n./svc.sh install", dir, strings.TrimSpace(linuxElevatePrelude))
 			if _, err := h.Run(installSvcCmd); err != nil {
 				fmt.Fprintf(m.out(), "  %s: warning: failed to install svc.sh service: %v\n", name, err)
 			}
@@ -636,7 +636,7 @@ func (m *Manager) removeNative(h *host.Host, rc config.RunnerConfig, instanceNam
 
 	// Uninstall svc.sh service if present (before removing files)
 	if h.OS == "linux" && svcShPresent(h, instanceName) {
-		uninstallSvcCmd := fmt.Sprintf("cd %s && %s ./svc.sh uninstall 2>/dev/null || true", dir, strings.TrimSpace(linuxElevatePrelude))
+		uninstallSvcCmd := fmt.Sprintf("cd %s && %s\n./svc.sh uninstall 2>/dev/null || true", dir, strings.TrimSpace(linuxElevatePrelude))
 		h.Run(uninstallSvcCmd) // Ignore errors - we're removing anyway
 	}
 
