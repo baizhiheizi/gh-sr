@@ -81,6 +81,7 @@ With no subcommand, gh sr opens the interactive dashboard on a terminal; use gh 
 		logsCmd(),
 		cleanupCmd(),
 		updateCmd(),
+		removeCmd(),
 		serviceCmd(),
 		configCmd(),
 		dashboardCmd(),
@@ -739,6 +740,29 @@ func updateCmd() *cobra.Command {
 				return err
 			}
 			return ops.Update(cmd.OutOrStdout(), cfg, mgr, filterHost, filterRepo, args)
+		},
+	}
+}
+
+func removeCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "remove [runner-names...]",
+		Short: "Remove runners from hosts and config (deregisters from GitHub)",
+		Long: `Removes each runner from its host, deregisters it from GitHub, and removes
+the runner entry from ~/.gh-sr/runners.yml. Unlike gh sr update, this does not
+re-setup the runner afterward.
+
+Use --host and/or --repo to filter which runners to remove.` + linuxSetupPrivilegesHelp,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, err := loadConfig()
+			if err != nil {
+				return err
+			}
+			mgr, err := newManager(cfg, cmd.OutOrStdout())
+			if err != nil {
+				return err
+			}
+			return ops.Remove(cmd.OutOrStdout(), cfg, mgr, filterHost, filterRepo, args)
 		},
 	}
 }

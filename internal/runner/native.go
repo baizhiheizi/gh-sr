@@ -1,6 +1,7 @@
 package runner
 
 import (
+	"encoding/base64"
 	"fmt"
 	"strings"
 
@@ -31,6 +32,41 @@ func NativeRunnerConfigPresent(h *host.Host, instanceName string) (bool, error) 
 		return false, err
 	}
 	return strings.TrimSpace(out) == "yes", nil
+}
+
+// svcShPresent reports whether svc.sh is deployed in the runner directory.
+func svcShPresent(h *host.Host, instanceName string) bool {
+	dir := h.RunnerDir(instanceName)
+	if h.OS == "windows" {
+		return false
+	}
+	out, _ := h.Run(fmt.Sprintf("test -f %s/svc.sh && echo yes || echo no", dir))
+	return strings.TrimSpace(out) == "yes"
+}
+
+// writeRemoteBytes writes data to a remote path using base64 encoding.
+func writeRemoteBytes(h *host.Host, remotePath string, data []byte) error {
+	if h.OS == "windows" {
+		b64 := base64.StdEncoding.EncodeToString(data)
+		ps := fmt.Sprintf(
+			"$p = %s; $d = [Convert]::FromBase64String(%s); $dir = Split-Path -Parent $p; New-Item -ItemType Directory -Force -Path $dir | Out-Null; [IO.File]::WriteAllBytes($p, $d)",
+			powerShellSingleQuoted(remotePath),
+			powerShellSingleQuoted(b64),
+		)
+		_, err := h.RunShell(ps)
+		return err
+	}
+	b64 := base64.StdEncoding.EncodeToString(data)
+	qpath := posixSingleQuote(remotePath)
+	cmd := fmt.Sprintf(`set -e; d=$(dirname %s); mkdir -p "$d"; printf '%%s' %s | base64 -d > %s`,
+		qpath, posixSingleQuote(b64), qpath)
+	_, err := h.Run(cmd)
+	return err
+}
+
+// posixSingleQuote escapes a string for safe use inside single quotes in POSIX shell.
+func posixSingleQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'"
 }
 
 func runnerTarballURL(version, osName, arch string) string {
@@ -271,6 +307,32 @@ func (m *Manager) setupNative(h *host.Host, rc config.RunnerConfig) error {
 		}
 
 		fmt.Fprintf(m.out(), "  %s: configured\n", name)
+
+		// Deploy svc.sh and runsvc.sh for systemd-based service management on Linux.
+		if h.OS == "linux" {
+			// Deploy svc.sh to the runner directory
+			if err := writeRemoteBytes(h, dir+"/svc.sh", []byte(SVCShContent)); err != nil {
+				fmt.Fprintf(m.out(), "  %s: warning: failed to deploy svc.sh: %v\n", name, err)
+			} else {
+				h.Run(fmt.Sprintf("chmod +x %s/svc.sh", dir))
+			}
+
+			// Deploy the systemd service template
+			if err := writeRemoteBytes(h, dir+"/bin/actions.runner.service.template", []byte(ServiceTemplateContent)); err != nil {
+				fmt.Fprintf(m.out(), "  %s: warning: failed to deploy service template: %v\n", name, err)
+			}
+
+			// Copy runsvc.sh from the runner package to the runner root (runsvc.sh handles signals gracefully)
+			if _, err := h.Run(fmt.Sprintf("cp %s/bin/runsvc.sh %s/runsvc.sh && chmod +x %s/runsvc.sh", dir, dir, dir)); err != nil {
+				fmt.Fprintf(m.out(), "  %s: warning: failed to copy runsvc.sh: %v\n", name, err)
+			}
+
+			// Install svc.sh as a systemd service (requires root)
+			installSvcCmd := fmt.Sprintf("cd %s && %s ./svc.sh install", dir, strings.TrimSpace(linuxElevatePrelude))
+			if _, err := h.Run(installSvcCmd); err != nil {
+				fmt.Fprintf(m.out(), "  %s: warning: failed to install svc.sh service: %v\n", name, err)
+			}
+		}
 	}
 
 	// For agentic runners, install gh-aw CLI on the host.
@@ -571,6 +633,12 @@ func (m *Manager) stopNative(h *host.Host, instanceName string) error {
 
 func (m *Manager) removeNative(h *host.Host, rc config.RunnerConfig, instanceName string) error {
 	dir := h.RunnerDir(instanceName)
+
+	// Uninstall svc.sh service if present (before removing files)
+	if h.OS == "linux" && svcShPresent(h, instanceName) {
+		uninstallSvcCmd := fmt.Sprintf("cd %s && %s ./svc.sh uninstall 2>/dev/null || true", dir, strings.TrimSpace(linuxElevatePrelude))
+		h.Run(uninstallSvcCmd) // Ignore errors - we're removing anyway
+	}
 
 	_ = m.stopNative(h, instanceName)
 
