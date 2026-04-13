@@ -10,19 +10,19 @@
 - **Format**: `gofmt -w .`
 - ⚠️ `go.mod` requires go 1.25.0; sandbox has 1.24.13 and network is firewalled. Use CI for build/test validation.
 - CI: `.github/workflows/ci.yml` runs vet + test + bench (bench added in PR #18, merged)
-- safeoutputs/github MCP: call via HTTP at http://host.docker.internal:80/mcp/{safeoutputs,github}; auth from /home/runner/.copilot/mcp-config.json; requires Mcp-Session-Id header (from initialize response)
 
 ## Performance Notes
 
 - `CollectHostMetrics` in `ops/metrics.go`: already parallelized with goroutines ✅
 - `EnrichWithGitHubStatus` in `runner/runner.go`: already parallelized with goroutines ✅
 - `ListRunnersScoped` was single-page (GitHub defaults to 30/page, max 100). Fixed in PR #9 to paginate all results. ✅ MERGED
-- `CollectStatus` in `ops/ops.go`: parallelized in PR #15 — groups by host, one SSH connection per host, concurrent WaitGroup. ✅
-- `ResolveHostInfo` in `ops/detect.go`: parallelized in PR #15 — concurrent host detection with WaitGroup. ✅
-- Docker mode removed from codebase — `EffectiveMode` always returns "native". ResolveModes/docker probing is N/A.
-- `Up`, `Down`, `Restart`, `Update` in `ops/ops.go`: parallelized in PR #20 — group by host, one SSH connection per host, concurrent WaitGroup via `runPerHostParallel` helper. Pending review.
+- `CollectStatus` in `ops/ops.go`: parallelized in PR #15 — groups by host, one SSH connection per host, concurrent WaitGroup. ✅ MERGED
+- `ResolveHostInfo` in `ops/detect.go`: parallelized in PR #15 — concurrent host detection with WaitGroup. ✅ MERGED
+- Docker mode removed from codebase — `EffectiveMode` always returns "native".
+- `Up`, `Down`, `Restart`, `Update` in `ops/ops.go`: parallelized in PR #20 — group by host, one SSH connection per host, concurrent WaitGroup via `runPerHostParallel` helper. ✅ MERGED 2026-04-13.
 - `Setup` in `ops/ops.go`: left sequential (per-host dedup via hostsDone; no parallel opportunity).
-- Doctor host checks in `doctor/doctor.go` ~L140: sequential per host. Low priority (not a hot path).
+- `Remove` in `ops/ops.go`: sequential. Parallelization blocked by `config.RemoveRunner` file mutations (not concurrency-safe without structural changes). Low value: Remove is a rare operation.
+- Doctor host checks in `doctor/doctor.go`: sequential per host. Low priority (diagnostic tool, not hot path).
 
 ## Optimization Backlog
 
@@ -31,8 +31,9 @@
 3. ✅ **CollectStatus parallelization** (done - PR #15 MERGED): group by host + WaitGroup
 4. ✅ **ResolveHostInfo parallelization** (done - PR #15 MERGED): concurrent host detection
 5. ✅ **CI benchmark job** (done - PR #18 MERGED): captures benchmark output as artifacts per commit
-6. **Up/Down/Restart/Update parallelization**: PR #20 pending — group-by-host pattern, O(N×SSH) → O(SSH); uses new `runPerHostParallel` + `lockedWriter` helpers.
+6. ✅ **Up/Down/Restart/Update parallelization** (done - PR #20 MERGED 2026-04-13): group-by-host pattern, O(N×SSH) → O(SSH); `lockedWriter` + `runPerHostParallel` helpers.
 7. **Doctor parallelization**: host checks in `doctor.go` sequential. Low priority (not a hot path).
+8. **Remove parallelization**: blocked by config mutation concerns. Low value (rare operation).
 
 ## Work In Progress
 
@@ -44,15 +45,15 @@
 - 2026-04-09: PR #13 — add Go benchmarks + `make bench`. **MERGED 2026-04-11.**
 - 2026-04-10: PR #15 — parallelize `CollectStatus` + `ResolveHostInfo`. **MERGED 2026-04-11.**
 - 2026-04-11: PR #17 — CI benchmark job. **MERGED as PR #18.**
-- 2026-04-12: PR #20 — parallelize `Up`/`Down`/`Restart`/`Update` via `runPerHostParallel`. Pending review.
+- 2026-04-12: PR #20 — parallelize `Up`/`Down`/`Restart`/`Update` via `runPerHostParallel`. **MERGED 2026-04-13.**
 
 ## Backlog Cursor
 
-Last checked: Tasks 1, 2, 3, 7 on 2026-04-12. Next run: Tasks 4, 5, 6, 7 (maintain PR #20, check for performance issues to comment on, explore measurement infrastructure).
+Last checked: Tasks 4, 5, 6, 7 on 2026-04-13. Next run: Tasks 1, 2, 3, 7 — look for new opportunities (all known parallelization done; consider Doctor parallelization or new areas).
 
 ## Last Run
 
-2026-04-12 12:27 UTC - Tasks 1, 2, 3, 7 - Created PR #20 (parallelize Up/Down/Restart/Update) - Run: https://github.com/an-lee/gh-sr/actions/runs/24306715880
+2026-04-13 12:40 UTC - Tasks 4, 5, 6, 7 - PR #20 merged — no pending PRs, no performance issues — all major parallelization work complete. Run: https://github.com/an-lee/gh-sr/actions/runs/24343782934
 
 ## Previously Checked-Off Items by Maintainer
 
