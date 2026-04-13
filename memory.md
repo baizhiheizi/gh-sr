@@ -12,7 +12,7 @@
 - `go.mod` requires `go 1.25.0` but Go proxy is blocked in the agent sandbox (Forbidden).
 - Only `go 1.24.13` is available locally; GOTOOLCHAIN=local fails with version mismatch.
 - **Tests cannot be run in this sandbox** — infrastructure limitation. Note in PRs as "Infrastructure failure".
-- **safeoutputs MCP tools unavailable in ALL runs so far** (create_pull_request, update_issue, add_comment, noop, missing_tool all return "tool does not exist"). This is a persistent environment issue across multiple runs (2026-04-11, 2026-04-12).
+- safeoutputs tools were unavailable in runs 2026-04-11 and 2026-04-12; now available as of 2026-04-13.
 
 ## Testing Notes
 
@@ -22,14 +22,15 @@
 - Integration with GitHub API mocked via custom `httptest.Server`
 - Config tests use `t.TempDir()` for temp config files
 - Pattern: `*_test.go` in same package (white-box testing)
+- Table-driven tests are the preferred pattern in this repo
 
 ## Testing Landscape
 
 ### Well-tested packages
 - `internal/config`: extensive tests (validate, load, filter, resolve env, ApplyEnvFile)
 - `internal/runner`: tests for github client, enrich status, OS mismatch, docker functions
-- `internal/host`: tests for SSH parsing, PowerShell encoding, metrics, normalizeArch (detect_test.go added 2026-04-12, PR pending), IsLocal, paths, local connection
-- `internal/autostart`: tests for sanitize basic + edge cases (extended 2026-04-12, PR pending) and generate
+- `internal/host`: tests for SSH parsing, PowerShell encoding, metrics, normalizeArch, IsLocal, paths, local connection
+- `internal/autostart`: tests for sanitize (basic + edge cases added 2026-04-13) and generate
 - `internal/doctor`: tests for exit code, uniqueRepos
 - `internal/tui`: status_test.go present
 - `internal/ops`: metrics_test.go (sortedHostNames)
@@ -43,29 +44,23 @@
 1. **ops/metrics.go** — `sortedHostNames` MERGED (PR #8)
 2. **runner/runner.go** — `expectedGitHubRunnerOS` MERGED (PR #8)
 3. **runner/docker.go** — `shellSingleQuote`, `dockerRunnerEntryScript` MERGED (PR #11)
-4. **host/detect.go + autostart/sanitize.go** — edge cases — BRANCH READY: `test-assist/normalizeArch-sanitize-edge-cases` (commit 896d2fc, 2026-04-12). PR NOT YET CREATED (safeoutputs tools unavailable across all runs).
-5. **ops/ops.go** — orchestration functions are integration-heavy; skip unless mock infra added
+4. **host/detect.go** — `normalizeArch` tests — PR SUBMITTED 2026-04-13
+5. **autostart/sanitize.go** — edge cases — PR SUBMITTED 2026-04-13
+6. **ops/ops.go** — orchestration functions are integration-heavy; skip unless mock infra added
 
 ## Task Schedule (Round-Robin)
 
-Last run: 2026-04-12 — Tasks 3 (implement), 7 (BLOCKED by safeoutputs)
-Next run should prioritize: Task 4 (maintain/push pending branch), Task 7
+Last run: 2026-04-13 — Tasks 3 (implement + PR created), 7 (monthly activity updated)
+Next run should prioritize: Task 4 (maintain PRs), Task 2 (identify new opportunities), Task 7
 
-## PENDING FROM LAST RUN
+## Open PRs
 
-- Branch `test-assist/normalizeArch-sanitize-edge-cases` committed (896d2fc) but PR NOT CREATED.
-  Files: `internal/host/detect_test.go` (new), `internal/autostart/sanitize_test.go` (updated)
-  safeoutputs tools unavailable across ALL runs — persistent environment issue.
+- "[Test Improver] Add normalizeArch tests and expand SanitizeInstance edge cases" — submitted 2026-04-13, branch: test-assist/detect-sanitize-edge-cases
 
 ## Completed Work
 
 - PR #8 [MERGED 2026-04-09]: Tests for `expectedGitHubRunnerOS` and `sortedHostNames` pure functions
 - PR #11 [MERGED 2026-04-10]: Tests for `shellSingleQuote`, `dockerRunnerEntryScript`, `docker_pre_setup`
-- PR #12 [UNCERTAIN]: Memory said "created 2026-04-11" but branch did not exist locally in subsequent runs. safeoutputs may have failed silently.
-
-## Open PRs
-
-- None confirmed (safeoutputs unavailable; branch test-assist/normalizeArch-sanitize-edge-cases has commits ready)
 
 ## Maintainer Priorities
 
@@ -73,4 +68,4 @@ No maintainer comments yet.
 
 ## Monthly Activity Issue
 
-- Issue #4: "[Test Improver] Monthly Activity 2026-04" — open
+- Issue #4: "[Test Improver] Monthly Activity 2026-04" — open, updated 2026-04-13
