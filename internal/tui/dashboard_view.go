@@ -16,6 +16,8 @@ func (m *dashboardModel) View() tea.View {
 		return m.viewScroll()
 	case panelConfirmCleanup:
 		return m.viewConfirmCleanup()
+	case panelConfirmRemove:
+		return m.viewConfirmRemove()
 	case panelActionMenu:
 		return m.viewActionMenu()
 	case panelGlobalMenu:
@@ -223,6 +225,16 @@ func (m *dashboardModel) viewFilterList(choices []string, subtitle string) tea.V
 func (m *dashboardModel) viewConfirmCleanup() tea.View {
 	s := titleStyle.Render("Confirm cleanup") + "\n\n" +
 		"  Remove offline self-hosted runners via the GitHub API?\n\n" +
+		helpStyle.Render("  y: confirm   n / esc: cancel") + "\n"
+	v := tea.NewView(s)
+	v.AltScreen = true
+	return v
+}
+
+func (m *dashboardModel) viewConfirmRemove() tea.View {
+	s := titleStyle.Render("Confirm remove") + "\n\n" +
+		fmt.Sprintf("  Remove runner %s? This will deregister it from GitHub,\n  remove it from the host, and delete it from config.\n\n",
+			configVal.Render(m.confirmRemoveInst)) +
 		helpStyle.Render("  y: confirm   n / esc: cancel") + "\n"
 	v := tea.NewView(s)
 	v.AltScreen = true

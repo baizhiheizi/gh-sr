@@ -41,6 +41,7 @@ const (
 	panelFilterHost
 	panelFilterRepo
 	panelConfirmCleanup
+	panelConfirmRemove
 	panelHostMetrics
 	panelScroll
 )
@@ -67,8 +68,9 @@ type dashboardModel struct {
 
 	showHelp bool
 
-	panel      panelKind
-	menuCursor int
+	panel             panelKind
+	menuCursor        int
+	confirmRemoveInst string
 
 	scrollTitle string
 	scrollLines []string
@@ -116,7 +118,7 @@ type hostMetricsMsg struct {
 }
 
 var (
-	actionMenuLabels = []string{"Setup", "Start (up)", "Stop (down)", "Restart", "Update", "View logs"}
+	actionMenuLabels = []string{"Setup", "Start (up)", "Stop (down)", "Restart", "Update", "View logs", "Remove"}
 	globalMenuLabels = []string{
 		"Doctor",
 		"Host metrics (CPU, memory, disk)",
@@ -225,6 +227,23 @@ func (m *dashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, m.runOp("cleanup", func() error {
 					_, err := ops.CleanupOffline(io.Discard, m.cfg, m.mgr)
 					return err
+				})
+			case "n", "esc":
+				m.panel = panelMain
+				m.menuCursor = 0
+			}
+			return m, nil
+		}
+		if m.panel == panelConfirmRemove {
+			switch key {
+			case "y":
+				inst := m.confirmRemoveInst
+				hostF := m.hostForSelectedAction()
+				m.panel = panelMain
+				m.menuCursor = 0
+				m.toast = ""
+				return m, m.runOp("remove", func() error {
+					return ops.Remove(io.Discard, m.cfg, m.mgr, hostF, m.tuiRepoFilter, []string{inst})
 				})
 			case "n", "esc":
 				m.panel = panelMain
@@ -467,6 +486,11 @@ func (m *dashboardModel) updateActionMenu(key string) tea.Cmd {
 				text, err := ops.Logs(cfg, mgr, hostF, inst)
 				return logLoadedMsg{text: text, err: err}
 			}
+		case 6:
+			m.confirmRemoveInst = inst
+			m.panel = panelConfirmRemove
+			m.menuCursor = 0
+			return nil
 		}
 	}
 	return nil
