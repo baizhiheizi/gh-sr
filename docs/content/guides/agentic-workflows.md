@@ -200,9 +200,17 @@ docker run --rm --add-host=host.docker.internal:host-gateway alpine \
 
 If you use `gh sr setup` with `profile: agentic`, this DNS configuration is handled automatically — see [§9 What `profile: agentic` automates](#9-what-profile-agentic-automates) for details.
 
-### 4c. Docker-in-Docker (DinD)
+### 4c. Docker socket access for the MCP Gateway
 
-The MCP gateway must be able to spawn containers using the Docker socket:
+The MCP Gateway (`ghcr.io/github/gh-aw-mcpg`) runs on the host network and spawns MCP server containers via the Docker socket. This is **Docker-outside-of-Docker** (DooD) — the gateway container accesses the **host's** Docker daemon, not an inner Docker daemon.
+
+```
+MCP Gateway container (host network)
+  → /var/run/docker.sock
+  → spawns sibling MCP server containers on the host's network
+```
+
+Verify the socket is accessible from inside a container:
 
 ```bash
 docker run --rm -v /var/run/docker.sock:/var/run/docker.sock docker:cli docker ps

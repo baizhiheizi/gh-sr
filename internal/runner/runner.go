@@ -69,6 +69,19 @@ func (m *Manager) EnsureSetup(h *host.Host, rc config.RunnerConfig) error {
 
 func (m *Manager) Start(h *host.Host, rc config.RunnerConfig) error {
 	for _, name := range rc.InstanceNames() {
+		// Prefer svc.sh for Linux if it's deployed
+		if h.OS == "linux" && svcShPresent(h, name) {
+			dir := h.RunnerDir(name)
+			// Install the systemd unit first if not already installed (.service file is the marker).
+			cmd := fmt.Sprintf("cd %s && %s\nif [ ! -f .service ]; then $SUDO ./svc.sh install; fi\n$SUDO ./svc.sh start", dir, strings.TrimSpace(linuxElevatePrelude))
+			out, err := h.Run(cmd)
+			if err != nil {
+				return fmt.Errorf("starting %s via svc.sh: %w", name, err)
+			}
+			fmt.Fprintf(m.out(), "  %s: %s\n", name, strings.TrimSpace(out))
+			continue
+		}
+
 		kind, derr := autostart.Detect(h, name)
 		if derr != nil {
 			return fmt.Errorf("starting %s: %w", name, derr)
@@ -103,6 +116,18 @@ func (m *Manager) Start(h *host.Host, rc config.RunnerConfig) error {
 
 func (m *Manager) Stop(h *host.Host, rc config.RunnerConfig) error {
 	for _, name := range rc.InstanceNames() {
+		// Prefer svc.sh for Linux if it's deployed
+		if h.OS == "linux" && svcShPresent(h, name) {
+			dir := h.RunnerDir(name)
+			cmd := fmt.Sprintf("cd %s && %s\n$SUDO ./svc.sh stop", dir, strings.TrimSpace(linuxElevatePrelude))
+			out, err := h.Run(cmd)
+			if err != nil {
+				return fmt.Errorf("stopping %s via svc.sh: %w", name, err)
+			}
+			fmt.Fprintf(m.out(), "  %s: %s\n", name, strings.TrimSpace(out))
+			continue
+		}
+
 		kind, derr := autostart.Detect(h, name)
 		if derr != nil {
 			return fmt.Errorf("stopping %s: %w", name, derr)

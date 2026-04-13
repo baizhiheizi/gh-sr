@@ -189,6 +189,55 @@ func AddRunnerFull(cfgPath string, opts AddRunnerOpts) error {
 	return writeYAMLBack(cfgPath, &root)
 }
 
+// RemoveRunner removes a runner entry from the config file at cfgPath by runner name.
+func RemoveRunner(cfgPath, runnerName string) error {
+	data, err := os.ReadFile(cfgPath)
+	if err != nil {
+		return fmt.Errorf("reading config: %w", err)
+	}
+
+	var root yaml.Node
+	if err := yaml.Unmarshal(data, &root); err != nil {
+		return fmt.Errorf("parsing config: %w", err)
+	}
+	if root.Kind != yaml.DocumentNode || len(root.Content) == 0 {
+		return fmt.Errorf("unexpected YAML structure")
+	}
+	top := root.Content[0]
+	if top.Kind != yaml.MappingNode {
+		return fmt.Errorf("config root is not a mapping")
+	}
+
+	runnersNode := findMapValue(top, "runners")
+	if runnersNode == nil || runnersNode.Kind != yaml.SequenceNode {
+		return fmt.Errorf("runners is not a sequence")
+	}
+
+	// Find and remove the runner entry
+	found := false
+	newContent := make([]*yaml.Node, 0)
+	for i := 0; i < len(runnersNode.Content); i++ {
+		entry := runnersNode.Content[i]
+		if entry.Kind != yaml.MappingNode {
+			newContent = append(newContent, entry)
+			continue
+		}
+		nameNode := findMapValue(entry, "name")
+		if nameNode == nil || nameNode.Value != runnerName {
+			newContent = append(newContent, entry)
+			continue
+		}
+		found = true
+	}
+
+	if !found {
+		return fmt.Errorf("runner %q not found in config", runnerName)
+	}
+
+	runnersNode.Content = newContent
+	return writeYAMLBack(cfgPath, &root)
+}
+
 func findMapValue(mapping *yaml.Node, key string) *yaml.Node {
 	for i := 0; i+1 < len(mapping.Content); i += 2 {
 		if mapping.Content[i].Value == key {

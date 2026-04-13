@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/an-lee/gh-sr/internal/agentic"
 	"github.com/an-lee/gh-sr/internal/config"
 	"github.com/an-lee/gh-sr/internal/host"
 	"github.com/an-lee/gh-sr/internal/runner"
@@ -37,9 +38,8 @@ func ExitCode(res Result, strict bool) int {
 }
 
 // Run prints diagnostics to w. cfg and cfgErr come from config.LoadFromPath (or Load) after BootstrapEnv.
-// hasGitHubToken is true when gh CLI credentials yielded a token for github.com.
 // If cfg is nil (load error), GitHub and host checks are skipped after the configuration section.
-func Run(w io.Writer, cfgPath, envPath string, cfg *config.Config, cfgErr error, gh *runner.GitHubClient, hasGitHubToken bool, filterHost, filterRepo string, strict bool) Result {
+func Run(w io.Writer, cfgPath, envPath string, cfg *config.Config, cfgErr error, gh *runner.GitHubClient, filterHost, filterRepo string, strict bool) Result {
 	var r Result
 
 	fmt.Fprintln(w, "=== Local environment ===")
@@ -60,13 +60,6 @@ func Run(w io.Writer, cfgPath, envPath string, cfg *config.Config, cfgErr error,
 		r.Warn++
 	default:
 		printLine(w, sevOK, "local", fmt.Sprintf("env file present: %s", envPath))
-	}
-
-	if hasGitHubToken {
-		printLine(w, sevOK, "local", "GitHub token: from gh CLI (gh auth login)")
-	} else {
-		printLine(w, sevFail, "local", "GitHub token: not found; run `gh auth login`")
-		r.Fail++
 	}
 
 	needSSH := cfg == nil
@@ -350,116 +343,78 @@ func hasAgenticRunners(runners []config.RunnerConfig) bool {
 
 // checkAgenticPrereqs verifies Docker is available on the host for agentic workflow containers.
 // gh-aw (GitHub Agentic Workflows) uses Docker on the host for AWF sandbox containers.
+// It uses agentic.ValidatePrereqs for comprehensive checking and prints remediation guidance.
 func checkAgenticPrereqs(w io.Writer, hostName string, h *host.Host, r *Result) {
-	if h.OS != "linux" {
-		printLine(w, sevFail, hostName, "agentic: gh-aw only supported on Linux hosts")
+	failures := agentic.ValidatePrereqs(h)
+
+	for _, f := range failures {
+		sev := sevFail
+		if f.Severity == agentic.SeverityWarning {
+			sev = sevWarn
+		}
 		r.Fail++
-		return
-	}
-
-	// Check docker CLI.
-	out, err := h.Run(`docker --version 2>/dev/null`)
-	if err != nil || !strings.Contains(out, "Docker version") {
-		printLine(w, sevFail, hostName, "agentic: docker CLI not found on PATH; gh-aw requires Docker to be pre-installed on the host")
-		r.Fail++
-		return
-	}
-	printLine(w, sevOK, hostName, fmt.Sprintf("agentic: docker CLI %s", strings.TrimSpace(out)))
-
-	// Check docker daemon is running.
-	out, err = h.Run(`docker info 2>/dev/null`)
-	if err != nil {
-		printLine(w, sevFail, hostName, "agentic: docker daemon not running (docker info failed); start docker or ensure it starts at boot")
-		r.Fail++
-		return
-	}
-	printLine(w, sevOK, hostName, "agentic: docker daemon running")
-
-	// Check docker compose plugin.
-	out, err = h.Run(`docker compose version 2>/dev/null`)
-	if err != nil {
-		printLine(w, sevWarn, hostName, "agentic: docker compose plugin not found (docker compose version failed); gh-aw may need it for multi-container setup")
-		r.Warn++
-	} else {
-		printLine(w, sevOK, hostName, fmt.Sprintf("agentic: docker compose %s", strings.TrimSpace(out)))
-	}
-
-	// Check iptables is available.
-	out, err = h.Run(`command -v iptables >/dev/null 2>&1 && echo ok || echo missing`)
-	if err != nil || strings.TrimSpace(out) != "ok" {
-		printLine(w, sevFail, hostName, "agentic: iptables not found on PATH; gh-aw needs it for network egress control (DOCKER-USER chain)")
-		r.Fail++
-		return
-	}
-	printLine(w, sevOK, hostName, "agentic: iptables available")
-
-	// Check DOCKER-USER chain exists (gh-aw creates it).
-	out, err = h.Run(`iptables -L DOCKER-USER 2>/dev/null && echo exists || echo missing`)
-	if err != nil || strings.TrimSpace(out) != "exists" {
-		printLine(w, sevWarn, hostName, "agentic: DOCKER-USER chain not found; gh-aw creates it on first run; ensure passwordless sudo for iptables")
-		r.Warn++
-	} else {
-		printLine(w, sevOK, hostName, "agentic: DOCKER-USER chain exists")
-	}
-
-	// Check RUNNER_TEMP for agentic runners.
-	// gh-aw uses /tmp/gh-aw for its runtime tree. If the runner's RUNNER_TEMP is /tmp,
-	// bind mounts and security isolation will conflict with gh-aw's own files.
-	out, err = h.Run(`echo "${RUNNER_TEMP:-}"`)
-	if err == nil {
-		rt := strings.TrimSpace(out)
-		if rt == "/tmp" {
-			printLine(w, sevWarn, hostName, "agentic: RUNNER_TEMP=/tmp conflicts with gh-aw runtime tree at /tmp/gh-aw (mount and isolation conflicts)")
-			printLine(w, sevWarn, hostName, "agentic: fix: set RUNNER_TEMP to a path under the runner work directory, e.g. ~/.gh-sr/runners/<name>/_work/_temp")
+		if sev == sevWarn {
+			r.Fail--
 			r.Warn++
 		}
-	}
-
-	// Check passwordless sudo for iptables (needed for gh-aw egress rules).
-	uid, err := h.Run(`id -u`)
-	if err != nil {
-		printLine(w, sevWarn, hostName, fmt.Sprintf("agentic: could not check uid for iptables sudo: %v", err))
-		r.Warn++
-		return
-	}
-	if strings.TrimSpace(uid) != "0" {
-		out, err = h.Run(`sudo -n iptables -L DOCKER-USER >/dev/null 2>&1 && echo ok || echo no`)
-		if err != nil || strings.TrimSpace(out) != "ok" {
-			printLine(w, sevWarn, hostName, "agentic: passwordless sudo for iptables not available; gh-aw may fail to set egress rules")
-			r.Warn++
-			return
+		printLine(w, sev, hostName, "agentic: "+f.Message)
+		// Print remediation guidance inline
+		if f.Remediation != "" {
+			lines := strings.Split(f.Remediation, "\n")
+			for _, line := range lines {
+				fmt.Fprintf(w, "       %s\n", line)
+			}
 		}
-		printLine(w, sevOK, hostName, "agentic: passwordless sudo for iptables available")
-	}
-
-	// Check host.docker.internal resolution inside containers.
-	// gh-aw relies on host.docker.internal to reach the MCP gateway from agent containers.
-	out, err = h.Run(`docker run --rm alpine sh -c "getent hosts host.docker.internal || echo failed" 2>/dev/null`)
-	out = strings.TrimSpace(out)
-	if err != nil || out == "failed" || out == "" {
-		printLine(w, sevFail, hostName, "agentic: host.docker.internal does not resolve inside containers; configure Docker DNS (see README)")
-		r.Fail++
-	} else if strings.Contains(out, "127.0.0.1") {
-		printLine(w, sevFail, hostName, "agentic: host.docker.internal resolves to 127.0.0.1 inside containers; this breaks gh-aw MCP gateway (see README)")
-		r.Fail++
-	} else {
-		fields := strings.Fields(out)
-		ip := ""
-		if len(fields) > 0 {
-			ip = fields[0]
+		if f.DocRef != "" {
+			fmt.Fprintf(w, "       See: %s\n", f.DocRef)
 		}
-		printLine(w, sevOK, hostName, fmt.Sprintf("agentic: host.docker.internal resolves correctly inside containers (%s)", ip))
 	}
 
-	// Check general DNS resolution inside containers.
-	// If dnsmasq is configured without upstream servers, it only answers static records
-	// and REFUSES everything else, breaking external API access (model providers, etc.).
-	out, err = h.Run(`docker run --rm alpine sh -c "nslookup github.com >/dev/null 2>&1 && echo ok || echo failed" 2>/dev/null`)
-	out = strings.TrimSpace(out)
-	if err != nil || out != "ok" {
-		printLine(w, sevFail, hostName, "agentic: external DNS (github.com) does not resolve inside containers; check Docker DNS / dnsmasq upstream server config (see README)")
-		r.Fail++
-	} else {
-		printLine(w, sevOK, hostName, "agentic: external DNS resolves inside containers")
+	// If no failures, print a summary OK line
+	if len(failures) == 0 {
+		// Docker CLI version
+		out, _ := h.Run(`docker --version 2>/dev/null`)
+		if strings.Contains(out, "Docker version") {
+			printLine(w, sevOK, hostName, fmt.Sprintf("agentic: docker CLI %s", strings.TrimSpace(out)))
+		}
+		// Docker daemon
+		out, _ = h.Run(`docker info 2>/dev/null`)
+		if _, err := h.Run(`docker info >/dev/null 2>&1`); err == nil {
+			printLine(w, sevOK, hostName, "agentic: docker daemon running")
+		}
+		// Docker compose
+		out, _ = h.Run(`docker compose version 2>/dev/null`)
+		if _, err := h.Run(`docker compose version >/dev/null 2>&1`); err == nil {
+			printLine(w, sevOK, hostName, fmt.Sprintf("agentic: docker compose %s", strings.TrimSpace(out)))
+		}
+		// Socket access
+		out, _ = h.Run(`docker run --rm -v /var/run/docker.sock:/var/run/docker.sock docker:cli docker ps 2>/dev/null`)
+		if _, err := h.Run(`docker run --rm -v /var/run/docker.sock:/var/run/docker.sock docker:cli docker ps >/dev/null 2>&1`); err == nil {
+			printLine(w, sevOK, hostName, "agentic: can spawn containers via Docker socket")
+		}
+		// iptables
+		if _, err := h.Run(`command -v iptables >/dev/null 2>&1`); err == nil {
+			printLine(w, sevOK, hostName, "agentic: iptables available")
+		}
+		// sudo iptables
+		uid, _ := h.Run(`id -u`)
+		if strings.TrimSpace(uid) != "0" {
+			out, _ := h.Run(`sudo -n iptables -L DOCKER-USER >/dev/null 2>&1 && echo ok || echo no`)
+			if strings.TrimSpace(out) == "ok" {
+				printLine(w, sevOK, hostName, "agentic: passwordless sudo for iptables available")
+			}
+		} else {
+			printLine(w, sevOK, hostName, "agentic: running as root (no sudo needed)")
+		}
+		// host.docker.internal
+		out, _ = h.Run(`docker run --rm alpine sh -c "getent hosts host.docker.internal" 2>/dev/null`)
+		if fields := strings.Fields(strings.TrimSpace(out)); len(fields) > 0 && fields[0] != "127.0.0.1" && fields[0] != "::1" {
+			printLine(w, sevOK, hostName, fmt.Sprintf("agentic: host.docker.internal resolves inside containers (%s)", fields[0]))
+		}
+		// external DNS
+		out, _ = h.Run(`docker run --rm alpine sh -c "nslookup github.com >/dev/null 2>&1 && echo ok || echo failed" 2>/dev/null`)
+		if strings.TrimSpace(out) == "ok" {
+			printLine(w, sevOK, hostName, "agentic: external DNS resolves inside containers")
+		}
 	}
 }

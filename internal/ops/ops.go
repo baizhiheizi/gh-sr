@@ -205,6 +205,53 @@ func Update(w io.Writer, cfg *config.Config, mgr *runner.Manager, filterHost, fi
 	return nil
 }
 
+// Remove deregisters a runner from GitHub, removes it from the host, and removes it from the local config.
+func Remove(w io.Writer, cfg *config.Config, mgr *runner.Manager, filterHost, filterRepo string, nameArgs []string) error {
+	if err := ResolveHostInfo(w, cfg); err != nil {
+		return err
+	}
+	runners := config.FilterRunners(cfg, filterHost, filterRepo, nameArgs)
+	if len(runners) == 0 {
+		return fmt.Errorf("no runners matching the given filters")
+	}
+
+	cfgPath, err := config.ResolveConfigPath("")
+	if err != nil {
+		return err
+	}
+
+	for _, rc := range runners {
+		hcfg := cfg.Hosts[rc.Host]
+		if config.IsLocalAddr(hcfg.Addr) {
+			fmt.Fprintf(w, "Removing %s from %s (local)...\n", rc.Name, rc.Host)
+		} else {
+			fmt.Fprintf(w, "Removing %s from %s (%s)...\n", rc.Name, rc.Host, hcfg.Addr)
+		}
+		h, err := ConnectHost(rc.Host, hcfg)
+		if err != nil {
+			return err
+		}
+
+		// Deregister from GitHub and remove from host
+		if err := mgr.Remove(h, rc); err != nil {
+			h.Close()
+			return err
+		}
+
+		// Remove from local config
+		if err := config.RemoveRunner(cfgPath, rc.Name); err != nil {
+			h.Close()
+			return fmt.Errorf("removing %s from config: %w", rc.Name, err)
+		}
+
+		h.Close()
+		fmt.Fprintf(w, "  %s: removed from host and config\n", rc.Name)
+	}
+
+	fmt.Fprintln(w, "\nRemove complete.")
+	return nil
+}
+
 // CollectStatus gathers runner status rows like gh sr status.
 //
 // Runners are grouped by host so that each host requires only one SSH connection.

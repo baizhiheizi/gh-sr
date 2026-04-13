@@ -1,10 +1,11 @@
 package runner
 
 import (
+	"encoding/base64"
 	"fmt"
-	"io"
 	"strings"
 
+	"github.com/an-lee/gh-sr/internal/agentic"
 	"github.com/an-lee/gh-sr/internal/autostart"
 	"github.com/an-lee/gh-sr/internal/config"
 	"github.com/an-lee/gh-sr/internal/host"
@@ -31,6 +32,41 @@ func NativeRunnerConfigPresent(h *host.Host, instanceName string) (bool, error) 
 		return false, err
 	}
 	return strings.TrimSpace(out) == "yes", nil
+}
+
+// svcShPresent reports whether svc.sh is deployed in the runner directory.
+func svcShPresent(h *host.Host, instanceName string) bool {
+	dir := h.RunnerDir(instanceName)
+	if h.OS == "windows" {
+		return false
+	}
+	out, _ := h.Run(fmt.Sprintf("test -f %s/svc.sh && echo yes || echo no", dir))
+	return strings.TrimSpace(out) == "yes"
+}
+
+// writeRemoteBytes writes data to a remote path using base64 encoding.
+func writeRemoteBytes(h *host.Host, remotePath string, data []byte) error {
+	if h.OS == "windows" {
+		b64 := base64.StdEncoding.EncodeToString(data)
+		ps := fmt.Sprintf(
+			"$p = %s; $d = [Convert]::FromBase64String(%s); $dir = Split-Path -Parent $p; New-Item -ItemType Directory -Force -Path $dir | Out-Null; [IO.File]::WriteAllBytes($p, $d)",
+			powerShellSingleQuoted(remotePath),
+			powerShellSingleQuoted(b64),
+		)
+		_, err := h.RunShell(ps)
+		return err
+	}
+	b64 := base64.StdEncoding.EncodeToString(data)
+	qpath := posixSingleQuote(remotePath)
+	cmd := fmt.Sprintf(`set -e; d=$(dirname %s); mkdir -p "$d"; printf '%%s' %s | base64 -d > %s`,
+		qpath, posixSingleQuote(b64), qpath)
+	_, err := h.Run(cmd)
+	return err
+}
+
+// posixSingleQuote escapes a string for safe use inside single quotes in POSIX shell.
+func posixSingleQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'"
 }
 
 func runnerTarballURL(version, osName, arch string) string {
@@ -271,14 +307,72 @@ func (m *Manager) setupNative(h *host.Host, rc config.RunnerConfig) error {
 		}
 
 		fmt.Fprintf(m.out(), "  %s: configured\n", name)
+
+		// Deploy svc.sh and runsvc.sh for systemd-based service management on Linux.
+		if h.OS == "linux" {
+			// Deploy svc.sh to the runner directory
+			if err := writeRemoteBytes(h, dir+"/svc.sh", []byte(SVCShContent)); err != nil {
+				fmt.Fprintf(m.out(), "  %s: warning: failed to deploy svc.sh: %v\n", name, err)
+			} else {
+				h.Run(fmt.Sprintf("chmod +x %s/svc.sh", dir))
+			}
+
+			// Deploy the systemd service template
+			if err := writeRemoteBytes(h, dir+"/bin/actions.runner.service.template", []byte(ServiceTemplateContent)); err != nil {
+				fmt.Fprintf(m.out(), "  %s: warning: failed to deploy service template: %v\n", name, err)
+			}
+
+			// Copy runsvc.sh from the runner package to the runner root (runsvc.sh handles signals gracefully)
+			if _, err := h.Run(fmt.Sprintf("cp %s/bin/runsvc.sh %s/runsvc.sh && chmod +x %s/runsvc.sh", dir, dir, dir)); err != nil {
+				fmt.Fprintf(m.out(), "  %s: warning: failed to copy runsvc.sh: %v\n", name, err)
+			}
+
+			// Install svc.sh as a systemd service (requires root)
+			installSvcCmd := fmt.Sprintf("cd %s && %s\n$SUDO ./svc.sh install", dir, strings.TrimSpace(linuxElevatePrelude))
+			if _, err := h.Run(installSvcCmd); err != nil {
+				fmt.Fprintf(m.out(), "  %s: warning: failed to install svc.sh service: %v\n", name, err)
+			}
+		}
 	}
 
 	// For agentic runners, install gh-aw CLI on the host.
 	// gh-aw (GitHub Agentic Workflows) uses Docker on the host for AWF sandbox containers.
 	if rc.IsAgentic() && h.OS == "linux" {
-		// Pre-flight check: warn if the runner user lacks passwordless sudo.
-		// gh-aw requires sudo to manage iptables (DOCKER-USER chain) and awf-net bridge.
-		warnAgenticSudoPrereqs(h, m.out(), rc.Name)
+		// Collect all prerequisite failures instead of failing on the first one.
+		// This lets us attempt auto-fix for some issues and report all problems at the end.
+		prereqFailures := agentic.ValidatePrereqs(h)
+
+		// Separate blocking errors from warnings
+		var blockingFailures []agentic.PrereqFailure
+		for _, f := range prereqFailures {
+			if f.Severity == agentic.SeverityError {
+				blockingFailures = append(blockingFailures, f)
+			}
+		}
+
+		// If there are blocking failures that we cannot auto-fix, fail immediately.
+		// These are things like "not Linux" or "Docker not installed at all".
+		if len(blockingFailures) > 0 {
+			fmt.Fprintf(m.out(), "  %s: agentic prerequisites have blocking failures:\n", rc.Name)
+			for _, f := range blockingFailures {
+				fmt.Fprintf(m.out(), "  %s:   - %s\n", rc.Name, f.Message)
+			}
+			fmt.Fprintf(m.out(), "\n%s\n", agentic.FormatAllRemediations(blockingFailures))
+			return fmt.Errorf("agentic prerequisite check failed: %d blocking failure(s)", len(blockingFailures))
+		}
+
+		// Attempt auto-fix for non-blocking issues (sudo for iptables, RUNNER_TEMP).
+		// Set up passwordless sudo for iptables if missing.
+		if err := m.setupAgenticSudoConfigure(h, rc.Name); err != nil {
+			fmt.Fprintf(m.out(), "  %s: warning: could not configure passwordless sudo for iptables: %v\n", rc.Name, err)
+		}
+
+		// Set RUNNER_TEMP if wrong or unset.
+		for _, instName := range rc.InstanceNames() {
+			if err := m.setupRunnerTemp(h, instName); err != nil {
+				fmt.Fprintf(m.out(), "  %s: warning: could not configure RUNNER_TEMP: %v\n", instName, err)
+			}
+		}
 
 		// Clean up zombie Docker resources from previously crashed gh-aw jobs.
 		// If a job crashes, orphaned gh-aw containers and networks block the next job.
@@ -362,7 +456,7 @@ echo "cleanup done"
 		// bridge IP and forwards everything else upstream. This also ensures external DNS
 		// (model provider APIs, GitHub, etc.) works from inside agent containers.
 		fmt.Fprintf(m.out(), "  %s: setting up Docker DNS for agentic workflows...\n", rc.Name)
-		if err := m.setupAgenticDNS(h, rc.Name); err != nil {
+		if err := m.setupAgenticDNSConfigure(h, rc.Name); err != nil {
 			fmt.Fprintf(m.out(), "  %s: warning: Docker DNS setup failed: %v\n", rc.Name, err)
 		}
 
@@ -392,6 +486,20 @@ echo "cleanup done"
 				}
 				fmt.Fprintf(m.out(), "  %s: pulled %s: %s\n", rc.Name, img, statusLine)
 			}
+		}
+
+		// Report any remaining unfixed prerequisite failures (warnings only at this point).
+		// We only report failures that were NOT auto-fixed. The setupAgenticSudoConfigure
+		// and setupRunnerTemp functions already output success/failure messages, so we
+		// don't re-report them here if they succeeded.
+		var remainingWarnings []agentic.PrereqFailure
+		for _, f := range prereqFailures {
+			if f.Severity == agentic.SeverityWarning {
+				remainingWarnings = append(remainingWarnings, f)
+			}
+		}
+		if len(remainingWarnings) > 0 {
+			fmt.Fprintf(m.out(), "\n%s\n", agentic.FormatAllRemediations(remainingWarnings))
 		}
 	}
 
@@ -526,6 +634,12 @@ func (m *Manager) stopNative(h *host.Host, instanceName string) error {
 func (m *Manager) removeNative(h *host.Host, rc config.RunnerConfig, instanceName string) error {
 	dir := h.RunnerDir(instanceName)
 
+	// Uninstall svc.sh service if present (before removing files)
+	if h.OS == "linux" && svcShPresent(h, instanceName) {
+		uninstallSvcCmd := fmt.Sprintf("cd %s && %s\n$SUDO ./svc.sh uninstall 2>/dev/null || true", dir, strings.TrimSpace(linuxElevatePrelude))
+		h.Run(uninstallSvcCmd) // Ignore errors - we're removing anyway
+	}
+
 	_ = m.stopNative(h, instanceName)
 
 	removeToken, err := m.GitHub.GetRemovalTokenScoped(rc.Scope(), rc.ScopeTarget())
@@ -558,6 +672,28 @@ func (m *Manager) removeNative(h *host.Host, rc config.RunnerConfig, instanceNam
 
 func (m *Manager) statusNative(h *host.Host, instanceName string) string {
 	dir := h.RunnerDir(instanceName)
+
+	// For svc.sh-managed runners on Linux: read the service name from the .service
+	// marker file written by "svc.sh install" and query systemctl directly.
+	if h.OS == "linux" && svcShPresent(h, instanceName) {
+		out, err := h.Run(fmt.Sprintf(
+			`svc_file="%s/.service"; `+
+				`if [ -f "$svc_file" ]; then `+
+				`svc=$(cat "$svc_file"); `+
+				`systemctl is-active "$svc" 2>/dev/null || echo inactive; `+
+				`fi`,
+			dir,
+		))
+		if err == nil {
+			state := strings.TrimSpace(out)
+			if state == "active" {
+				return "running"
+			}
+			if state != "" {
+				return "stopped"
+			}
+		}
+	}
 
 	if kind, err := autostart.Detect(h, instanceName); err == nil && kind != autostart.KindNone {
 		active, err := autostart.IsServiceActive(h, instanceName, kind)
@@ -623,185 +759,4 @@ func (m *Manager) logsNative(h *host.Host, instanceName string) (string, error) 
 
 	cmd := fmt.Sprintf("tail -50 %s/runner.log 2>/dev/null || echo 'no logs found'", dir)
 	return h.Run(cmd)
-}
-
-// setupAgenticDNS configures Docker DNS on a Linux host so that agent containers
-// (gh-aw) can resolve host.docker.internal to the docker0 bridge IP and also reach
-// external domains (model providers, GitHub, etc.). It is idempotent: safe to re-run.
-func (m *Manager) setupAgenticDNS(h *host.Host, runnerName string) error {
-	// Step 1: Check if Docker is available at all.
-	dockerCheck, err := h.Run(`docker info >/dev/null 2>&1 && echo ok || echo missing`)
-	if err != nil || strings.TrimSpace(dockerCheck) != "ok" {
-		return fmt.Errorf("docker daemon not available on host; skipping DNS setup")
-	}
-
-	// Step 2: Detect docker0 bridge IP. Fall back to 172.17.0.1 if detection fails.
-	bridgeIP, err := h.Run(`ip -4 addr show docker0 2>/dev/null | grep -oP 'inet \K[\d.]+'`)
-	if err != nil || strings.TrimSpace(bridgeIP) == "" {
-		bridgeIP = "172.17.0.1"
-	} else {
-		bridgeIP = strings.TrimSpace(bridgeIP)
-	}
-
-	// Step 3: Detect if host.docker.internal already resolves inside containers.
-	// If it resolves to a non-loopback IP, skip DNS setup (user may have their own solution).
-	checkCmd := `docker run --rm alpine sh -c "getent hosts host.docker.internal 2>/dev/null" 2>/dev/null`
-	out, err := h.Run(checkCmd)
-	if err == nil && strings.TrimSpace(out) != "" {
-		fields := strings.Fields(strings.TrimSpace(out))
-		if len(fields) > 0 && fields[0] != "127.0.0.1" && fields[0] != "::1" {
-			// Already configured; nothing to do.
-			return nil
-		}
-	}
-
-	// Step 4: Detect the package manager.
-	detectPM := `if command -v apt-get >/dev/null 2>&1; then echo apt
-elif command -v dnf >/dev/null 2>&1; then echo dnf
-elif command -v yum >/dev/null 2>&1; then echo yum
-elif command -v apk >/dev/null 2>&1; then echo apk
-else echo unknown; fi`
-	pmOut, err := h.Run(detectPM)
-	pm := strings.TrimSpace(pmOut)
-	if pm == "unknown" {
-		return fmt.Errorf("could not detect package manager; skipping DNS setup")
-	}
-
-	// Step 5: Install dnsmasq if missing.
-	dnsmasqInstalled, err := h.Run(`command -v dnsmasq >/dev/null 2>&1 && echo yes || echo no`)
-	dnsmasqInstalled = strings.TrimSpace(dnsmasqInstalled)
-	if dnsmasqInstalled != "yes" {
-		var installCmd string
-		switch pm {
-		case "apt":
-			installCmd = fmt.Sprintf(`%s && $SUDO apt-get update && $SUDO apt-get install -y dnsmasq`, linuxElevatePrelude)
-		case "dnf", "yum":
-			installCmd = fmt.Sprintf(`%s && $SUDO %s install -y dnsmasq`, linuxElevatePrelude, pm)
-		case "apk":
-			installCmd = fmt.Sprintf(`%s && $SUDO apk add dnsmasq`, linuxElevatePrelude)
-		}
-		if _, err := h.Run(installCmd); err != nil {
-			return fmt.Errorf("installing dnsmasq: %w", err)
-		}
-	}
-
-	// Step 6: Write dnsmasq config for gh-sr.
-	// Resolves host.docker.internal to the docker0 bridge IP and forwards everything else
-	// to systemd-resolved (127.0.0.53) and 8.8.8.8. The config file is prefixed "gh-sr-"
-	// so we can detect and manage it separately from any user-provided config.
-	dnsmasqConf := fmt.Sprintf(`address=/host.docker.internal/%s
-listen-address=%s
-bind-interfaces
-server=127.0.0.53
-server=8.8.8.8
-`, bridgeIP, bridgeIP)
-	// Use linuxElevatePrelude once at the top to set $SUDO, then use $SUDO throughout.
-	confWrite := linuxElevatePrelude + fmt.Sprintf(`
-CONF=/etc/dnsmasq.d/gh-sr-docker.conf
-TMPCONF=$(mktemp)
-cat > "$TMPCONF" << 'GHSREOF'
-%sGHSREOF
-if ! cmp -s "$TMPCONF" "$CONF" 2>/dev/null; then
-    $SUDO cp "$TMPCONF" "$CONF"
-    $SUDO systemctl restart dnsmasq
-    echo "dnsmasq configured"
-else
-    echo "dnsmasq config unchanged"
-fi
-rm -f "$TMPCONF"`, dnsmasqConf)
-	out, err = h.Run(confWrite)
-	if err != nil {
-		return fmt.Errorf("writing dnsmasq config: %w", err)
-	}
-	if out != "" {
-		fmt.Fprintf(m.out(), "  %s: dnsmasq: %s\n", runnerName, strings.TrimSpace(out))
-	}
-
-	// Step 7: Configure Docker daemon DNS if not already set to use our dnsmasq.
-	// linuxElevatePrelude is prepended once to set $SUDO; all elevated ops use $SUDO thereafter.
-	daemonDNSConfigured, err := h.Run(linuxElevatePrelude + fmt.Sprintf(`
-DOCKER_CONF=/etc/docker/daemon.json
-BRIDGE_IP='%s'
-if [ ! -f "$DOCKER_CONF" ]; then
-    printf '{"dns":["%s","8.8.8.8"]}\n' "$BRIDGE_IP" | $SUDO tee "$DOCKER_CONF" > /dev/null
-    $SUDO systemctl restart docker
-    echo "daemon.json created with DNS"
-else
-    # Check if our dnsmasq IP is already in the dns list.
-    if grep -q '"'"'"$BRIDGE_IP"'"'"' "$DOCKER_CONF" 2>/dev/null; then
-        echo "daemon.json DNS already configured"
-    else
-        # Merge: add our dnsmasq IP at the front of the existing dns array, preserve other keys.
-        # Try python3 first, then fall back to a shell-based approach.
-        if command -v python3 >/dev/null 2>&1; then
-            python3 -c "
-import json, sys
-path = '$DOCKER_CONF'
-try:
-    with open(path) as f:
-        data = json.load(f)
-except:
-    data = {}
-dns = data.get('dns', [])
-if '$BRIDGE_IP' not in dns:
-    dns.insert(0, '$BRIDGE_IP')
-    dns = [d for d in dns if d]
-data['dns'] = dns
-with open(path, 'w') as f:
-    json.dump(data, f, indent=2)
-print('daemon.json DNS merged')
-" 2>/dev/null && $SUDO systemctl restart docker && echo "daemon.json DNS updated"
-        else
-            # Fallback: use jq if available, otherwise just overwrite dns array safely.
-            if command -v jq >/dev/null 2>&1; then
-                $SUDO jq '.dns = ["'"'"'$BRIDGE_IP'"'"'", (.dns // [])[0:5]] | .dns += ["8.8.8.8"] | .dns = (.dns | unique)' "$DOCKER_CONF" > "${DOCKER_CONF}.new" && $SUDO mv "${DOCKER_CONF}.new" "$DOCKER_CONF" && $SUDO systemctl restart docker && echo "daemon.json DNS updated via jq"
-            else
-                # Last resort: read existing content and rebuild the dns array.
-                # This is fragile but works on minimal systems without python3 or jq.
-                $SUDO sh -c 'grep -v dns "$1" > "${1}.new"' -- "$DOCKER_CONF" && echo "  \"dns\": [\"$BRIDGE_IP\",\"8.8.8.8\"]" | $SUDO tee -a "${DOCKER_CONF}.new" > /dev/null && echo "}" | $SUDO tee -a "${DOCKER_CONF}.new" > /dev/null && $SUDO mv "${DOCKER_CONF}.new" "$DOCKER_CONF" && $SUDO systemctl restart docker && echo "daemon.json DNS updated via shell"
-            fi
-        fi
-    fi
-fi`, bridgeIP, bridgeIP))
-	if err != nil && !strings.Contains(daemonDNSConfigured, "already configured") && !strings.Contains(daemonDNSConfigured, "configured") && !strings.Contains(daemonDNSConfigured, "updated") {
-		// Non-fatal: docker restart may fail if there are running containers.
-		fmt.Fprintf(m.out(), "  %s: warning: Docker daemon DNS merge failed: %v\n", runnerName, err)
-	} else if daemonDNSConfigured != "" {
-		fmt.Fprintf(m.out(), "  %s: docker: %s\n", runnerName, strings.TrimSpace(daemonDNSConfigured))
-	}
-
-	// Step 8: Verify DNS resolution from inside a container.
-	verifyCmd := `docker run --rm alpine sh -c "getent hosts host.docker.internal 2>/dev/null && nslookup github.com >/dev/null 2>&1 && echo ok" 2>/dev/null`
-	verifyOut, err := h.Run(verifyCmd)
-	if err != nil || strings.TrimSpace(verifyOut) != "ok" {
-		fmt.Fprintf(m.out(), "  %s: warning: container DNS verification failed; agentic workflows may not work. Run 'gh sr doctor' for diagnostics.\n", runnerName)
-	} else {
-		fmt.Fprintf(m.out(), "  %s: Docker DNS verified inside containers\n", runnerName)
-	}
-
-	return nil
-}
-
-// warnAgenticSudoPrereqs checks whether the runner user has passwordless sudo and, if not,
-// prints a warning with remediation instructions. gh-aw requires sudo to manage iptables
-// (DOCKER-USER chain) and the awf-net Docker bridge. This is a non-blocking warning: setup
-// continues regardless so that the user can fix sudo and re-run without restarting from scratch.
-func warnAgenticSudoPrereqs(h *host.Host, w io.Writer, runnerName string) {
-	uid, err := h.Run(`id -u`)
-	if err != nil {
-		return // cannot determine, skip silently
-	}
-	if strings.TrimSpace(uid) == "0" {
-		return // running as root, no sudo needed
-	}
-	out, err := h.Run(`sudo -n true 2>/dev/null && echo ok || echo no`)
-	if err != nil || strings.TrimSpace(out) != "ok" {
-		userName, _ := h.Run(`id -un`)
-		userName = strings.TrimSpace(userName)
-		fmt.Fprintf(w, "  %s: WARNING: passwordless sudo not available for user %q\n", runnerName, userName)
-		fmt.Fprintf(w, "  %s:   gh-aw requires passwordless sudo to manage iptables and Docker bridge networks.\n", runnerName)
-		fmt.Fprintf(w, "  %s:   To fix, run as root on the host:\n", runnerName)
-		fmt.Fprintf(w, "  %s:     echo \"%s ALL=(ALL) NOPASSWD:ALL\" > /etc/sudoers.d/gh-sr-%s\n", runnerName, userName, userName)
-		fmt.Fprintf(w, "  %s:     chmod 0440 /etc/sudoers.d/gh-sr-%s\n", runnerName, userName)
-	}
 }
