@@ -1,0 +1,24 @@
+Why `gh sr` cannot setup the `RUNNER_TEMP` for users instead of warninig?
+
+  rune-agentic:   - RUNNER_TEMP is not set; gh-aw requires it to be set to a path other than /tmp
+
+╔════════════════════════════════════════════════════════════════════════════╗
+║  Agentic Prerequisite Failures                                            ║
+╠════════════════════════════════════════════════════════════════════════════╣
+║  1 failure(s) need to be resolved before agentic workflows can run.      ║
+╚════════════════════════════════════════════════════════════════════════════╝
+
+[1] FAIL: runner-temp-unset
+  [agentic-workflows.md §6] RUNNER_TEMP is not set; gh-aw requires it to be set to a path other than /tmp
+
+  To fix:
+    Set RUNNER_TEMP in the runner's .env file:
+
+      echo "RUNNER_TEMP=$HOME/.gh-sr/runners/_temp" >> ~/actions-runner/.env
+      mkdir -p "$HOME/.gh-sr/runners/_temp"
+
+Error: agentic prerequisite check failed: 1 blocking failure(s)
+
+---
+
+yes, fix it.

@@ -1,0 +1,36 @@
+{
+  "cli_version": "dev",
+  "checkpoint_id": "74b87838848a",
+  "session_id": "b2650f75-3712-4a8a-b8ed-c3036f2bcaf8",
+  "strategy": "manual-commit",
+  "created_at": "2026-04-13T01:18:20.535726759Z",
+  "branch": "main",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "internal/agentic/agentic.go"
+  ],
+  "agent": "Claude Code",
+  "turn_id": "dedb4eaa5921",
+  "token_usage": {
+    "input_tokens": 126539,
+    "cache_creation_tokens": 43941,
+    "cache_read_tokens": 517232,
+    "output_tokens": 3349,
+    "api_call_count": 19
+  },
+  "session_metrics": {
+    "turn_count": 2
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-04-13T01:18:20.460749365Z",
+    "agent_lines": 2,
+    "agent_removed": 2,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 2,
+    "total_lines_changed": 4,
+    "agent_percentage": 100,
+    "metric_version": 2
+  }
+}
