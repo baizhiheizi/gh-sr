@@ -1,0 +1,1 @@
+`gh sr up` succeed. But in `gh sr dashboard`, all runners are `stopped`. Is something wrong with the monitor logic? Help me to identify and fix it.
