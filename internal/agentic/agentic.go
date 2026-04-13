@@ -113,7 +113,7 @@ Ensure the runner user is in the docker group:
 		if rt == "" {
 			failures = append(failures, PrereqFailure{
 				Name:     "runner-temp-unset",
-				Severity: SeverityError,
+				Severity: SeverityWarning,
 				Message:  "RUNNER_TEMP is not set; gh-aw requires it to be set to a path other than /tmp",
 				Remediation: `Set RUNNER_TEMP in the runner's .env file:
 
@@ -124,7 +124,7 @@ Ensure the runner user is in the docker group:
 		} else if rt == "/tmp" {
 			failures = append(failures, PrereqFailure{
 				Name:     "runner-temp-tmp",
-				Severity: SeverityError,
+				Severity: SeverityWarning,
 				Message:  "RUNNER_TEMP=/tmp conflicts with gh-aw runtime tree at /tmp/gh-aw",
 				Remediation: `Set RUNNER_TEMP to a different path in the runner's .env file:
 
