@@ -106,32 +106,54 @@ Ensure the runner user is in the docker group:
 		})
 	}
 
-	// RUNNER_TEMP check
-	out, err = h.Run(`echo "${RUNNER_TEMP:-}"`)
+	// RUNNER_TEMP check: read from .env files directly (not shell env, since
+	// setupRunnerTemp writes to the .env file and ValidatePrereqs may run before
+	// a shell session has sourced it).
+	out, err = h.Run(`
+FOUND_BAD=0
+for ENV_FILE in $(find "$HOME/.gh-sr/runners" -maxdepth 2 -name ".env" 2>/dev/null); do
+  RUNNER_TEMP=$(grep "^RUNNER_TEMP=" "$ENV_FILE" 2>/dev/null | cut -d= -f2)
+  INSTANCE=$(basename "$(dirname "$ENV_FILE")")
+  if [ -z "$RUNNER_TEMP" ]; then
+    echo "unset:$INSTANCE"
+    FOUND_BAD=1
+  elif [ "$RUNNER_TEMP" = "/tmp" ]; then
+    echo "tmp:$INSTANCE"
+    FOUND_BAD=1
+  fi
+done
+[ $FOUND_BAD -eq 0 ] && echo "ok"
+`)
 	if err == nil {
-		rt := strings.TrimSpace(out)
-		if rt == "" {
-			failures = append(failures, PrereqFailure{
-				Name:     "runner-temp-unset",
-				Severity: SeverityWarning,
-				Message:  "RUNNER_TEMP is not set; gh-aw requires it to be set to a path other than /tmp",
-				Remediation: `Set RUNNER_TEMP in the runner's .env file:
+		lines := strings.TrimSpace(out)
+		if lines != "ok" {
+			for _, line := range strings.Split(lines, "\n") {
+				if strings.HasPrefix(line, "unset:") {
+					instance := strings.TrimPrefix(line, "unset:")
+					failures = append(failures, PrereqFailure{
+						Name:     "runner-temp-unset",
+						Severity: SeverityWarning,
+						Message:  fmt.Sprintf("RUNNER_TEMP is not set in %s's .env; gh-aw requires it to be set to a path other than /tmp", instance),
+						Remediation: `Set RUNNER_TEMP in the runner's .env file:
 
   echo "RUNNER_TEMP=$HOME/.gh-sr/runners/_temp" >> ~/actions-runner/.env
   mkdir -p "$HOME/.gh-sr/runners/_temp"`,
-				DocRef: "agentic-workflows.md §6",
-			})
-		} else if rt == "/tmp" {
-			failures = append(failures, PrereqFailure{
-				Name:     "runner-temp-tmp",
-				Severity: SeverityWarning,
-				Message:  "RUNNER_TEMP=/tmp conflicts with gh-aw runtime tree at /tmp/gh-aw",
-				Remediation: `Set RUNNER_TEMP to a different path in the runner's .env file:
+						DocRef: "agentic-workflows.md §6",
+					})
+				} else if strings.HasPrefix(line, "tmp:") {
+					instance := strings.TrimPrefix(line, "tmp:")
+					failures = append(failures, PrereqFailure{
+						Name:     "runner-temp-tmp",
+						Severity: SeverityWarning,
+						Message:  fmt.Sprintf("RUNNER_TEMP=/tmp in %s's .env conflicts with gh-aw runtime tree at /tmp/gh-aw", instance),
+						Remediation: `Set RUNNER_TEMP to a different path in the runner's .env file:
 
   sed -i 's|RUNNER_TEMP=/tmp|RUNNER_TEMP='"$HOME"'/.gh-sr/runners/_temp|' ~/actions-runner/.env
   mkdir -p "$HOME/.gh-sr/runners/_temp"`,
-				DocRef: "agentic-workflows.md §6",
-			})
+						DocRef: "agentic-workflows.md §6",
+					})
+				}
+			}
 		}
 	}
 
