@@ -1,0 +1,13 @@
+The runner failed to start. Help me to identify the root cause and fix it.
+
+gh-sr on  main [⇡] via 🐹 v1.26.1 took 12s
+➜  gh sr up
+Detecting OS/arch for host r1 (an-lee@10.0.0.132)...
+Detecting OS/arch for host x1 (an-lee@192.168.31.66)...
+Detecting OS/arch for host mac (an-lee@192.168.31.72)...
+  mac: detected os=darwin arch=arm64
+  x1: detected os=linux arch=amd64
+  r1: detected os=linux arch=amd64
+Starting rune-agentic on x1...
+Error: starting rune-agentic-1 via svc.sh: running "cd $HOME/.gh-sr/runners/rune-agentic-1 && SUDO=''\nif [ \"$(id -u)\" -ne 0 ]; then\n\tif command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then\n\t\tSUDO='sudo -n'\n\telse\n\t\techo 'gh sr: remote Linux commands need root SSH or passwordless sudo (non-interactive); SSH has no TTY for sudo passwords. Use NOPASSWD, connect as root, or install software manually. Run: gh sr doctor' >&2\n\t\texit 1\n\tfi\nfi\n./svc.sh start": Process exited with status 1
+stderr:

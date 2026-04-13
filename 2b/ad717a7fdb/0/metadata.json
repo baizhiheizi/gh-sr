@@ -1,0 +1,38 @@
+{
+  "cli_version": "dev",
+  "checkpoint_id": "2bad717a7fdb",
+  "session_id": "8b18a31f-0216-4e85-992f-dd49a6a11c40",
+  "strategy": "manual-commit",
+  "created_at": "2026-04-13T01:31:25.763138042Z",
+  "branch": "main",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "internal/runner/native.go",
+    "internal/runner/runner.go"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-sonnet-4-6",
+  "turn_id": "8fa95ea7be2f",
+  "token_usage": {
+    "input_tokens": 20,
+    "cache_creation_tokens": 78705,
+    "cache_read_tokens": 514318,
+    "output_tokens": 3059,
+    "api_call_count": 15
+  },
+  "session_metrics": {
+    "turn_count": 1
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-04-13T01:31:25.655079294Z",
+    "agent_lines": 4,
+    "agent_removed": 4,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 4,
+    "total_lines_changed": 8,
+    "agent_percentage": 100,
+    "metric_version": 2
+  }
+}
