@@ -1,0 +1,25 @@
+{
+  "cli_version": "dev",
+  "checkpoint_id": "b447569bf4cb",
+  "strategy": "manual-commit",
+  "branch": "main",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "internal/agentic/agentic.go"
+  ],
+  "sessions": [
+    {
+      "metadata": "/b4/47569bf4cb/0/metadata.json",
+      "transcript": "/b4/47569bf4cb/0/full.jsonl",
+      "content_hash": "/b4/47569bf4cb/0/content_hash.txt",
+      "prompt": "/b4/47569bf4cb/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 244801,
+    "cache_creation_tokens": 27017,
+    "cache_read_tokens": 464681,
+    "output_tokens": 5614,
+    "api_call_count": 16
+  }
+}

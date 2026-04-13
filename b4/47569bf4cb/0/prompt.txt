@@ -1,0 +1,52 @@
+Not only make it a WARN, but implement it, auto-fix it.
+
+---
+
+No, I tested it. It only warns, no fix.
+
+➜  gh sr setup
+Detecting OS/arch for host r1 (an-lee@10.0.0.132)...
+Detecting OS/arch for host x1 (an-lee@192.168.31.66)...
+Detecting OS/arch for host mac (an-lee@192.168.31.72)...
+  mac: detected os=darwin arch=arm64
+  x1: detected os=linux arch=amd64
+  r1: detected os=linux arch=amd64
+Setting up on x1 (an-lee@192.168.31.66)...
+  rune-agentic-1: already installed, skipping
+  rune-agentic-2: already installed, skipping
+  rune-agentic: passwordless sudo for iptables already configured
+  rune-agentic-1: configuring RUNNER_TEMP (currently: <unset>)...
+  rune-agentic-1: RUNNER_TEMP configured to $HOME/.gh-sr/runners/rune-agentic-1/_work/_temp
+  rune-agentic-2: configuring RUNNER_TEMP (currently: <unset>)...
+  rune-agentic-2: RUNNER_TEMP configured to $HOME/.gh-sr/runners/rune-agentic-2/_work/_temp
+  rune-agentic: cleaning up zombie gh-aw Docker resources...
+  rune-agentic: Docker cleanup: cleanup done
+  rune-agentic: installing gh-aw CLI for agentic profile...
+  rune-agentic: gh-aw CLI installed
+  rune-agentic: gh-aw: gh-aw already installed
+  rune-agentic: setting up /opt/hostedtoolcache for agentic workflows...
+  rune-agentic: /opt/hostedtoolcache configured
+  rune-agentic: hostedtoolcache: /opt/hostedtoolcache already exists as a directory
+  rune-agentic: setting up Docker DNS for agentic workflows...
+  rune-agentic: pre-pulling gh-aw images (this may take a few minutes)...
+  rune-agentic: pulled ghcr.io/github/gh-aw-firewall/agent:latest: ghcr.io/github/gh-aw-firewall/agent:latest
+  rune-agentic: pulled ghcr.io/github/gh-aw-mcpg:latest: ghcr.io/github/gh-aw-mcpg:latest
+
+╔════════════════════════════════════════════════════════════════════════════╗
+║  Agentic Prerequisite Failures                                            ║
+╠════════════════════════════════════════════════════════════════════════════╣
+║  1 failure(s) need to be resolved before agentic workflows can run.      ║
+╚════════════════════════════════════════════════════════════════════════════╝
+
+[1] WARN: runner-temp-unset
+  [agentic-workflows.md §6] RUNNER_TEMP is not set; gh-aw requires it to be set to a path other than /tmp
+
+  To fix:
+    Set RUNNER_TEMP in the runner's .env file:
+
+      echo "RUNNER_TEMP=$HOME/.gh-sr/runners/_temp" >> ~/actions-runner/.env
+      mkdir -p "$HOME/.gh-sr/runners/_temp"
+
+
+Setup complete.
+Start runners with: gh sr up [runner-names...] (setup registers the runner; up launches the listener.)
