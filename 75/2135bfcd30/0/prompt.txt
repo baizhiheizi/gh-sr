@@ -1,0 +1,1 @@
+In TUI, we should be able to select a runner and remove it.
