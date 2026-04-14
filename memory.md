@@ -20,9 +20,11 @@
 - `ResolveHostInfo` in `ops/detect.go`: parallelized in PR #15 — concurrent host detection with WaitGroup. ✅ MERGED
 - Docker mode removed from codebase — `EffectiveMode` always returns "native".
 - `Up`, `Down`, `Restart`, `Update` in `ops/ops.go`: parallelized in PR #20 — group by host, one SSH connection per host, concurrent WaitGroup via `runPerHostParallel` helper. ✅ MERGED 2026-04-13.
+- `doctor` host checks + GitHub API checks: parallelized in PR #21 — concurrent goroutines per host (buffered output, sorted flush) + concurrent API probes. CI pending.
 - `Setup` in `ops/ops.go`: left sequential (per-host dedup via hostsDone; no parallel opportunity).
 - `Remove` in `ops/ops.go`: sequential. Parallelization blocked by `config.RemoveRunner` file mutations (not concurrency-safe without structural changes). Low value: Remove is a rare operation.
-- Doctor host checks in `doctor/doctor.go`: sequential per host. Low priority (diagnostic tool, not hot path).
+- `ServiceInstall`/`ServiceUninstall`/`ServiceStatus` in `ops/service.go`: sequential per-runner connections. Could use `runPerHostParallel` but low priority (infrequent setup operations).
+- Note: doctor_test.go was updated (commit 8bfae51) to match Run() signature change (hasGitHubToken removed). Current Run() signature: `Run(w, cfgPath, envPath, cfg, cfgErr, gh, filterHost, filterRepo, strict)`.
 
 ## Optimization Backlog
 
@@ -32,12 +34,13 @@
 4. ✅ **ResolveHostInfo parallelization** (done - PR #15 MERGED): concurrent host detection
 5. ✅ **CI benchmark job** (done - PR #18 MERGED): captures benchmark output as artifacts per commit
 6. ✅ **Up/Down/Restart/Update parallelization** (done - PR #20 MERGED 2026-04-13): group-by-host pattern, O(N×SSH) → O(SSH); `lockedWriter` + `runPerHostParallel` helpers.
-7. **Doctor parallelization**: host checks in `doctor.go` sequential. Low priority (not a hot path).
-8. **Remove parallelization**: blocked by config mutation concerns. Low value (rare operation).
+7. **Doctor parallelization**: PR #21 created 2026-04-14 — host checks + GitHub API checks parallel. CI pending.
+8. **ServiceInstall/ServiceUninstall parallelization**: could use `runPerHostParallel`. Low priority (one-time ops).
+9. **Remove parallelization**: blocked by config mutation concerns. Low value (rare operation).
 
 ## Work In Progress
 
-*(None)*
+*(None — PR #21 created for doctor parallelization)*
 
 ## Completed Work
 
@@ -46,14 +49,15 @@
 - 2026-04-10: PR #15 — parallelize `CollectStatus` + `ResolveHostInfo`. **MERGED 2026-04-11.**
 - 2026-04-11: PR #17 — CI benchmark job. **MERGED as PR #18.**
 - 2026-04-12: PR #20 — parallelize `Up`/`Down`/`Restart`/`Update` via `runPerHostParallel`. **MERGED 2026-04-13.**
+- 2026-04-14: PR #21 — parallelize `doctor` host SSH checks + GitHub API probes. CI pending.
 
 ## Backlog Cursor
 
-Last checked: Tasks 4, 5, 6, 7 on 2026-04-13. Next run: Tasks 1, 2, 3, 7 — look for new opportunities (all known parallelization done; consider Doctor parallelization or new areas).
+Last checked: Tasks 1, 2, 3, 7 on 2026-04-14. Next run: Tasks 4, 5, 6, 7 — check PR #21 CI status, look for performance issues to comment on, consider service.go parallelization.
 
 ## Last Run
 
-2026-04-13 12:40 UTC - Tasks 4, 5, 6, 7 - PR #20 merged — no pending PRs, no performance issues — all major parallelization work complete. Run: https://github.com/an-lee/gh-sr/actions/runs/24343782934
+2026-04-14 12:38 UTC - Tasks 1, 2, 3, 7 - Created PR #21 (doctor parallelization). Run: https://github.com/an-lee/gh-sr/actions/runs/24399279302
 
 ## Previously Checked-Off Items by Maintainer
 
