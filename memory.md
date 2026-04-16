@@ -9,7 +9,7 @@
 - **Bench**: `make bench` → `go test ./... -run='^$' -bench=. -benchmem -count=3` (added in PR #13)
 - **Format**: `gofmt -w .`
 - ⚠️ `go.mod` requires go 1.25.0; sandbox has 1.24.13 and network is firewalled. Use CI for build/test validation.
-- ⚠️ `git push` fails in sandbox (network firewall) — `safeoutputs-create_pull_request` creates a patch artifact + issue instead of a PR.
+- ⚠️ `git push` fails in sandbox (network firewall) — `safeoutputs-create_pull_request` creates a patch artifact but no PR/issue.
 - CI: `.github/workflows/ci.yml` runs vet + test + bench (bench added in PR #18, merged)
 
 ## Performance Notes
@@ -21,11 +21,10 @@
 - `ResolveHostInfo` in `ops/detect.go`: parallelized in PR #15 — concurrent host detection with WaitGroup. ✅ MERGED
 - Docker mode removed from codebase — `EffectiveMode` always returns "native".
 - `Up`, `Down`, `Restart`, `Update` in `ops/ops.go`: parallelized in PR #20 — group by host, one SSH connection per host, concurrent WaitGroup via `runPerHostParallel` helper. ✅ MERGED 2026-04-13.
-- `doctor` host checks + GitHub API checks: parallelization implemented locally on 2026-04-14 (issue #25) and 2026-04-15 — patch artifact created both times (git push fails in sandbox). Issue #25 has manual instructions + patch.
+- `doctor` host checks + GitHub API checks: parallelization patch in issues #25 (2026-04-14) and #28 (2026-04-15). Maintainer has `eyes` reaction on both. Blocked by git push in sandbox.
+- `ServiceInstall`/`ServiceUninstall`/`ServiceStatus` in `ops/service.go`: parallelized locally 2026-04-16 via `runPerHostParallel`. Patch artifact created; git push blocked.
 - `Setup` in `ops/ops.go`: left sequential (per-host dedup via hostsDone; no parallel opportunity).
 - `Remove` in `ops/ops.go`: sequential. Parallelization blocked by `config.RemoveRunner` file mutations (not concurrency-safe without structural changes). Low value: Remove is a rare operation.
-- `ServiceInstall`/`ServiceUninstall`/`ServiceStatus` in `ops/service.go`: sequential per-runner connections. Could use `runPerHostParallel` but low priority (infrequent setup operations).
-- Note: doctor_test.go was updated (commit 8bfae51) to match Run() signature change (hasGitHubToken removed). Current Run() signature: `Run(w, cfgPath, envPath, cfg, cfgErr, gh, filterHost, filterRepo, strict)`.
 
 ## Optimization Backlog
 
@@ -35,13 +34,13 @@
 4. ✅ **ResolveHostInfo parallelization** (done - PR #15 MERGED): concurrent host detection
 5. ✅ **CI benchmark job** (done - PR #18 MERGED): captures benchmark output as artifacts per commit
 6. ✅ **Up/Down/Restart/Update parallelization** (done - PR #20 MERGED 2026-04-13): group-by-host pattern, O(N×SSH) → O(SSH); `lockedWriter` + `runPerHostParallel` helpers.
-7. **Doctor parallelization**: Implemented but git push fails in sandbox. Patch in issue #25. Retry next run or maintainer can apply manually.
-8. **ServiceInstall/ServiceUninstall parallelization**: could use `runPerHostParallel`. Low priority (one-time ops).
+7. **Doctor parallelization**: Patch in issues #25 and #28. Retry or maintainer can apply manually. Blocked by git push in sandbox (now 3 attempts).
+8. **ServiceInstall/ServiceUninstall/ServiceStatus parallelization**: Patch artifact created 2026-04-16. Blocked by git push in sandbox.
 9. **Remove parallelization**: blocked by config mutation concerns. Low value (rare operation).
 
 ## Work In Progress
 
-*(None — doctor parallelization patch in issue #25, blocked by git push failure in sandbox)*
+*(None — doctor patch in issues #25/#28; service.go patch artifact in run 24510659684)*
 
 ## Completed Work
 
@@ -50,16 +49,17 @@
 - 2026-04-10: PR #15 — parallelize `CollectStatus` + `ResolveHostInfo`. **MERGED 2026-04-11.**
 - 2026-04-11: PR #17 — CI benchmark job. **MERGED as PR #18.**
 - 2026-04-12: PR #20 — parallelize `Up`/`Down`/`Restart`/`Update` via `runPerHostParallel`. **MERGED 2026-04-13.**
-- 2026-04-14: Doctor parallelization — patch artifact created (git push blocked). Issue #25 has patch + manual instructions.
-- 2026-04-15: Doctor parallelization — attempted again, patch artifact created again (same issue).
+- 2026-04-14: Doctor parallelization — patch artifact created (issue #25). Git push blocked.
+- 2026-04-15: Doctor parallelization — patch artifact created again (issue #28). Git push blocked.
+- 2026-04-16: ServiceInstall/Uninstall/Status parallelization — patch artifact created. Git push blocked.
 
 ## Backlog Cursor
 
-Last checked: Tasks 3, 4, 7 on 2026-04-15. Next run: Tasks 1, 2, 5, 6, 7 — verify commands still valid, look for new opportunities, check for performance issues to comment on, consider service.go parallelization.
+Last checked: Tasks 2, 3, 7 on 2026-04-16. Next run: Tasks 4, 5, 6, 7 — check PRs/issues, look for perf issues to comment on, investigate new infrastructure opportunities (e.g. benchmarks for service ops, or tui/dashboard.go refresh performance).
 
 ## Last Run
 
-2026-04-15 12:39 UTC - Tasks 3, 4, 7 - Doctor parallelization implemented; git push failed (sandbox network firewalled), patch artifact created. Run: https://github.com/an-lee/gh-sr/actions/runs/24454892688
+2026-04-16 12:40 UTC - Tasks 2, 3, 7 - ServiceInstall/Uninstall/Status parallelization patch created; git push blocked. Monthly Activity issue #6 updated. Run: https://github.com/an-lee/gh-sr/actions/runs/24510659684
 
 ## Previously Checked-Off Items by Maintainer
 
