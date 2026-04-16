@@ -6,6 +6,7 @@ import (
 
 	"github.com/an-lee/gh-sr/internal/autostart"
 	"github.com/an-lee/gh-sr/internal/config"
+	"github.com/an-lee/gh-sr/internal/host"
 	"github.com/an-lee/gh-sr/internal/runner"
 )
 
@@ -15,7 +16,7 @@ func ServiceInstall(w io.Writer, cfg *config.Config, filterHost, filterRepo stri
 		return err
 	}
 	runners := config.FilterRunners(cfg, filterHost, filterRepo, nameArgs)
-	for _, rc := range runners {
+	return runPerHostParallel(w, cfg, runners, func(w io.Writer, h *host.Host, rc config.RunnerConfig) error {
 		hcfg := cfg.Hosts[rc.Host]
 		if system && hcfg.OS != "linux" {
 			return fmt.Errorf("--system applies only to Linux hosts (host %q is %s)", rc.Host, hcfg.OS)
@@ -25,29 +26,21 @@ func ServiceInstall(w io.Writer, cfg *config.Config, filterHost, filterRepo stri
 		} else {
 			fmt.Fprintf(w, "Autostart for %s on %s (%s)...\n", rc.Name, rc.Host, hcfg.Addr)
 		}
-		h, err := ConnectHost(rc.Host, hcfg)
-		if err != nil {
-			return err
-		}
 		for _, inst := range rc.InstanceNames() {
 			ok, err := runner.NativeRunnerConfigPresent(h, inst)
 			if err != nil {
-				h.Close()
 				return fmt.Errorf("%s: %w", inst, err)
 			}
 			if !ok {
-				h.Close()
 				return fmt.Errorf("%s: runner not configured on host; run: gh sr setup %s", inst, rc.Name)
 			}
 			if err := autostart.Install(h, inst, autostart.InstallOpts{System: system}); err != nil {
-				h.Close()
 				return fmt.Errorf("%s: %w", inst, err)
 			}
 			fmt.Fprintf(w, "  %s: autostart installed\n", inst)
 		}
-		h.Close()
-	}
-	return nil
+		return nil
+	})
 }
 
 // ServiceUninstall removes autostart definitions created by gh sr service install.
@@ -56,21 +49,16 @@ func ServiceUninstall(w io.Writer, cfg *config.Config, filterHost, filterRepo st
 		return err
 	}
 	runners := config.FilterRunners(cfg, filterHost, filterRepo, nameArgs)
-	for _, rc := range runners {
+	return runPerHostParallel(w, cfg, runners, func(w io.Writer, h *host.Host, rc config.RunnerConfig) error {
 		hcfg := cfg.Hosts[rc.Host]
 		if config.IsLocalAddr(hcfg.Addr) {
 			fmt.Fprintf(w, "Removing autostart for %s on %s (local)...\n", rc.Name, rc.Host)
 		} else {
 			fmt.Fprintf(w, "Removing autostart for %s on %s (%s)...\n", rc.Name, rc.Host, hcfg.Addr)
 		}
-		h, err := ConnectHost(rc.Host, hcfg)
-		if err != nil {
-			return err
-		}
 		for _, inst := range rc.InstanceNames() {
 			kind, err := autostart.Detect(h, inst)
 			if err != nil {
-				h.Close()
 				return fmt.Errorf("%s: %w", inst, err)
 			}
 			if kind == autostart.KindNone {
@@ -78,14 +66,12 @@ func ServiceUninstall(w io.Writer, cfg *config.Config, filterHost, filterRepo st
 				continue
 			}
 			if err := autostart.Uninstall(h, inst); err != nil {
-				h.Close()
 				return fmt.Errorf("%s: %w", inst, err)
 			}
 			fmt.Fprintf(w, "  %s: autostart removed\n", inst)
 		}
-		h.Close()
-	}
-	return nil
+		return nil
+	})
 }
 
 // ServiceStatus prints autostart installation state per runner instance.
@@ -94,21 +80,14 @@ func ServiceStatus(w io.Writer, cfg *config.Config, filterHost, filterRepo strin
 		return err
 	}
 	runners := config.FilterRunners(cfg, filterHost, filterRepo, nameArgs)
-	for _, rc := range runners {
-		hcfg := cfg.Hosts[rc.Host]
-		h, err := ConnectHost(rc.Host, hcfg)
-		if err != nil {
-			return err
-		}
+	return runPerHostParallel(w, cfg, runners, func(w io.Writer, h *host.Host, rc config.RunnerConfig) error {
 		for _, inst := range rc.InstanceNames() {
 			row, err := autostart.Status(h, rc.Host, inst, "native")
 			if err != nil {
-				h.Close()
 				return fmt.Errorf("%s: %w", inst, err)
 			}
 			fmt.Fprintf(w, "%s @ %s [%s]: %s\n", inst, row.Host, row.Mode, row.Detail)
 		}
-		h.Close()
-	}
-	return nil
+		return nil
+	})
 }
