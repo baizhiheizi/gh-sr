@@ -12,7 +12,7 @@
 - `go.mod` requires `go 1.25.0` but Go proxy is blocked in the agent sandbox (Forbidden).
 - Only `go 1.24.13` is available locally; GOTOOLCHAIN=local fails with version mismatch.
 - **Tests cannot be run in this sandbox** — infrastructure limitation. Note in PRs as "Infrastructure failure".
-- **Git push consistently fails (exit code 128)** — safeoutputs create_pull_request saves patches but cannot push branches. PRs are created as fallback issues with patch artifacts instead.
+- **Git push consistently fails (exit code 128)** — safeoutputs create_pull_request saves patches but cannot push branches. Issues are created as fallback with patch artifacts instead.
 
 ## Testing Notes
 
@@ -38,26 +38,29 @@
 ### Remaining gaps
 - `internal/ops/ops.go`, `service.go` — orchestration-heavy, needs mocks
 - `internal/host/detect.go` — DetectOS/DetectArch require SSH; normalizeArch patch pending
+- `internal/agentic/agentic.go` — patch READY (issue #31, run 24512277592)
 
 ## Testing Backlog
 
 1. **ops/metrics.go** — `sortedHostNames` MERGED (PR #8)
 2. **runner/runner.go** — `expectedGitHubRunnerOS` MERGED (PR #8)
 3. **runner/docker.go** — `shellSingleQuote`, `dockerRunnerEntryScript` MERGED (PR #11)
-4. **host/detect.go** — `normalizeArch` tests — PATCH READY (issues #23, #26, current run patch)
-5. **autostart/sanitize.go** — expanded table-driven tests (15 cases) — PATCH READY (issues #23, #26)
-6. **ops/ops.go** — orchestration functions are integration-heavy; skip unless mock infra added
+4. **host/detect.go** — `normalizeArch` tests — PATCH READY (issue #29, run 24456550513)
+5. **autostart/sanitize.go** — expanded table-driven tests (15 cases) — PATCH READY (issue #29, run 24456550513)
+6. **agentic/agentic.go** — `HasBlockingFailures`, `FormatRemediation`, `FormatAllRemediations` — PATCH READY (issue #31, run 24512277592)
+7. **ops/ops.go** — orchestration functions are integration-heavy; skip unless mock infra added
 
 ## Task Schedule (Round-Robin)
 
-Last run: 2026-04-15 — Tasks 4 (maintain PRs - retried push, still failing), 7 (monthly activity updated)
-Next run should prioritize: Task 2 (re-scan for new opportunities after recent Perf Improver changes), Task 6 (test infrastructure), Task 7
+Last run: 2026-04-16 — Tasks 2 (rescan for opportunities), 3 (agentic tests), 7 (monthly activity updated)
+Next run should prioritize: Task 4 (maintain PRs), Task 5 (comment on testing issues), Task 6 (test infrastructure), Task 7
 
 ## Open Issues with Patches
 
-- Issue #23: "[Test Improver] Add normalizeArch tests and expand SanitizeInstance edge cases" — patch in run 24345332348
-- Issue #26: "[Test Improver] Add normalizeArch tests and expand SanitizeInstance table-driven tests" — patch in run 24400978974
-- Current run 24456550513: new patch created but push failed (same work, slightly refined)
+- Issue #23: earlier attempt at normalizeArch/SanitizeInstance — superseded by #29
+- Issue #26: earlier attempt at normalizeArch/SanitizeInstance — superseded by #29
+- Issue #29: "[Test Improver] Add normalizeArch tests and expand SanitizeInstance table-driven tests" — patch in run 24456550513
+- Issue #31: "[Test Improver] Add tests for agentic prereq helper functions" — patch in run 24512277592
 
 ## Completed Work
 
@@ -70,4 +73,4 @@ No maintainer comments yet.
 
 ## Monthly Activity Issue
 
-- Issue #4: "[Test Improver] Monthly Activity 2026-04" — open, updated 2026-04-15
+- Issue #4: "[Test Improver] Monthly Activity 2026-04" — open, updated 2026-04-16
