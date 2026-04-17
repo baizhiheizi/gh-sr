@@ -21,8 +21,8 @@
 - `ResolveHostInfo` in `ops/detect.go`: parallelized in PR #15 — concurrent host detection with WaitGroup. ✅ MERGED
 - Docker mode removed from codebase — `EffectiveMode` always returns "native".
 - `Up`, `Down`, `Restart`, `Update` in `ops/ops.go`: parallelized in PR #20 — group by host, one SSH connection per host, concurrent WaitGroup via `runPerHostParallel` helper. ✅ MERGED 2026-04-13.
-- `doctor` host checks + GitHub API checks: parallelization patch in issues #25 (2026-04-14) and #28 (2026-04-15). Maintainer has `eyes` reaction on both. Blocked by git push in sandbox.
-- `ServiceInstall`/`ServiceUninstall`/`ServiceStatus` in `ops/service.go`: parallelized locally 2026-04-16 via `runPerHostParallel`. Patch artifact created; git push blocked.
+- `ServiceInstall`/`ServiceUninstall`/`ServiceStatus` in `ops/service.go`: already use `runPerHostParallel` (confirmed in current codebase). ✅
+- `doctor` host checks + GitHub API checks: parallelization patch attempted 4 times (issues #25, #28, runs 2026-04-14/15/16/17). Git push blocked in sandbox.
 - `Setup` in `ops/ops.go`: left sequential (per-host dedup via hostsDone; no parallel opportunity).
 - `Remove` in `ops/ops.go`: sequential. Parallelization blocked by `config.RemoveRunner` file mutations (not concurrency-safe without structural changes). Low value: Remove is a rare operation.
 
@@ -34,13 +34,13 @@
 4. ✅ **ResolveHostInfo parallelization** (done - PR #15 MERGED): concurrent host detection
 5. ✅ **CI benchmark job** (done - PR #18 MERGED): captures benchmark output as artifacts per commit
 6. ✅ **Up/Down/Restart/Update parallelization** (done - PR #20 MERGED 2026-04-13): group-by-host pattern, O(N×SSH) → O(SSH); `lockedWriter` + `runPerHostParallel` helpers.
-7. **Doctor parallelization**: Patch in issues #25 and #28. Retry or maintainer can apply manually. Blocked by git push in sandbox (now 3 attempts).
-8. **ServiceInstall/ServiceUninstall/ServiceStatus parallelization**: Patch artifact created 2026-04-16. Blocked by git push in sandbox.
+7. ✅ **ServiceInstall/ServiceUninstall/ServiceStatus parallelization**: already in codebase via `runPerHostParallel`.
+8. **Doctor parallelization**: Patch attempted 4 times, always blocked by git push in sandbox. Issues #25 and #28 open with patch artifacts.
 9. **Remove parallelization**: blocked by config mutation concerns. Low value (rare operation).
 
 ## Work In Progress
 
-*(None — doctor patch in issues #25/#28; service.go patch artifact in run 24510659684)*
+*(None — doctor patch in issues #25/#28; 4 attempts blocked)*
 
 ## Completed Work
 
@@ -51,15 +51,16 @@
 - 2026-04-12: PR #20 — parallelize `Up`/`Down`/`Restart`/`Update` via `runPerHostParallel`. **MERGED 2026-04-13.**
 - 2026-04-14: Doctor parallelization — patch artifact created (issue #25). Git push blocked.
 - 2026-04-15: Doctor parallelization — patch artifact created again (issue #28). Git push blocked.
-- 2026-04-16: ServiceInstall/Uninstall/Status parallelization — patch artifact created. Git push blocked.
+- 2026-04-16: ServiceInstall/Uninstall/Status parallelization — patch artifact created. Git push blocked. (Code already had runPerHostParallel — may have been applied.)
+- 2026-04-17: Doctor parallelization — patch artifact created (branch perf-assist/parallelize-doctor-2026-04-17). Git push blocked (4th attempt).
 
 ## Backlog Cursor
 
-Last checked: Tasks 2, 3, 7 on 2026-04-16. Next run: Tasks 4, 5, 6, 7 — check PRs/issues, look for perf issues to comment on, investigate new infrastructure opportunities (e.g. benchmarks for service ops, or tui/dashboard.go refresh performance).
+Last checked: Tasks 3, 4, 5, 6, 7 on 2026-04-17. Next run: Tasks 1, 2, 6, 7 — re-validate commands, look for new opportunities (TUI refresh perf, config.Load benchmark), investigate new infrastructure.
 
 ## Last Run
 
-2026-04-16 12:40 UTC - Tasks 2, 3, 7 - ServiceInstall/Uninstall/Status parallelization patch created; git push blocked. Monthly Activity issue #6 updated. Run: https://github.com/an-lee/gh-sr/actions/runs/24510659684
+2026-04-17 12:36 UTC - Tasks 3, 4, 5, 6, 7 - Doctor parallelization patch (4th attempt); git push blocked. Monthly Activity issue #6 updated. Run: https://github.com/an-lee/gh-sr/actions/runs/24565340942
 
 ## Previously Checked-Off Items by Maintainer
 
