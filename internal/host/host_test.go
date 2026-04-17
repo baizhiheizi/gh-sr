@@ -9,6 +9,49 @@ import (
 	"github.com/an-lee/gh-sr/internal/config"
 )
 
+func Test_normalizeArch(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		input   string
+		want    string
+		wantErr bool
+	}{
+		// Valid amd64 inputs
+		{"x86_64", "amd64", false},
+		{"amd64", "amd64", false},
+		{"X86_64", "amd64", false},
+		{"AMD64", "amd64", false},
+		// Valid arm64 inputs
+		{"aarch64", "arm64", false},
+		{"arm64", "arm64", false},
+		{"AARCH64", "arm64", false},
+		{"ARM64", "arm64", false},
+		// Error cases
+		{"i386", "", true},
+		{"UNKNOWN", "", true},
+		{"", "", true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.input, func(t *testing.T) {
+			t.Parallel()
+			got, err := normalizeArch(tc.input)
+			if tc.wantErr {
+				if err == nil {
+					t.Errorf("normalizeArch(%q): expected error, got %q", tc.input, got)
+				}
+				return
+			}
+			if err != nil {
+				t.Errorf("normalizeArch(%q): unexpected error: %v", tc.input, err)
+				return
+			}
+			if got != tc.want {
+				t.Errorf("normalizeArch(%q) = %q, want %q", tc.input, got, tc.want)
+			}
+		})
+	}
+}
+
 func Test_parseAddr(t *testing.T) {
 	t.Parallel()
 	u, a := parseAddr("user@host.example:2222")
