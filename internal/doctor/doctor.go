@@ -1,12 +1,14 @@
 package doctor
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"os"
 	"runtime"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/an-lee/gh-sr/internal/agentic"
 	"github.com/an-lee/gh-sr/internal/config"
@@ -106,57 +108,105 @@ func Run(w io.Writer, cfgPath, envPath string, cfg *config.Config, cfgErr error,
 		r.Fail++
 	} else {
 		repos := uniqueRepos(runners)
-		for _, repo := range repos {
-			list, err := gh.ListRunners(repo)
-			if err != nil {
-				printLine(w, sevFail, "github", fmt.Sprintf("%s: %v", repo, err))
-				r.Fail++
-				continue
-			}
-			printLine(w, sevOK, "github", fmt.Sprintf("%s: list runners OK (%d registered)", repo, len(list)))
-		}
 		orgs := uniqueOrgs(runners)
-		for _, org := range orgs {
-			list, err := gh.ListRunnersScoped("org", org)
-			if err != nil {
-				printLine(w, sevFail, "github", fmt.Sprintf("org %s: %v", org, err))
+
+		type apiResult struct {
+			sev string
+			msg string
+		}
+		repoResults := make([]apiResult, len(repos))
+		orgResults := make([]apiResult, len(orgs))
+
+		var apiWg sync.WaitGroup
+		for i, repo := range repos {
+			apiWg.Add(1)
+			go func(idx int, repo string) {
+				defer apiWg.Done()
+				list, err := gh.ListRunners(repo)
+				if err != nil {
+					repoResults[idx] = apiResult{sevFail, fmt.Sprintf("%s: %v", repo, err)}
+				} else {
+					repoResults[idx] = apiResult{sevOK, fmt.Sprintf("%s: list runners OK (%d registered)", repo, len(list))}
+				}
+			}(i, repo)
+		}
+		for i, org := range orgs {
+			apiWg.Add(1)
+			go func(idx int, org string) {
+				defer apiWg.Done()
+				list, err := gh.ListRunnersScoped("org", org)
+				if err != nil {
+					orgResults[idx] = apiResult{sevFail, fmt.Sprintf("org %s: %v", org, err)}
+				} else {
+					orgResults[idx] = apiResult{sevOK, fmt.Sprintf("org %s: list runners OK (%d registered)", org, len(list))}
+				}
+			}(i, org)
+		}
+		apiWg.Wait()
+
+		for _, res := range repoResults {
+			printLine(w, res.sev, "github", res.msg)
+			if res.sev == sevFail {
 				r.Fail++
-				continue
 			}
-			printLine(w, sevOK, "github", fmt.Sprintf("org %s: list runners OK (%d registered)", org, len(list)))
+		}
+		for _, res := range orgResults {
+			printLine(w, res.sev, "github", res.msg)
+			if res.sev == sevFail {
+				r.Fail++
+			}
 		}
 	}
 
 	fmt.Fprintln(w, "\n=== Hosts ===")
 	hostOrder := uniqueHostNames(runners)
-	for _, hostName := range hostOrder {
-		hcfg := cfg.Hosts[hostName]
 
-		h := host.NewHost(hostName, hcfg)
-		if err := h.Connect(); err != nil {
-			printLine(w, sevFail, hostName, fmt.Sprintf("connect: %v", err))
-			r.Fail++
-			continue
-		}
-		if err := ensureDoctorHostOS(h, hcfg.Addr); err != nil {
-			printLine(w, sevFail, hostName, fmt.Sprintf("detect os: %v", err))
-			r.Fail++
-			_ = h.Close()
-			continue
-		}
+	type hostResult struct {
+		buf bytes.Buffer
+		r   Result
+	}
+	hostResults := make([]hostResult, len(hostOrder))
 
-		func() {
+	var hostWg sync.WaitGroup
+	for i, hostName := range hostOrder {
+		hostWg.Add(1)
+		go func(idx int, hostName string) {
+			defer hostWg.Done()
+			hr := &hostResults[idx]
+			hcfg := cfg.Hosts[hostName]
+
+			h := host.NewHost(hostName, hcfg)
+			if err := h.Connect(); err != nil {
+				printLine(&hr.buf, sevFail, hostName, fmt.Sprintf("connect: %v", err))
+				hr.r.Fail++
+				return
+			}
+			if err := ensureDoctorHostOS(h, hcfg.Addr); err != nil {
+				printLine(&hr.buf, sevFail, hostName, fmt.Sprintf("detect os: %v", err))
+				hr.r.Fail++
+				_ = h.Close()
+				return
+			}
+
 			defer h.Close()
-			printLine(w, sevOK, hostName, fmt.Sprintf("connected (%s)", addrSummary(hcfg.Addr)))
-			checkNative(w, hostName, h, &r)
-			checkNativeRunnerInstall(w, hostName, h, runners, &r)
+			printLine(&hr.buf, sevOK, hostName, fmt.Sprintf("connected (%s)", addrSummary(hcfg.Addr)))
+			checkNative(&hr.buf, hostName, h, &hr.r)
+			checkNativeRunnerInstall(&hr.buf, hostName, h, runners, &hr.r)
 			if h.OS == "linux" {
-				checkLinuxSudo(w, hostName, h, &r)
+				checkLinuxSudo(&hr.buf, hostName, h, &hr.r)
 			}
 			if hasAgenticRunners(cfg.RunnersForHost(hostName)) {
-				checkAgenticPrereqs(w, hostName, h, &r)
+				checkAgenticPrereqs(&hr.buf, hostName, h, &hr.r)
 			}
-		}()
+		}(i, hostName)
+	}
+	hostWg.Wait()
+
+	for i := range hostOrder {
+		hr := &hostResults[i]
+		_, _ = io.Copy(w, &hr.buf)
+		r.Fail += hr.r.Fail
+		r.Warn += hr.r.Warn
 	}
 
 	printSummary(w, r, strict)
