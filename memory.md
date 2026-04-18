@@ -22,7 +22,8 @@
 - Docker mode removed from codebase — `EffectiveMode` always returns "native".
 - `Up`, `Down`, `Restart`, `Update` in `ops/ops.go`: parallelized in PR #20 — group by host, one SSH connection per host, concurrent WaitGroup via `runPerHostParallel` helper. ✅ MERGED 2026-04-13.
 - `ServiceInstall`/`ServiceUninstall`/`ServiceStatus` in `ops/service.go`: already use `runPerHostParallel` (confirmed in current codebase). ✅
-- `doctor` host checks + GitHub API checks: parallelization patch attempted 4 times (issues #25, #28, runs 2026-04-14/15/16/17). Git push blocked in sandbox.
+- `doctor.go`: GitHub API checks + host checks already fully parallelized in current codebase (apiWg + hostWg). ✅
+- `config.Load`: called on every CLI invocation (file read + YAML parse + Validate). No benchmark coverage until PR in 2026-04-18 run.
 - `Setup` in `ops/ops.go`: left sequential (per-host dedup via hostsDone; no parallel opportunity).
 - `Remove` in `ops/ops.go`: sequential. Parallelization blocked by `config.RemoveRunner` file mutations (not concurrency-safe without structural changes). Low value: Remove is a rare operation.
 
@@ -35,12 +36,14 @@
 5. ✅ **CI benchmark job** (done - PR #18 MERGED): captures benchmark output as artifacts per commit
 6. ✅ **Up/Down/Restart/Update parallelization** (done - PR #20 MERGED 2026-04-13): group-by-host pattern, O(N×SSH) → O(SSH); `lockedWriter` + `runPerHostParallel` helpers.
 7. ✅ **ServiceInstall/ServiceUninstall/ServiceStatus parallelization**: already in codebase via `runPerHostParallel`.
-8. **Doctor parallelization**: Patch attempted 4 times, always blocked by git push in sandbox. Issues #25 and #28 open with patch artifacts.
-9. **Remove parallelization**: blocked by config mutation concerns. Low value (rare operation).
+8. ✅ **Doctor parallelization**: already in codebase (apiWg + hostWg for GitHub API and host checks).
+9. **config.Load benchmarks**: patch artifact created 2026-04-18 (branch perf-assist/config-load-benchmarks-2026-04-18). Establishes baseline for future Load/Validate optimization.
+10. **FilterRunners single-pass**: currently 3 sequential linear scans, could be 1 pass. Minor improvement for typical small configs.
+11. **Remove parallelization**: blocked by config mutation concerns. Low value (rare operation).
 
 ## Work In Progress
 
-*(None — doctor patch in issues #25/#28; 4 attempts blocked)*
+*(None — config.Load benchmark patch in 2026-04-18 run)*
 
 ## Completed Work
 
@@ -49,18 +52,16 @@
 - 2026-04-10: PR #15 — parallelize `CollectStatus` + `ResolveHostInfo`. **MERGED 2026-04-11.**
 - 2026-04-11: PR #17 — CI benchmark job. **MERGED as PR #18.**
 - 2026-04-12: PR #20 — parallelize `Up`/`Down`/`Restart`/`Update` via `runPerHostParallel`. **MERGED 2026-04-13.**
-- 2026-04-14: Doctor parallelization — patch artifact created (issue #25). Git push blocked.
-- 2026-04-15: Doctor parallelization — patch artifact created again (issue #28). Git push blocked.
-- 2026-04-16: ServiceInstall/Uninstall/Status parallelization — patch artifact created. Git push blocked. (Code already had runPerHostParallel — may have been applied.)
-- 2026-04-17: Doctor parallelization — patch artifact created (branch perf-assist/parallelize-doctor-2026-04-17). Git push blocked (4th attempt).
+- 2026-04-14 to 2026-04-17: Doctor parallelization — 4 patch attempts, git push blocked. Now confirmed doctor.go is already parallelized in current codebase.
+- 2026-04-18: config.Load + Validate benchmarks — patch artifact created (branch perf-assist/config-load-benchmarks-2026-04-18). Git push blocked.
 
 ## Backlog Cursor
 
-Last checked: Tasks 3, 4, 5, 6, 7 on 2026-04-17. Next run: Tasks 1, 2, 6, 7 — re-validate commands, look for new opportunities (TUI refresh perf, config.Load benchmark), investigate new infrastructure.
+Last checked: Tasks 2, 6, 7 on 2026-04-18. Next run: Tasks 1, 3, 4, 5, 7 — check for FilterRunners single-pass opportunity, look for new patterns.
 
 ## Last Run
 
-2026-04-17 12:36 UTC - Tasks 3, 4, 5, 6, 7 - Doctor parallelization patch (4th attempt); git push blocked. Monthly Activity issue #6 updated. Run: https://github.com/an-lee/gh-sr/actions/runs/24565340942
+2026-04-18 12:26 UTC - Tasks 2, 6, 7 - Added config.Load/Validate benchmarks (patch artifact); Monthly Activity issue #6 updated. Run: https://github.com/an-lee/gh-sr/actions/runs/24604641019
 
 ## Previously Checked-Off Items by Maintainer
 
