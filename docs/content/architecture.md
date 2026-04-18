@@ -91,8 +91,8 @@ sequenceDiagram
 | `gh sr restart` | `down` then `up`; stop errors are ignored before start. |
 | `gh sr update` | Remove local runner registration (native) or container (docker), then setup and start again—use when upgrading the runner stack. |
 | `gh sr cleanup` | Deletes **offline** runners from the GitHub API only; it does not remove local install dirs or Docker containers. |
-| `gh sr service install` / `uninstall` / `status` | **Native** runners only: install OS autostart (systemd on Linux, LaunchAgent on macOS, scheduled task at logon on Windows). **Docker** rows are skipped; containers already use Docker’s `--restart unless-stopped`. After install, `gh sr up` and `gh sr down` start/stop the same supervisor instead of a bare `nohup` / Win32 process. |
-| `gh sr doctor` | Read-only checks: local paths, config, GitHub API, SSH targets, Docker vs native prerequisites. Use `--strict` to treat **WARN** as failure. |
+| `gh sr service install` / `uninstall` / `status` | **Native** runners only: install OS autostart (systemd on Linux, LaunchAgent on macOS, scheduled task at logon on Windows). **Docker** rows are skipped; containers already use Docker’s `--restart unless-stopped`. After install, `gh sr up` and `gh sr down` start/stop the same supervisor instead of a bare `nohup` / Win32 process. All three service commands dispatch **one SSH connection per host concurrently**, so they complete in roughly the time it takes to reach the slowest single host; output order across hosts is non-deterministic. |
+| `gh sr doctor` | Read-only checks: local paths, config, GitHub API, SSH targets, Docker vs native prerequisites. Use `--strict` to treat **WARN** as failure. Host SSH checks run **concurrently** (one goroutine per host), and GitHub API checks (repos and orgs) are also issued concurrently; results in both sections are printed in sorted order. |
 
 ```mermaid
 flowchart TD
