@@ -1,6 +1,10 @@
 package config
 
 import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -78,5 +82,68 @@ func BenchmarkEffectiveLabels_Explicit(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		rc.EffectiveLabels("linux", "amd64")
+	}
+}
+
+// makeConfigYAML generates a minimal valid YAML config with n runners across numHosts hosts.
+func makeConfigYAML(n, numHosts int) string {
+	var sb strings.Builder
+	sb.WriteString("hosts:\n")
+	for i := 0; i < numHosts; i++ {
+		name := fmt.Sprintf("host%02d", i)
+		sb.WriteString(fmt.Sprintf("  %s:\n    addr: local\n    os: linux\n    arch: amd64\n", name))
+	}
+	sb.WriteString("runners:\n")
+	for i := 0; i < n; i++ {
+		host := fmt.Sprintf("host%02d", i%numHosts)
+		sb.WriteString(fmt.Sprintf("  - name: runner-%02d\n    repo: org/repo-%02d\n    host: %s\n    count: 2\n", i, i%10, host))
+	}
+	return sb.String()
+}
+
+// BenchmarkLoad measures end-to-end config loading (file read + YAML parse + validate).
+// Config loading is on the hot path — it's called for every CLI invocation.
+func BenchmarkLoad_Small(b *testing.B) {
+	dir := b.TempDir()
+	path := filepath.Join(dir, "runners.yml")
+	if err := os.WriteFile(path, []byte(makeConfigYAML(5, 2)), 0o600); err != nil {
+		b.Fatal(err)
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := Load(path); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkLoad_Large(b *testing.B) {
+	dir := b.TempDir()
+	path := filepath.Join(dir, "runners.yml")
+	if err := os.WriteFile(path, []byte(makeConfigYAML(50, 10)), 0o600); err != nil {
+		b.Fatal(err)
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := Load(path); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+// BenchmarkValidate measures just the validation pass, isolating it from YAML parsing.
+func BenchmarkValidate_Small(b *testing.B) {
+	cfg := makeRunnerCfg(5, 2)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = cfg.Validate()
+	}
+}
+
+func BenchmarkValidate_Large(b *testing.B) {
+	cfg := makeRunnerCfg(100, 10)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = cfg.Validate()
 	}
 }
