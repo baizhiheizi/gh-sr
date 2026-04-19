@@ -414,49 +414,45 @@ func (c *Config) FindRunnerForLogs(nameArg, hostFilter string) (*RunnerConfig, e
 }
 
 // FilterRunners returns runners matching optional host, repo, and/or explicit runner/instance names.
+// All active filters are evaluated in a single pass to avoid intermediate allocations.
 func FilterRunners(cfg *Config, hostFilter, repoFilter string, nameArgs []string) []RunnerConfig {
-	runners := cfg.Runners
-
-	if hostFilter != "" {
-		var filtered []RunnerConfig
-		for _, r := range runners {
-			if r.Host == hostFilter {
-				filtered = append(filtered, r)
-			}
-		}
-		runners = filtered
+	if hostFilter == "" && repoFilter == "" && len(nameArgs) == 0 {
+		return cfg.Runners
 	}
 
-	if repoFilter != "" {
-		var filtered []RunnerConfig
-		for _, r := range runners {
-			if r.Repo == repoFilter {
-				filtered = append(filtered, r)
-			}
-		}
-		runners = filtered
-	}
-
+	var nameSet map[string]bool
 	if len(nameArgs) > 0 {
-		nameSet := map[string]bool{}
+		nameSet = make(map[string]bool, len(nameArgs))
 		for _, a := range nameArgs {
 			nameSet[a] = true
 		}
-		var filtered []RunnerConfig
-		for _, r := range runners {
+	}
+
+	var filtered []RunnerConfig
+	for _, r := range cfg.Runners {
+		if hostFilter != "" && r.Host != hostFilter {
+			continue
+		}
+		if repoFilter != "" && r.Repo != repoFilter {
+			continue
+		}
+		if nameSet != nil {
 			if nameSet[r.Name] {
 				filtered = append(filtered, r)
 				continue
 			}
+			matched := false
 			for _, inst := range r.InstanceNames() {
 				if nameSet[inst] {
-					filtered = append(filtered, r)
+					matched = true
 					break
 				}
 			}
+			if !matched {
+				continue
+			}
 		}
-		runners = filtered
+		filtered = append(filtered, r)
 	}
-
-	return runners
+	return filtered
 }
