@@ -14,6 +14,8 @@ history when you want more than the auto-generated GitHub summary.
 
 ### Added
 
+- Added `BenchmarkLoad_Small`, `BenchmarkLoad_Large`, `BenchmarkValidate_Small`, and `BenchmarkValidate_Large` benchmarks in `internal/config` to establish a performance baseline for config loading and validation. Run with `make bench`. (#37)
+
 ### Changed
 
 - `gh sr doctor` now runs host SSH checks and GitHub API checks (repos and orgs) concurrently, reducing wall-clock time from O(N × latency) to O(latency) for configurations with multiple hosts or targets. Output within each section is printed in sorted order. (#33)

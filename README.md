@@ -106,6 +106,9 @@ For detailed configuration instructions, see the [Host Setup Documentation](http
 ```bash
 make check    # vet + tests (same idea as CI)
 # or: go vet ./... && go test ./... -race -count=1
+
+make bench    # run all benchmarks with memory stats
+# or: go test ./... -run='^$' -bench=. -benchmem -count=3
 ```
 
 Repository layout is described in [docs/reference/file-structure.md](docs/reference/file-structure.md).
