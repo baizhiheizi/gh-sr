@@ -54,6 +54,15 @@ func BenchmarkFilterRunners_ByName(b *testing.B) {
 	}
 }
 
+func BenchmarkFilterRunners_AllFilters(b *testing.B) {
+	cfg := makeRunnerCfg(100, 10)
+	// all three filters active: single-pass is most beneficial here
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		FilterRunners(cfg, "ahost", "org/repo-0", []string{"runner-a-2"})
+	}
+}
+
 func BenchmarkInstanceNames(b *testing.B) {
 	rc := RunnerConfig{Name: "my-runner", Count: 10}
 	b.ResetTimer()
