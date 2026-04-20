@@ -5,6 +5,11 @@ on:
   schedule: daily
   workflow_dispatch:
 
+runs-on: [self-hosted, linux]
+
+imports:
+  - an-lee/workflows/agentic/shared/engines/minimax.md@main
+
 network:
   allowed:
   - defaults

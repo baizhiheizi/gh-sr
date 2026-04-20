@@ -5,6 +5,11 @@ on:
   slash_command:
     name: grumpy
     events: [pull_request_comment, pull_request_review_comment]
+    
+runs-on: [self-hosted, linux]
+
+imports:
+  - an-lee/workflows/agentic/shared/engines/minimax.md@main
 
 permissions:
   contents: read

@@ -10,6 +10,11 @@ on:
   issues:
     types: [opened, reopened]
   reaction: eyes
+  
+runs-on: [self-hosted, linux]
+
+imports:
+  - an-lee/workflows/agentic/shared/engines/minimax.md@main
 
 permissions: read-all
 

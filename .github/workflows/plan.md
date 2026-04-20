@@ -6,6 +6,11 @@ on:
   slash_command:
     name: plan
     events: [issue_comment, discussion_comment]
+    
+runs-on: [self-hosted, linux]
+
+imports:
+  - an-lee/workflows/agentic/shared/engines/minimax.md@main
 
 permissions:
   contents: read

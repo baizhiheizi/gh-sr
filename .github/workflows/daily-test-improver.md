@@ -17,6 +17,11 @@ on:
     name: test-assist
   reaction: "eyes"
 
+runs-on: [self-hosted, linux]
+
+imports:
+  - an-lee/workflows/agentic/shared/engines/minimax.md@main
+  
 timeout-minutes: 30
 
 permissions: read-all

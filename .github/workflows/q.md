@@ -8,6 +8,11 @@ on:
   slash_command:
     name: q
   reaction: rocket
+  
+runs-on: [self-hosted, linux]
+
+imports:
+  - an-lee/workflows/agentic/shared/engines/minimax.md@main
 
 permissions:
   contents: read
