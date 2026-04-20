@@ -10,6 +10,7 @@
 - **Format**: `gofmt -w .`
 - ⚠️ `go.mod` requires go 1.25.0; sandbox has 1.24.13 and network is firewalled. Use CI for build/test validation.
 - ⚠️ `git push` fails in sandbox (network firewall) — `safeoutputs-create_pull_request` creates a patch artifact but no PR/issue.
+- ⚠️ `create_pull_request` safeoutputs tool not in function list on 2026-04-20 run; PR creation blocked again.
 - CI: `.github/workflows/ci.yml` runs vet + test + bench (bench added in PR #18, merged)
 
 ## Performance Notes
@@ -24,7 +25,8 @@
 - `ServiceInstall`/`ServiceUninstall`/`ServiceStatus` in `ops/service.go`: already use `runPerHostParallel` (confirmed in current codebase). ✅
 - `doctor.go`: GitHub API checks + host checks parallelized in PR #33. ✅ MERGED 2026-04-17.
 - `config.Load`: benchmarks added in PR #37. ✅ MERGED 2026-04-18.
-- `FilterRunners` in `config.go`: single-pass rewrite in 2026-04-19 run; patch artifact created (branch perf-assist/filter-runners-single-pass).
+- `FilterRunners` in `config.go`: single-pass rewrite already in codebase (from prior patch). ✅ Already applied.
+- `GetLatestRunnerVersion` in `runner/github.go`: sync.Once cache added 2026-04-20 — branch `perf-assist/cache-latest-runner-version` committed locally; PR creation blocked by missing safeoutputs tool.
 - `Setup` in `ops/ops.go`: left sequential (per-host dedup via hostsDone; no parallel opportunity).
 - `Remove` in `ops/ops.go`: sequential. Parallelization blocked by `config.RemoveRunner` file mutations. Low value: Remove is a rare operation.
 
@@ -39,12 +41,13 @@
 7. ✅ **ServiceInstall/ServiceUninstall/ServiceStatus parallelization**: already in codebase via `runPerHostParallel`.
 8. ✅ **Doctor parallelization**: merged PR #33 (2026-04-17).
 9. ✅ **config.Load benchmarks**: merged PR #37 (2026-04-18).
-10. **FilterRunners single-pass**: patch ready (2026-04-19 run); eliminates intermediate allocs + no-filter fast-path. Branch: perf-assist/filter-runners-single-pass.
-11. **Remove parallelization**: blocked by config mutation concerns. Low value (rare operation).
+10. ✅ **FilterRunners single-pass**: already applied in codebase.
+11. **GetLatestRunnerVersion sync.Once cache**: branch ready (2026-04-20); saves (N-1)×RTT when setting up N runners in parallel. PR creation blocked.
+12. **Remove parallelization**: blocked by config mutation concerns. Low value (rare operation).
 
 ## Work In Progress
 
-*(None — FilterRunners single-pass patch artifact created 2026-04-19)*
+GetLatestRunnerVersion cache — branch `perf-assist/cache-latest-runner-version` committed locally. Need PR creation on next run when safeoutputs tools available.
 
 ## Completed Work
 
@@ -56,14 +59,15 @@
 - 2026-04-17: PR #33 — parallelize doctor host + GitHub API checks. **MERGED 2026-04-17.**
 - 2026-04-18: PR #37 — config.Load + Validate benchmarks. **MERGED 2026-04-18.**
 - 2026-04-19: FilterRunners single-pass — patch artifact created (branch perf-assist/filter-runners-single-pass). Git push blocked.
+- 2026-04-20: GetLatestRunnerVersion sync.Once cache — committed to branch perf-assist/cache-latest-runner-version; safeoutputs tool unavailable, PR creation pending.
 
 ## Backlog Cursor
 
-Last checked: Tasks 3, 4, 5, 7 on 2026-04-19. Next run: Tasks 1, 2, 6, 7 — explore new opportunities, check if FilterRunners patch was merged.
+Last checked: Tasks 1, 2, 3, 6, 7 on 2026-04-20. Next run: Tasks 3 (submit pending PR), 4, 5, 7.
 
 ## Last Run
 
-2026-04-19 12:26 UTC - Tasks 3, 4, 5, 7 - FilterRunners single-pass patch; Monthly Activity issue #6 updated. Run: https://github.com/an-lee/gh-sr/actions/runs/24629040505
+2026-04-20 04:38 UTC - Tasks 1, 2, 3, 7 - GetLatestRunnerVersion sync.Once cache implemented (branch perf-assist/cache-latest-runner-version); Monthly Activity issue update pending. Run: https://github.com/an-lee/gh-sr/actions/runs/24648563820
 
 ## Previously Checked-Off Items by Maintainer
 
