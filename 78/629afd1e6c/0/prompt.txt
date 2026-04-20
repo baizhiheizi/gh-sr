@@ -1,0 +1,59 @@
+`gh sr aw ports assign` should only add/update `sandbox.mcp.port` right? But in practical, it make quite a few changes:
+
+```
++    - python
++    - rust
++    - java
++"on":
++  schedule: daily
++  workflow_dispatch: null
+ permissions: read-all
+-
+-tracker-id: ci-coach-daily
+-
+-tools:
+-  github:
+-    toolsets: [default]
+-  bash: true
+-  web-fetch:
+-
++runs-on:
++  - self-hosted
++  - linux
++  - agentic
+ safe-outputs:
+   create-pull-request:
+     expires: 2d
+     protected-files: fallback-to-issue
+-    title-prefix: "[ci-coach] "
+-
+-timeout-minutes: 30
++    title-prefix: '[ci-coach] '
++sandbox:
++  mcp:
++    port: 9080
+ source: githubnext/agentics/workflows/ci-coach.md@aae6af93b4035df74630817afa13c528d6b74fe6
++timeout-minutes: 30
++tools:
++  bash: true
++  github:
++    toolsets:
++      - default
++  web-fetch: null
++tracker-id: ci-coach-daily
+ ---
+```
+
+Help me to identify the root cause and fix it.
+
+---
+
+Implement the plan as specified, it is attached for your reference. Do NOT edit the plan file itself.
+
+To-do's from the plan have already been created. Do not create them again. Mark them as in_progress as you work, starting with the first one. Don't stop until you have completed all the to-dos.
+
+---
+
+Implement the plan as specified, it is attached for your reference. Do NOT edit the plan file itself.
+
+To-do's from the plan have already been created. Do not create them again. Mark them as in_progress as you work, starting with the first one. Don't stop until you have completed all the to-dos.

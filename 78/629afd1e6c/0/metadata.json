@@ -1,0 +1,38 @@
+{
+  "cli_version": "dev",
+  "checkpoint_id": "78629afd1e6c",
+  "session_id": "8162cd8a-0b40-4beb-80ce-7580684df657",
+  "strategy": "manual-commit",
+  "created_at": "2026-04-20T03:49:44.0292786Z",
+  "branch": "main",
+  "checkpoints_count": 3,
+  "files_touched": [
+    "internal/ghawfrontmatter/ghawfrontmatter.go",
+    "internal/ghawfrontmatter/ghawfrontmatter_test.go"
+  ],
+  "agent": "Claude Code",
+  "model": "composer-2",
+  "turn_id": "ada8a4c6921b",
+  "token_usage": {
+    "input_tokens": 0,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 0,
+    "output_tokens": 0,
+    "api_call_count": 0
+  },
+  "session_metrics": {
+    "turn_count": 4
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-04-20T03:49:43.998854111Z",
+    "agent_lines": 133,
+    "agent_removed": 19,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 133,
+    "total_lines_changed": 152,
+    "agent_percentage": 100,
+    "metric_version": 2
+  }
+}
