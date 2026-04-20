@@ -208,8 +208,9 @@ func ScanMarkdownWorkflows(root string) ([]*Doc, error) {
 	return out, nil
 }
 
-// ApplyMCPPortPatch rewrites the YAML frontmatter to set features.mcp-gateway: true
-// and sandbox.mcp.port. The markdown body after the closing --- is preserved.
+// ApplyMCPPortPatch rewrites the YAML frontmatter to set sandbox.mcp.port only.
+// It does not modify features.mcp-gateway (see upstream gh-aw Sandbox docs).
+// The markdown body after the closing --- is preserved.
 // It updates the YAML AST in place so unrelated keys keep order and style.
 func ApplyMCPPortPatch(data []byte, port int) ([]byte, error) {
 	if port < 1 || port > 65535 {
@@ -230,15 +231,6 @@ func ApplyMCPPortPatch(data []byte, port int) ([]byte, error) {
 	if top.Kind != yaml.MappingNode {
 		return nil, fmt.Errorf("frontmatter root must be a YAML mapping")
 	}
-	features, err := getOrCreateMapping(top, "features")
-	if err != nil {
-		return nil, fmt.Errorf("features: %w", err)
-	}
-	setScalarKey(features, "mcp-gateway", &yaml.Node{
-		Kind:  yaml.ScalarNode,
-		Tag:   "!!bool",
-		Value: "true",
-	})
 	sandbox, err := getOrCreateMapping(top, "sandbox")
 	if err != nil {
 		return nil, fmt.Errorf("sandbox: %w", err)

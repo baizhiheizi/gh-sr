@@ -33,8 +33,8 @@ func TestApplyMCPPortPatch(t *testing.T) {
 	if !bytes.HasPrefix(out, []byte("---\n")) {
 		t.Fatalf("prefix: %q", out[:20])
 	}
-	if !bytes.Contains(out, []byte("mcp-gateway: true")) {
-		t.Fatalf("missing mcp-gateway: %s", out)
+	if bytes.Contains(out, []byte("mcp-gateway")) {
+		t.Fatalf("did not expect mcp-gateway in port-only patch: %s", out)
 	}
 	if !bytes.Contains(out, []byte("port: 9082")) {
 		t.Fatalf("missing port: %s", out)
@@ -61,20 +61,30 @@ func TestApplyMCPPortPatch_preservesUnrelatedYAML(t *testing.T) {
 	if !strings.Contains(s, "on:\n  schedule: daily") {
 		t.Fatalf("expected on block unchanged, got:\n%s", s)
 	}
-	if !strings.Contains(s, "mcp-gateway: true") || !strings.Contains(s, "port: 9080") {
-		t.Fatalf("expected patch fields, got:\n%s", s)
+	if strings.Contains(s, "mcp-gateway") {
+		t.Fatalf("did not expect mcp-gateway in port-only patch, got:\n%s", s)
+	}
+	if !strings.Contains(s, "port: 9080") {
+		t.Fatalf("expected port patch, got:\n%s", s)
 	}
 }
 
-func TestApplyMCPPortPatch_errorsNonMappingFeatures(t *testing.T) {
+func TestApplyMCPPortPatch_leavesFeaturesUnchanged(t *testing.T) {
 	t.Parallel()
 	src := []byte("---\nfeatures: []\non: issues\ntools:\n  bash: true\n---\n")
-	_, err := ApplyMCPPortPatch(src, 9080)
-	if err == nil {
-		t.Fatal("expected error")
+	out, err := ApplyMCPPortPatch(src, 9080)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if !strings.Contains(err.Error(), "features") {
-		t.Fatalf("error: %v", err)
+	s := string(out)
+	if !strings.Contains(s, "features: []") {
+		t.Fatalf("expected features sequence unchanged, got:\n%s", s)
+	}
+	if !strings.Contains(s, "port: 9080") {
+		t.Fatalf("expected sandbox.mcp.port added, got:\n%s", s)
+	}
+	if strings.Contains(s, "mcp-gateway") {
+		t.Fatalf("did not expect mcp-gateway, got:\n%s", s)
 	}
 }
 

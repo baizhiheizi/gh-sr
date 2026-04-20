@@ -332,7 +332,7 @@ runs-on:
 **CLI helpers** (run from a clone of the repository that contains `.github/workflows/*.md`):
 
 - `gh sr aw ports check [--workflow-root DIR] [--repo owner/repo]` — warns on duplicate ports, implicit default 80 across files, and rough concurrency vs. `count` on each host.
-- `gh sr aw ports assign [--workflow-root DIR] [--base-port 9080] [--write]` — assigns distinct `sandbox.mcp.port` values (dry-run unless `--write`). Re-run `gh aw compile` afterward.
+- `gh sr aw ports assign [--workflow-root DIR] [--base-port 9080] [--write]` — writes distinct `sandbox.mcp.port` values per workflow markdown (dry-run unless `--write`). It does **not** modify `features.mcp-gateway`; that flag is separate (see [gh-aw Sandbox configuration](https://github.github.com/gh-aw/reference/sandbox/) for gateway routing and `sandbox.mcp`). Re-run `gh aw compile` afterward.
 - `gh sr doctor --workflow-root DIR` (or `doctor --repo owner/repo` when `./.github/workflows` exists in the current directory) — runs the same MCP port checks after host diagnostics.
 
 **Limitation:** two concurrent jobs that use the **same compiled workflow** (same `sandbox.mcp.port`) on one host still conflict; fixing that requires different workflow sources, separate machines, limiting concurrency, or changes in gh-aw.
