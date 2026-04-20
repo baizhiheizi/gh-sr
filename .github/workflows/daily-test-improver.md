@@ -9,32 +9,25 @@ description: |
   - Records testing techniques and learnings in persistent memory
   - Updates a monthly activity summary for maintainer visibility
   Always thoughtful, quality-focused, and mindful of test maintainability.
-
 on:
   schedule: daily
   workflow_dispatch:
   slash_command:
     name: test-assist
   reaction: "eyes"
-
 runs-on: [self-hosted, linux]
-
 imports:
   - an-lee/workflows/agentic/shared/engines/minimax.md@main
-  
 timeout-minutes: 30
-
 permissions: read-all
-
 network:
   allowed:
-  - defaults
-  - dotnet
-  - node
-  - python
-  - rust
-  - java
-
+    - defaults
+    - dotnet
+    - node
+    - python
+    - rust
+    - java
 safe-outputs:
   add-comment:
     max: 10
@@ -58,15 +51,16 @@ safe-outputs:
     target: "*"
     title-prefix: "[Test Improver] "
     max: 1
-
 tools:
   web-fetch:
   bash: true
   github:
     toolsets: [all]
   repo-memory: true
-
 source: githubnext/agentics/workflows/daily-test-improver.md@97143ac59cb3a13ef2a77581f929f06719c7402a
+sandbox:
+  mcp:
+    port: 9082
 ---
 
 # Daily Test Improver

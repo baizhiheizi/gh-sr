@@ -1,26 +1,20 @@
 ---
 description: Performs critical code review with a focus on edge cases, potential bugs, and code quality issues
-
 on:
   slash_command:
     name: grumpy
     events: [pull_request_comment, pull_request_review_comment]
-    
 runs-on: [self-hosted, linux]
-
 imports:
   - an-lee/workflows/agentic/shared/engines/minimax.md@main
-
 permissions:
   contents: read
   pull-requests: read
-
 tools:
   cache-memory: true
   github:
     lockdown: true
     toolsets: [pull_requests, repos]
-
 safe-outputs:
   create-pull-request-review-comment:
     max: 5
@@ -28,13 +22,15 @@ safe-outputs:
   submit-pull-request-review:
     max: 1
   messages:
-    footer: "> 😤 *Reluctantly reviewed by [{workflow_name}]({run_url})*"
-    run-started: "😤 *sigh* [{workflow_name}]({run_url}) is begrudgingly looking at this {event_type}... This better be worth my time."
-    run-success: "😤 Fine. [{workflow_name}]({run_url}) finished the review. It wasn't completely terrible. I guess. 🙄"
-    run-failure: "😤 Great. [{workflow_name}]({run_url}) {status}. As if my day couldn't get any worse..."
-
+    footer: "> \U0001F624 *Reluctantly reviewed by [{workflow_name}]({run_url})*"
+    run-started: "\U0001F624 *sigh* [{workflow_name}]({run_url}) is begrudgingly looking at this {event_type}... This better be worth my time."
+    run-success: "\U0001F624 Fine. [{workflow_name}]({run_url}) finished the review. It wasn't completely terrible. I guess. \U0001F644"
+    run-failure: "\U0001F624 Great. [{workflow_name}]({run_url}) {status}. As if my day couldn't get any worse..."
 timeout-minutes: 10
 source: githubnext/agentics/workflows/grumpy-reviewer.md@97143ac59cb3a13ef2a77581f929f06719c7402a
+sandbox:
+  mcp:
+    port: 9083
 ---
 
 # Grumpy Code Reviewer 🔥

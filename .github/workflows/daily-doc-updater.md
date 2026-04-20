@@ -4,34 +4,27 @@ description: Automatically reviews and updates documentation based on recent cod
 on:
   schedule: daily
   workflow_dispatch:
-
 runs-on: [self-hosted, linux]
-
 imports:
   - an-lee/workflows/agentic/shared/engines/minimax.md@main
-
 network:
   allowed:
-  - defaults
-  - dotnet
-  - node
-  - python
-  - rust
-  - java
-
+    - defaults
+    - dotnet
+    - node
+    - python
+    - rust
+    - java
 permissions:
   contents: read
   issues: read
   pull-requests: read
-
 tools:
   github:
     toolsets: [default]
   edit:
   bash: true
-
 timeout-minutes: 30
-
 safe-outputs:
   create-pull-request:
     expires: 2d
@@ -39,8 +32,10 @@ safe-outputs:
     labels: [documentation, automation]
     draft: false
     protected-files: fallback-to-issue
-
 source: githubnext/agentics/workflows/daily-doc-updater.md@97143ac59cb3a13ef2a77581f929f06719c7402a
+sandbox:
+  mcp:
+    port: 9080
 ---
 
 # Daily Documentation Updater

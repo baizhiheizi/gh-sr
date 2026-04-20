@@ -5,32 +5,28 @@ description: |
   runs tests and formatters, and pushes corrections to the PR branch. Provides detailed
   comments explaining changes made. Helps rapidly resolve PR blockers and keep
   development flowing.
-
 on:
   slash_command:
     name: pr-fix
   reaction: "eyes"
-
 permissions: read-all
-
 network: defaults
-
 tools:
   web-fetch:
   bash: true
   github:
     min-integrity: none # This workflow is allowed to examine any PR because it's invoked by a repo maintainer
-
 safe-outputs:
   push-to-pull-request-branch:
   create-issue:
     title-prefix: "${{ github.workflow }}"
     labels: [automation, pr-fix]
   add-comment:
-
 timeout-minutes: 20
-
 source: githubnext/agentics/workflows/pr-fix.md@97143ac59cb3a13ef2a77581f929f06719c7402a
+sandbox:
+  mcp:
+    port: 9086
 ---
 
 # PR Fix

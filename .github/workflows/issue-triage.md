@@ -5,34 +5,29 @@ description: |
   from similar issues, and provides analysis notes including debugging strategies,
   reproduction steps, and resource links. Helps maintainers quickly understand and
   prioritize incoming issues.
-
 on:
   issues:
     types: [opened, reopened]
   reaction: eyes
-  
 runs-on: [self-hosted, linux]
-
 imports:
   - an-lee/workflows/agentic/shared/engines/minimax.md@main
-
 permissions: read-all
-
 network: defaults
-
 safe-outputs:
   add-labels:
     max: 5
   add-comment:
-
 tools:
   web-fetch:
   github:
     toolsets: [issues]
     min-integrity: none # This workflow is allowed to examine and comment on any issues
-
 timeout-minutes: 10
 source: githubnext/agentics/workflows/issue-triage.md@97143ac59cb3a13ef2a77581f929f06719c7402a
+sandbox:
+  mcp:
+    port: 9084
 ---
 
 # Agentic Triage

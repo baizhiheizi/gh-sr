@@ -1,28 +1,22 @@
 ---
 name: Plan Command
 description: Generates project plans and task breakdowns when invoked with /plan command in issues or PRs
-
 on:
   slash_command:
     name: plan
     events: [issue_comment, discussion_comment]
-    
 runs-on: [self-hosted, linux]
-
 imports:
   - an-lee/workflows/agentic/shared/engines/minimax.md@main
-
 permissions:
   contents: read
   discussions: read
   issues: read
   pull-requests: read
-
 tools:
   github:
     toolsets: [default, discussions]
     min-integrity: none # This workflow is allowed to examine and comment on any issues
-
 safe-outputs:
   create-issue:
     title-prefix: "[task] "
@@ -32,6 +26,9 @@ safe-outputs:
     required-category: "Ideas"
 timeout-minutes: 10
 source: githubnext/agentics/workflows/plan.md@97143ac59cb3a13ef2a77581f929f06719c7402a
+sandbox:
+  mcp:
+    port: 9085
 ---
 
 # Planning Assistant

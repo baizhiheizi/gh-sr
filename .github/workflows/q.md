@@ -1,27 +1,18 @@
 ---
-description: |
-  Intelligent assistant that answers questions, analyzes repositories, and can create PRs for workflow optimizations.
-  An expert system that improves, optimizes, and fixes agentic workflows by investigating performance, 
-  identifying missing tools, and detecting inefficiencies.
-
+description: "Intelligent assistant that answers questions, analyzes repositories, and can create PRs for workflow optimizations.\nAn expert system that improves, optimizes, and fixes agentic workflows by investigating performance, \nidentifying missing tools, and detecting inefficiencies.\n"
 on:
   slash_command:
     name: q
   reaction: rocket
-  
 runs-on: [self-hosted, linux]
-
 imports:
   - an-lee/workflows/agentic/shared/engines/minimax.md@main
-
 permissions:
   contents: read
   actions: read
   issues: read
   pull-requests: read
-
 network: defaults
-
 safe-outputs:
   add-comment:
     max: 1
@@ -30,15 +21,16 @@ safe-outputs:
     labels: [automation, workflow-optimization]
     draft: false
     if-no-changes: "ignore"
-
 tools:
   agentic-workflows:
   bash: true
   github:
     min-integrity: none # This workflow is allowed to examine any PR because it's invoked by a repo maintainer
-
 timeout-minutes: 15
 source: githubnext/agentics/workflows/q.md@97143ac59cb3a13ef2a77581f929f06719c7402a
+sandbox:
+  mcp:
+    port: 9087
 ---
 
 # Q - Agentic Workflow Optimizer

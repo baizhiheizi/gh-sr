@@ -9,27 +9,22 @@ description: |
   - Records performance techniques and learnings in persistent memory
   - Updates a monthly activity summary for maintainer visibility
   Always methodical, measurement-driven, and mindful of trade-offs.
-
 on:
   schedule: daily
   workflow_dispatch:
   slash_command:
     name: perf-assist
   reaction: "eyes"
-
 timeout-minutes: 60
-
 permissions: read-all
-
 network:
   allowed:
-  - defaults
-  - dotnet
-  - node
-  - python
-  - rust
-  - java
-
+    - defaults
+    - dotnet
+    - node
+    - python
+    - rust
+    - java
 safe-outputs:
   add-comment:
     max: 10
@@ -53,15 +48,16 @@ safe-outputs:
     target: "*"
     title-prefix: "[Perf Improver] "
     max: 1
-
 tools:
   web-fetch:
   github:
     toolsets: [all]
   bash: true
   repo-memory: true
-
 source: githubnext/agentics/workflows/daily-perf-improver.md@97143ac59cb3a13ef2a77581f929f06719c7402a
+sandbox:
+  mcp:
+    port: 9081
 ---
 
 # Daily Perf Improver
