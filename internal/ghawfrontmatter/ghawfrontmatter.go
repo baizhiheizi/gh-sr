@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -209,6 +210,7 @@ func ScanMarkdownWorkflows(root string) ([]*Doc, error) {
 
 // ApplyMCPPortPatch rewrites the YAML frontmatter to set features.mcp-gateway: true
 // and sandbox.mcp.port. The markdown body after the closing --- is preserved.
+// It updates the YAML AST in place so unrelated keys keep order and style.
 func ApplyMCPPortPatch(data []byte, port int) ([]byte, error) {
 	if port < 1 || port > 65535 {
 		return nil, fmt.Errorf("port must be 1..65535")
@@ -217,36 +219,45 @@ func ApplyMCPPortPatch(data []byte, port int) ([]byte, error) {
 	if !ok {
 		return nil, fmt.Errorf("no YAML frontmatter found")
 	}
-	var root map[string]interface{}
-	if err := yaml.Unmarshal(yamlDoc, &root); err != nil {
+	var doc yaml.Node
+	if err := yaml.Unmarshal(yamlDoc, &doc); err != nil {
 		return nil, err
 	}
-	if root == nil {
-		root = make(map[string]interface{})
+	if doc.Kind != yaml.DocumentNode || len(doc.Content) == 0 {
+		return nil, fmt.Errorf("frontmatter: empty YAML document")
 	}
-	feat, _ := root["features"].(map[string]interface{})
-	if feat == nil {
-		feat = make(map[string]interface{})
-		root["features"] = feat
+	top := doc.Content[0]
+	if top.Kind != yaml.MappingNode {
+		return nil, fmt.Errorf("frontmatter root must be a YAML mapping")
 	}
-	feat["mcp-gateway"] = true
-	sb, _ := root["sandbox"].(map[string]interface{})
-	if sb == nil {
-		sb = make(map[string]interface{})
-		root["sandbox"] = sb
+	features, err := getOrCreateMapping(top, "features")
+	if err != nil {
+		return nil, fmt.Errorf("features: %w", err)
 	}
-	mcp, _ := sb["mcp"].(map[string]interface{})
-	if mcp == nil {
-		mcp = make(map[string]interface{})
-		sb["mcp"] = mcp
+	setScalarKey(features, "mcp-gateway", &yaml.Node{
+		Kind:  yaml.ScalarNode,
+		Tag:   "!!bool",
+		Value: "true",
+	})
+	sandbox, err := getOrCreateMapping(top, "sandbox")
+	if err != nil {
+		return nil, fmt.Errorf("sandbox: %w", err)
 	}
-	mcp["port"] = port
+	mcp, err := getOrCreateMapping(sandbox, "mcp")
+	if err != nil {
+		return nil, fmt.Errorf("sandbox.mcp: %w", err)
+	}
+	setScalarKey(mcp, "port", &yaml.Node{
+		Kind:  yaml.ScalarNode,
+		Tag:   "!!int",
+		Value: strconv.Itoa(port),
+	})
 
 	var buf bytes.Buffer
 	buf.WriteString("---\n")
 	enc := yaml.NewEncoder(&buf)
 	enc.SetIndent(2)
-	if err := enc.Encode(root); err != nil {
+	if err := enc.Encode(&doc); err != nil {
 		return nil, err
 	}
 	if err := enc.Close(); err != nil {
@@ -258,6 +269,51 @@ func ApplyMCPPortPatch(data []byte, port int) ([]byte, error) {
 	wb.WriteString("\n---\n")
 	wb.Write(rest)
 	return wb.Bytes(), nil
+}
+
+func findMapValueNode(mapping *yaml.Node, key string) *yaml.Node {
+	for i := 0; i+1 < len(mapping.Content); i += 2 {
+		k := mapping.Content[i]
+		if k.Kind == yaml.ScalarNode && k.Value == key {
+			return mapping.Content[i+1]
+		}
+	}
+	return nil
+}
+
+// getOrCreateMapping returns the mapping under key, creating an empty mapping if absent.
+// If the key exists but is not a mapping, it returns an error.
+func getOrCreateMapping(mapping *yaml.Node, key string) (*yaml.Node, error) {
+	if mapping.Kind != yaml.MappingNode {
+		return nil, fmt.Errorf("expected a mapping")
+	}
+	v := findMapValueNode(mapping, key)
+	if v == nil {
+		newMap := &yaml.Node{Kind: yaml.MappingNode}
+		mapping.Content = append(mapping.Content,
+			&yaml.Node{Kind: yaml.ScalarNode, Value: key},
+			newMap,
+		)
+		return newMap, nil
+	}
+	if v.Kind != yaml.MappingNode {
+		return nil, fmt.Errorf("%q is not a mapping (kind %v)", key, v.Kind)
+	}
+	return v, nil
+}
+
+// setScalarKey sets or replaces key with the given scalar value node.
+func setScalarKey(mapping *yaml.Node, key string, scalar *yaml.Node) {
+	for i := 0; i+1 < len(mapping.Content); i += 2 {
+		if mapping.Content[i].Kind == yaml.ScalarNode && mapping.Content[i].Value == key {
+			mapping.Content[i+1] = scalar
+			return
+		}
+	}
+	mapping.Content = append(mapping.Content,
+		&yaml.Node{Kind: yaml.ScalarNode, Value: key},
+		scalar,
+	)
 }
 
 func normalizeRunsOn(v interface{}) []string {
