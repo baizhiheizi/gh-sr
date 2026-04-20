@@ -6,7 +6,6 @@ import (
 )
 
 func TestPreferred(t *testing.T) {
-	t.Parallel()
 	cases := []struct {
 		name   string
 		visual string
@@ -37,7 +36,6 @@ func TestPreferred(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
 			if tc.onlyOS == "!windows" && runtime.GOOS == "windows" {
 				t.Skip("default editor differs on Windows")
 			}
@@ -52,7 +50,6 @@ func TestPreferred(t *testing.T) {
 }
 
 func TestCommand_usesPreferred(t *testing.T) {
-	t.Parallel()
 	t.Setenv("VISUAL", "myvim")
 	t.Setenv("EDITOR", "")
 	cmd := Command("/some/file")
