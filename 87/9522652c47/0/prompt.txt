@@ -1,0 +1,5 @@
+/claude-md-improver Improve @CLAUDE.md , add expicit verditcs after code changes.
+
+---
+
+yes
