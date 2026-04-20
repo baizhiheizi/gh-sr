@@ -1,0 +1,51 @@
+{
+  "cli_version": "dev",
+  "checkpoint_id": "9f39c9b7b36e",
+  "session_id": "8b4c5e78-8c63-4ba8-a187-1e0d97e1e3fb",
+  "strategy": "manual-commit",
+  "created_at": "2026-04-20T02:31:28.070806094Z",
+  "branch": "feat/gh-sr-mcp-port-orchestration",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "cmd/gh-sr/main.go",
+    "docs/content/guides/agentic-workflows.md",
+    "internal/config/config.go",
+    "internal/config/config_test.go",
+    "internal/doctor/doctor.go",
+    "internal/doctor/doctor_test.go",
+    "internal/ghawfrontmatter/ghawfrontmatter.go",
+    "internal/ghawfrontmatter/ghawfrontmatter_test.go",
+    "internal/ghawports/assign.go",
+    "internal/ghawports/check.go",
+    "internal/ghawports/check_test.go",
+    "internal/runner/native.go",
+    "internal/runner/native_test.go",
+    "internal/runner/runner.go",
+    "internal/tui/dashboard.go"
+  ],
+  "agent": "Claude Code",
+  "model": "composer-2",
+  "turn_id": "bba63238992f",
+  "token_usage": {
+    "input_tokens": 0,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 0,
+    "output_tokens": 0,
+    "api_call_count": 0
+  },
+  "session_metrics": {
+    "turn_count": 8
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-04-20T02:31:28.012932772Z",
+    "agent_lines": 1033,
+    "agent_removed": 17,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 1033,
+    "total_lines_changed": 1050,
+    "agent_percentage": 100,
+    "metric_version": 2
+  }
+}

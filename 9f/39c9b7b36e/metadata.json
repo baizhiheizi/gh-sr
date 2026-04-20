@@ -1,0 +1,39 @@
+{
+  "cli_version": "dev",
+  "checkpoint_id": "9f39c9b7b36e",
+  "strategy": "manual-commit",
+  "branch": "feat/gh-sr-mcp-port-orchestration",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "cmd/gh-sr/main.go",
+    "docs/content/guides/agentic-workflows.md",
+    "internal/config/config.go",
+    "internal/config/config_test.go",
+    "internal/doctor/doctor.go",
+    "internal/doctor/doctor_test.go",
+    "internal/ghawfrontmatter/ghawfrontmatter.go",
+    "internal/ghawfrontmatter/ghawfrontmatter_test.go",
+    "internal/ghawports/assign.go",
+    "internal/ghawports/check.go",
+    "internal/ghawports/check_test.go",
+    "internal/runner/native.go",
+    "internal/runner/native_test.go",
+    "internal/runner/runner.go",
+    "internal/tui/dashboard.go"
+  ],
+  "sessions": [
+    {
+      "metadata": "/9f/39c9b7b36e/0/metadata.json",
+      "transcript": "/9f/39c9b7b36e/0/full.jsonl",
+      "content_hash": "/9f/39c9b7b36e/0/content_hash.txt",
+      "prompt": "/9f/39c9b7b36e/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 0,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 0,
+    "output_tokens": 0,
+    "api_call_count": 0
+  }
+}
