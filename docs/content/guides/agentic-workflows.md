@@ -302,6 +302,41 @@ safe-outputs:
 ---
 ```
 
+### 8a. Concurrent jobs, MCP gateway ports, and gh-sr
+
+The gh-aw MCP gateway listens on the host network (`docker --network host`). The TCP port comes from workflow frontmatter `sandbox.mcp.port` (default **80** after `gh aw compile`). If several agentic jobs run on the **same physical host**, they must use **different** ports, or only one such job may run at a time.
+
+**Configure per-instance ports in gh-sr** (`runners.yml`): on a runner with `profile: agentic`, set either:
+
+- `agentic_mcp_port_base: 9080` — instances get ports `9080`, `9081`, … up to `count-1`, or
+- `agentic_mcp_ports: [9080, 9081]` — explicit list whose length must equal `count`.
+
+gh-sr then registers each instance with an extra label **`gh-sr-mcp-<port>`** (for example `gh-sr-mcp-9080`) so GitHub can route jobs to a runner whose MCP port matches the workflow.
+
+Match the workflow frontmatter to that port and label:
+
+```yaml
+features:
+  mcp-gateway: true
+sandbox:
+  mcp:
+    port: 9080
+runs-on:
+  - self-hosted
+  - Linux
+  - X64
+  - agentic
+  - gh-sr-mcp-9080
+```
+
+**CLI helpers** (run from a clone of the repository that contains `.github/workflows/*.md`):
+
+- `gh sr aw ports check [--workflow-root DIR] [--repo owner/repo]` — warns on duplicate ports, implicit default 80 across files, and rough concurrency vs. `count` on each host.
+- `gh sr aw ports assign [--workflow-root DIR] [--base-port 9080] [--write]` — assigns distinct `sandbox.mcp.port` values (dry-run unless `--write`). Re-run `gh aw compile` afterward.
+- `gh sr doctor --workflow-root DIR` (or `doctor --repo owner/repo` when `./.github/workflows` exists in the current directory) — runs the same MCP port checks after host diagnostics.
+
+**Limitation:** two concurrent jobs that use the **same compiled workflow** (same `sandbox.mcp.port`) on one host still conflict; fixing that requires different workflow sources, separate machines, limiting concurrency, or changes in gh-aw.
+
 ## 9. What `profile: agentic` automates
 
 gh-sr handles the following during `gh sr setup` for runners with `profile: agentic` on Linux:
@@ -313,6 +348,7 @@ gh-sr handles the following during `gh sr setup` for runners with `profile: agen
 | **`/opt/hostedtoolcache`** | Bind-mounts npm global prefix to `/opt/hostedtoolcache`, persists in `/etc/fstab` | gh-aw agent containers look for engine binaries (`claude`, `codex`, etc.) in `/opt/hostedtoolcache/*/bin` |
 | **`gh-aw` CLI** | Installs from upstream script (`curl \| bash`) | Provides CLI tooling for managing AWF containers |
 | **`agentic` label** | Appends `agentic` to runner labels | Routes agentic workflow jobs to this runner |
+| **`gh-sr-mcp-*` labels** | When `agentic_mcp_port_base` or `agentic_mcp_ports` is set, each instance gets `gh-sr-mcp-<port>` | Lets `runs-on` target a runner whose MCP listener matches `sandbox.mcp.port` (see [§8a](#8a-concurrent-jobs-mcp-gateway-ports-and-gh-sr)) |
 
 ## 10. End-to-End Verification Script
 

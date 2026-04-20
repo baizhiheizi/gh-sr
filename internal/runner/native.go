@@ -131,8 +131,8 @@ func nativeConfigURL(rc config.RunnerConfig) string {
 	return "https://github.com/" + rc.Repo
 }
 
-func windowsNativeConfigScript(h *host.Host, rc config.RunnerConfig, instanceName, regToken string) string {
-	labels := strings.Join(rc.EffectiveLabels(h.OS, h.Arch), ",")
+func windowsNativeConfigScript(h *host.Host, rc config.RunnerConfig, instanceName, regToken string, instanceIndex int) string {
+	labels := strings.Join(rc.EffectiveLabelsForInstance(h.OS, h.Arch, instanceIndex), ",")
 	cmd := fmt.Sprintf(
 		"& .\\config.cmd --unattended --url %s --token %s --name %s --labels %s --work '_work' --replace",
 		powerShellSingleQuoted(nativeConfigURL(rc)),
@@ -215,7 +215,7 @@ func (m *Manager) setupNative(h *host.Host, rc config.RunnerConfig) error {
 		return fmt.Errorf("unsupported OS/arch: %s/%s", h.OS, h.Arch)
 	}
 
-	for _, name := range rc.InstanceNames() {
+	for i, name := range rc.InstanceNames() {
 		dir := h.RunnerDir(name)
 
 		installed, _ := NativeRunnerConfigPresent(h, name)
@@ -282,11 +282,11 @@ func (m *Manager) setupNative(h *host.Host, rc config.RunnerConfig) error {
 			return err
 		}
 
-		labels := strings.Join(rc.EffectiveLabels(h.OS, h.Arch), ",")
+		labels := strings.Join(rc.EffectiveLabelsForInstance(h.OS, h.Arch, i), ",")
 
 		fmt.Fprintf(m.out(), "  %s: registering runner with GitHub...\n", name)
 		if h.OS == "windows" {
-			if _, err := h.RunShell(windowsNativeConfigScript(h, rc, name, regToken)); err != nil {
+			if _, err := h.RunShell(windowsNativeConfigScript(h, rc, name, regToken, i)); err != nil {
 				return fmt.Errorf("configuring runner on Windows: %w", err)
 			}
 		} else {

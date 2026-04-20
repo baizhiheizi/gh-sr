@@ -157,7 +157,7 @@ func (m *Manager) Remove(h *host.Host, rc config.RunnerConfig) error {
 func (m *Manager) Status(h *host.Host, rc config.RunnerConfig) ([]RunnerStatus, error) {
 	var statuses []RunnerStatus
 
-	for _, name := range rc.InstanceNames() {
+	for i, name := range rc.InstanceNames() {
 		repoDisplay := rc.Repo
 		if rc.Org != "" {
 			repoDisplay = "org:" + rc.Org
@@ -166,7 +166,7 @@ func (m *Manager) Status(h *host.Host, rc config.RunnerConfig) ([]RunnerStatus, 
 			Instance: name,
 			Host:     rc.Host,
 			Repo:     repoDisplay,
-			Labels:   strings.Join(rc.EffectiveLabels(h.OS, h.Arch), ", "),
+			Labels:   strings.Join(rc.EffectiveLabelsForInstance(h.OS, h.Arch, i), ", "),
 			Mode:     "native",
 		}
 

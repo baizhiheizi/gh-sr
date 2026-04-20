@@ -720,3 +720,85 @@ func TestFilterRunners(t *testing.T) {
 		t.Fatalf("stacked filters: got %v", stack)
 	}
 }
+
+func TestValidateAgenticMCPPorts(t *testing.T) {
+	t.Parallel()
+	base := 9080
+	cfg := Config{
+		Hosts: map[string]HostConfig{"h": {Addr: "local", OS: "linux", Arch: "amd64"}},
+		Runners: []RunnerConfig{{
+			Name: "r", Repo: "o/r", Host: "h", Profile: "agentic", Count: 2,
+			AgenticMCPPortBase: &base,
+		}},
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	cfgBoth := Config{
+		Hosts: map[string]HostConfig{"h": {Addr: "local", OS: "linux", Arch: "amd64"}},
+		Runners: []RunnerConfig{{
+			Name: "r", Repo: "o/r", Host: "h", Profile: "agentic", Count: 2,
+			AgenticMCPPorts:    []int{9080, 9081},
+			AgenticMCPPortBase: &base,
+		}},
+	}
+	if err := cfgBoth.Validate(); err == nil {
+		t.Fatal("expected error when both ports and base set")
+	}
+}
+
+func TestValidateAgenticMCPPorts_wrongLen(t *testing.T) {
+	t.Parallel()
+	cfg := Config{
+		Hosts: map[string]HostConfig{"h": {Addr: "local", OS: "linux", Arch: "amd64"}},
+		Runners: []RunnerConfig{{
+			Name: "r", Repo: "o/r", Host: "h", Profile: "agentic", Count: 2,
+			AgenticMCPPorts: []int{9080},
+		}},
+	}
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected error")
+	}
+}
+
+func TestValidateAgenticMCPPorts_requiresAgenticProfile(t *testing.T) {
+	t.Parallel()
+	base := 9080
+	cfg := Config{
+		Hosts: map[string]HostConfig{"h": {Addr: "local", OS: "linux", Arch: "amd64"}},
+		Runners: []RunnerConfig{{
+			Name: "r", Repo: "o/r", Host: "h", Count: 1,
+			AgenticMCPPortBase: &base,
+		}},
+	}
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected error without agentic profile")
+	}
+}
+
+func TestEffectiveLabelsForInstance_mcpPorts(t *testing.T) {
+	t.Parallel()
+	base := 9100
+	rc := RunnerConfig{
+		Name: "r", Repo: "o/r", Host: "h", Profile: "agentic", Count: 2,
+		AgenticMCPPortBase: &base,
+	}
+	rc.applyAgenticDefaults()
+	l0 := rc.EffectiveLabelsForInstance("linux", "amd64", 0)
+	l1 := rc.EffectiveLabelsForInstance("linux", "amd64", 1)
+	if !containsFold(l0, "gh-sr-mcp-9100") {
+		t.Fatalf("l0: %v", l0)
+	}
+	if !containsFold(l1, "gh-sr-mcp-9101") {
+		t.Fatalf("l1: %v", l1)
+	}
+}
+
+func containsFold(labels []string, want string) bool {
+	for _, l := range labels {
+		if strings.EqualFold(l, want) {
+			return true
+		}
+	}
+	return false
+}

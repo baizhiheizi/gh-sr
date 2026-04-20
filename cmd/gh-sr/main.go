@@ -14,6 +14,7 @@ import (
 	"github.com/an-lee/gh-sr/internal/config"
 	"github.com/an-lee/gh-sr/internal/doctor"
 	"github.com/an-lee/gh-sr/internal/editor"
+	"github.com/an-lee/gh-sr/internal/ghawports"
 	"github.com/an-lee/gh-sr/internal/ops"
 	"github.com/an-lee/gh-sr/internal/runner"
 	"github.com/an-lee/gh-sr/internal/tui"
@@ -73,6 +74,7 @@ With no subcommand, gh sr opens the interactive dashboard on a terminal; use gh 
 		initCmd(),
 		addCmd(),
 		doctorCmd(),
+		awCmd(),
 		setupCmd(),
 		upCmd(),
 		downCmd(),
@@ -419,9 +421,76 @@ func configCmd() *cobra.Command {
 	return cmd
 }
 
+func awCmd() *cobra.Command {
+	root := &cobra.Command{
+		Use:   "aw",
+		Short: "GitHub Agentic Workflows (gh-aw) helpers",
+	}
+	var wfRoot string
+	var basePort int
+	var write bool
+
+	ports := &cobra.Command{
+		Use:   "ports",
+		Short: "MCP gateway port tools for AW markdown workflows",
+	}
+	check := &cobra.Command{
+		Use:   "check",
+		Short: "Lint sandbox.mcp.port usage against runners.yml",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := config.BootstrapEnv(); err != nil {
+				return err
+			}
+			cfgPath, err := config.ResolveConfigPath(cfgFile)
+			if err != nil {
+				return err
+			}
+			cfg, err := config.LoadFromPath(cfgPath)
+			if err != nil {
+				fmt.Fprintf(cmd.OutOrStdout(), "WARN: config: %v\n", err)
+			}
+			rootDir := wfRoot
+			if rootDir == "" {
+				rootDir = "."
+			}
+			_, fails := ghawports.Check(cmd.OutOrStdout(), cfg, ghawports.CheckOpts{
+				WorkflowRoot: rootDir,
+				RepoFilter:   filterRepo,
+			})
+			if fails > 0 {
+				os.Exit(1)
+			}
+			return nil
+		},
+	}
+	assign := &cobra.Command{
+		Use:   "assign",
+		Short: "Assign distinct sandbox.mcp.port values to each AW workflow markdown (dry-run unless --write)",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			rootDir := wfRoot
+			if rootDir == "" {
+				rootDir = "."
+			}
+			return ghawports.Assign(cmd.OutOrStdout(), ghawports.AssignOpts{
+				WorkflowRoot: rootDir,
+				BasePort:     basePort,
+				Write:        write,
+			})
+		},
+	}
+	check.Flags().StringVar(&wfRoot, "workflow-root", "", "repository root containing .github/workflows (default: .)")
+	assign.Flags().StringVar(&wfRoot, "workflow-root", "", "repository root containing .github/workflows (default: .)")
+	assign.Flags().IntVar(&basePort, "base-port", 9080, "first TCP port to assign")
+	assign.Flags().BoolVar(&write, "write", false, "write updated frontmatter to disk")
+	ports.AddCommand(check, assign)
+	root.AddCommand(ports)
+	return root
+}
+
 func doctorCmd() *cobra.Command {
 	var strict bool
 	var fix bool
+	var workflowRoot string
 	cmd := &cobra.Command{
 		Use:   "doctor",
 		Short: "Check config, GitHub API access, and host prerequisites",
@@ -448,7 +517,7 @@ func doctorCmd() *cobra.Command {
 				}
 			}
 
-			res := doctor.Run(cmd.OutOrStdout(), cfgPath, envPath, cfg, cfgErr, gh, filterHost, filterRepo, strict)
+			res := doctor.Run(cmd.OutOrStdout(), cfgPath, envPath, cfg, cfgErr, gh, filterHost, filterRepo, strict, workflowRoot)
 			if fix && res.Fail > 0 {
 				fmt.Fprintln(cmd.OutOrStdout(), "\n--- Running `gh sr setup` to attempt fixes ---")
 				// Re-run setup for affected runners - this will auto-fix what it can.
@@ -470,6 +539,7 @@ func doctorCmd() *cobra.Command {
 	}
 	cmd.Flags().BoolVar(&strict, "strict", false, "non-zero exit if any check is WARN (default: only FAIL fails the run)")
 	cmd.Flags().BoolVar(&fix, "fix", false, "automatically attempt to fix failures by re-running setup")
+	cmd.Flags().StringVar(&workflowRoot, "workflow-root", "", "repo root for gh-aw MCP port lint (.github/workflows); when empty with --repo, uses . if ./.github/workflows exists")
 	return cmd
 }
 
