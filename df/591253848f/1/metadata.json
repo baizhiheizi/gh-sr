@@ -1,0 +1,42 @@
+{
+  "cli_version": "dev",
+  "checkpoint_id": "df591253848f",
+  "session_id": "d90f9634-bf90-4b8f-90db-014001821188",
+  "strategy": "manual-commit",
+  "created_at": "2026-04-20T04:32:34.378762338Z",
+  "branch": "main",
+  "checkpoints_count": 0,
+  "files_touched": [
+    ".github/workflows/grumpy-reviewer.lock.yml",
+    ".github/workflows/grumpy-reviewer.md",
+    ".github/workflows/pr-fix.md",
+    ".github/workflows/daily-perf-improver.lock.yml",
+    ".github/workflows/daily-perf-improver.md",
+    ".github/workflows/issue-triage.lock.yml",
+    ".github/workflows/issue-triage.md",
+    ".github/workflows/plan.lock.yml",
+    ".github/workflows/plan.md",
+    ".github/workflows/q.md",
+    ".github/workflows/daily-doc-updater.lock.yml",
+    ".github/workflows/daily-doc-updater.md",
+    ".github/workflows/daily-test-improver.lock.yml",
+    ".github/workflows/q.lock.yml",
+    ".github/workflows/daily-test-improver.md",
+    ".github/workflows/pr-fix.lock.yml"
+  ],
+  "agent": "Cursor",
+  "model": "composer-2",
+  "turn_id": "78d482a3fadc",
+  "initial_attribution": {
+    "calculated_at": "2026-04-20T04:32:34.378323939Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 0,
+    "human_modified": 153,
+    "human_removed": 39,
+    "total_committed": 0,
+    "total_lines_changed": 192,
+    "agent_percentage": 0,
+    "metric_version": 2
+  }
+}
