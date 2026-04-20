@@ -1,0 +1,28 @@
+{
+  "cli_version": "dev",
+  "checkpoint_id": "78629afd1e6c",
+  "session_id": "d90f9634-bf90-4b8f-90db-014001821188",
+  "strategy": "manual-commit",
+  "created_at": "2026-04-20T03:49:50.076463883Z",
+  "branch": "main",
+  "checkpoints_count": 0,
+  "files_touched": [
+    "internal/ghawfrontmatter/ghawfrontmatter.go",
+    "internal/ghawfrontmatter/ghawfrontmatter_test.go"
+  ],
+  "agent": "Cursor",
+  "model": "composer-2",
+  "turn_id": "78d482a3fadc",
+  "initial_attribution": {
+    "calculated_at": "2026-04-20T03:49:50.075958416Z",
+    "agent_lines": 133,
+    "agent_removed": 19,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 133,
+    "total_lines_changed": 152,
+    "agent_percentage": 100,
+    "metric_version": 2
+  }
+}
