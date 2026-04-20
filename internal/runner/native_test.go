@@ -78,7 +78,7 @@ func Test_windowsNativeConfigScript_usesRunnerDirVariable(t *testing.T) {
 		Labels: []string{"windows", "native"},
 	}
 
-	script := windowsNativeConfigScript(h, rc, "unwx-1", "token-value")
+	script := windowsNativeConfigScript(h, rc, "unwx-1", "token-value", 0)
 
 	if !strings.Contains(script, "$runnerDir = Join-Path (Join-Path $env:USERPROFILE '.gh-sr\\runners') 'unwx-1'") {
 		t.Fatalf("runner dir should be assigned from a PowerShell expression: %q", script)

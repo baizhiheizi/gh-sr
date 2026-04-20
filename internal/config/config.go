@@ -32,6 +32,9 @@ type HostConfig struct {
 	WindowsPS string `yaml:"windows_ps"` // powershell (default) or pwsh — which exe runs encoded remote scripts on Windows
 }
 
+// AgenticMCPLabelPrefix is prepended to the TCP port in runner labels (e.g. gh-sr-mcp-9080).
+const AgenticMCPLabelPrefix = "gh-sr-mcp-"
+
 type RunnerConfig struct {
 	Name      string   `yaml:"name"`
 	Repo      string   `yaml:"repo"`
@@ -42,6 +45,11 @@ type RunnerConfig struct {
 	Labels    []string `yaml:"labels"`
 	Ephemeral bool     `yaml:"ephemeral"`
 	Profile   string   `yaml:"profile"` // "agentic" for GitHub Agentic Workflows
+	// AgenticMCPPorts assigns one MCP gateway port per runner instance (length must equal count).
+	// Mutually exclusive with AgenticMCPPortBase.
+	AgenticMCPPorts []int `yaml:"agentic_mcp_ports,omitempty"`
+	// AgenticMCPPortBase assigns ports base, base+1, … for instances 0..count-1 (mutually exclusive with AgenticMCPPorts).
+	AgenticMCPPortBase *int `yaml:"agentic_mcp_port_base,omitempty"`
 }
 
 // IsAgentic returns true if the runner uses the agentic profile.
@@ -101,17 +109,72 @@ func DefaultLabels(hostOS, arch string) []string {
 	return labels
 }
 
-// EffectiveLabels returns the runner's labels, auto-generating them from host info if empty.
-// For agentic profile runners, "agentic" label is always appended.
-func (rc *RunnerConfig) EffectiveLabels(hostOS, arch string) []string {
+// InstanceCount returns the number of runner instances (at least 1).
+func (rc *RunnerConfig) InstanceCount() int {
+	c := rc.Count
+	if c < 1 {
+		return 1
+	}
+	return c
+}
+
+// AgenticMCPPortsResolved returns one TCP port per instance when agentic MCP port strategy is configured.
+func (rc *RunnerConfig) AgenticMCPPortsResolved() ([]int, bool) {
+	if !rc.IsAgentic() {
+		return nil, false
+	}
+	n := rc.InstanceCount()
+	if len(rc.AgenticMCPPorts) > 0 {
+		return rc.AgenticMCPPorts, true
+	}
+	if rc.AgenticMCPPortBase != nil {
+		base := *rc.AgenticMCPPortBase
+		if base < 1 {
+			return nil, false
+		}
+		ports := make([]int, n)
+		for i := range n {
+			ports[i] = base + i
+		}
+		return ports, true
+	}
+	return nil, false
+}
+
+func (rc *RunnerConfig) effectiveLabelsCore(hostOS, arch string) []string {
 	var labels []string
 	if len(rc.Labels) > 0 {
-		labels = rc.Labels
+		labels = append([]string(nil), rc.Labels...)
 	} else {
 		labels = DefaultLabels(hostOS, arch)
 	}
 	if rc.IsAgentic() && !hasLabel(labels, "agentic") {
 		labels = append(labels, "agentic")
+	}
+	return labels
+}
+
+// EffectiveLabels returns labels for the first instance (index 0). For identical labels across
+// instances, this matches every instance; when agentic_mcp_ports / agentic_mcp_port_base is set,
+// use EffectiveLabelsForInstance for each registration.
+func (rc *RunnerConfig) EffectiveLabels(hostOS, arch string) []string {
+	return rc.EffectiveLabelsForInstance(hostOS, arch, 0)
+}
+
+// EffectiveLabelsForInstance returns the runner's labels for instance instanceIndex (0-based).
+// When agentic MCP ports are configured, appends gh-sr-mcp-<port> for that instance.
+func (rc *RunnerConfig) EffectiveLabelsForInstance(hostOS, arch string, instanceIndex int) []string {
+	labels := rc.effectiveLabelsCore(hostOS, arch)
+	ports, ok := rc.AgenticMCPPortsResolved()
+	if !ok || len(ports) == 0 {
+		return labels
+	}
+	if instanceIndex < 0 || instanceIndex >= len(ports) {
+		return labels
+	}
+	tag := fmt.Sprintf("%s%d", AgenticMCPLabelPrefix, ports[instanceIndex])
+	if !hasLabel(labels, tag) {
+		labels = append(labels, tag)
 	}
 	return labels
 }
@@ -275,8 +338,50 @@ func (c *Config) Validate() error {
 		if r.Profile != "" && r.Profile != "agentic" {
 			return fmt.Errorf("runner %q: profile must be empty or \"agentic\" (got %q)", r.Name, r.Profile)
 		}
+		if err := validateAgenticMCPPorts(&r); err != nil {
+			return err
+		}
 	}
 
+	return nil
+}
+
+func validateAgenticMCPPorts(r *RunnerConfig) error {
+	hasPorts := len(r.AgenticMCPPorts) > 0
+	hasBase := r.AgenticMCPPortBase != nil
+	if !hasPorts && !hasBase {
+		return nil
+	}
+	if !r.IsAgentic() {
+		return fmt.Errorf("runner %q: agentic_mcp_ports / agentic_mcp_port_base require profile: agentic", r.Name)
+	}
+	if hasPorts && hasBase {
+		return fmt.Errorf("runner %q: set only one of agentic_mcp_ports or agentic_mcp_port_base", r.Name)
+	}
+	n := r.InstanceCount()
+	if hasPorts {
+		if len(r.AgenticMCPPorts) != n {
+			return fmt.Errorf("runner %q: agentic_mcp_ports must have length %d (count), got %d", r.Name, n, len(r.AgenticMCPPorts))
+		}
+		seen := make(map[int]bool, n)
+		for _, p := range r.AgenticMCPPorts {
+			if p < 1 || p > 65535 {
+				return fmt.Errorf("runner %q: agentic_mcp_ports values must be between 1 and 65535 (got %d)", r.Name, p)
+			}
+			if seen[p] {
+				return fmt.Errorf("runner %q: agentic_mcp_ports must be unique (duplicate %d)", r.Name, p)
+			}
+			seen[p] = true
+		}
+		return nil
+	}
+	base := *r.AgenticMCPPortBase
+	if base < 1 || base > 65535 {
+		return fmt.Errorf("runner %q: agentic_mcp_port_base must be between 1 and 65535 (got %d)", r.Name, base)
+	}
+	if base+n-1 > 65535 {
+		return fmt.Errorf("runner %q: agentic_mcp_port_base %d with count %d exceeds port 65535", r.Name, base, n)
+	}
 	return nil
 }
 
