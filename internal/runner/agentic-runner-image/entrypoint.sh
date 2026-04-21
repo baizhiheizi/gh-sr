@@ -147,12 +147,30 @@ fi
 # RUNNER_TEMP must not be /tmp (gh-aw explicitly requires a non-/tmp path).
 export RUNNER_TEMP="${RUNNER_TEMP_DIR}"
 
+# RUNNER_TOOL_CACHE must be /opt/hostedtoolcache so tools installed by
+# actions/setup-node, actions/setup-python, etc. land where gh-aw's agent
+# container looks for them. Its "Execute" step hard-codes:
+#
+#     PATH="$(find /opt/hostedtoolcache -maxdepth 4 -type d -name bin …):$PATH"
+#
+# If we leave RUNNER_TOOL_CACHE unset the runner defaults it to
+# $RUNNER_WORK/_tool (here /runner-state/_work/_tool) and Node ends up
+# invisible to the agent, so `claude` fails with "command not found".
+# The /opt/hostedtoolcache directory is created and chowned to runner in
+# the Dockerfile, so it is writable by the runner user.
+export RUNNER_TOOL_CACHE="/opt/hostedtoolcache"
+
+# su - resets the environment to a login shell's defaults, so RUNNER_TEMP
+# and RUNNER_TOOL_CACHE are re-exported on the runner-user side of every
+# invocation below.
+RUNNER_ENV="RUNNER_TEMP='${RUNNER_TEMP_DIR}' RUNNER_TOOL_CACHE='${RUNNER_TOOL_CACHE}'"
+
 # Only configure if not already done. GitHub registration tokens are one-time-use;
 # running config.sh on every restart would consume the token and fail on the second start.
 # (Same behaviour as native runners — configure once, restart many times.)
 if [ ! -f "${RUNNER_DIR}/.runner" ]; then
     echo "[entrypoint] configuring runner..."
-    su - runner -c "cd '${RUNNER_DIR}' && RUNNER_TEMP='${RUNNER_TEMP_DIR}' ./config.sh ${CONFIG_ARGS[*]@Q}" 2>&1
+    su - runner -c "cd '${RUNNER_DIR}' && ${RUNNER_ENV} ./config.sh ${CONFIG_ARGS[*]@Q}" 2>&1
 else
     echo "[entrypoint] runner already configured, skipping config.sh"
 fi
@@ -178,4 +196,4 @@ trap _shutdown SIGTERM SIGINT
 
 # ── 6. Run ────────────────────────────────────────────────────────────────────
 echo "[entrypoint] starting actions runner as user 'runner'..."
-exec su - runner -c "cd '${RUNNER_DIR}' && RUNNER_TEMP='${RUNNER_TEMP_DIR}' ./run.sh"
+exec su - runner -c "cd '${RUNNER_DIR}' && ${RUNNER_ENV} ./run.sh"

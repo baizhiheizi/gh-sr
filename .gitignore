@@ -1,4 +1,5 @@
 .env
+bin/gh-sr
 /gh-sr
 /gh-sr-test
 dist/
