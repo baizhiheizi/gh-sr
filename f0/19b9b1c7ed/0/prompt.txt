@@ -1,0 +1,62 @@
+Let's focus on the runners for agentic workflow @docs/content/guides/agentic-workflows.md and related docs: https://github.github.com/gh-aw/guides/self-hosted-runners/ 
+
+Currently, the runner is native, the agentic workflow works well some time. But I want multiple runners working in the same host at the same time, when multiple agentic workflows running at the same time in the same host, it easily raise some issues. because of the shared tmp dir, awf port etc.
+
+Could you help me to do a full review, and make some improvements that ensure multiple agentic workflows would running at the same time in the same host perfactly.
+
+---
+
+Implement the plan as specified, it is attached for your reference. Do NOT edit the plan file itself.
+
+To-do's from the plan have already been created. Do not create them again. Mark them as in_progress as you work, starting with the first one. Don't stop until you have completed all the to-dos.
+
+---
+
+Implement the plan as specified, it is attached for your reference. Do NOT edit the plan file itself.
+
+To-do's from the plan have already been created. Do not create them again. Mark them as in_progress as you work, starting with the first one. Don't stop until you have completed all the to-dos.
+
+---
+
+Failed to setup.
+
+➜  gh sr setup
+Detecting OS/arch for host mac (an-lee@192.168.31.72)...
+Detecting OS/arch for host x1 (an-lee@192.168.31.66)...
+  x1: detected os=linux arch=amd64
+  mac: detected os=darwin arch=arm64
+Setting up on x1 (an-lee@192.168.31.66)...
+  ohmyxin-agentic: checking agentic runner image gh-sr/agentic-runner:2.333.1...
+  ohmyxin-agentic: building agentic runner image (this may take several minutes)...
+  ohmyxin-agentic: image built: gh-sr/agentic-runner:2.333.1
+  ohmyxin-agentic-1: creating runner container...
+Error: creating container gh-sr-ohmyxin-agentic-1: running "\nmkdir -p '$HOME/.gh-sr/runners/ohmyxin-agentic-1'\ndocker create \\\n  --name 'gh-sr-ohmyxin-agentic-1' \\\n  --privileged \\\n  --restart unless-stopped \\\n  -v '$HOME/.gh-sr/runners/ohmyxin-agentic-1':/runner-state \\\n  -e GH_SR_RUNNER_NAME='ohmyxin-agentic-1' \\\n  -e GH_SR_RUNNER_TOKEN='REDACTED' \\\n  -e GH_SR_RUNNER_URL='https://github.com/an-lee/ohmyxin' \\\n  -e GH_SR_RUNNER_LABELS='self-hosted,x1,agentic' \\\n  -e GH_SR_RUNNER_GROUP='Default' \\\n  -e GH_SR_RUNNER_EPHEMERAL='' \\\n  'gh-sr/agentic-runner:2.333.1'": Process exited with status 1
+stderr: Error response from daemon: create $HOME/.gh-sr/runners/ohmyxin-agentic-1: "$HOME/.gh-sr/runners/ohmyxin-agentic-1" includes invalid characters for a local volume name, only "[a-zA-Z0-9][a-zA-Z0-9_.-]" are allowed. If you intended to pass a host directory, use absolute path
+
+---
+
+Implement the plan as specified, it is attached for your reference. Do NOT edit the plan file itself.
+
+To-do's from the plan have already been created. Do not create them again. Mark them as in_progress as you work, starting with the first one. Don't stop until you have completed all the to-dos.
+
+---
+
+Implement the plan as specified, it is attached for your reference. Do NOT edit the plan file itself.
+
+To-do's from the plan have already been created. Do not create them again. Mark them as in_progress as you work, starting with the first one. Don't stop until you have completed all the to-dos.
+
+---
+
+@run-24699750444 review this log of workflow. Identify the root cause and fix it. It works well in native runner, but not in container runner. Some config might be wroing in the runner.
+
+---
+
+Implement the plan as specified, it is attached for your reference. Do NOT edit the plan file itself.
+
+To-do's from the plan have already been created. Do not create them again. Mark them as in_progress as you work, starting with the first one. Don't stop until you have completed all the to-dos.
+
+---
+
+Implement the plan as specified, it is attached for your reference. Do NOT edit the plan file itself.
+
+To-do's from the plan have already been created. Do not create them again. Mark them as in_progress as you work, starting with the first one. Don't stop until you have completed all the to-dos.
