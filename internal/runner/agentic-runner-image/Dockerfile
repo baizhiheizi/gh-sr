@@ -29,8 +29,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libicu-dev \
         iproute2 \
         uidmap \
+        imagemagick \
+        libvips \
+        libyaml-0-2 \
+        libsodium-dev \
     && rm -rf /var/lib/apt/lists/*
-
+b
 # Docker CE (for DinD — the inner dockerd that gh-aw uses)
 RUN install -m 0755 -d /etc/apt/keyrings \
     && curl -fsSL https://download.docker.com/linux/ubuntu/gpg \
@@ -93,6 +97,13 @@ RUN su - runner -c "curl -sL https://raw.githubusercontent.com/github/gh-aw/main
 
 # Runner state directory (bind-mounted from host at runtime)
 RUN mkdir -p /runner-state && chown runner:runner /runner-state
+
+# Docker wrapper: transparently patches gh-aw-mcpg images so they start
+# correctly under `--network host`. See docker-wrapper.sh header for details.
+# /usr/local/bin comes before /usr/bin in the default PATH, so this wrapper
+# shadows the real docker CLI (at /usr/bin/docker) for all users.
+COPY docker-wrapper.sh /usr/local/bin/docker
+RUN chmod +x /usr/local/bin/docker
 
 # Entrypoint
 COPY entrypoint.sh /entrypoint.sh

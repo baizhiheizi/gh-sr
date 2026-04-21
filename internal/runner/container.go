@@ -359,6 +359,20 @@ chmod +x %s`,
 		return fmt.Errorf("writing entrypoint.sh: %w", err)
 	}
 
+	// Write docker-wrapper.sh.
+	wrapperPath := buildDir + "/docker-wrapper.sh"
+	writeWrapper := fmt.Sprintf(`cat > %s << 'GHSR_EOF'
+%s
+GHSR_EOF
+chmod +x %s`,
+		wrapperPath,
+		strings.ReplaceAll(agenticRunnerDockerWrapper, "GHSR_EOF", "GHSR_E0F"),
+		wrapperPath,
+	)
+	if _, err := h.Run(writeWrapper); err != nil {
+		return fmt.Errorf("writing docker-wrapper.sh: %w", err)
+	}
+
 	// Build.
 	buildCmd := fmt.Sprintf(
 		"docker build --build-arg RUNNER_VERSION=%s --build-arg RUNNER_ARCH=%s -t %s %s",

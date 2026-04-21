@@ -13,3 +13,6 @@ var agenticRunnerDockerfile string
 
 //go:embed agentic-runner-image/entrypoint.sh
 var agenticRunnerEntrypoint string
+
+//go:embed agentic-runner-image/docker-wrapper.sh
+var agenticRunnerDockerWrapper string
