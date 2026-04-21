@@ -1,0 +1,40 @@
+{
+  "cli_version": "dev",
+  "checkpoint_id": "575f5b631780",
+  "session_id": "c2c0857b-d87c-4b97-bc88-bf34309d89dd",
+  "strategy": "manual-commit",
+  "created_at": "2026-04-21T05:52:29.650427478Z",
+  "branch": "main",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "internal/runner/agentic-runner-image/Dockerfile",
+    "internal/runner/agentic-runner-image/docker-wrapper.sh"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-opus-4-7",
+  "turn_id": "4fac535fea5d",
+  "token_usage": {
+    "input_tokens": 0,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 0,
+    "output_tokens": 0,
+    "api_call_count": 0
+  },
+  "session_metrics": {
+    "turn_count": 28,
+    "context_tokens": 202664,
+    "context_window_size": 200000
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-04-21T05:52:29.515216224Z",
+    "agent_lines": 47,
+    "agent_removed": 78,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 47,
+    "total_lines_changed": 125,
+    "agent_percentage": 100,
+    "metric_version": 2
+  }
+}
