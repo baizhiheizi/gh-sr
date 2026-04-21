@@ -102,8 +102,10 @@ RUNNER_LABELS="${GH_SR_RUNNER_LABELS:-self-hosted,Linux,X64,agentic}"
 RUNNER_GROUP="${GH_SR_RUNNER_GROUP:-Default}"
 
 mkdir -p "${RUNNER_WORK_DIR}" "${RUNNER_TEMP_DIR}"
+# Work and temp dirs are created as root; give the runner user ownership so it
+# can create job workspaces inside them.
+chown runner:runner "${RUNNER_WORK_DIR}" "${RUNNER_TEMP_DIR}"
 
-# Always re-configure so label/token changes take effect on container restart.
 CONFIG_ARGS=(
     --url "${RUNNER_URL}"
     --token "${RUNNER_TOKEN}"
@@ -122,7 +124,15 @@ fi
 # RUNNER_TEMP must not be /tmp (gh-aw explicitly requires a non-/tmp path).
 export RUNNER_TEMP="${RUNNER_TEMP_DIR}"
 
-su - runner -c "cd '${RUNNER_DIR}' && RUNNER_TEMP='${RUNNER_TEMP_DIR}' ./config.sh ${CONFIG_ARGS[*]@Q}" 2>&1
+# Only configure if not already done. GitHub registration tokens are one-time-use;
+# running config.sh on every restart would consume the token and fail on the second start.
+# (Same behaviour as native runners — configure once, restart many times.)
+if [ ! -f "${RUNNER_DIR}/.runner" ]; then
+    echo "[entrypoint] configuring runner..."
+    su - runner -c "cd '${RUNNER_DIR}' && RUNNER_TEMP='${RUNNER_TEMP_DIR}' ./config.sh ${CONFIG_ARGS[*]@Q}" 2>&1
+else
+    echo "[entrypoint] runner already configured, skipping config.sh"
+fi
 
 # ── 4. Pre-pull gh-aw images (best-effort, background) ────────────────────────
 su - runner -c "
