@@ -62,11 +62,14 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
     && rm -rf /var/lib/apt/lists/*
 
 # runner user (non-root, but in docker group so it can talk to the inner dockerd)
+# Full passwordless sudo is required: AWF installs binaries to system paths
+# (/usr/local/lib/awf/) and manipulates iptables rules at job runtime.
+# The container is already --privileged and single-purpose, so this is safe.
 RUN useradd --create-home --shell /bin/bash runner \
     && usermod -aG docker runner \
-    && echo "runner ALL=(ALL) NOPASSWD: /sbin/iptables,/sbin/ip6tables,/usr/sbin/iptables,/usr/sbin/ip6tables" \
-       > /etc/sudoers.d/runner-iptables \
-    && chmod 0440 /etc/sudoers.d/runner-iptables
+    && echo "runner ALL=(ALL) NOPASSWD: ALL" \
+       > /etc/sudoers.d/runner-nopasswd \
+    && chmod 0440 /etc/sudoers.d/runner-nopasswd
 
 # /opt/hostedtoolcache — gh-aw agent containers look here for pre-installed tools
 RUN mkdir -p /opt/hostedtoolcache && chown runner:runner /opt/hostedtoolcache
