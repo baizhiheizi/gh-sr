@@ -180,22 +180,37 @@ func Restart(w io.Writer, cfg *config.Config, mgr *runner.Manager, filterHost, f
 	})
 }
 
+// partitionRebuildTargets splits runners into container-mode targets vs native rows (skipped by rebuild).
+func partitionRebuildTargets(runners []config.RunnerConfig) (container []config.RunnerConfig, skipped []config.RunnerConfig) {
+	for _, rc := range runners {
+		if rc.IsContainerMode() {
+			container = append(container, rc)
+		} else {
+			skipped = append(skipped, rc)
+		}
+	}
+	return container, skipped
+}
+
 // RebuildImage rebuilds the container runner Docker image for container-mode
 // runners (agentic or not), recreates the containers (preserving state), and
-// starts them. Native-mode runners are rejected with an error.
+// starts them. Native-mode runners in the selection are skipped (logged); only
+// container-mode runners are rebuilt.
 func RebuildImage(w io.Writer, cfg *config.Config, mgr *runner.Manager, filterHost, filterRepo string, nameArgs []string) error {
 	if err := ResolveHostInfo(w, cfg); err != nil {
 		return err
 	}
 	runners := config.FilterRunners(cfg, filterHost, filterRepo, nameArgs)
-
-	for _, rc := range runners {
-		if !rc.IsContainerMode() {
-			return fmt.Errorf("runner %s uses runner_mode: native — gh sr rebuild only applies to container-mode runners", rc.Name)
-		}
+	containerRunners, skipped := partitionRebuildTargets(runners)
+	for _, rc := range skipped {
+		fmt.Fprintf(w, "Skipping %s (runner_mode: native); gh sr rebuild applies only to runner_mode: container\n", rc.Name)
+	}
+	if len(containerRunners) == 0 {
+		fmt.Fprintln(w, "No container-mode runners to rebuild.")
+		return nil
 	}
 
-	return runPerHostParallel(w, cfg, runners, func(w io.Writer, h *host.Host, rc config.RunnerConfig) error {
+	return runPerHostParallel(w, cfg, containerRunners, func(w io.Writer, h *host.Host, rc config.RunnerConfig) error {
 		fmt.Fprintf(w, "Rebuilding image for %s on %s...\n", rc.Name, rc.Host)
 		return mgr.RebuildImage(h, rc)
 	})

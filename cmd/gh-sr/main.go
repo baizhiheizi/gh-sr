@@ -742,7 +742,7 @@ Runner state (the .runner registration file, work directories, and Docker layer
 cache inside the container) is preserved across the rebuild, so runners stay
 registered with GitHub and do not consume a new registration token.
 
-Only container-mode runners are supported (runner_mode: container).`,
+Runners with runner_mode: native are skipped (no error); only runner_mode: container rows are rebuilt.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, err := loadConfig()
 			if err != nil {

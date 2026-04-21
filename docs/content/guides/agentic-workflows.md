@@ -583,6 +583,8 @@ Each runner instance runs as a Docker container named `gh-sr-<instance>` with `-
 
 The image (`gh-sr/agentic-runner:<version>`) is built once per runner version. To force a rebuild after local changes or a new runner version:
 
+Native-mode runners in the selection are skipped without error; the command only rebuilds `runner_mode: container` runners.
+
 ```bash
 gh sr rebuild <runner-name>   # preferred: tears down containers, rebuilds, restarts
 

@@ -75,10 +75,11 @@ func (m *Manager) EnsureSetup(h *host.Host, rc config.RunnerConfig) error {
 
 // RebuildImage rebuilds the container runner Docker image for container-mode
 // runners (agentic or not), recreates each container instance (preserving runner
-// state), and starts them. Returns an error for native-mode runners.
+// state), and starts them. Native-mode runners are a no-op (return nil).
 func (m *Manager) RebuildImage(h *host.Host, rc config.RunnerConfig) error {
 	if !rc.IsContainerMode() {
-		return fmt.Errorf("runner %s uses runner_mode: native — image rebuild only applies to container-mode runners", rc.Name)
+		fmt.Fprintf(m.out(), "  %s: skipping rebuild (not runner_mode: container)\n", rc.Name)
+		return nil
 	}
 	return m.rebuildContainerImage(h, rc)
 }
