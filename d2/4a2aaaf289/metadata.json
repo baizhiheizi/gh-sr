@@ -3,7 +3,7 @@
   "checkpoint_id": "d24a2aaaf289",
   "strategy": "manual-commit",
   "branch": "main",
-  "checkpoints_count": 3,
+  "checkpoints_count": 4,
   "files_touched": [
     "cmd/gh-sr/main.go",
     "docs/content/guides/agentic-workflows.md",
@@ -23,6 +23,12 @@
       "transcript": "/d2/4a2aaaf289/1/full.jsonl",
       "content_hash": "/d2/4a2aaaf289/1/content_hash.txt",
       "prompt": "/d2/4a2aaaf289/1/prompt.txt"
+    },
+    {
+      "metadata": "/d2/4a2aaaf289/2/metadata.json",
+      "transcript": "/d2/4a2aaaf289/2/full.jsonl",
+      "content_hash": "/d2/4a2aaaf289/2/content_hash.txt",
+      "prompt": "/d2/4a2aaaf289/2/prompt.txt"
     }
   ],
   "token_usage": {
