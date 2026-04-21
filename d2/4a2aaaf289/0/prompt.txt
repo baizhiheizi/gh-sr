@@ -1,0 +1,1 @@
+We should remove `gh sr aw` command, it's supposed to resolve the ports occupied by concorrent native agentic runners. Since we could use container mode now, we don't need it any more. When user want to run muliltiple runners at the same host, he should use container-mode. We should document it.
