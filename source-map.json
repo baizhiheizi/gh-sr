@@ -1,0 +1,54 @@
+{
+  "Home": {
+    "sourceFiles": [
+      { "path": "README.md", "hash": "a1b2c3d4" }
+    ],
+    "templateHash": "template-v1",
+    "generatedAt": "2026-04-21T14:20:00Z"
+  },
+  "Architecture": {
+    "sourceFiles": [
+      { "path": "cmd/gh-sr/main.go", "hash": "e5f6g7h8" },
+      { "path": "internal/config/config.go", "hash": "i9j0k1l2" },
+      { "path": "internal/runner/runner.go", "hash": "m3n4o5p6" },
+      { "path": "internal/ops/service.go", "hash": "q7r8s9t0" },
+      { "path": "internal/autostart/autostart.go", "hash": "u1v2w3x4" }
+    ],
+    "templateHash": "template-v1",
+    "generatedAt": "2026-04-21T14:20:00Z"
+  },
+  "Commands": {
+    "sourceFiles": [
+      { "path": "cmd/gh-sr/main.go", "hash": "e5f6g7h8" }
+    ],
+    "templateHash": "template-v1",
+    "generatedAt": "2026-04-21T14:20:00Z"
+  },
+  "Configuration-Reference": {
+    "sourceFiles": [
+      { "path": "internal/config/config.go", "hash": "i9j0k1l2" }
+    ],
+    "templateHash": "template-v1",
+    "generatedAt": "2026-04-21T14:20:00Z"
+  },
+  "Host-Setup": {
+    "sourceFiles": [
+      { "path": "internal/autostart/autostart.go", "hash": "u1v2w3x4" },
+      { "path": "internal/doctor/doctor.go", "hash": "y5z6a7b8" }
+    ],
+    "templateHash": "template-v1",
+    "generatedAt": "2026-04-21T14:20:00Z"
+  },
+  "Development": {
+    "sourceFiles": [
+      { "path": "README.md", "hash": "a1b2c3d4" }
+    ],
+    "templateHash": "template-v1",
+    "generatedAt": "2026-04-21T14:20:00Z"
+  },
+  "For-Agents": {
+    "sourceFiles": [],
+    "templateHash": "template-v1",
+    "generatedAt": "2026-04-21T14:20:00Z"
+  }
+}
