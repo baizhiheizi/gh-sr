@@ -28,6 +28,29 @@ RUNNER_TEMP_DIR="${RUNNER_STATE_DIR}/_temp"
 DOCKER_DATA_ROOT="${RUNNER_STATE_DIR}/docker-data"
 mkdir -p "${DOCKER_DATA_ROOT}"
 
+# Enable cgroup v2 nesting so the inner dockerd can create child cgroups for
+# its containers (otherwise awf's compose stack fails with
+# `cannot enter cgroupv2 "/sys/fs/cgroup/docker" with domain controllers --
+# it is in threaded mode`).
+#
+# Mirrors upstream docker:dind — see moby/hack/dind:
+# https://github.com/moby/moby/blob/v26.0.1/hack/dind
+#
+# Steps:
+#   1. Evacuate all processes from the root cgroup into /sys/fs/cgroup/init.
+#      Writing to cgroup.subtree_control fails with EBUSY if the cgroup has
+#      member processes; the "no internal processes" rule is a v2 invariant.
+#   2. Enable every controller for descendants by mirroring
+#      cgroup.controllers into cgroup.subtree_control with "+" prefixes.
+if [ -f /sys/fs/cgroup/cgroup.controllers ]; then
+    echo "[entrypoint] enabling cgroup v2 nesting..."
+    mkdir -p /sys/fs/cgroup/init
+    xargs -rn1 < /sys/fs/cgroup/cgroup.procs > /sys/fs/cgroup/init/cgroup.procs 2>/dev/null || true
+    sed -e 's/ / +/g' -e 's/^/+/' < /sys/fs/cgroup/cgroup.controllers \
+        > /sys/fs/cgroup/cgroup.subtree_control 2>/dev/null || \
+        echo "[entrypoint] WARNING: failed to enable cgroup controllers (continuing anyway)"
+fi
+
 echo "[entrypoint] starting dockerd..."
 dockerd \
     --data-root="${DOCKER_DATA_ROOT}" \
