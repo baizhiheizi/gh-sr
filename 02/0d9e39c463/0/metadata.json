@@ -1,0 +1,39 @@
+{
+  "cli_version": "dev",
+  "checkpoint_id": "020d9e39c463",
+  "session_id": "c2c0857b-d87c-4b97-bc88-bf34309d89dd",
+  "strategy": "manual-commit",
+  "created_at": "2026-04-21T08:31:45.482178464Z",
+  "branch": "main",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "internal/runner/agentic-runner-image/entrypoint.sh"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-opus-4-7",
+  "turn_id": "716a6f618b3b",
+  "token_usage": {
+    "input_tokens": 0,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 0,
+    "output_tokens": 0,
+    "api_call_count": 0
+  },
+  "session_metrics": {
+    "turn_count": 32,
+    "context_tokens": 223750,
+    "context_window_size": 200000
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-04-21T08:31:45.325613029Z",
+    "agent_lines": 20,
+    "agent_removed": 2,
+    "human_added": 1,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 21,
+    "total_lines_changed": 23,
+    "agent_percentage": 95.65217391304348,
+    "metric_version": 2
+  }
+}
