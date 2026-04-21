@@ -12,7 +12,6 @@ import (
 
 	"github.com/an-lee/gh-sr/internal/agentic"
 	"github.com/an-lee/gh-sr/internal/config"
-	"github.com/an-lee/gh-sr/internal/ghawports"
 	"github.com/an-lee/gh-sr/internal/host"
 	"github.com/an-lee/gh-sr/internal/runner"
 )
@@ -42,9 +41,7 @@ func ExitCode(res Result, strict bool) int {
 
 // Run prints diagnostics to w. cfg and cfgErr come from config.LoadFromPath (or Load) after BootstrapEnv.
 // If cfg is nil (load error), GitHub and host checks are skipped after the configuration section.
-// workflowRoot, when non-empty, enables MCP port lint for .github/workflows/*.md under that path.
-// When empty and filterRepo is set, uses "." if ./.github/workflows exists.
-func Run(w io.Writer, cfgPath, envPath string, cfg *config.Config, cfgErr error, gh *runner.GitHubClient, filterHost, filterRepo string, strict bool, workflowRoot string) Result {
+func Run(w io.Writer, cfgPath, envPath string, cfg *config.Config, cfgErr error, gh *runner.GitHubClient, filterHost, filterRepo string, strict bool) Result {
 	var r Result
 
 	fmt.Fprintln(w, "=== Local environment ===")
@@ -101,7 +98,6 @@ func Run(w io.Writer, cfgPath, envPath string, cfg *config.Config, cfgErr error,
 	if len(runners) == 0 {
 		printLine(w, sevWarn, "config", "no runners match --host / --repo filters")
 		r.Warn++
-		runAgenticMCPWorkflowCheck(w, cfg, filterRepo, workflowRoot, &r)
 		printSummary(w, r, strict)
 		return r
 	}
@@ -220,36 +216,8 @@ func Run(w io.Writer, cfgPath, envPath string, cfg *config.Config, cfgErr error,
 		r.Warn += hr.r.Warn
 	}
 
-	runAgenticMCPWorkflowCheck(w, cfg, filterRepo, workflowRoot, &r)
-
 	printSummary(w, r, strict)
 	return r
-}
-
-func resolveWorkflowRoot(flag, filterRepo string) string {
-	flag = strings.TrimSpace(flag)
-	if flag != "" {
-		return flag
-	}
-	if filterRepo != "" {
-		if st, err := os.Stat(".github/workflows"); err == nil && st.IsDir() {
-			return "."
-		}
-	}
-	return ""
-}
-
-func runAgenticMCPWorkflowCheck(w io.Writer, cfg *config.Config, filterRepo, workflowRoot string, r *Result) {
-	root := resolveWorkflowRoot(workflowRoot, filterRepo)
-	if root == "" {
-		return
-	}
-	fmt.Fprintln(w, "\n=== Agentic MCP ports (workflow markdown) ===")
-	var mbuf bytes.Buffer
-	warns, fails := ghawports.Check(&mbuf, cfg, ghawports.CheckOpts{WorkflowRoot: root, RepoFilter: filterRepo})
-	_, _ = io.Copy(w, &mbuf)
-	r.Warn += warns
-	r.Fail += fails
 }
 
 func printLine(w io.Writer, sev, scope, msg string) {

@@ -333,11 +333,9 @@ runs-on:
   - gh-sr-mcp-9080
 ```
 
-**Validation** (run from a clone of the repository that contains `.github/workflows/*.md`):
+**Operational checks:** `gh sr doctor` validates config, GitHub API access, and host prerequisites (including agentic/container tooling). It does **not** scan workflow markdown for MCP ports anymore.
 
-- `gh sr doctor --workflow-root DIR` (or `doctor --repo owner/repo` when `./.github/workflows` exists in the current directory) — runs MCP port checks (duplicate ports, implicit default 80, rough concurrency vs. `count` on each host) after host diagnostics.
-
-The former `gh sr aw ports check` / `gh sr aw ports assign` commands were removed: use **`runner_mode: container`** for same-host concurrency without rewriting workflow frontmatter. If you stay on native mode with `count > 1`, keep ports and `gh-sr-mcp-*` labels aligned manually and re-run `gh aw compile` after editing frontmatter; see [gh-aw Sandbox configuration](https://github.github.com/gh-aw/reference/sandbox/) for `sandbox.mcp` and `features.mcp-gateway`.
+For same-host concurrency without hand-maintaining distinct `sandbox.mcp.port` values per workflow, use **`runner_mode: container`** (see §8b). If you stay on native mode with `count > 1`, align ports, `gh-sr-mcp-*` labels, and `runs-on` yourself and re-run `gh aw compile` after editing frontmatter; see [gh-aw Sandbox configuration](https://github.github.com/gh-aw/reference/sandbox/) for `sandbox.mcp` and `features.mcp-gateway`.
 
 **Limitation:** two concurrent jobs that use the **same compiled workflow** (same `sandbox.mcp.port`) on one host still conflict; fixing that requires different workflow sources, separate machines, limiting concurrency, or changes in gh-aw.
 

@@ -27,7 +27,7 @@ gh run              # Use 'gh run' (not local binary) for testing
 ## Architecture
 
 - `cmd/gh-sr/`     — CLI entry point
-- `internal/`     — Core packages (agentic, autostart, config, doctor, editor, ghawfrontmatter, ghawports, host, ops, runner, tui)
+- `internal/`     — Core packages (agentic, autostart, config, doctor, editor, host, ops, runner, tui)
 - `config/`       — Configuration files and templates
 - `scripts/`      — Helper scripts
 - `docs/`         — Hugo docs site
@@ -37,7 +37,6 @@ gh run              # Use 'gh run' (not local binary) for testing
 - `go.mod` — module definition
 - `config/runner.go` — runner configuration
 - `internal/runner/` — runner management logic
-- `internal/ghawports/` — MCP port lint for agentic workflow markdown (used by `gh sr doctor`, not a separate CLI)
 
 ## Build
 

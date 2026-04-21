@@ -423,7 +423,6 @@ func configCmd() *cobra.Command {
 func doctorCmd() *cobra.Command {
 	var strict bool
 	var fix bool
-	var workflowRoot string
 	cmd := &cobra.Command{
 		Use:   "doctor",
 		Short: "Check config, GitHub API access, and host prerequisites",
@@ -450,7 +449,7 @@ func doctorCmd() *cobra.Command {
 				}
 			}
 
-			res := doctor.Run(cmd.OutOrStdout(), cfgPath, envPath, cfg, cfgErr, gh, filterHost, filterRepo, strict, workflowRoot)
+			res := doctor.Run(cmd.OutOrStdout(), cfgPath, envPath, cfg, cfgErr, gh, filterHost, filterRepo, strict)
 			if fix && res.Fail > 0 {
 				fmt.Fprintln(cmd.OutOrStdout(), "\n--- Running `gh sr setup` to attempt fixes ---")
 				// Re-run setup for affected runners - this will auto-fix what it can.
@@ -472,7 +471,6 @@ func doctorCmd() *cobra.Command {
 	}
 	cmd.Flags().BoolVar(&strict, "strict", false, "non-zero exit if any check is WARN (default: only FAIL fails the run)")
 	cmd.Flags().BoolVar(&fix, "fix", false, "automatically attempt to fix failures by re-running setup")
-	cmd.Flags().StringVar(&workflowRoot, "workflow-root", "", "repo root for gh-aw MCP port lint (.github/workflows); when empty with --repo, uses . if ./.github/workflows exists")
 	return cmd
 }
 
