@@ -4,9 +4,9 @@ on:
   slash_command:
     name: q
   reaction: rocket
-runs-on: [self-hosted, linux]
+runs-on: [self-hosted, linux, agentic]
 imports:
-  - an-lee/workflows/agentic/shared/engines/minimax.md@main
+  - shared/self-hosted-runner.md
 permissions:
   contents: read
   actions: read
@@ -28,9 +28,6 @@ tools:
     min-integrity: none # This workflow is allowed to examine any PR because it's invoked by a repo maintainer
 timeout-minutes: 15
 source: githubnext/agentics/workflows/q.md@97143ac59cb3a13ef2a77581f929f06719c7402a
-sandbox:
-  mcp:
-    port: 9087
 ---
 
 # Q - Agentic Workflow Optimizer
@@ -48,6 +45,7 @@ When invoked with the `/q` command in an issue or pull request comment, analyze 
 5. **Creating a pull request** with optimized workflow configurations
 
 <current_context>
+
 ## Current Context
 
 - **Repository**: ${{ github.repository }}
@@ -56,6 +54,7 @@ When invoked with the `/q` command in an issue or pull request comment, analyze 
 - **Triggered by**: @${{ github.actor }}
 
 {{#if ${{ github.event.issue.number }} }}
+
 ### Parent Issue Context
 
 This workflow was triggered from a comment on issue #${{ github.event.issue.number }}.
@@ -65,9 +64,10 @@ This workflow was triggered from a comment on issue #${{ github.event.issue.numb
 1. Read the issue title, body, and labels to understand what workflows or problems are being discussed
 2. Consider any linked issues or previous comments for additional context
 3. Use this issue context to inform your investigation and recommendations
-{{/if}}
+   {{/if}}
 
 {{#if ${{ github.event.pull_request.number }} }}
+
 ### Parent Pull Request Context
 
 This workflow was triggered from a comment on pull request #${{ github.event.pull_request.number }}.
@@ -77,9 +77,10 @@ This workflow was triggered from a comment on pull request #${{ github.event.pul
 1. Review the PR title, description, and changed files to understand what changes are being proposed
 2. Consider the PR's relationship to workflow optimizations or issues
 3. Use this PR context to inform your investigation and recommendations
-{{/if}}
+   {{/if}}
 
 {{#if ${{ github.event.discussion.number }} }}
+
 ### Parent Discussion Context
 
 This workflow was triggered from a comment on discussion #${{ github.event.discussion.number }}.
@@ -89,8 +90,8 @@ This workflow was triggered from a comment on discussion #${{ github.event.discu
 1. Review the discussion title and body to understand the topic being discussed
 2. Consider the discussion context when planning your workflow optimizations
 3. Use this discussion context to inform your investigation and recommendations
-{{/if}}
-</current_context>
+   {{/if}}
+   </current_context>
 
 ## Investigation Protocol
 
@@ -109,6 +110,7 @@ This workflow was triggered from a comment on discussion #${{ github.event.discu
 Use the agentic-workflows tool to gather real data:
 
 1. **Download Recent Logs**:
+
    ```
    Use the `logs` tool from agentic-workflows:
    - Workflow name: (specific workflow or empty for all)
@@ -118,6 +120,7 @@ Use the agentic-workflows tool to gather real data:
    ```
 
 2. **Review Audit Information**:
+
    ```
    Use the `audit` tool for specific problematic runs:
    - Run ID: (from logs analysis)
@@ -155,10 +158,12 @@ Based on your analysis, make targeted improvements to workflow files:
 #### 4.1 Add Missing Tools
 
 If logs show missing tool reports:
+
 - Add the tools to the appropriate workflow frontmatter
 - Add shared imports if the tool has a standard configuration
 
 Example:
+
 ```yaml
 tools:
   bash: true
@@ -168,11 +173,13 @@ tools:
 #### 4.2 Fix Permission Issues
 
 If logs show permission errors:
+
 - Add required permissions to workflow frontmatter
 - Use safe-outputs for write operations when appropriate
 - Ensure minimal necessary permissions
 
 Example:
+
 ```yaml
 permissions:
   contents: read
@@ -183,10 +190,12 @@ permissions:
 #### 4.3 Optimize Repetitive Operations
 
 If logs show excessive repetitive tool calls:
+
 - Extract common patterns into workflow steps
 - Add shared configuration files for repeated setups
 
 Example of creating a shared import:
+
 ```yaml
 imports:
   - shared/formatting.md
@@ -196,6 +205,7 @@ imports:
 #### 4.4 Extract Common Execution Pathways
 
 If multiple workflows share similar logic:
+
 - Create new shared configuration files in `workflows/shared/`
 - Extract common prompts or instructions
 - Add imports to workflows to use shared configs
@@ -203,6 +213,7 @@ If multiple workflows share similar logic:
 #### 4.5 Improve Workflow Configuration
 
 General optimizations:
+
 - Add `timeout-minutes` to prevent runaway costs
 - Add `stop-after` for time-limited workflows
 - Ensure proper network settings
@@ -213,11 +224,12 @@ General optimizations:
 **CRITICAL**: Use the agentic-workflows tool to validate all changes:
 
 1. **Compile Modified Workflows**:
+
    ```
    Use the `compile` tool from agentic-workflows:
    - Workflow: (name of modified workflow)
    ```
-   
+
 2. **Check Compilation Output**: Ensure no errors or warnings
 3. **Validate Syntax**: Confirm the workflow is syntactically correct
 4. **Test locally if possible**: Try running the workflow in a test environment
@@ -245,7 +257,7 @@ Create a pull request with your improvements:
 
 4. **PR Structure**: Include in your pull request:
    - **Title**: Clear description of improvements (will be prefixed with "[q]")
-   - **Description**: 
+   - **Description**:
      - Summary of issues found from live data
      - Specific workflows modified
      - Changes made and why
@@ -324,6 +336,7 @@ Your pull request description should include:
 ## Issues Found (from live data)
 
 ### [Workflow Name]
+
 - **Log Analysis**: [Summary from actual logs]
 - **Run IDs Analyzed**: [Specific run IDs from audit]
 - **Issues Identified**:
@@ -336,6 +349,7 @@ Your pull request description should include:
 ## Changes Made
 
 ### [Workflow Name] (workflows/[name].md)
+
 - Added missing tool: `[tool-name]` (found in run #[run-id])
 - Fixed permission: Added `[permission]` (error in run #[run-id])
 - Optimized: [specific optimization based on log analysis]
@@ -352,6 +366,7 @@ Your pull request description should include:
 ## Validation
 
 All modified workflows compiled successfully using the `compile` tool from agentic-workflows:
+
 - ✅ [workflow-1]
 - ✅ [workflow-2]
 - ✅ [workflow-N]

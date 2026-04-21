@@ -12,5 +12,6 @@ engine:
     ANTHROPIC_DEFAULT_HAIKU_MODEL: "MiniMax-M2.7"
 network:
   allowed:
+  - defaults
   - api.minimaxi.com
 ---

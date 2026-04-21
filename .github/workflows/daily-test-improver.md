@@ -15,9 +15,9 @@ on:
   slash_command:
     name: test-assist
   reaction: "eyes"
-runs-on: [self-hosted, linux]
+runs-on: [self-hosted, linux, agentic]
 imports:
-  - an-lee/workflows/agentic/shared/engines/minimax.md@main
+  - shared/self-hosted-runner.md
 timeout-minutes: 30
 permissions: read-all
 network:
@@ -58,9 +58,6 @@ tools:
     toolsets: [all]
   repo-memory: true
 source: githubnext/agentics/workflows/daily-test-improver.md@97143ac59cb3a13ef2a77581f929f06719c7402a
-sandbox:
-  mcp:
-    port: 9082
 ---
 
 # Daily Test Improver
@@ -163,12 +160,12 @@ Always do Task 7 (Update Monthly Activity Summary Issue) every run. In all comme
    c. **Before implementing**: Run existing tests, generate coverage baseline if relevant (using existing coverage pipeline when available).
 
    d. Implement the testing improvement. Consider approaches like:
-      - **New tests for complex untested code**: Focus on meaningful coverage for code with real logic
-      - **Edge case tests**: Error conditions, boundary values, null/empty inputs
-      - **Regression tests**: Prevent specific bugs from recurring
-      - **Integration tests**: Verify components work together
-      - **Test refactoring**: Improve clarity, reduce brittleness, add helpers
-      - **Flaky test fixes**: Stabilize unreliable tests
+   - **New tests for complex untested code**: Focus on meaningful coverage for code with real logic
+   - **Edge case tests**: Error conditions, boundary values, null/empty inputs
+   - **Regression tests**: Prevent specific bugs from recurring
+   - **Integration tests**: Verify components work together
+   - **Test refactoring**: Improve clarity, reduce brittleness, add helpers
+   - **Flaky test fixes**: Stabilize unreliable tests
 
    e. **Run all tests**: Ensure new tests pass and existing tests still pass.
 
@@ -255,13 +252,14 @@ Maintain a single open issue titled `[Test Improver] Monthly Activity {YYYY}-{MM
 2. **Issue body format** - use **exactly** this structure:
 
    ```markdown
-   🤖 *Test Improver here - I'm an automated AI assistant focused on improving tests for this repository.*
+   🤖 _Test Improver here - I'm an automated AI assistant focused on improving tests for this repository._
 
    ## Activity for <Month Year>
 
    ## Suggested Actions for Maintainer
 
    **Comprehensive list** of all pending actions requiring maintainer attention (excludes items already actioned and checked off).
+
    - Reread the issue you're updating before you update it - there may be new checkbox adjustments since your last update that require you to adjust the suggested actions.
    - List **all** the comments, PRs, and issues that need attention
    - Exclude **all** items that have either
@@ -270,41 +268,43 @@ Maintain a single open issue titled `[Test Improver] Monthly Activity {YYYY}-{MM
    - Use memory to keep track of items checked off by user.
    - Be concise - one line per item:
 
-   * [ ] **Review PR** #<number>: <summary> - [Review](<link>)
-   * [ ] **Check comment** #<number>: Test Improver commented - verify guidance is helpful - [View](<link>)
-   * [ ] **Merge PR** #<number>: <reason> - [Review](<link>)
-   * [ ] **Close issue** #<number>: <reason> - [View](<link>)
-   * [ ] **Close PR** #<number>: <reason> - [View](<link>)
+   * [ ] **Review PR** #<number>: <summary> - [Review](link)
+   * [ ] **Check comment** #<number>: Test Improver commented - verify guidance is helpful - [View](link)
+   * [ ] **Merge PR** #<number>: <reason> - [Review](link)
+   * [ ] **Close issue** #<number>: <reason> - [View](link)
+   * [ ] **Close PR** #<number>: <reason> - [View](link)
 
-   *(If no actions needed, state "No suggested actions at this time.")*
+   _(If no actions needed, state "No suggested actions at this time.")_
 
    ## Maintainer Priorities
 
    {Any priorities or preferences noted from maintainer comments - quote relevant feedback}
 
-   *(If none noted yet, state "No specific priorities communicated yet.")*
+   _(If none noted yet, state "No specific priorities communicated yet.")_
 
    ## Testing Opportunities Backlog
 
    {Brief list of identified testing opportunities from memory, prioritized by value}
 
-   *(If nothing identified yet, state "Still analyzing repository for opportunities.")*
+   _(If nothing identified yet, state "Still analyzing repository for opportunities.")_
 
    ## Discovered Commands
 
    {List validated build/test/coverage commands from memory}
 
-   *(If not yet discovered, state "Still discovering repository commands.")*
+   _(If not yet discovered, state "Still discovering repository commands.")_
 
    ## Run History
 
    ### <YYYY-MM-DD HH:MM UTC> - [Run](<https://github.com/<repo>/actions/runs/<run-id>>)
+
    - 🔍 Identified opportunity: <short description>
    - 🔧 Created PR #<number>: <short description>
    - 💬 Commented on #<number>: <short description>
    - 📊 Coverage: <brief finding>
 
    ### <YYYY-MM-DD HH:MM UTC> - [Run](<https://github.com/<repo>/actions/runs/<run-id>>)
+
    - 🔄 Updated PR #<number>: <short description>
    ```
 

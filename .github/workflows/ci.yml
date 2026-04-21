@@ -9,7 +9,7 @@ on:
 jobs:
   test:
     name: test
-    runs-on: [self-hosted, linux]
+    runs-on: [self-hosted, linux, ci]
     steps:
       - uses: actions/checkout@v4
 
@@ -28,7 +28,7 @@ jobs:
     name: bench
     runs-on: [self-hosted, linux]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - uses: actions/setup-go@v5
         with:

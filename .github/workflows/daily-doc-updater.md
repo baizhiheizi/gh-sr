@@ -4,9 +4,9 @@ description: Automatically reviews and updates documentation based on recent cod
 on:
   schedule: daily
   workflow_dispatch:
-runs-on: [self-hosted, linux]
+runs-on: [self-hosted, linux, agentic]
 imports:
-  - an-lee/workflows/agentic/shared/engines/minimax.md@main
+  - shared/self-hosted-runner.md
 network:
   allowed:
     - defaults
@@ -33,9 +33,6 @@ safe-outputs:
     draft: false
     protected-files: fallback-to-issue
 source: githubnext/agentics/workflows/daily-doc-updater.md@97143ac59cb3a13ef2a77581f929f06719c7402a
-sandbox:
-  mcp:
-    port: 9080
 ---
 
 # Daily Documentation Updater
@@ -53,6 +50,7 @@ Scan the repository for merged pull requests and code changes from the last 24 h
 First, search for merged pull requests from the last 24 hours.
 
 Use the GitHub tools to:
+
 - Calculate yesterday's date: `date -u -d "1 day ago" +%Y-%m-%d`
 - Search for pull requests merged in the last 24 hours using `search_pull_requests` with a query like: `repo:${{ github.repository }} is:pr is:merged merged:>=YYYY-MM-DD` (replace YYYY-MM-DD with yesterday's date)
 - Get details of each merged PR using `pull_request_read`
@@ -73,6 +71,7 @@ Create a summary of changes that should be documented.
 ### 3. Identify Documentation Location
 
 Determine where documentation is located in this repository:
+
 - Check for `docs/` directory
 - Check for `README.md` files
 - Check for `*.md` files in root or subdirectories
@@ -132,6 +131,7 @@ If you made any documentation changes:
 **PR Title Format**: `[docs] Update documentation for features from [date]`
 
 **PR Description Template**:
+
 ```markdown
 ## Documentation Updates - [Date]
 
