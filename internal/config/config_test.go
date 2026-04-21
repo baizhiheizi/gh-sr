@@ -802,3 +802,79 @@ func containsFold(labels []string, want string) bool {
 	}
 	return false
 }
+
+func TestRunnerConfig_RunnerMode_defaults(t *testing.T) {
+	t.Parallel()
+	rc := RunnerConfig{}
+	if rc.EffectiveRunnerMode() != RunnerModeNative {
+		t.Fatalf("empty runner_mode should default to native, got %q", rc.EffectiveRunnerMode())
+	}
+	if rc.IsContainerMode() {
+		t.Fatal("empty runner_mode should not be container mode")
+	}
+}
+
+func TestRunnerConfig_RunnerMode_container(t *testing.T) {
+	t.Parallel()
+	rc := RunnerConfig{RunnerMode: RunnerModeContainer}
+	if rc.EffectiveRunnerMode() != RunnerModeContainer {
+		t.Fatalf("runner_mode: container should return container, got %q", rc.EffectiveRunnerMode())
+	}
+	if !rc.IsContainerMode() {
+		t.Fatal("IsContainerMode() should return true for container mode")
+	}
+}
+
+func TestValidate_runnerMode_invalid(t *testing.T) {
+	t.Parallel()
+	cfg := Config{
+		Hosts:   map[string]HostConfig{"h": {Addr: "local", OS: "linux", Arch: "amd64"}},
+		Runners: []RunnerConfig{{Name: "r", Repo: "o/r", Host: "h", RunnerMode: "docker"}},
+	}
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected error for invalid runner_mode")
+	}
+}
+
+func TestValidate_runnerMode_container_requiresAgentic(t *testing.T) {
+	t.Parallel()
+	cfg := Config{
+		Hosts:   map[string]HostConfig{"h": {Addr: "local", OS: "linux", Arch: "amd64"}},
+		Runners: []RunnerConfig{{Name: "r", Repo: "o/r", Host: "h", RunnerMode: RunnerModeContainer}},
+	}
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected error: container mode requires agentic profile")
+	}
+}
+
+func TestValidate_runnerMode_container_withAgenticMCPPorts(t *testing.T) {
+	t.Parallel()
+	base := 9080
+	cfg := Config{
+		Hosts: map[string]HostConfig{"h": {Addr: "local", OS: "linux", Arch: "amd64"}},
+		Runners: []RunnerConfig{{
+			Name: "r", Repo: "o/r", Host: "h",
+			Profile:            "agentic",
+			RunnerMode:         RunnerModeContainer,
+			AgenticMCPPortBase: &base,
+		}},
+	}
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected error: agentic_mcp_port_base not needed with container mode")
+	}
+}
+
+func TestValidate_runnerMode_container_valid(t *testing.T) {
+	t.Parallel()
+	cfg := Config{
+		Hosts: map[string]HostConfig{"h": {Addr: "local", OS: "linux", Arch: "amd64"}},
+		Runners: []RunnerConfig{{
+			Name: "r", Repo: "o/r", Host: "h", Count: 2,
+			Profile:    "agentic",
+			RunnerMode: RunnerModeContainer,
+		}},
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("unexpected error for valid container-mode config: %v", err)
+	}
+}

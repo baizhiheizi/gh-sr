@@ -302,7 +302,9 @@ safe-outputs:
 ---
 ```
 
-### 8a. Concurrent jobs, MCP gateway ports, and gh-sr
+### 8a. Concurrent jobs, MCP gateway ports, and gh-sr *(native mode only)*
+
+> **This section applies to `runner_mode: native` (the default).** If you use `runner_mode: container`, you do not need to configure ports or labels — see [§8b](#8b-runner-modes-native-vs-container-recommended-for-concurrency).
 
 The gh-aw MCP gateway listens on the host network (`docker --network host`). The TCP port comes from workflow frontmatter `sandbox.mcp.port` (default **80** after `gh aw compile`). If several agentic jobs run on the **same physical host**, they must use **different** ports, or only one such job may run at a time.
 
@@ -336,6 +338,46 @@ runs-on:
 - `gh sr doctor --workflow-root DIR` (or `doctor --repo owner/repo` when `./.github/workflows` exists in the current directory) — runs the same MCP port checks after host diagnostics.
 
 **Limitation:** two concurrent jobs that use the **same compiled workflow** (same `sandbox.mcp.port`) on one host still conflict; fixing that requires different workflow sources, separate machines, limiting concurrency, or changes in gh-aw.
+
+### 8b. Runner modes: native vs container (recommended for concurrency)
+
+> **Applies to runners with `profile: agentic`.**
+
+gh-aw hardcodes `/tmp/gh-aw` in compiled `.lock.yml` files (~80 references per workflow: prompt files, agent stdio logs, step summaries, MCP payloads/logs, firewall logs, and the `-v /tmp/gh-aw:/tmp/gh-aw:rw` Docker bind mount). When multiple agentic jobs run simultaneously on the **same host**, they overwrite each other's files at this path.
+
+`runner_mode: native` (the default) requires you to manage this conflict with the per-instance MCP port labeling described in [§8a](#8a-concurrent-jobs-mcp-gateway-ports-and-gh-sr). `RUNNER_TEMP` is already isolated per runner instance by gh-sr.
+
+`runner_mode: container` (opt-in) resolves all `/tmp/gh-aw` conflicts by running each runner instance in its own **privileged Docker container with an inner dockerd** (Docker-in-Docker). Every container has:
+
+| Resource | Native mode | Container mode |
+|---|---|---|
+| `/tmp/gh-aw` | **shared** — jobs overwrite each other | **isolated** per container filesystem |
+| `iptables` / AWF rules | **shared** host netfilter state | isolated per container network namespace |
+| MCP gateway port 80 | **shared** — conflicts on multi-instance hosts | isolated (`--network host` inside container = that container's network) |
+| `RUNNER_TEMP` | isolated per runner instance | isolated per container |
+| Docker image cache | shared host Docker | per-container (stored in bind-mounted state dir) |
+
+In container mode, `agentic_mcp_ports` / `agentic_mcp_port_base` and the `gh-sr-mcp-<port>` label trick are **not needed**. Each container runs its own MCP gateway on port 80 without conflict.
+
+**Example `runners.yml`:**
+
+```yaml
+runners:
+  - name: my-agentic
+    repo: owner/repo
+    host: my-linux-host
+    count: 3               # 3 concurrent agentic jobs
+    profile: agentic
+    runner_mode: container # enables DinD isolation
+    # No agentic_mcp_ports needed — port 80 is isolated per container
+```
+
+gh-sr will build the runner container image locally on first `gh sr setup` (Ubuntu 24.04 + Docker CE + gh-aw + dnsmasq + actions runner). Subsequent setups skip the build if the image is already up to date.
+
+**When to use which mode:**
+
+- **`runner_mode: native`** — default; suitable when you run only one agentic job at a time per host, or already manage port assignments via [§8a](#8a-concurrent-jobs-mcp-gateway-ports-and-gh-sr). Zero extra disk space beyond the runner binaries.
+- **`runner_mode: container`** *(recommended for concurrent agentic jobs)* — use when 2+ agentic jobs must run simultaneously on the same host and you want zero configuration of ports, dnsmasq, iptables, or sudoers on the host.
 
 ## 9. What `profile: agentic` automates
 
@@ -513,3 +555,90 @@ cat /etc/dnsmasq.d/gh-sr-docker.conf
 # Inspect Docker DNS settings
 cat /etc/docker/daemon.json
 ```
+
+## 12. Container mode operations (`runner_mode: container`)
+
+> **Only relevant when using `runner_mode: container` (see [§8b](#8b-runner-modes-native-vs-container-recommended-for-concurrency)).**
+
+### Setup and lifecycle
+
+```bash
+# Set up all container-mode runners (builds the image on first run)
+gh sr setup
+
+# Start / stop all runner containers
+gh sr up
+gh sr down
+
+# View status
+gh sr status
+
+# Stream recent logs for a specific instance
+gh sr logs my-agentic
+```
+
+Each runner instance runs as a Docker container named `gh-sr-<instance>` with `--restart unless-stopped`, so it auto-starts when Docker starts on the host and auto-restarts after a job completes.
+
+### Rebuild the runner image
+
+The image (`gh-sr/agentic-runner:<version>`) is built once per runner version. To force a rebuild after local changes or a new runner version:
+
+```bash
+# Remove the existing image on the host, then re-run setup
+docker rmi gh-sr/agentic-runner:<version>
+gh sr setup
+```
+
+The version tag matches the GitHub Actions runner version resolved at setup time.
+
+### Attach to a running runner container
+
+```bash
+# Exec into a running runner container (e.g. to inspect /tmp/gh-aw state)
+docker exec -it gh-sr-<instance> bash
+
+# Inside the container — check inner dockerd status
+docker info
+
+# Check agent containers spawned by a running job
+docker ps
+
+# Tail the entrypoint log
+tail -f /runner-state/dockerd.log
+```
+
+### Cleaning up stale AWF artefacts
+
+If a job crashes mid-run, orphan containers and iptables rules may remain *inside the runner container*. To clean up:
+
+```bash
+# Inside the runner container
+docker exec gh-sr-<instance> bash -c "
+  docker ps -a --filter 'name=awf-' --format '{{.ID}}' | xargs -r docker rm -f
+  docker ps -a --filter 'name=gh-aw' --format '{{.ID}}' | xargs -r docker rm -f
+  docker ps -a --filter 'name=gh-aw-mcpg-' --format '{{.ID}}' | xargs -r docker rm -f
+"
+
+# Flush stale AWF iptables rules inside the container
+docker exec gh-sr-<instance> iptables -F DOCKER-USER
+```
+
+`gh sr doctor` reports orphan containers and stale rules as warnings.
+
+### Security: `--privileged` and Sysbox
+
+By default, container-mode runners use `--privileged` because the inner dockerd needs full Linux capabilities. This is appropriate for trusted infrastructure but increases the attack surface.
+
+**Alternative: [Sysbox](https://github.com/nestybox/sysbox)** is an OCI runtime that enables Docker-in-Docker without `--privileged`, using user namespaces for isolation. If Sysbox is installed on the host, you can run the runner container with `--runtime sysbox-runc` instead of `--privileged`. Sysbox is not auto-configured by gh-sr; refer to Sysbox documentation for installation and then update the `docker create` command in your setup accordingly.
+
+### State persistence
+
+Each runner container bind-mounts `$HOME/.gh-sr/runners/<instance>` as `/runner-state` inside the container. This directory stores:
+
+| Path | Contents |
+|---|---|
+| `/runner-state/docker-data/` | Inner Docker layer cache (preserves pulled gh-aw images across restarts) |
+| `/runner-state/_work/` | Runner job workspace |
+| `/runner-state/_temp/` | `RUNNER_TEMP` — isolated per container |
+| `/runner-state/dockerd.log` | Inner dockerd log |
+

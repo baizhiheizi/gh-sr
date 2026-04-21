@@ -43,12 +43,18 @@ type RunnerStatus struct {
 }
 
 func (m *Manager) Setup(h *host.Host, rc config.RunnerConfig) error {
+	if rc.IsContainerMode() {
+		return m.setupContainer(h, rc)
+	}
 	return m.setupNative(h, rc)
 }
 
 // NeedsSetup checks whether a runner requires setup before it can start.
-// Checks if any instance is missing the .runner config file.
+// Checks if any instance is missing the .runner config file (native) or container (container mode).
 func (m *Manager) NeedsSetup(h *host.Host, rc config.RunnerConfig) bool {
+	if rc.IsContainerMode() {
+		return m.needsSetupContainer(h, rc)
+	}
 	for _, name := range rc.InstanceNames() {
 		ok, _ := NativeRunnerConfigPresent(h, name)
 		if !ok {
@@ -68,6 +74,16 @@ func (m *Manager) EnsureSetup(h *host.Host, rc config.RunnerConfig) error {
 }
 
 func (m *Manager) Start(h *host.Host, rc config.RunnerConfig) error {
+	if rc.IsContainerMode() {
+		for _, name := range rc.InstanceNames() {
+			if err := m.startContainer(h, name); err != nil {
+				return err
+			}
+			fmt.Fprintf(m.out(), "  %s: container started\n", name)
+		}
+		return nil
+	}
+
 	for _, name := range rc.InstanceNames() {
 		// Prefer svc.sh for Linux if it's deployed
 		if h.OS == "linux" && svcShPresent(h, name) {
@@ -115,6 +131,16 @@ func (m *Manager) Start(h *host.Host, rc config.RunnerConfig) error {
 }
 
 func (m *Manager) Stop(h *host.Host, rc config.RunnerConfig) error {
+	if rc.IsContainerMode() {
+		for _, name := range rc.InstanceNames() {
+			if err := m.stopContainer(h, name); err != nil {
+				return err
+			}
+			fmt.Fprintf(m.out(), "  %s: container stopped\n", name)
+		}
+		return nil
+	}
+
 	for _, name := range rc.InstanceNames() {
 		// Prefer svc.sh for Linux if it's deployed
 		if h.OS == "linux" && svcShPresent(h, name) {
@@ -147,8 +173,14 @@ func (m *Manager) Stop(h *host.Host, rc config.RunnerConfig) error {
 
 func (m *Manager) Remove(h *host.Host, rc config.RunnerConfig) error {
 	for _, name := range rc.InstanceNames() {
-		if err := m.removeNative(h, rc, name); err != nil {
-			return fmt.Errorf("removing %s: %w", name, err)
+		if rc.IsContainerMode() {
+			if err := m.removeContainer(h, rc, name); err != nil {
+				return fmt.Errorf("removing %s: %w", name, err)
+			}
+		} else {
+			if err := m.removeNative(h, rc, name); err != nil {
+				return fmt.Errorf("removing %s: %w", name, err)
+			}
 		}
 	}
 	return nil
@@ -162,15 +194,20 @@ func (m *Manager) Status(h *host.Host, rc config.RunnerConfig) ([]RunnerStatus, 
 		if rc.Org != "" {
 			repoDisplay = "org:" + rc.Org
 		}
+		mode := rc.EffectiveRunnerMode()
 		s := RunnerStatus{
 			Instance: name,
 			Host:     rc.Host,
 			Repo:     repoDisplay,
 			Labels:   strings.Join(rc.EffectiveLabelsForInstance(h.OS, h.Arch, i), ", "),
-			Mode:     "native",
+			Mode:     mode,
 		}
 
-		s.Local = m.statusNative(h, name)
+		if rc.IsContainerMode() {
+			s.Local = m.statusContainer(h, name)
+		} else {
+			s.Local = m.statusNative(h, name)
+		}
 		statuses = append(statuses, s)
 	}
 
@@ -178,6 +215,9 @@ func (m *Manager) Status(h *host.Host, rc config.RunnerConfig) ([]RunnerStatus, 
 }
 
 func (m *Manager) Logs(h *host.Host, rc config.RunnerConfig, instanceName string) (string, error) {
+	if rc.IsContainerMode() {
+		return m.logsContainer(h, instanceName)
+	}
 	return m.logsNative(h, instanceName)
 }
 

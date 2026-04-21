@@ -35,6 +35,14 @@ type HostConfig struct {
 // AgenticMCPLabelPrefix is prepended to the TCP port in runner labels (e.g. gh-sr-mcp-9080).
 const AgenticMCPLabelPrefix = "gh-sr-mcp-"
 
+// RunnerModeNative runs the actions runner process directly on the host OS.
+const RunnerModeNative = "native"
+
+// RunnerModeContainer runs each runner instance inside its own privileged Docker
+// container (DinD), providing full filesystem and network isolation between
+// concurrent agentic workflow jobs on the same host.
+const RunnerModeContainer = "container"
+
 type RunnerConfig struct {
 	Name      string   `yaml:"name"`
 	Repo      string   `yaml:"repo"`
@@ -44,7 +52,8 @@ type RunnerConfig struct {
 	Count     int      `yaml:"count"`
 	Labels    []string `yaml:"labels"`
 	Ephemeral bool     `yaml:"ephemeral"`
-	Profile   string   `yaml:"profile"` // "agentic" for GitHub Agentic Workflows
+	Profile   string   `yaml:"profile"`     // "agentic" for GitHub Agentic Workflows
+	RunnerMode string  `yaml:"runner_mode"` // "native" (default) or "container"
 	// AgenticMCPPorts assigns one MCP gateway port per runner instance (length must equal count).
 	// Mutually exclusive with AgenticMCPPortBase.
 	AgenticMCPPorts []int `yaml:"agentic_mcp_ports,omitempty"`
@@ -55,6 +64,19 @@ type RunnerConfig struct {
 // IsAgentic returns true if the runner uses the agentic profile.
 func (rc *RunnerConfig) IsAgentic() bool {
 	return rc.Profile == "agentic"
+}
+
+// IsContainerMode returns true if the runner uses container-isolated DinD mode.
+func (rc *RunnerConfig) IsContainerMode() bool {
+	return rc.RunnerMode == RunnerModeContainer
+}
+
+// EffectiveRunnerMode returns the resolved runner mode (defaults to "native").
+func (rc *RunnerConfig) EffectiveRunnerMode() string {
+	if rc.RunnerMode == RunnerModeContainer {
+		return RunnerModeContainer
+	}
+	return RunnerModeNative
 }
 
 // Scope returns "repo" or "org" depending on how the runner is registered.
@@ -337,6 +359,15 @@ func (c *Config) Validate() error {
 		}
 		if r.Profile != "" && r.Profile != "agentic" {
 			return fmt.Errorf("runner %q: profile must be empty or \"agentic\" (got %q)", r.Name, r.Profile)
+		}
+		if r.RunnerMode != "" && r.RunnerMode != RunnerModeNative && r.RunnerMode != RunnerModeContainer {
+			return fmt.Errorf("runner %q: runner_mode must be %q or %q (got %q)", r.Name, RunnerModeNative, RunnerModeContainer, r.RunnerMode)
+		}
+		if r.RunnerMode == RunnerModeContainer && !r.IsAgentic() {
+			return fmt.Errorf("runner %q: runner_mode: container requires profile: agentic", r.Name)
+		}
+		if r.IsContainerMode() && (len(r.AgenticMCPPorts) > 0 || r.AgenticMCPPortBase != nil) {
+			return fmt.Errorf("runner %q: agentic_mcp_ports / agentic_mcp_port_base are not needed with runner_mode: container (each container has its own isolated port 80)", r.Name)
 		}
 		if err := validateAgenticMCPPorts(&r); err != nil {
 			return err

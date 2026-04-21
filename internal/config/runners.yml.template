@@ -73,3 +73,19 @@ runners:
   #   host: vps-1
   #   profile: agentic   # enables gh-aw CLI setup and agentic label
   #   # labels are auto-generated with "agentic" appended
+  #
+  # Agentic runner in container mode (recommended for running multiple concurrent
+  # agentic jobs on the same host). Each runner instance runs inside its own
+  # privileged Docker container with an isolated /tmp/gh-aw, dockerd, and network
+  # namespace. Eliminates /tmp collisions and MCP port conflicts automatically.
+  # The host only needs Docker installed; gh-aw and all other dependencies live
+  # inside the container image (built locally by gh sr during setup).
+  #
+  # - name: agentic-container
+  #   repo: owner/repo
+  #   host: vps-1
+  #   count: 3             # run 3 concurrent agentic jobs safely
+  #   profile: agentic
+  #   runner_mode: container   # "native" (default) or "container" (DinD isolation)
+  #   # Note: agentic_mcp_ports / agentic_mcp_port_base are NOT needed in container
+  #   # mode — port 80 is automatically isolated per container.

@@ -199,8 +199,15 @@ func Run(w io.Writer, cfgPath, envPath string, cfg *config.Config, cfgErr error,
 			if h.OS == "linux" {
 				checkLinuxSudo(&hr.buf, hostName, h, &hr.r)
 			}
-			if hasAgenticRunners(cfg.RunnersForHost(hostName)) {
+			hostRunners := cfg.RunnersForHost(hostName)
+			if hasNativeAgenticRunners(hostRunners) {
 				checkAgenticPrereqs(&hr.buf, hostName, h, &hr.r)
+			}
+			if hasContainerAgenticRunners(hostRunners) {
+				checkContainerAgenticPrereqs(&hr.buf, hostName, h, &hr.r)
+			}
+			if h.OS == "linux" && hasAgenticRunners(hostRunners) {
+				checkAWFHygiene(&hr.buf, hostName, h, &hr.r)
 			}
 		}(i, hostName)
 	}
@@ -423,6 +430,26 @@ func hasAgenticRunners(runners []config.RunnerConfig) bool {
 	return false
 }
 
+// hasNativeAgenticRunners returns true if any runner uses agentic profile in native mode.
+func hasNativeAgenticRunners(runners []config.RunnerConfig) bool {
+	for _, rc := range runners {
+		if rc.IsAgentic() && !rc.IsContainerMode() {
+			return true
+		}
+	}
+	return false
+}
+
+// hasContainerAgenticRunners returns true if any runner uses agentic profile in container mode.
+func hasContainerAgenticRunners(runners []config.RunnerConfig) bool {
+	for _, rc := range runners {
+		if rc.IsAgentic() && rc.IsContainerMode() {
+			return true
+		}
+	}
+	return false
+}
+
 // checkAgenticPrereqs verifies Docker is available on the host for agentic workflow containers.
 // gh-aw (GitHub Agentic Workflows) uses Docker on the host for AWF sandbox containers.
 // It uses agentic.ValidatePrereqs for comprehensive checking and prints remediation guidance.
@@ -497,6 +524,65 @@ func checkAgenticPrereqs(w io.Writer, hostName string, h *host.Host, r *Result) 
 		out, _ = h.Run(`docker run --rm alpine sh -c "nslookup github.com >/dev/null 2>&1 && echo ok || echo failed" 2>/dev/null`)
 		if strings.TrimSpace(out) == "ok" {
 			printLine(w, sevOK, hostName, "agentic: external DNS resolves inside containers")
+		}
+	}
+}
+
+// checkContainerAgenticPrereqs checks host requirements for container-mode (DinD) agentic runners.
+// The inner dockerd, dnsmasq, and iptables all live inside the runner image, so only
+// the outer Docker availability and --privileged support are checked here.
+func checkContainerAgenticPrereqs(w io.Writer, hostName string, h *host.Host, r *Result) {
+	failures := agentic.ValidateContainerPrereqs(h)
+
+	if len(failures) == 0 {
+		printLine(w, sevOK, hostName, "agentic(container): docker available and --privileged supported")
+		return
+	}
+
+	for _, f := range failures {
+		sev := sevFail
+		if f.Severity == agentic.SeverityWarning {
+			sev = sevWarn
+			r.Warn++
+		} else {
+			r.Fail++
+		}
+		printLine(w, sev, hostName, "agentic(container): "+f.Message)
+		if f.Remediation != "" {
+			for _, line := range strings.Split(f.Remediation, "\n") {
+				fmt.Fprintf(w, "       %s\n", line)
+			}
+		}
+		if f.DocRef != "" {
+			fmt.Fprintf(w, "       See: %s\n", f.DocRef)
+		}
+	}
+}
+
+// checkAWFHygiene reports stale AWF artefacts (orphan containers, stale iptables rules).
+// These are always warnings; they don't block setup but waste resources.
+func checkAWFHygiene(w io.Writer, hostName string, h *host.Host, r *Result) {
+	failures := agentic.ValidateAWFHygiene(h)
+	if len(failures) == 0 {
+		printLine(w, sevOK, hostName, "agentic: no orphan AWF containers or stale iptables rules")
+		return
+	}
+	for _, f := range failures {
+		sev := sevWarn
+		if f.Severity == agentic.SeverityError {
+			sev = sevFail
+			r.Fail++
+		} else {
+			r.Warn++
+		}
+		printLine(w, sev, hostName, "agentic(hygiene): "+f.Message)
+		if f.Remediation != "" {
+			for _, line := range strings.Split(f.Remediation, "\n") {
+				fmt.Fprintf(w, "       %s\n", line)
+			}
+		}
+		if f.DocRef != "" {
+			fmt.Fprintf(w, "       See: %s\n", f.DocRef)
 		}
 	}
 }

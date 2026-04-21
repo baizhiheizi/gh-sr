@@ -252,6 +252,138 @@ If missing, update the config and restart:
 	return failures
 }
 
+// ValidateContainerPrereqs checks prerequisites for container-mode (DinD) agentic runners.
+// Unlike ValidatePrereqs (for native mode), container mode only needs:
+//   - Docker available on the host (to run the outer container)
+//   - Support for --privileged containers (required for the inner dockerd)
+//
+// dnsmasq, sudoers/iptables, host.docker.internal, and RUNNER_TEMP setup all
+// live inside the container image and are not host requirements.
+func ValidateContainerPrereqs(h *host.Host) []PrereqFailure {
+	var failures []PrereqFailure
+
+	if h.OS != "linux" {
+		failures = append(failures, PrereqFailure{
+			Name:     "linux-required",
+			Severity: SeverityError,
+			Message:  "runner_mode: container is only supported on Linux hosts",
+			Remediation: "Use a Linux host. Container-mode agentic runners require a Linux host with Docker.",
+			DocRef: "agentic-workflows.md §8b",
+		})
+		return failures
+	}
+
+	// Docker CLI check
+	out, err := h.Run(`docker --version 2>/dev/null`)
+	if err != nil || !strings.Contains(out, "Docker version") {
+		failures = append(failures, PrereqFailure{
+			Name:     "docker-cli",
+			Severity: SeverityError,
+			Message:  "docker CLI not found on PATH; required to manage runner containers",
+			Remediation: `Install Docker on the host:
+
+  sudo apt-get update && sudo apt-get install -y docker.io
+  sudo systemctl enable --now docker
+  sudo usermod -aG docker $USER
+  # Log out and back in for group membership to take effect`,
+			DocRef: "agentic-workflows.md §8b",
+		})
+		return failures
+	}
+
+	// Docker daemon check
+	if _, err = h.Run(`docker info >/dev/null 2>&1`); err != nil {
+		failures = append(failures, PrereqFailure{
+			Name:     "docker-daemon",
+			Severity: SeverityError,
+			Message:  "docker daemon not running",
+			Remediation: `Start and enable Docker:
+
+  sudo systemctl start docker
+  sudo systemctl enable docker`,
+			DocRef: "agentic-workflows.md §8b",
+		})
+		return failures
+	}
+
+	// --privileged support check (required for DinD)
+	// We try to create a short-lived privileged container; if the daemon or kernel
+	// security policy rejects --privileged, the inner dockerd will not start.
+	privOut, err := h.Run(`docker run --rm --privileged alpine sh -c "echo privileged-ok" 2>/dev/null`)
+	if err != nil || strings.TrimSpace(privOut) != "privileged-ok" {
+		failures = append(failures, PrereqFailure{
+			Name:     "docker-privileged",
+			Severity: SeverityError,
+			Message:  "docker --privileged containers are not supported; required for DinD (inner dockerd)",
+			Remediation: `Privileged containers may be blocked by:
+  - A non-root Docker daemon with userns-remap enabled (disable it for this use-case)
+  - A Kubernetes/container runtime security policy
+  - Seccomp/AppArmor profile restrictions
+
+  Verify with: docker run --rm --privileged alpine echo ok
+  For Sysbox (rootless-compatible alternative): see agentic-workflows.md §12`,
+			DocRef: "agentic-workflows.md §8b",
+		})
+	}
+
+	return failures
+}
+
+// ValidateAWFHygiene checks for leftover AWF/gh-aw Docker artefacts from crashed jobs.
+// These are not blocking failures, only warnings.
+func ValidateAWFHygiene(h *host.Host) []PrereqFailure {
+	var failures []PrereqFailure
+
+	if h.OS != "linux" {
+		return failures
+	}
+
+	// Orphan awf-* containers (AWF agent sandbox containers left by crashed jobs)
+	out, _ := h.Run(`docker ps -a --filter "name=awf-" --filter "name=gh-aw" --format '{{.Names}}' 2>/dev/null | head -20`)
+	if strings.TrimSpace(out) != "" {
+		failures = append(failures, PrereqFailure{
+			Name:     "awf-orphan-containers",
+			Severity: SeverityWarning,
+			Message:  "orphan gh-aw/awf containers found from previously crashed jobs",
+			Remediation: `Clean up orphan containers to free resources and avoid port conflicts:
+
+  docker ps -a --filter "name=awf-" --format '{{.ID}}' | xargs -r docker rm -f
+  docker ps -a --filter "name=gh-aw" --format '{{.ID}}' | xargs -r docker rm -f`,
+			DocRef: "agentic-workflows.md §12",
+		})
+	}
+
+	// Stale DOCKER-USER iptables rules referencing removed containers
+	out, _ = h.Run(`sudo -n iptables -L DOCKER-USER --line-numbers -n 2>/dev/null | grep -i "awf\|gh-aw" | head -20`)
+	if strings.TrimSpace(out) != "" {
+		failures = append(failures, PrereqFailure{
+			Name:     "stale-docker-user-rules",
+			Severity: SeverityWarning,
+			Message:  "stale DOCKER-USER iptables rules referencing gh-aw/awf containers",
+			Remediation: `Flush stale AWF egress rules (only safe to do when no agentic jobs are running):
+
+  sudo iptables -F DOCKER-USER`,
+			DocRef: "agentic-workflows.md §12",
+		})
+	}
+
+	// Orphan gh-aw-mcpg-* containers (MCP gateway containers)
+	out, _ = h.Run(`docker ps -a --filter "name=gh-aw-mcpg-" --format '{{.Names}}' 2>/dev/null | head -20`)
+	if strings.TrimSpace(out) != "" {
+		failures = append(failures, PrereqFailure{
+			Name:     "mcpg-orphan-containers",
+			Severity: SeverityWarning,
+			Message:  "orphan gh-aw-mcpg-* containers found from previously crashed jobs",
+			Remediation: `Clean up orphan MCP gateway containers:
+
+  docker ps -a --filter "name=gh-aw-mcpg-" --format '{{.ID}}' | xargs -r docker rm -f`,
+			DocRef: "agentic-workflows.md §12",
+		})
+	}
+
+	return failures
+}
+
 // HasBlockingFailures returns true if any failure has severity "error".
 func HasBlockingFailures(failures []PrereqFailure) bool {
 	for _, f := range failures {

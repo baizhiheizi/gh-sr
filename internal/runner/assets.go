@@ -7,3 +7,9 @@ var SVCShContent string
 
 //go:embed actions.runner.service.template
 var ServiceTemplateContent string
+
+//go:embed agentic-runner-image/Dockerfile
+var agenticRunnerDockerfile string
+
+//go:embed agentic-runner-image/entrypoint.sh
+var agenticRunnerEntrypoint string
