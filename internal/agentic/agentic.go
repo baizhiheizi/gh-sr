@@ -2,6 +2,7 @@ package agentic
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/an-lee/gh-sr/internal/host"
@@ -252,13 +253,14 @@ If missing, update the config and restart:
 	return failures
 }
 
-// ValidateContainerPrereqs checks prerequisites for container-mode (DinD) agentic runners.
-// Unlike ValidatePrereqs (for native mode), container mode only needs:
-//   - Docker available on the host (to run the outer container)
+// ValidateContainerPrereqs checks host prerequisites for runner_mode: container (DinD).
+// Unlike ValidatePrereqs (for native agentic), the host only needs:
+//   - Docker available on the host (to run the outer runner container)
 //   - Support for --privileged containers (required for the inner dockerd)
 //
-// dnsmasq, sudoers/iptables, host.docker.internal, and RUNNER_TEMP setup all
-// live inside the container image and are not host requirements.
+// dnsmasq, sudoers/iptables, host.docker.internal, gh-aw tooling, and RUNNER_TEMP
+// live inside the runner image (or apply only to native agentic) and are not
+// validated here.
 func ValidateContainerPrereqs(h *host.Host) []PrereqFailure {
 	var failures []PrereqFailure
 
@@ -267,7 +269,7 @@ func ValidateContainerPrereqs(h *host.Host) []PrereqFailure {
 			Name:     "linux-required",
 			Severity: SeverityError,
 			Message:  "runner_mode: container is only supported on Linux hosts",
-			Remediation: "Use a Linux host. Container-mode agentic runners require a Linux host with Docker.",
+			Remediation: "Use a Linux host with Docker. Container-mode self-hosted runners require Linux on the host.",
 			DocRef: "agentic-workflows.md §8b",
 		})
 		return failures
@@ -377,6 +379,62 @@ func ValidateAWFHygiene(h *host.Host) []PrereqFailure {
 			Remediation: `Clean up orphan MCP gateway containers:
 
   docker ps -a --filter "name=gh-aw-mcpg-" --format '{{.ID}}' | xargs -r docker rm -f`,
+			DocRef: "agentic-workflows.md §12",
+		})
+	}
+
+	return failures
+}
+
+// ValidateAWFHygieneInner runs the same orphan/stale checks as ValidateAWFHygiene
+// against the inner Docker daemon inside a running DinD runner container (outerContainer
+// is the host-visible name, e.g. gh-sr-myinstance).
+func ValidateAWFHygieneInner(h *host.Host, outerContainer string) []PrereqFailure {
+	var failures []PrereqFailure
+	if h.OS != "linux" {
+		return failures
+	}
+	q := strconv.Quote(outerContainer)
+	pfx := "docker exec " + q + " "
+
+	out, _ := h.Run(pfx + `docker ps -a --filter "name=awf-" --filter "name=gh-aw" --format '{{.Names}}' 2>/dev/null | head -20`)
+	if strings.TrimSpace(out) != "" {
+		failures = append(failures, PrereqFailure{
+			Name:     "awf-orphan-containers-inner",
+			Severity: SeverityWarning,
+			Message:  fmt.Sprintf("orphan gh-aw/awf containers in inner Docker (runner container %s)", outerContainer),
+			Remediation: fmt.Sprintf(`Clean up inside the runner container (outer name %s):
+
+  docker exec -it %s bash
+  docker ps -a --filter "name=awf-" --format '{{.ID}}' | xargs -r docker rm -f
+  docker ps -a --filter "name=gh-aw" --format '{{.ID}}' | xargs -r docker rm -f`, outerContainer, outerContainer),
+			DocRef: "agentic-workflows.md §12",
+		})
+	}
+
+	out, _ = h.Run(pfx + `iptables -L DOCKER-USER --line-numbers -n 2>/dev/null | grep -i "awf\|gh-aw" | head -20`)
+	if strings.TrimSpace(out) != "" {
+		failures = append(failures, PrereqFailure{
+			Name:     "stale-docker-user-rules-inner",
+			Severity: SeverityWarning,
+			Message:  fmt.Sprintf("stale DOCKER-USER iptables rules in inner netns (runner container %s)", outerContainer),
+			Remediation: fmt.Sprintf(`Flush inner AWF egress rules when no agentic job is using this runner:
+
+  docker exec %s iptables -F DOCKER-USER`, outerContainer),
+			DocRef: "agentic-workflows.md §12",
+		})
+	}
+
+	out, _ = h.Run(pfx + `docker ps -a --filter "name=gh-aw-mcpg-" --format '{{.Names}}' 2>/dev/null | head -20`)
+	if strings.TrimSpace(out) != "" {
+		failures = append(failures, PrereqFailure{
+			Name:     "mcpg-orphan-containers-inner",
+			Severity: SeverityWarning,
+			Message:  fmt.Sprintf("orphan gh-aw-mcpg-* containers in inner Docker (runner container %s)", outerContainer),
+			Remediation: fmt.Sprintf(`Clean up inside the runner container:
+
+  docker exec -it %s bash
+  docker ps -a --filter "name=gh-aw-mcpg-" --format '{{.ID}}' | xargs -r docker rm -f`, outerContainer),
 			DocRef: "agentic-workflows.md §12",
 		})
 	}

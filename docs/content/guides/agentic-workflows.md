@@ -581,9 +581,7 @@ Each runner instance runs as a Docker container named `gh-sr-<instance>` with `-
 
 ### Rebuild the runner image
 
-The image (`gh-sr/agentic-runner:<version>`) is built once per runner version. To force a rebuild after local changes or a new runner version:
-
-Native-mode runners in the selection are skipped without error; the command only rebuilds `runner_mode: container` runners.
+The image (`gh-sr/agentic-runner:<version>`) is built once per runner version. To force a rebuild after local changes or a new runner version, use `gh sr rebuild <runner-name>` (native-mode runners in the selection are skipped; only `runner_mode: container` runners are rebuilt) or remove the image and re-run `gh sr setup`:
 
 ```bash
 gh sr rebuild <runner-name>   # preferred: tears down containers, rebuilds, restarts
@@ -594,6 +592,19 @@ gh sr setup
 ```
 
 The version tag matches the GitHub Actions runner version resolved at setup time.
+
+### Health checks (`gh sr doctor`)
+
+On each Linux host in scope, `gh sr doctor` validates **native** runners by checking the host directory under `$HOME/.gh-sr/runners/<instance>/` for `run.sh` and `.runner`. It does **not** use those paths for `runner_mode: container` instances.
+
+For **container** runners on Linux it additionally checks:
+
+- Host Docker CLI/daemon and that a short `--privileged` test container runs (required for DinD).
+- For each configured instance: a Docker object named `gh-sr-<instance>` exists and is **running** (warns if created/exited).
+- **Inner DinD**: `docker exec gh-sr-<instance> docker info` succeeds.
+- **Registration**: `.runner` exists at `/home/runner/actions-runner/.runner` inside the outer container.
+
+For **native** `profile: agentic`, it runs host-level AWF orphan / `DOCKER-USER` hygiene (same as before). For **container** `profile: agentic`, it runs the same style of checks against the **inner** Docker daemon (`docker exec gh-sr-<instance> docker ps …`), because AWF containers live under inner dockerd, not on the host.
 
 ### Attach to a running runner container
 

@@ -11,9 +11,13 @@ import (
 // AgenticRunnerImageTag is the local Docker image tag built by gh sr setup.
 const AgenticRunnerImageTag = "gh-sr/agentic-runner"
 
-// containerName returns the deterministic Docker container name for a runner instance.
-func containerName(instanceName string) string {
+// ContainerDockerName returns the deterministic Docker container name for a runner instance.
+func ContainerDockerName(instanceName string) string {
 	return "gh-sr-" + instanceName
+}
+
+func containerName(instanceName string) string {
+	return ContainerDockerName(instanceName)
 }
 
 // containerStateDir returns the host-side bind-mount path for runner instance state.

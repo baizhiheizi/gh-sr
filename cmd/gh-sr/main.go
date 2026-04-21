@@ -426,7 +426,7 @@ func doctorCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "doctor",
 		Short: "Check config, GitHub API access, and host prerequisites",
-		Long:  "Validates local paths, configuration, GitHub API access, and SSH targets (Docker or native tooling per runner mode). See README \"Host setup\" for steps gh sr cannot automate.",
+		Long:  "Validates local paths, configuration, GitHub API access, and SSH targets. For runner_mode: native, checks host runner dirs and (when profile: agentic) Docker, dnsmasq, and AWF hygiene on the host. For runner_mode: container, checks outer Docker and --privileged, each gh-sr-<instance> container, inner dockerd, .runner inside the container, and (when profile: agentic) AWF hygiene on the inner Docker. See README \"Host setup\" for steps gh sr cannot automate.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := config.BootstrapEnv(); err != nil {
 				return err

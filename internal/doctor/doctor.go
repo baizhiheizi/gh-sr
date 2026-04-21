@@ -7,6 +7,7 @@ import (
 	"os"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -199,11 +200,15 @@ func Run(w io.Writer, cfgPath, envPath string, cfg *config.Config, cfgErr error,
 			if hasNativeAgenticRunners(hostRunners) {
 				checkAgenticPrereqs(&hr.buf, hostName, h, &hr.r)
 			}
-			if hasContainerAgenticRunners(hostRunners) {
-				checkContainerAgenticPrereqs(&hr.buf, hostName, h, &hr.r)
+			if h.OS == "linux" && hasContainerModeRunners(hostRunners) {
+				checkContainerHostPrereqs(&hr.buf, hostName, h, &hr.r)
+				checkContainerRunnerInstall(&hr.buf, hostName, h, runners, &hr.r)
 			}
-			if h.OS == "linux" && hasAgenticRunners(hostRunners) {
+			if h.OS == "linux" && hasNativeAgenticRunners(hostRunners) {
 				checkAWFHygiene(&hr.buf, hostName, h, &hr.r)
+			}
+			if h.OS == "linux" && hasContainerAgenticRunners(hostRunners) {
+				checkContainerAgenticInnerHygiene(&hr.buf, hostName, h, runners, &hr.r)
 			}
 		}(i, hostName)
 	}
@@ -304,7 +309,7 @@ func uniqueHostNames(runners []config.RunnerConfig) []string {
 func nativeInstallTargetsForHost(runners []config.RunnerConfig, hostName string) [][2]string {
 	var out [][2]string
 	for _, rc := range runners {
-		if rc.Host != hostName {
+		if rc.Host != hostName || rc.IsContainerMode() {
 			continue
 		}
 		for _, inst := range rc.InstanceNames() {
@@ -312,6 +317,43 @@ func nativeInstallTargetsForHost(runners []config.RunnerConfig, hostName string)
 		}
 	}
 	return out
+}
+
+// containerInstallTargetsForHost lists (instanceName, runnerConfigName) for container-mode runners on hostName.
+func containerInstallTargetsForHost(runners []config.RunnerConfig, hostName string) [][2]string {
+	var out [][2]string
+	for _, rc := range runners {
+		if rc.Host != hostName || !rc.IsContainerMode() {
+			continue
+		}
+		for _, inst := range rc.InstanceNames() {
+			out = append(out, [2]string{inst, rc.Name})
+		}
+	}
+	return out
+}
+
+// containerAgenticInstallTargetsForHost lists container-mode instances that use profile: agentic.
+func containerAgenticInstallTargetsForHost(runners []config.RunnerConfig, hostName string) [][2]string {
+	var out [][2]string
+	for _, rc := range runners {
+		if rc.Host != hostName || !rc.IsContainerMode() || !rc.IsAgentic() {
+			continue
+		}
+		for _, inst := range rc.InstanceNames() {
+			out = append(out, [2]string{inst, rc.Name})
+		}
+	}
+	return out
+}
+
+func hasContainerModeRunners(runners []config.RunnerConfig) bool {
+	for _, rc := range runners {
+		if rc.IsContainerMode() {
+			return true
+		}
+	}
+	return false
 }
 
 func checkNativeRunnerInstall(w io.Writer, hostName string, h *host.Host, runners []config.RunnerConfig, r *Result) {
@@ -386,16 +428,6 @@ func checkLinuxSudo(w io.Writer, hostName string, h *host.Host, r *Result) {
 		return
 	}
 	printLine(w, sevOK, hostName, "linux: non-root user has passwordless sudo")
-}
-
-// hasAgenticRunners returns true if any runner in the list uses the agentic profile.
-func hasAgenticRunners(runners []config.RunnerConfig) bool {
-	for _, rc := range runners {
-		if rc.IsAgentic() {
-			return true
-		}
-	}
-	return false
 }
 
 // hasNativeAgenticRunners returns true if any runner uses agentic profile in native mode.
@@ -496,14 +528,14 @@ func checkAgenticPrereqs(w io.Writer, hostName string, h *host.Host, r *Result) 
 	}
 }
 
-// checkContainerAgenticPrereqs checks host requirements for container-mode (DinD) agentic runners.
-// The inner dockerd, dnsmasq, and iptables all live inside the runner image, so only
-// the outer Docker availability and --privileged support are checked here.
-func checkContainerAgenticPrereqs(w io.Writer, hostName string, h *host.Host, r *Result) {
+// checkContainerHostPrereqs checks host requirements for runner_mode: container (DinD).
+// The inner dockerd, dnsmasq, and iptables live inside the runner image; only the
+// outer Docker daemon and --privileged support are checked here.
+func checkContainerHostPrereqs(w io.Writer, hostName string, h *host.Host, r *Result) {
 	failures := agentic.ValidateContainerPrereqs(h)
 
 	if len(failures) == 0 {
-		printLine(w, sevOK, hostName, "agentic(container): docker available and --privileged supported")
+		printLine(w, sevOK, hostName, "container: host Docker available and --privileged supported")
 		return
 	}
 
@@ -515,7 +547,7 @@ func checkContainerAgenticPrereqs(w io.Writer, hostName string, h *host.Host, r 
 		} else {
 			r.Fail++
 		}
-		printLine(w, sev, hostName, "agentic(container): "+f.Message)
+		printLine(w, sev, hostName, "container: "+f.Message)
 		if f.Remediation != "" {
 			for _, line := range strings.Split(f.Remediation, "\n") {
 				fmt.Fprintf(w, "       %s\n", line)
@@ -523,6 +555,83 @@ func checkContainerAgenticPrereqs(w io.Writer, hostName string, h *host.Host, r 
 		}
 		if f.DocRef != "" {
 			fmt.Fprintf(w, "       See: %s\n", f.DocRef)
+		}
+	}
+}
+
+// checkContainerRunnerInstall verifies each DinD runner container exists on the host,
+// is running (warn otherwise), inner dockerd responds, and .runner is present inside the image path.
+func checkContainerRunnerInstall(w io.Writer, hostName string, h *host.Host, runners []config.RunnerConfig, r *Result) {
+	for _, pair := range containerInstallTargetsForHost(runners, hostName) {
+		inst, runnerName := pair[0], pair[1]
+		cname := runner.ContainerDockerName(inst)
+		q := strconv.Quote(cname)
+
+		out, err := h.Run(fmt.Sprintf(`docker inspect --format '{{.State.Status}}' %s 2>/dev/null || echo missing`, q))
+		status := strings.TrimSpace(out)
+		if err != nil || status == "missing" || status == "" {
+			printLine(w, sevFail, hostName, fmt.Sprintf("container: instance %s (%s) — Docker container %s not found; run: gh sr setup %s", inst, runnerName, cname, runnerName))
+			r.Fail++
+			continue
+		}
+		if status != "running" && status != "restarting" {
+			printLine(w, sevWarn, hostName, fmt.Sprintf("container: instance %s (%s) — %s state is %q (expected running); run: gh sr up %s", inst, runnerName, cname, status, runnerName))
+			r.Warn++
+			continue
+		}
+
+		if _, err := h.Run(fmt.Sprintf("docker exec %s docker info >/dev/null 2>&1", q)); err != nil {
+			printLine(w, sevWarn, hostName, fmt.Sprintf("container: instance %s — inner dockerd not responding inside %s", inst, cname))
+			r.Warn++
+		} else {
+			printLine(w, sevOK, hostName, fmt.Sprintf("container: instance %s — inner dockerd healthy (%s)", inst, cname))
+		}
+
+		out, _ = h.Run(fmt.Sprintf("docker exec %s test -f /home/runner/actions-runner/.runner && echo ok || echo no", q))
+		if strings.TrimSpace(out) != "ok" {
+			printLine(w, sevFail, hostName, fmt.Sprintf("container: instance %s — actions runner not configured inside %s (missing .runner); run: gh sr setup %s", inst, cname, runnerName))
+			r.Fail++
+			continue
+		}
+		printLine(w, sevOK, hostName, fmt.Sprintf("container: instance %s — registered (.runner present in %s)", inst, cname))
+	}
+}
+
+// checkContainerAgenticInnerHygiene runs AWF orphan checks against the inner Docker in each running DinD agentic runner.
+func checkContainerAgenticInnerHygiene(w io.Writer, hostName string, h *host.Host, runners []config.RunnerConfig, r *Result) {
+	for _, pair := range containerAgenticInstallTargetsForHost(runners, hostName) {
+		inst := pair[0]
+		cname := runner.ContainerDockerName(inst)
+		q := strconv.Quote(cname)
+
+		out, err := h.Run(fmt.Sprintf(`docker inspect --format '{{.State.Status}}' %s 2>/dev/null || echo missing`, q))
+		status := strings.TrimSpace(out)
+		if err != nil || status != "running" {
+			continue
+		}
+
+		failures := agentic.ValidateAWFHygieneInner(h, cname)
+		if len(failures) == 0 {
+			printLine(w, sevOK, hostName, fmt.Sprintf("container(agent): inner Docker clean (%s)", cname))
+			continue
+		}
+		for _, f := range failures {
+			sev := sevWarn
+			if f.Severity == agentic.SeverityError {
+				sev = sevFail
+				r.Fail++
+			} else {
+				r.Warn++
+			}
+			printLine(w, sev, hostName, "container(agent): "+f.Message)
+			if f.Remediation != "" {
+				for _, line := range strings.Split(f.Remediation, "\n") {
+					fmt.Fprintf(w, "       %s\n", line)
+				}
+			}
+			if f.DocRef != "" {
+				fmt.Fprintf(w, "       See: %s\n", f.DocRef)
+			}
 		}
 	}
 }

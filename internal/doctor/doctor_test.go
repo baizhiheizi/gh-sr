@@ -99,6 +99,45 @@ func TestNativeInstallTargetsForHost(t *testing.T) {
 	if len(nativeInstallTargetsForHost(runners, "h2")) != 1 {
 		t.Fatalf("h2 should have one target")
 	}
+
+	mixed := []config.RunnerConfig{
+		{Name: "native", Host: "hx", Repo: "o/r", Count: 1},
+		{Name: "din", Host: "hx", Repo: "o/r", Count: 1, RunnerMode: config.RunnerModeContainer},
+	}
+	gotN := nativeInstallTargetsForHost(mixed, "hx")
+	if len(gotN) != 1 || gotN[0][0] != "native-1" {
+		t.Fatalf("native targets should exclude container mode: %#v", gotN)
+	}
+}
+
+func TestContainerInstallTargetsForHost(t *testing.T) {
+	t.Parallel()
+	runners := []config.RunnerConfig{
+		{Name: "n", Host: "h1", Repo: "o/r", Count: 1},
+		{Name: "c", Host: "h1", Repo: "o/r", Count: 2, RunnerMode: config.RunnerModeContainer},
+	}
+	got := containerInstallTargetsForHost(runners, "h1")
+	want := [][2]string{{"c-1", "c"}, {"c-2", "c"}}
+	if len(got) != len(want) {
+		t.Fatalf("len %d want %d: %#v", len(got), len(want), got)
+	}
+	for i := range want {
+		if got[i][0] != want[i][0] || got[i][1] != want[i][1] {
+			t.Fatalf("idx %d: got %#v want %#v", i, got[i], want[i])
+		}
+	}
+}
+
+func TestContainerAgenticInstallTargetsForHost(t *testing.T) {
+	t.Parallel()
+	runners := []config.RunnerConfig{
+		{Name: "ci", Host: "h1", Repo: "o/r", Count: 1, RunnerMode: config.RunnerModeContainer},
+		{Name: "ag", Host: "h1", Repo: "o/r", Count: 1, RunnerMode: config.RunnerModeContainer, Profile: "agentic"},
+	}
+	got := containerAgenticInstallTargetsForHost(runners, "h1")
+	if len(got) != 1 || got[0][0] != "ag-1" || got[0][1] != "ag" {
+		t.Fatalf("want single agentic container instance, got %#v", got)
+	}
 }
 
 func TestRun_ConfigErrorSkipsGitHub(t *testing.T) {

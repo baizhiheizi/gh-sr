@@ -16,6 +16,9 @@ func TestContainerName(t *testing.T) {
 	if got := containerName("x"); got != "gh-sr-x" {
 		t.Errorf("containerName(x): got %q", got)
 	}
+	if got := ContainerDockerName("my-agentic-1"); got != containerName("my-agentic-1") {
+		t.Errorf("ContainerDockerName vs containerName: got %q", got)
+	}
 }
 
 func TestContainerStateDir(t *testing.T) {
