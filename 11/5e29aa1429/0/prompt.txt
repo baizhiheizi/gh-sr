@@ -1,0 +1,116 @@
+Let's focus on the runners for agentic workflow @docs/content/guides/agentic-workflows.md and related docs: https://github.github.com/gh-aw/guides/self-hosted-runners/ 
+
+Currently, the runner is native, the agentic workflow works well some time. But I want multiple runners working in the same host at the same time, when multiple agentic workflows running at the same time in the same host, it easily raise some issues. because of the shared tmp dir, awf port etc.
+
+Could you help me to do a full review, and make some improvements that ensure multiple agentic workflows would running at the same time in the same host perfactly.
+
+---
+
+Implement the plan as specified, it is attached for your reference. Do NOT edit the plan file itself.
+
+To-do's from the plan have already been created. Do not create them again. Mark them as in_progress as you work, starting with the first one. Don't stop until you have completed all the to-dos.
+
+---
+
+Implement the plan as specified, it is attached for your reference. Do NOT edit the plan file itself.
+
+To-do's from the plan have already been created. Do not create them again. Mark them as in_progress as you work, starting with the first one. Don't stop until you have completed all the to-dos.
+
+---
+
+Failed to setup.
+
+➜  gh sr setup
+Detecting OS/arch for host mac (an-lee@192.168.31.72)...
+Detecting OS/arch for host x1 (an-lee@192.168.31.66)...
+  x1: detected os=linux arch=amd64
+  mac: detected os=darwin arch=arm64
+Setting up on x1 (an-lee@192.168.31.66)...
+  ohmyxin-agentic: checking agentic runner image gh-sr/agentic-runner:2.333.1...
+  ohmyxin-agentic: building agentic runner image (this may take several minutes)...
+  ohmyxin-agentic: image built: gh-sr/agentic-runner:2.333.1
+  ohmyxin-agentic-1: creating runner container...
+Error: creating container gh-sr-ohmyxin-agentic-1: running "\nmkdir -p '$HOME/.gh-sr/runners/ohmyxin-agentic-1'\ndocker create \\\n  --name 'gh-sr-ohmyxin-agentic-1' \\\n  --privileged \\\n  --restart unless-stopped \\\n  -v '$HOME/.gh-sr/runners/ohmyxin-agentic-1':/runner-state \\\n  -e GH_SR_RUNNER_NAME='ohmyxin-agentic-1' \\\n  -e GH_SR_RUNNER_TOKEN='REDACTED' \\\n  -e GH_SR_RUNNER_URL='https://github.com/an-lee/ohmyxin' \\\n  -e GH_SR_RUNNER_LABELS='self-hosted,x1,agentic' \\\n  -e GH_SR_RUNNER_GROUP='Default' \\\n  -e GH_SR_RUNNER_EPHEMERAL='' \\\n  'gh-sr/agentic-runner:2.333.1'": Process exited with status 1
+stderr: Error response from daemon: create $HOME/.gh-sr/runners/ohmyxin-agentic-1: "$HOME/.gh-sr/runners/ohmyxin-agentic-1" includes invalid characters for a local volume name, only "[a-zA-Z0-9][a-zA-Z0-9_.-]" are allowed. If you intended to pass a host directory, use absolute path
+
+---
+
+Implement the plan as specified, it is attached for your reference. Do NOT edit the plan file itself.
+
+To-do's from the plan have already been created. Do not create them again. Mark them as in_progress as you work, starting with the first one. Don't stop until you have completed all the to-dos.
+
+---
+
+Implement the plan as specified, it is attached for your reference. Do NOT edit the plan file itself.
+
+To-do's from the plan have already been created. Do not create them again. Mark them as in_progress as you work, starting with the first one. Don't stop until you have completed all the to-dos.
+
+---
+
+@run-24699750444 review this log of workflow. Identify the root cause and fix it. It works well in native runner, but not in container runner. Some config might be wroing in the runner.
+
+---
+
+Implement the plan as specified, it is attached for your reference. Do NOT edit the plan file itself.
+
+To-do's from the plan have already been created. Do not create them again. Mark them as in_progress as you work, starting with the first one. Don't stop until you have completed all the to-dos.
+
+---
+
+Implement the plan as specified, it is attached for your reference. Do NOT edit the plan file itself.
+
+To-do's from the plan have already been created. Do not create them again. Mark them as in_progress as you work, starting with the first one. Don't stop until you have completed all the to-dos.
+
+---
+
+How could I make the runner take effect? Would `gh sr down` & `gh sr up` work?
+
+---
+
+We should add a `gh sr` command for this, rebuild the image for runner. We don't expect user to login into host to do it himself.
+
+---
+
+We should add a `gh sr` command for this, rebuild the image for runner. We don't expect user to login into host to do it himself.
+
+---
+
+@\home\an-lee\.cursor\projects\home-an-lee-projects-gh-sr\terminals\2.txt:255-352 It rais another error when running, review the logs. And identify the root cause.
+
+---
+
+@\home\an-lee\.cursor\projects\home-an-lee-projects-gh-sr\terminals\2.txt:370-606 It failed when starting MCP Gateway. The container runner still need to tune.
+
+---
+
+@\home\an-lee\.cursor\projects\home-an-lee-projects-gh-sr\terminals\2.txt:370-606 It failed when starting MCP Gateway. The container runner still need to tune. Help me to fix it.
+
+---
+
+➜  gh sr rebuild enjoy-agentic
+Detecting OS/arch for host mac (an-lee@192.168.31.72)...
+Detecting OS/arch for host x1 (an-lee@192.168.31.66)...
+  mac: detected os=darwin arch=arm64
+  x1: detected os=linux arch=amd64
+Rebuilding image for enjoy-agentic on x1...
+  enjoy-agentic-1: stopping container...
+  enjoy-agentic-1: removing container...
+  enjoy-agentic-2: stopping container...
+  enjoy-agentic-2: removing container...
+  enjoy-agentic: removing old agentic-runner image(s)...
+  enjoy-agentic: building agentic runner image gh-sr/agentic-runner:2.333.1 (this may take several minutes)...
+Error: building agentic runner image: docker build: running "docker build --build-arg RUNNER_VERSION='2.333.1' --build-arg RUNNER_ARCH='x64' -t 'gh-sr/agentic-runner:2.333.1' '/tmp/gh-sr-agentic-runner-build'": Process exited with status 1
+stderr: #0 building with "default" instance using docker driver
+
+#1 [internal] load build definition from Dockerfile
+#1 transferring dockerfile: 4.46kB done
+#1 DONE 0.0s
+Dockerfile:37
+--------------------
+  35 |             libsodium-dev \
+  36 |         && rm -rf /var/lib/apt/lists/*
+  37 | >>> b
+  38 |     # Docker CE (for DinD — the inner dockerd that gh-aw uses)
+  39 |     RUN install -m 0755 -d /etc/apt/keyrings \
+--------------------
+ERROR: failed to build: failed to solve: dockerfile parse error on line 37: unknown instruction: b
