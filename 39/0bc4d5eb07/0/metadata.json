@@ -1,0 +1,47 @@
+{
+  "cli_version": "dev",
+  "checkpoint_id": "390bc4d5eb07",
+  "session_id": "c2c0857b-d87c-4b97-bc88-bf34309d89dd",
+  "strategy": "manual-commit",
+  "created_at": "2026-04-21T11:14:38.695250588Z",
+  "branch": "main",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "cmd/gh-sr/main.go",
+    "docs/content/guides/agentic-workflows.md",
+    "internal/config/config.go",
+    "internal/config/config_test.go",
+    "internal/config/runners.yml.template",
+    "internal/ops/ops.go",
+    "internal/runner/agentic-runner-image/Dockerfile",
+    "internal/runner/container.go",
+    "internal/runner/runner.go"
+  ],
+  "agent": "Claude Code",
+  "model": "composer-2",
+  "turn_id": "3e3ad94e41fd",
+  "token_usage": {
+    "input_tokens": 0,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 0,
+    "output_tokens": 0,
+    "api_call_count": 0
+  },
+  "session_metrics": {
+    "turn_count": 34,
+    "context_tokens": 223750,
+    "context_window_size": 200000
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-04-21T11:14:38.556103072Z",
+    "agent_lines": 54,
+    "agent_removed": 37,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 54,
+    "total_lines_changed": 91,
+    "agent_percentage": 100,
+    "metric_version": 2
+  }
+}
