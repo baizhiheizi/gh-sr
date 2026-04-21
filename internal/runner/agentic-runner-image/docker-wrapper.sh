@@ -1,100 +1,67 @@
 #!/bin/bash
 # gh-sr docker wrapper
 #
-# Transparently patches gh-aw-mcpg images so they work with `--network host`.
+# Makes gh-aw-mcpg's self-inspect validation block a no-op by forcing a
+# non-hex container hostname.
 #
-# Upstream's /app/run_containerized.sh runs a self-inspect validation block
-# that hard-exits the gateway when launched inside a DinD runner:
+# Background
+# ----------
+# gh-aw's launcher runs the MCP Gateway as:
 #
-#   1. validate_port_mapping fails because MCP_GATEWAY_PORT (80) is never
-#      present in NetworkSettings.Ports — the image only EXPOSEs 8000, and
-#      host-networked containers have an empty Ports map anyway.
-#   2. validate_stdin_interactive fails because `docker inspect .Config.OpenStdin`
-#      from inside the container doesn't reliably reflect the `-i` flag used
-#      at run time.
+#     docker run -i --rm --network host ... ghcr.io/github/gh-aw-mcpg:<tag>
+#
+# Inside the container, /app/run_containerized.sh detects CONTAINER_ID from
+# /proc/self/cgroup or falls back to `hostname`, then runs:
+#
+#     if [ -n "$CONTAINER_ID" ]; then
+#         validate_port_mapping "$CONTAINER_ID"       # needs port in NetworkSettings.Ports
+#         validate_stdin_interactive "$CONTAINER_ID"  # needs Config.OpenStdin == true
+#         ...
+#     fi
+#
+# Under `--network host` the Ports map is empty, so validate_port_mapping
+# fails. validate_stdin_interactive is also flaky in DinD. Both kill the
+# gateway with exit 1.
+#
+# The upstream script already has a clean escape hatch: if CONTAINER_ID
+# cannot be determined, the whole block is skipped. On cgroup v2 hosts
+# /proc/self/cgroup yields no hex string, so detection falls back to the
+# container hostname. We override --hostname to a non-hex value so the
+# hostname fallback also fails, CONTAINER_ID stays empty, and the gateway
+# starts through its intended "could not determine container ID" code path.
+#
+# This wrapper intercepts `docker run|create ... ghcr.io/github/gh-aw-mcpg:* ...`
+# and injects `--hostname gh-aw-mcpg` right after the subcommand. All other
+# `docker` invocations are passed through untouched.
 #
 # See: https://github.com/github/gh-aw/issues/25511
-#
-# This wrapper detects any `docker run|create ... ghcr.io/github/gh-aw-mcpg:* ...`
-# invocation, pulls the image if needed, and rebuilds it with those self-inspect
-# checks commented out. The rebuild is a single sed layer, tagged identically,
-# and labelled `gh-sr.patched=<version>` so subsequent invocations are no-ops
-# unless the patch logic itself changes (bump PATCH_VERSION below).
-#
-# All other `docker` commands are passed through untouched.
 
 real=/usr/bin/docker
-lockfile=/tmp/gh-sr-docker-patch.lock
 
-# Bump this when changing the sed transformation below so stale cached
-# images (from previous gh-sr versions) are detected and re-patched.
-PATCH_VERSION=v2
-
-patch_mcpg_image() {
-    local image="$1"
-
-    if "$real" image inspect "$image" \
-        --format '{{index .Config.Labels "gh-sr.patched"}}' 2>/dev/null \
-        | grep -qx "$PATCH_VERSION"; then
-        return 0
-    fi
-
-    if ! "$real" image inspect "$image" >/dev/null 2>&1; then
-        "$real" pull "$image" >/dev/null 2>&1 || return 0
-        if "$real" image inspect "$image" \
-            --format '{{index .Config.Labels "gh-sr.patched"}}' 2>/dev/null \
-            | grep -qx "$PATCH_VERSION"; then
-            return 0
-        fi
-    fi
-
-    local tmp
-    tmp=$(mktemp -d)
-    cat > "$tmp/Dockerfile" <<'EOF'
-FROM __BASE_IMAGE__
-LABEL gh-sr.patched=__PATCH_VERSION__
-# Neutralise the self-inspect validation block in the containerized
-# entrypoint. All of these checks do `docker inspect <self>` and compare
-# against settings that don't apply when the gateway is launched with
-# `--network host` inside a DinD runner:
-#
-#   - validate_port_mapping:       requires MCP_GATEWAY_PORT in NetworkSettings.Ports
-#   - validate_stdin_interactive:  requires Config.OpenStdin == true
-#   - validate_container_config:   warns only (docker socket mount)
-#   - validate_log_directory_mount: warns only (log dir mount)
-#
-# gh-aw always passes `-i`, mounts the docker socket, and uses --network host,
-# so skipping these checks is safe for our environment.
-# See: https://github.com/github/gh-aw/issues/25511
-RUN sed -i -E 's|^([[:space:]]+)(validate_[a-z_]+ "\$CONTAINER_ID".*)|\1# gh-sr: skipped \2|' /app/run_containerized.sh
-EOF
-    sed -i \
-        -e "s|__BASE_IMAGE__|$image|" \
-        -e "s|__PATCH_VERSION__|$PATCH_VERSION|" \
-        "$tmp/Dockerfile"
-
-    "$real" build -q -t "$image" "$tmp" >/dev/null 2>&1 || true
-    rm -rf "$tmp"
-}
-
-maybe_patch_args() {
+needs_hostname_injection() {
     local sub="${1:-}"
     case "$sub" in
         run|create) ;;
-        *) return 0 ;;
+        *) return 1 ;;
     esac
 
+    local has_hostname=false
+    local has_mcpg=false
     local arg
     for arg in "$@"; do
-        if [[ "$arg" == ghcr.io/github/gh-aw-mcpg:* ]]; then
-            (
-                flock -x 200
-                patch_mcpg_image "$arg"
-            ) 200>"$lockfile" 2>/dev/null || true
-            return 0
-        fi
+        case "$arg" in
+            --hostname|--hostname=*|-h) has_hostname=true ;;
+            ghcr.io/github/gh-aw-mcpg:*) has_mcpg=true ;;
+        esac
     done
+
+    [[ "$has_mcpg" == true && "$has_hostname" == false ]]
 }
 
-maybe_patch_args "$@" || true
+if needs_hostname_injection "$@"; then
+    sub="$1"
+    shift
+    exec "$real" "$sub" --hostname gh-aw-mcpg "$@"
+fi
+
 exec "$real" "$@"

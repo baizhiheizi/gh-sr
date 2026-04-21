@@ -98,8 +98,10 @@ RUN su - runner -c "curl -sL https://raw.githubusercontent.com/github/gh-aw/main
 # Runner state directory (bind-mounted from host at runtime)
 RUN mkdir -p /runner-state && chown runner:runner /runner-state
 
-# Docker wrapper: transparently patches gh-aw-mcpg images so they start
-# correctly under `--network host`. See docker-wrapper.sh header for details.
+# Docker wrapper: injects `--hostname gh-aw-mcpg` into `docker run|create`
+# invocations that target ghcr.io/github/gh-aw-mcpg images, so the gateway's
+# self-inspect validation block is skipped via its own "unknown container ID"
+# escape hatch. See docker-wrapper.sh header for details.
 # /usr/local/bin comes before /usr/bin in the default PATH, so this wrapper
 # shadows the real docker CLI (at /usr/bin/docker) for all users.
 COPY docker-wrapper.sh /usr/local/bin/docker
