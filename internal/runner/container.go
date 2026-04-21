@@ -247,6 +247,61 @@ func (m *Manager) logsContainer(h *host.Host, instanceName string) (string, erro
 	return out, nil
 }
 
+// rebuildContainerImage tears down all containers for a runner group, removes
+// the old agentic-runner image, rebuilds it from the embedded sources, recreates
+// the containers, and starts them. The runner state directories (including the
+// .runner registration file) are intentionally preserved so the runners do not
+// re-register with GitHub on next start.
+func (m *Manager) rebuildContainerImage(h *host.Host, rc config.RunnerConfig) error {
+	if h.OS != "linux" {
+		return fmt.Errorf("runner_mode: container is only supported on Linux hosts")
+	}
+
+	// Stop and remove containers (keep state dirs so .runner persists).
+	for _, name := range rc.InstanceNames() {
+		cName := containerName(name)
+		fmt.Fprintf(m.out(), "  %s: stopping container...\n", name)
+		_, _ = h.Run(fmt.Sprintf("docker stop %s 2>/dev/null || true", cName))
+		fmt.Fprintf(m.out(), "  %s: removing container...\n", name)
+		_, _ = h.Run(fmt.Sprintf("docker rm -f %s 2>/dev/null || true", cName))
+	}
+
+	// Remove all local agentic-runner images so the build is forced.
+	fmt.Fprintf(m.out(), "  %s: removing old agentic-runner image(s)...\n", rc.Name)
+	_, _ = h.Run(fmt.Sprintf(
+		"docker images %s -q | xargs -r docker rmi -f 2>/dev/null || true",
+		posixSingleQuote(AgenticRunnerImageTag),
+	))
+
+	// Resolve runner version and architecture for the build.
+	version, err := m.GitHub.GetLatestRunnerVersion()
+	if err != nil {
+		return fmt.Errorf("resolving runner version: %w", err)
+	}
+	arch := archForGitHub(h.Arch)
+	imageTag := fmt.Sprintf("%s:%s", AgenticRunnerImageTag, version)
+
+	fmt.Fprintf(m.out(), "  %s: building agentic runner image %s (this may take several minutes)...\n", rc.Name, imageTag)
+	if err := buildAgenticRunnerImage(h, imageTag, version, arch); err != nil {
+		return fmt.Errorf("building agentic runner image: %w", err)
+	}
+	fmt.Fprintf(m.out(), "  %s: image built: %s\n", rc.Name, imageTag)
+
+	// Recreate and start each container. Because state dirs still exist on the
+	// host (bind-mounted at /runner-state), the entrypoint will find .runner and
+	// skip config.sh, so no new registration token is consumed on start.
+	if err := m.setupContainer(h, rc); err != nil {
+		return err
+	}
+	for _, name := range rc.InstanceNames() {
+		fmt.Fprintf(m.out(), "  %s: starting container...\n", name)
+		if err := m.startContainer(h, name); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // needsSetupContainer reports whether any instance container is missing.
 func (m *Manager) needsSetupContainer(h *host.Host, rc config.RunnerConfig) bool {
 	for _, name := range rc.InstanceNames() {

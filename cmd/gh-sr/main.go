@@ -79,6 +79,7 @@ With no subcommand, gh sr opens the interactive dashboard on a terminal; use gh 
 		upCmd(),
 		downCmd(),
 		restartCmd(),
+		rebuildCmd(),
 		statusCmd(),
 		logsCmd(),
 		cleanupCmd(),
@@ -725,6 +726,32 @@ func restartCmd() *cobra.Command {
 				return err
 			}
 			return ops.Restart(cmd.OutOrStdout(), cfg, mgr, filterHost, filterRepo, args)
+		},
+	}
+}
+
+func rebuildCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "rebuild [runner-names...]",
+		Short: "Rebuild the agentic runner image and restart containers (container-mode only)",
+		Long: `Rebuilds the gh-sr/agentic-runner Docker image from the embedded sources,
+recreates the runner containers, and starts them.
+
+Runner state (the .runner registration file, work directories, and Docker layer
+cache inside the container) is preserved across the rebuild, so runners stay
+registered with GitHub and do not consume a new registration token.
+
+Only container-mode runners are supported (runner_mode: container).`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, err := loadConfig()
+			if err != nil {
+				return err
+			}
+			mgr, err := newManager(cfg, cmd.OutOrStdout())
+			if err != nil {
+				return err
+			}
+			return ops.RebuildImage(cmd.OutOrStdout(), cfg, mgr, filterHost, filterRepo, args)
 		},
 	}
 }
