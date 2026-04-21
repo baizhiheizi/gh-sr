@@ -836,14 +836,19 @@ func TestValidate_runnerMode_invalid(t *testing.T) {
 	}
 }
 
-func TestValidate_runnerMode_container_requiresAgentic(t *testing.T) {
+func TestValidate_runnerMode_container_nonAgentic_valid(t *testing.T) {
 	t.Parallel()
 	cfg := Config{
-		Hosts:   map[string]HostConfig{"h": {Addr: "local", OS: "linux", Arch: "amd64"}},
-		Runners: []RunnerConfig{{Name: "r", Repo: "o/r", Host: "h", RunnerMode: RunnerModeContainer}},
+		Hosts: map[string]HostConfig{"h": {Addr: "local", OS: "linux", Arch: "amd64"}},
+		Runners: []RunnerConfig{{
+			Name:       "r",
+			Repo:       "o/r",
+			Host:       "h",
+			RunnerMode: RunnerModeContainer,
+		}},
 	}
-	if err := cfg.Validate(); err == nil {
-		t.Fatal("expected error: container mode requires agentic profile")
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("container mode without profile: agentic should validate: %v", err)
 	}
 }
 

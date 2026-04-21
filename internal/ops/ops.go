@@ -180,9 +180,9 @@ func Restart(w io.Writer, cfg *config.Config, mgr *runner.Manager, filterHost, f
 	})
 }
 
-// RebuildImage rebuilds the agentic runner Docker image for container-mode
-// runners, recreates the containers (preserving state), and starts them.
-// Native-mode runners are rejected with an error.
+// RebuildImage rebuilds the container runner Docker image for container-mode
+// runners (agentic or not), recreates the containers (preserving state), and
+// starts them. Native-mode runners are rejected with an error.
 func RebuildImage(w io.Writer, cfg *config.Config, mgr *runner.Manager, filterHost, filterRepo string, nameArgs []string) error {
 	if err := ResolveHostInfo(w, cfg); err != nil {
 		return err

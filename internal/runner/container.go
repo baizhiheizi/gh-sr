@@ -54,7 +54,7 @@ func containerRunnerPresent(h *host.Host, instanceName string) bool {
 	return strings.TrimSpace(out) == "yes"
 }
 
-// setupContainer builds the gh-sr agentic runner image (if not already up to date)
+// setupContainer builds the gh-sr container runner image (if not already up to date)
 // and creates (but does not start) each runner container.
 func (m *Manager) setupContainer(h *host.Host, rc config.RunnerConfig) error {
 	if h.OS != "linux" {
@@ -72,7 +72,7 @@ func (m *Manager) setupContainer(h *host.Host, rc config.RunnerConfig) error {
 	// Write the Dockerfile and entrypoint to a temp dir on the host, then build.
 	imageTag := fmt.Sprintf("%s:%s", AgenticRunnerImageTag, version)
 
-	fmt.Fprintf(m.out(), "  %s: checking agentic runner image %s...\n", rc.Name, imageTag)
+	fmt.Fprintf(m.out(), "  %s: checking container runner image %s...\n", rc.Name, imageTag)
 
 	imageExists, err := containerImageExists(h, imageTag)
 	if err != nil {
@@ -80,9 +80,9 @@ func (m *Manager) setupContainer(h *host.Host, rc config.RunnerConfig) error {
 	}
 
 	if !imageExists {
-		fmt.Fprintf(m.out(), "  %s: building agentic runner image (this may take several minutes)...\n", rc.Name)
+		fmt.Fprintf(m.out(), "  %s: building container runner image (this may take several minutes)...\n", rc.Name)
 		if err := buildAgenticRunnerImage(h, imageTag, version, arch); err != nil {
-			return fmt.Errorf("building agentic runner image: %w", err)
+			return fmt.Errorf("building container runner image: %w", err)
 		}
 		fmt.Fprintf(m.out(), "  %s: image built: %s\n", rc.Name, imageTag)
 	} else {
@@ -266,8 +266,8 @@ func (m *Manager) rebuildContainerImage(h *host.Host, rc config.RunnerConfig) er
 		_, _ = h.Run(fmt.Sprintf("docker rm -f %s 2>/dev/null || true", cName))
 	}
 
-	// Remove all local agentic-runner images so the build is forced.
-	fmt.Fprintf(m.out(), "  %s: removing old agentic-runner image(s)...\n", rc.Name)
+	// Remove all local gh-sr/agentic-runner images so the build is forced.
+	fmt.Fprintf(m.out(), "  %s: removing old container runner image(s)...\n", rc.Name)
 	_, _ = h.Run(fmt.Sprintf(
 		"docker images %s -q | xargs -r docker rmi -f 2>/dev/null || true",
 		posixSingleQuote(AgenticRunnerImageTag),
@@ -281,9 +281,9 @@ func (m *Manager) rebuildContainerImage(h *host.Host, rc config.RunnerConfig) er
 	arch := archForGitHub(h.Arch)
 	imageTag := fmt.Sprintf("%s:%s", AgenticRunnerImageTag, version)
 
-	fmt.Fprintf(m.out(), "  %s: building agentic runner image %s (this may take several minutes)...\n", rc.Name, imageTag)
+	fmt.Fprintf(m.out(), "  %s: building container runner image %s (this may take several minutes)...\n", rc.Name, imageTag)
 	if err := buildAgenticRunnerImage(h, imageTag, version, arch); err != nil {
-		return fmt.Errorf("building agentic runner image: %w", err)
+		return fmt.Errorf("building container runner image: %w", err)
 	}
 	fmt.Fprintf(m.out(), "  %s: image built: %s\n", rc.Name, imageTag)
 

@@ -40,7 +40,8 @@ const RunnerModeNative = "native"
 
 // RunnerModeContainer runs each runner instance inside its own privileged Docker
 // container (DinD), providing full filesystem and network isolation between
-// concurrent agentic workflow jobs on the same host.
+// concurrent jobs on the same host. Used for agentic workflows (isolated /tmp/gh-aw,
+// MCP on port 80) and for any self-hosted runner that wants container isolation.
 const RunnerModeContainer = "container"
 
 type RunnerConfig struct {
@@ -66,7 +67,8 @@ func (rc *RunnerConfig) IsAgentic() bool {
 	return rc.Profile == "agentic"
 }
 
-// IsContainerMode returns true if the runner uses container-isolated DinD mode.
+// IsContainerMode returns true if the runner uses container-isolated DinD mode
+// (same image for agentic and non-agentic runners).
 func (rc *RunnerConfig) IsContainerMode() bool {
 	return rc.RunnerMode == RunnerModeContainer
 }
@@ -362,9 +364,6 @@ func (c *Config) Validate() error {
 		}
 		if r.RunnerMode != "" && r.RunnerMode != RunnerModeNative && r.RunnerMode != RunnerModeContainer {
 			return fmt.Errorf("runner %q: runner_mode must be %q or %q (got %q)", r.Name, RunnerModeNative, RunnerModeContainer, r.RunnerMode)
-		}
-		if r.RunnerMode == RunnerModeContainer && !r.IsAgentic() {
-			return fmt.Errorf("runner %q: runner_mode: container requires profile: agentic", r.Name)
 		}
 		if r.IsContainerMode() && (len(r.AgenticMCPPorts) > 0 || r.AgenticMCPPortBase != nil) {
 			return fmt.Errorf("runner %q: agentic_mcp_ports / agentic_mcp_port_base are not needed with runner_mode: container (each container has its own isolated port 80)", r.Name)

@@ -89,3 +89,12 @@ runners:
   #   runner_mode: container   # "native" (default) or "container" (DinD isolation)
   #   # Note: agentic_mcp_ports / agentic_mcp_port_base are NOT needed in container
   #   # mode — port 80 is automatically isolated per container.
+  #
+  # Same container image (DinD + actions runner) works for ordinary CI without
+  # profile: agentic — use when you want isolated dockerd and work dirs per instance:
+  #
+  # - name: ci-container
+  #   repo: owner/repo
+  #   host: vps-1
+  #   count: 2
+  #   runner_mode: container

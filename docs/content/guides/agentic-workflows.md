@@ -341,13 +341,13 @@ runs-on:
 
 ### 8b. Runner modes: native vs container (recommended for concurrency)
 
-> **Applies to runners with `profile: agentic`.**
+`runner_mode: container` is available for **any** Linux runner definition: with `profile: agentic` you get gh-aw host setup (§9) plus the same container image; **without** `profile: agentic` you still get a self-contained actions runner in DinD — useful when you want per-instance Docker and workspace isolation without agentic workflows. Both cases use the **same** built image (`gh-sr/agentic-runner:<version>` — the name is historical; the image is the generic container runner).
 
-gh-aw hardcodes `/tmp/gh-aw` in compiled `.lock.yml` files (~80 references per workflow: prompt files, agent stdio logs, step summaries, MCP payloads/logs, firewall logs, and the `-v /tmp/gh-aw:/tmp/gh-aw:rw` Docker bind mount). When multiple agentic jobs run simultaneously on the **same host**, they overwrite each other's files at this path.
+For **agentic** workflows specifically, gh-aw hardcodes `/tmp/gh-aw` in compiled `.lock.yml` files (~80 references per workflow: prompt files, agent stdio logs, step summaries, MCP payloads/logs, firewall logs, and the `-v /tmp/gh-aw:/tmp/gh-aw:rw` Docker bind mount). When multiple agentic jobs run simultaneously on the **same host** in native mode, they overwrite each other's files at this path.
 
 `runner_mode: native` (the default) requires you to manage this conflict with the per-instance MCP port labeling described in [§8a](#8a-concurrent-jobs-mcp-gateway-ports-and-gh-sr). `RUNNER_TEMP` is already isolated per runner instance by gh-sr.
 
-`runner_mode: container` (opt-in) resolves all `/tmp/gh-aw` conflicts by running each runner instance in its own **privileged Docker container with an inner dockerd** (Docker-in-Docker). Every container has:
+`runner_mode: container` (opt-in) resolves all `/tmp/gh-aw` conflicts for agentic jobs by running each runner instance in its own **privileged Docker container with an inner dockerd** (Docker-in-Docker). Every container has:
 
 | Resource | Native mode | Container mode |
 |---|---|---|
@@ -377,7 +377,7 @@ gh-sr will build the runner container image locally on first `gh sr setup` (Ubun
 **When to use which mode:**
 
 - **`runner_mode: native`** — default; suitable when you run only one agentic job at a time per host, or already manage port assignments via [§8a](#8a-concurrent-jobs-mcp-gateway-ports-and-gh-sr). Zero extra disk space beyond the runner binaries.
-- **`runner_mode: container`** *(recommended for concurrent agentic jobs)* — use when 2+ agentic jobs must run simultaneously on the same host and you want zero configuration of ports, dnsmasq, iptables, or sudoers on the host.
+- **`runner_mode: container`** — use for concurrent **agentic** jobs on one host without MCP port labels, **or** for ordinary CI when you want each runner instance in its own DinD sandbox (no `profile: agentic` required). The image includes Docker CE, dnsmasq, and the actions runner; gh-aw is pre-installed inside the image but is only needed for agentic jobs.
 
 ## 9. What `profile: agentic` automates
 
@@ -558,7 +558,7 @@ cat /etc/docker/daemon.json
 
 ## 12. Container mode operations (`runner_mode: container`)
 
-> **Only relevant when using `runner_mode: container` (see [§8b](#8b-runner-modes-native-vs-container-recommended-for-concurrency)).**
+> **Relevant for any `runner_mode: container` runner** (agentic or standard CI; see [§8b](#8b-runner-modes-native-vs-container-recommended-for-concurrency)).**
 
 ### Setup and lifecycle
 
@@ -584,7 +584,9 @@ Each runner instance runs as a Docker container named `gh-sr-<instance>` with `-
 The image (`gh-sr/agentic-runner:<version>`) is built once per runner version. To force a rebuild after local changes or a new runner version:
 
 ```bash
-# Remove the existing image on the host, then re-run setup
+gh sr rebuild <runner-name>   # preferred: tears down containers, rebuilds, restarts
+
+# Or: remove the image on the host, then re-run setup
 docker rmi gh-sr/agentic-runner:<version>
 gh sr setup
 ```

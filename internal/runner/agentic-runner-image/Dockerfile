@@ -1,9 +1,10 @@
-# gh-sr agentic runner container image
+# gh-sr container runner image (Docker tag: gh-sr/agentic-runner — historical name)
 #
-# Each runner instance runs in its own container, providing:
-#   - isolated /tmp/gh-aw (per-container filesystem)
+# Used for every runner_mode: container instance, with or without profile: agentic.
+# Each instance runs in its own container, providing:
+#   - isolated /tmp/gh-aw when running agentic workflows (per-container filesystem)
 #   - isolated dockerd and iptables (per-container network namespace)
-#   - isolated MCP gateway on port 80 (no port labeling required)
+#   - isolated MCP gateway on port 80 for agentic jobs (no per-host port labeling)
 #
 # Build: docker build -t gh-sr/agentic-runner:<version> .
 # Run:   see internal/runner/container.go
