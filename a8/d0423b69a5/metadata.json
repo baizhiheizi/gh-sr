@@ -1,0 +1,28 @@
+{
+  "cli_version": "dev",
+  "checkpoint_id": "a8d0423b69a5",
+  "strategy": "manual-commit",
+  "branch": "main",
+  "checkpoints_count": 3,
+  "files_touched": [
+    "cmd/gh-sr/main.go",
+    "internal/ops/ops.go",
+    "internal/runner/container.go",
+    "internal/runner/runner.go"
+  ],
+  "sessions": [
+    {
+      "metadata": "/a8/d0423b69a5/0/metadata.json",
+      "transcript": "/a8/d0423b69a5/0/full.jsonl",
+      "content_hash": "/a8/d0423b69a5/0/content_hash.txt",
+      "prompt": "/a8/d0423b69a5/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 0,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 0,
+    "output_tokens": 0,
+    "api_call_count": 0
+  }
+}
