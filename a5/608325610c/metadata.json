@@ -3,7 +3,7 @@
   "checkpoint_id": "a5608325610c",
   "strategy": "manual-commit",
   "branch": "main",
-  "checkpoints_count": 1,
+  "checkpoints_count": 3,
   "files_touched": [
     "CLAUDE.md",
     "cmd/gh-sr/main.go",
@@ -15,6 +15,12 @@
       "transcript": "/a5/608325610c/0/full.jsonl",
       "content_hash": "/a5/608325610c/0/content_hash.txt",
       "prompt": "/a5/608325610c/0/prompt.txt"
+    },
+    {
+      "metadata": "/a5/608325610c/1/metadata.json",
+      "transcript": "/a5/608325610c/1/full.jsonl",
+      "content_hash": "/a5/608325610c/1/content_hash.txt",
+      "prompt": "/a5/608325610c/1/prompt.txt"
     }
   ],
   "token_usage": {
