@@ -34,7 +34,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libyaml-0-2 \
         libsodium-dev \
     && rm -rf /var/lib/apt/lists/*
-b
+
 # Docker CE (for DinD — the inner dockerd that gh-aw uses)
 RUN install -m 0755 -d /etc/apt/keyrings \
     && curl -fsSL https://download.docker.com/linux/ubuntu/gpg \
