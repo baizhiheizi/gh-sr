@@ -37,7 +37,7 @@ gh run              # Use 'gh run' (not local binary) for testing
 - `go.mod` — module definition
 - `config/runner.go` — runner configuration
 - `internal/runner/` — runner management logic
-- `internal/ghawports/` — GitHub Actions runner port orchestration
+- `internal/ghawports/` — MCP port lint for agentic workflow markdown (used by `gh sr doctor`, not a separate CLI)
 
 ## Build
 

@@ -308,6 +308,8 @@ safe-outputs:
 
 The gh-aw MCP gateway listens on the host network (`docker --network host`). The TCP port comes from workflow frontmatter `sandbox.mcp.port` (default **80** after `gh aw compile`). If several agentic jobs run on the **same physical host**, they must use **different** ports, or only one such job may run at a time.
 
+For **multiple concurrent agentic runner instances on one host**, prefer [`runner_mode: container`](#8b-runner-modes-native-vs-container-recommended-for-concurrency) instead of juggling ports and labels in native mode: each runner container gets its own network namespace and MCP gateway on port 80 without conflicts (see §8b).
+
 **Configure per-instance ports in gh-sr** (`runners.yml`): on a runner with `profile: agentic`, set either:
 
 - `agentic_mcp_port_base: 9080` — instances get ports `9080`, `9081`, … up to `count-1`, or
@@ -331,11 +333,11 @@ runs-on:
   - gh-sr-mcp-9080
 ```
 
-**CLI helpers** (run from a clone of the repository that contains `.github/workflows/*.md`):
+**Validation** (run from a clone of the repository that contains `.github/workflows/*.md`):
 
-- `gh sr aw ports check [--workflow-root DIR] [--repo owner/repo]` — warns on duplicate ports, implicit default 80 across files, and rough concurrency vs. `count` on each host.
-- `gh sr aw ports assign [--workflow-root DIR] [--base-port 9080] [--write]` — writes distinct `sandbox.mcp.port` values per workflow markdown (dry-run unless `--write`). It does **not** modify `features.mcp-gateway`; that flag is separate (see [gh-aw Sandbox configuration](https://github.github.com/gh-aw/reference/sandbox/) for gateway routing and `sandbox.mcp`). Re-run `gh aw compile` afterward.
-- `gh sr doctor --workflow-root DIR` (or `doctor --repo owner/repo` when `./.github/workflows` exists in the current directory) — runs the same MCP port checks after host diagnostics.
+- `gh sr doctor --workflow-root DIR` (or `doctor --repo owner/repo` when `./.github/workflows` exists in the current directory) — runs MCP port checks (duplicate ports, implicit default 80, rough concurrency vs. `count` on each host) after host diagnostics.
+
+The former `gh sr aw ports check` / `gh sr aw ports assign` commands were removed: use **`runner_mode: container`** for same-host concurrency without rewriting workflow frontmatter. If you stay on native mode with `count > 1`, keep ports and `gh-sr-mcp-*` labels aligned manually and re-run `gh aw compile` after editing frontmatter; see [gh-aw Sandbox configuration](https://github.github.com/gh-aw/reference/sandbox/) for `sandbox.mcp` and `features.mcp-gateway`.
 
 **Limitation:** two concurrent jobs that use the **same compiled workflow** (same `sandbox.mcp.port`) on one host still conflict; fixing that requires different workflow sources, separate machines, limiting concurrency, or changes in gh-aw.
 
