@@ -23,6 +23,23 @@ func containerStateDir(h *host.Host, instanceName string) string {
 	return h.RunnerDir(instanceName)
 }
 
+// resolveAbsoluteRunnerDir returns the absolute (non-variable) path for the runner
+// state directory on the host by expanding $HOME to its real value.
+// h.RunnerDir returns a shell-variable string ("$HOME/...") which must not appear
+// inside single quotes in Docker arguments — Docker does not perform shell expansion.
+func resolveAbsoluteRunnerDir(h *host.Host, instanceName string) (string, error) {
+	dir := h.RunnerDir(instanceName)
+	if !strings.HasPrefix(dir, "$HOME") {
+		return dir, nil
+	}
+	out, err := h.Run("echo $HOME")
+	if err != nil {
+		return "", fmt.Errorf("resolving home dir: %w", err)
+	}
+	home := strings.TrimSpace(out)
+	return home + dir[len("$HOME"):], nil
+}
+
 // containerRunnerPresent returns true when the Docker container for the instance exists
 // (regardless of whether it is running or stopped).
 func containerRunnerPresent(h *host.Host, instanceName string) bool {
@@ -85,7 +102,10 @@ func (m *Manager) setupContainer(h *host.Host, rc config.RunnerConfig) error {
 			return fmt.Errorf("getting registration token for %s: %w", name, err)
 		}
 
-		stateDir := containerStateDir(h, name)
+		stateDir, err := resolveAbsoluteRunnerDir(h, name)
+		if err != nil {
+			return fmt.Errorf("resolving state dir for %s: %w", name, err)
+		}
 		labels := rc.EffectiveLabelsForInstance(h.OS, h.Arch, i)
 
 		runURL := ""
@@ -183,7 +203,11 @@ func (m *Manager) removeContainer(h *host.Host, rc config.RunnerConfig, instance
 	}
 
 	// Remove state directory.
-	stateDir := containerStateDir(h, instanceName)
+	stateDir, resolveErr := resolveAbsoluteRunnerDir(h, instanceName)
+	if resolveErr != nil {
+		// Fall back to unresolved path; rm -rf in the shell will still expand $HOME.
+		stateDir = containerStateDir(h, instanceName)
+	}
 	if _, err := h.Run(fmt.Sprintf("rm -rf %s", posixSingleQuote(stateDir))); err != nil {
 		fmt.Fprintf(m.out(), "  %s: warning: failed to remove state dir %s: %v\n", instanceName, stateDir, err)
 	}
