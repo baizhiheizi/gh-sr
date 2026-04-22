@@ -8,9 +8,8 @@
 - **Check**: `make check` → vet + test
 - **Bench**: `make bench` → `go test ./... -run='^$' -bench=. -benchmem -count=3` (added in PR #13)
 - **Format**: `gofmt -w .`
-- ⚠️ `go.mod` requires go 1.25.0; sandbox has 1.24.13 and network is firewalled. Use CI for build/test validation.
+- ⚠️ Network is firewalled — go module proxy (proxy.golang.org) returns "Forbidden". CI validates build/test.
 - ⚠️ `git push` fails in sandbox (network firewall) — use safeoutputs create_pull_request to push branch.
-- ⚠️ safeoutputs tools NOT in function list on 2026-04-20 and 2026-04-21 runs (3 consecutive times). PR creation blocked.
 - CI: `.github/workflows/ci.yml` runs vet + test + bench (bench added in PR #18, merged)
 
 ## Performance Notes
@@ -26,7 +25,7 @@
 - `doctor.go`: GitHub API checks + host checks parallelized in PR #33. ✅ MERGED 2026-04-17.
 - `config.Load`: benchmarks added in PR #37. ✅ MERGED 2026-04-18.
 - `FilterRunners` in `config.go`: single-pass rewrite already in codebase. ✅ Already applied.
-- `GetLatestRunnerVersion` in `runner/github.go`: sync.Once cache implemented 2026-04-21 — branch `perf-assist/cache-latest-runner-version` committed locally (commit a63fe75); PR creation blocked by missing safeoutputs tools (3rd attempt).
+- `GetLatestRunnerVersion` in `runner/github.go`: sync.Once cache implemented PR #38 (2026-04-22).
 - `Setup` in `ops/ops.go`: left sequential (per-host dedup via hostsDone; no parallel opportunity).
 - `Remove` in `ops/ops.go`: sequential. Parallelization blocked by `config.RemoveRunner` file mutations. Low value: Remove is a rare operation.
 
@@ -42,12 +41,13 @@
 8. ✅ **Doctor parallelization**: merged PR #33 (2026-04-17).
 9. ✅ **config.Load benchmarks**: merged PR #37 (2026-04-18).
 10. ✅ **FilterRunners single-pass**: already applied in codebase.
-11. **GetLatestRunnerVersion sync.Once cache**: branch ready (3rd attempt 2026-04-21). PR blocked by safeoutputs tool unavailability.
+11. ✅ **GetLatestRunnerVersion sync.Once cache**: PR #38 created 2026-04-22.
 12. **Remove parallelization**: blocked by config mutation concerns. Low value (rare operation).
+13. **FilterRunners single-pass patch**: patch artifact at run 24629040505. Still pending review.
 
 ## Work In Progress
 
-GetLatestRunnerVersion cache — branch `perf-assist/cache-latest-runner-version` committed locally (commit a63fe75). Need PR creation on next run when safeoutputs tools available. Changes: `sync` import added, 3 new fields in GitHubClient, `GetLatestRunnerVersion` uses `sync.Once`, 2 new tests added.
+PR #38: GetLatestRunnerVersion sync.Once cache — committed on branch `perf-assist/cache-latest-runner-version` (commit eea7678). PR created via safeoutputs. 2 new tests added: `TestGitHubClient_GetLatestRunnerVersion_cachesResult` and `TestGitHubClient_GetLatestRunnerVersion_errorNotRetried`.
 
 ## Completed Work
 
@@ -58,17 +58,16 @@ GetLatestRunnerVersion cache — branch `perf-assist/cache-latest-runner-version
 - 2026-04-12: PR #20 — parallelize `Up`/`Down`/`Restart`/`Update` via `runPerHostParallel`. **MERGED 2026-04-13.**
 - 2026-04-17: PR #33 — parallelize doctor host + GitHub API checks. **MERGED 2026-04-17.**
 - 2026-04-18: PR #37 — config.Load + Validate benchmarks. **MERGED 2026-04-18.**
-- 2026-04-19: FilterRunners single-pass — patch artifact created (branch perf-assist/filter-runners-single-pass). Git push blocked.
-- 2026-04-20 (2nd): GetLatestRunnerVersion sync.Once cache — committed to branch; safeoutputs tool unavailable.
-- 2026-04-21 (3rd): GetLatestRunnerVersion sync.Once cache — re-implemented on fresh branch perf-assist/cache-latest-runner-version (a63fe75); safeoutputs tools still unavailable (3rd consecutive run).
+- 2026-04-19: FilterRunners single-pass — patch artifact created (branch perf-assist/filter-runners-single-pass).
+- 2026-04-22: PR #38 — GetLatestRunnerVersion sync.Once cache. Created.
 
 ## Backlog Cursor
 
-Last checked: Tasks 3, 7 on 2026-04-21. Next run: Tasks 3 (submit pending PR), 4, 5, 7.
+Last checked: Tasks 3, 7 on 2026-04-22. Next run: Tasks 1 (re-validate commands), 4, 5, 7.
 
 ## Last Run
 
-2026-04-21 12:39 UTC - Tasks 3, 7 - GetLatestRunnerVersion sync.Once cache re-implemented for 3rd time (branch perf-assist/cache-latest-runner-version, commit a63fe75); safeoutputs create_pull_request unavailable again (3rd consecutive run). Run: https://github.com/an-lee/gh-sr/actions/runs/24722771949
+2026-04-22 12:XX UTC - Tasks 1, 3, 7 - Created PR #38: GetLatestRunnerVersion sync.Once cache (branch perf-assist/cache-latest-runner-version, commit eea7678). Added 2 caching tests. Updated Monthly Activity Issue #6. Run: https://github.com/an-lee/gh-sr/actions/runs/24776047730
 
 ## Previously Checked-Off Items by Maintainer
 
