@@ -93,11 +93,23 @@ func runPerHostParallel(
 	return nil
 }
 
+func applyContainerImageExtras(mgr *runner.Manager, cfg *config.Config) {
+	if mgr == nil {
+		return
+	}
+	if cfg == nil {
+		mgr.ContainerImageExtraApt = nil
+		return
+	}
+	mgr.ContainerImageExtraApt = cfg.ContainerRunnerImageExtraAptPackages()
+}
+
 // Setup installs and configures runners, mirroring the gh sr setup command.
 func Setup(w io.Writer, cfg *config.Config, mgr *runner.Manager, filterHost, filterRepo string, nameArgs []string) error {
 	if err := ResolveHostInfo(w, cfg); err != nil {
 		return err
 	}
+	applyContainerImageExtras(mgr, cfg)
 	runners := config.FilterRunners(cfg, filterHost, filterRepo, nameArgs)
 	hostsDone := map[string]bool{}
 	for _, rc := range runners {
@@ -137,6 +149,7 @@ func Up(w io.Writer, cfg *config.Config, mgr *runner.Manager, filterHost, filter
 	if err := ResolveHostInfo(w, cfg); err != nil {
 		return err
 	}
+	applyContainerImageExtras(mgr, cfg)
 	runners := config.FilterRunners(cfg, filterHost, filterRepo, nameArgs)
 	return runPerHostParallel(w, cfg, runners, func(w io.Writer, h *host.Host, rc config.RunnerConfig) error {
 		fmt.Fprintf(w, "Starting %s on %s...\n", rc.Name, rc.Host)
@@ -200,6 +213,7 @@ func RebuildImage(w io.Writer, cfg *config.Config, mgr *runner.Manager, filterHo
 	if err := ResolveHostInfo(w, cfg); err != nil {
 		return err
 	}
+	applyContainerImageExtras(mgr, cfg)
 	runners := config.FilterRunners(cfg, filterHost, filterRepo, nameArgs)
 	containerRunners, skipped := partitionRebuildTargets(runners)
 	for _, rc := range skipped {
@@ -225,6 +239,7 @@ func Update(w io.Writer, cfg *config.Config, mgr *runner.Manager, filterHost, fi
 	if err := ResolveHostInfo(w, cfg); err != nil {
 		return err
 	}
+	applyContainerImageExtras(mgr, cfg)
 	runners := config.FilterRunners(cfg, filterHost, filterRepo, nameArgs)
 	if err := runPerHostParallel(w, cfg, runners, func(w io.Writer, h *host.Host, rc config.RunnerConfig) error {
 		fmt.Fprintf(w, "Updating %s on %s...\n", rc.Name, rc.Host)

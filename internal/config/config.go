@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"regexp"
 	"runtime"
 	"strings"
 
@@ -16,9 +17,60 @@ func IsLocalAddr(addr string) bool {
 }
 
 type Config struct {
-	GitHub  GitHubConfig          `yaml:"github"`
-	Hosts   map[string]HostConfig `yaml:"hosts"`
-	Runners []RunnerConfig        `yaml:"runners"`
+	GitHub               GitHubConfig               `yaml:"github"`
+	Hosts                map[string]HostConfig      `yaml:"hosts"`
+	Runners              []RunnerConfig             `yaml:"runners"`
+	ContainerRunnerImage ContainerRunnerImageConfig `yaml:"container_runner_image,omitempty"`
+}
+
+// ContainerRunnerImageConfig controls optional customization of the locally built
+// gh-sr/agentic-runner Docker image (runner_mode: container).
+type ContainerRunnerImageConfig struct {
+	// ExtraAptPackages lists additional Debian package names to install in the
+	// image at build time (Ubuntu main archive only in v1).
+	ExtraAptPackages []string `yaml:"extra_apt_packages,omitempty"`
+}
+
+const (
+	maxContainerRunnerExtraAptPackages = 256
+	maxContainerRunnerAptPkgNameLen    = 200
+)
+
+var debianPackageNamePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9+.-]*$`)
+
+func validateContainerRunnerImage(img *ContainerRunnerImageConfig) error {
+	if img == nil || len(img.ExtraAptPackages) == 0 {
+		return nil
+	}
+	if len(img.ExtraAptPackages) > maxContainerRunnerExtraAptPackages {
+		return fmt.Errorf("container_runner_image.extra_apt_packages: at most %d entries allowed (got %d)",
+			maxContainerRunnerExtraAptPackages, len(img.ExtraAptPackages))
+	}
+	for i, raw := range img.ExtraAptPackages {
+		p := strings.TrimSpace(raw)
+		if p == "" {
+			return fmt.Errorf("container_runner_image.extra_apt_packages[%d]: empty package name", i)
+		}
+		if len(p) > maxContainerRunnerAptPkgNameLen {
+			return fmt.Errorf("container_runner_image.extra_apt_packages[%d]: package name too long (max %d characters)",
+				i, maxContainerRunnerAptPkgNameLen)
+		}
+		if !debianPackageNamePattern.MatchString(p) {
+			return fmt.Errorf("container_runner_image.extra_apt_packages[%d]: invalid package name %q (use lowercase Debian package tokens: [a-z0-9+.-])", i, p)
+		}
+	}
+	return nil
+}
+
+// ContainerRunnerImageExtraAptPackages returns a copy of extra apt package names
+// for the container runner image build.
+func (c *Config) ContainerRunnerImageExtraAptPackages() []string {
+	if c == nil {
+		return nil
+	}
+	out := make([]string, len(c.ContainerRunnerImage.ExtraAptPackages))
+	copy(out, c.ContainerRunnerImage.ExtraAptPackages)
+	return out
 }
 
 type GitHubConfig struct {
@@ -371,6 +423,10 @@ func (c *Config) Validate() error {
 		if err := validateAgenticMCPPorts(&r); err != nil {
 			return err
 		}
+	}
+
+	if err := validateContainerRunnerImage(&c.ContainerRunnerImage); err != nil {
+		return err
 	}
 
 	return nil

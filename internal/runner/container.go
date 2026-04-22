@@ -1,7 +1,10 @@
 package runner
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/an-lee/gh-sr/internal/config"
@@ -10,6 +13,38 @@ import (
 
 // AgenticRunnerImageTag is the local Docker image tag built by gh sr setup.
 const AgenticRunnerImageTag = "gh-sr/agentic-runner"
+
+// containerRunnerImageExtraSorted returns a sorted copy of unique non-empty package names.
+func containerRunnerImageExtraSorted(extra []string) []string {
+	seen := make(map[string]struct{})
+	var out []string
+	for _, p := range extra {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+		if _, ok := seen[p]; ok {
+			continue
+		}
+		seen[p] = struct{}{}
+		out = append(out, p)
+	}
+	slices.Sort(out)
+	return out
+}
+
+// ContainerRunnerImageTag returns the Docker image reference for the container runner
+// (e.g. gh-sr/agentic-runner:2.320.0 or gh-sr/agentic-runner:2.320.0-xa1b2c3d when extras are set).
+func ContainerRunnerImageTag(actionsRunnerVersion string, extraApt []string) string {
+	base := fmt.Sprintf("%s:%s", AgenticRunnerImageTag, actionsRunnerVersion)
+	sorted := containerRunnerImageExtraSorted(extraApt)
+	if len(sorted) == 0 {
+		return base
+	}
+	sum := sha256.Sum256([]byte(strings.Join(sorted, "\n")))
+	suffix := hex.EncodeToString(sum[:])[:8]
+	return base + "-x" + suffix
+}
 
 // ContainerDockerName returns the deterministic Docker container name for a runner instance.
 func ContainerDockerName(instanceName string) string {
@@ -73,8 +108,7 @@ func (m *Manager) setupContainer(h *host.Host, rc config.RunnerConfig) error {
 
 	arch := archForGitHub(h.Arch)
 
-	// Write the Dockerfile and entrypoint to a temp dir on the host, then build.
-	imageTag := fmt.Sprintf("%s:%s", AgenticRunnerImageTag, version)
+	imageTag := ContainerRunnerImageTag(version, m.containerImageExtraApt())
 
 	fmt.Fprintf(m.out(), "  %s: checking container runner image %s...\n", rc.Name, imageTag)
 
@@ -85,7 +119,7 @@ func (m *Manager) setupContainer(h *host.Host, rc config.RunnerConfig) error {
 
 	if !imageExists {
 		fmt.Fprintf(m.out(), "  %s: building container runner image (this may take several minutes)...\n", rc.Name)
-		if err := buildAgenticRunnerImage(h, imageTag, version, arch); err != nil {
+		if err := buildAgenticRunnerImage(h, imageTag, version, arch, m.containerImageExtraApt()); err != nil {
 			return fmt.Errorf("building container runner image: %w", err)
 		}
 		fmt.Fprintf(m.out(), "  %s: image built: %s\n", rc.Name, imageTag)
@@ -283,10 +317,10 @@ func (m *Manager) rebuildContainerImage(h *host.Host, rc config.RunnerConfig) er
 		return fmt.Errorf("resolving runner version: %w", err)
 	}
 	arch := archForGitHub(h.Arch)
-	imageTag := fmt.Sprintf("%s:%s", AgenticRunnerImageTag, version)
+	imageTag := ContainerRunnerImageTag(version, m.containerImageExtraApt())
 
 	fmt.Fprintf(m.out(), "  %s: building container runner image %s (this may take several minutes)...\n", rc.Name, imageTag)
-	if err := buildAgenticRunnerImage(h, imageTag, version, arch); err != nil {
+	if err := buildAgenticRunnerImage(h, imageTag, version, arch, m.containerImageExtraApt()); err != nil {
 		return fmt.Errorf("building container runner image: %w", err)
 	}
 	fmt.Fprintf(m.out(), "  %s: image built: %s\n", rc.Name, imageTag)
@@ -330,7 +364,7 @@ func containerImageExists(h *host.Host, imageTag string) (bool, error) {
 
 // buildAgenticRunnerImage uploads the embedded Dockerfile+entrypoint to the host
 // and builds the image via `docker build`.
-func buildAgenticRunnerImage(h *host.Host, imageTag, runnerVersion, runnerArch string) error {
+func buildAgenticRunnerImage(h *host.Host, imageTag, runnerVersion, runnerArch string, extraApt []string) error {
 	buildDir := "/tmp/gh-sr-agentic-runner-build"
 
 	// Write Dockerfile.
@@ -347,6 +381,37 @@ GHSR_EOF`,
 	)
 	if _, err := h.Run(writeDockerfile); err != nil {
 		return fmt.Errorf("writing Dockerfile: %w", err)
+	}
+
+	// Write apt-packages-core.txt (embedded manifest).
+	corePath := buildDir + "/apt-packages-core.txt"
+	writeCore := fmt.Sprintf(`cat > %s << 'GHSR_EOF'
+%s
+GHSR_EOF`,
+		corePath,
+		strings.ReplaceAll(agenticRunnerAptPackagesCore, "GHSR_EOF", "GHSR_E0F"),
+	)
+	if _, err := h.Run(writeCore); err != nil {
+		return fmt.Errorf("writing apt-packages-core.txt: %w", err)
+	}
+
+	// Write apt-packages-extra.txt (from config; validated at load time).
+	extraPath := buildDir + "/apt-packages-extra.txt"
+	extraSorted := containerRunnerImageExtraSorted(extraApt)
+	var writeExtra string
+	if len(extraSorted) == 0 {
+		writeExtra = fmt.Sprintf(": > %s", extraPath)
+	} else {
+		extraBody := strings.Join(extraSorted, "\n")
+		writeExtra = fmt.Sprintf(`cat > %s << 'GHSR_EOF'
+%s
+GHSR_EOF`,
+			extraPath,
+			strings.ReplaceAll(extraBody, "GHSR_EOF", "GHSR_E0F"),
+		)
+	}
+	if _, err := h.Run(writeExtra); err != nil {
+		return fmt.Errorf("writing apt-packages-extra.txt: %w", err)
 	}
 
 	// Write entrypoint.sh.

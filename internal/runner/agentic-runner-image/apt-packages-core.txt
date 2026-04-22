@@ -1,0 +1,34 @@
+# Core Ubuntu packages for the gh-sr container runner image (one name per line).
+# Lines starting with # and blank lines are ignored by the Dockerfile RUN step.
+automake
+build-essential
+ca-certificates
+curl
+dnsmasq
+dnsutils
+git
+gnupg
+imagemagick
+iproute2
+iptables
+jq
+libffi-dev
+libgmp-dev
+libicu-dev
+libpq-dev
+libssl-dev
+libsodium-dev
+libtool
+libvips
+libyaml-0-2
+libyaml-dev
+lsb-release
+node-gyp
+pkg-config
+python-is-python3
+python3-dev
+redis
+sudo
+tar
+uidmap
+unzip

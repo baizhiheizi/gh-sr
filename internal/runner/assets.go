@@ -11,6 +11,9 @@ var ServiceTemplateContent string
 //go:embed agentic-runner-image/Dockerfile
 var agenticRunnerDockerfile string
 
+//go:embed agentic-runner-image/apt-packages-core.txt
+var agenticRunnerAptPackagesCore string
+
 //go:embed agentic-runner-image/entrypoint.sh
 var agenticRunnerEntrypoint string
 

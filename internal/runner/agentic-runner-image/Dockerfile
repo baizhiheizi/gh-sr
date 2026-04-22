@@ -13,41 +13,12 @@ FROM ubuntu:24.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Core system dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
-        ca-certificates \
-        curl \
-        gnupg \
-        lsb-release \
-        sudo \
-        iptables \
-        dnsmasq \
-        dnsutils \
-        jq \
-        git \
-        tar \
-        unzip \
-        libicu-dev \
-        iproute2 \
-        uidmap \
-        imagemagick \
-        libvips \
-        libyaml-0-2 \
-        build-essential \
-        libpq-dev \
-        libvips \
-        libyaml-dev \
-        node-gyp \
-        pkg-config \
-        python-is-python3 \
-        redis \
-        automake \
-        libtool \
-        libffi-dev \
-        libssl-dev \
-        libgmp-dev \
-        python3-dev \
-        libsodium-dev \
+# Core system dependencies (manifest: apt-packages-core.txt)
+COPY apt-packages-core.txt /tmp/apt-packages-core.txt
+RUN apt-get update \
+    && grep -v '^[[:space:]]*#' /tmp/apt-packages-core.txt \
+        | grep -v '^[[:space:]]*$' \
+        | xargs -r apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Docker CE (for DinD — the inner dockerd that gh-aw uses)
@@ -109,6 +80,16 @@ RUN if [ -z "$RUNNER_VERSION" ]; then \
 
 # gh-aw CLI extension
 RUN su - runner -c "curl -sL https://raw.githubusercontent.com/github/gh-aw/main/install-gh-aw.sh | bash"
+
+# Optional extra apt packages (from runners.yml; empty file skips this step)
+COPY apt-packages-extra.txt /tmp/apt-packages-extra.txt
+RUN apt-get update \
+    && if [ -s /tmp/apt-packages-extra.txt ]; then \
+         grep -v '^[[:space:]]*#' /tmp/apt-packages-extra.txt \
+             | grep -v '^[[:space:]]*$' \
+             | xargs -r apt-get install -y --no-install-recommends; \
+       fi \
+    && rm -rf /var/lib/apt/lists/*
 
 # Runner state directory (bind-mounted from host at runtime)
 RUN mkdir -p /runner-state && chown runner:runner /runner-state

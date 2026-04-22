@@ -341,7 +341,7 @@ For same-host concurrency without hand-maintaining distinct `sandbox.mcp.port` v
 
 ### 8b. Runner modes: native vs container (recommended for concurrency)
 
-`runner_mode: container` is available for **any** Linux runner definition: with `profile: agentic` you get gh-aw host setup (§9) plus the same container image; **without** `profile: agentic` you still get a self-contained actions runner in DinD — useful when you want per-instance Docker and workspace isolation without agentic workflows. Both cases use the **same** built image (`gh-sr/agentic-runner:<version>` — the name is historical; the image is the generic container runner).
+`runner_mode: container` is available for **any** Linux runner definition: with `profile: agentic` you get gh-aw host setup (§9) plus the same container image; **without** `profile: agentic` you still get a self-contained actions runner in DinD — useful when you want per-instance Docker and workspace isolation without agentic workflows. Both cases use the **same** built image (`gh-sr/agentic-runner:<actions-runner-version>` — the name is historical; the image is the generic container runner). If you set global `container_runner_image.extra_apt_packages` in `runners.yml`, the tag becomes `gh-sr/agentic-runner:<version>-x<8-hex>` so Docker does not reuse an image built without those packages.
 
 For **agentic** workflows specifically, gh-aw hardcodes `/tmp/gh-aw` in compiled `.lock.yml` files (~80 references per workflow: prompt files, agent stdio logs, step summaries, MCP payloads/logs, firewall logs, and the `-v /tmp/gh-aw:/tmp/gh-aw:rw` Docker bind mount). When multiple agentic jobs run simultaneously on the **same host** in native mode, they overwrite each other's files at this path.
 
@@ -372,7 +372,7 @@ runners:
     # No agentic_mcp_ports needed — port 80 is isolated per container
 ```
 
-gh-sr will build the runner container image locally on first `gh sr setup` (Ubuntu 24.04 + Docker CE + gh-aw + dnsmasq + actions runner). Subsequent setups skip the build if the image is already up to date.
+gh-sr will build the runner container image locally on first `gh sr setup` (Ubuntu 24.04 + Docker CE + gh-aw + dnsmasq + actions runner). Core apt dependencies live in the repo manifest `internal/runner/agentic-runner-image/apt-packages-core.txt` (baked into the gh-sr binary). Optional tools: add a global `container_runner_image.extra_apt_packages` list in `runners.yml` (Debian package names only). Subsequent setups skip the build if the image for that tag already exists; after changing the extra list or upgrading gh-sr when the core manifest changed, run `gh sr rebuild` for container-mode runners if needed.
 
 **When to use which mode:**
 

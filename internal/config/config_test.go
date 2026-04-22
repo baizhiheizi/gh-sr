@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -881,5 +882,77 @@ func TestValidate_runnerMode_container_valid(t *testing.T) {
 	}
 	if err := cfg.Validate(); err != nil {
 		t.Fatalf("unexpected error for valid container-mode config: %v", err)
+	}
+}
+
+func TestValidate_containerRunnerImage_extraApt_ok(t *testing.T) {
+	t.Parallel()
+	cfg := Config{
+		Hosts:   map[string]HostConfig{"h": {Addr: "local", OS: "linux", Arch: "amd64"}},
+		Runners: []RunnerConfig{{Name: "r", Repo: "o/r", Host: "h", RunnerMode: RunnerModeContainer}},
+		ContainerRunnerImage: ContainerRunnerImageConfig{
+			ExtraAptPackages: []string{"ffmpeg", "  libyaml-0-2  "},
+		},
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestValidate_containerRunnerImage_extraApt_invalidName(t *testing.T) {
+	t.Parallel()
+	cfg := Config{
+		Hosts:   map[string]HostConfig{"h": {Addr: "local", OS: "linux", Arch: "amd64"}},
+		Runners: []RunnerConfig{{Name: "r", Repo: "o/r", Host: "h"}},
+		ContainerRunnerImage: ContainerRunnerImageConfig{
+			ExtraAptPackages: []string{"Bad_Package"},
+		},
+	}
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected error for invalid package name")
+	}
+}
+
+func TestValidate_containerRunnerImage_extraApt_emptyEntry(t *testing.T) {
+	t.Parallel()
+	cfg := Config{
+		Hosts:   map[string]HostConfig{"h": {Addr: "local", OS: "linux", Arch: "amd64"}},
+		Runners: []RunnerConfig{{Name: "r", Repo: "o/r", Host: "h"}},
+		ContainerRunnerImage: ContainerRunnerImageConfig{
+			ExtraAptPackages: []string{"curl", "  "},
+		},
+	}
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected error for empty package entry")
+	}
+}
+
+func TestValidate_containerRunnerImage_extraApt_tooMany(t *testing.T) {
+	t.Parallel()
+	pkgs := make([]string, maxContainerRunnerExtraAptPackages+1)
+	for i := range pkgs {
+		pkgs[i] = fmt.Sprintf("p%d", i)
+	}
+	cfg := Config{
+		Hosts:   map[string]HostConfig{"h": {Addr: "local", OS: "linux", Arch: "amd64"}},
+		Runners: []RunnerConfig{{Name: "r", Repo: "o/r", Host: "h"}},
+		ContainerRunnerImage: ContainerRunnerImageConfig{ExtraAptPackages: pkgs},
+	}
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected error when extra_apt_packages exceeds max")
+	}
+}
+
+func TestConfig_ContainerRunnerImageExtraAptPackages_copy(t *testing.T) {
+	t.Parallel()
+	cfg := &Config{
+		ContainerRunnerImage: ContainerRunnerImageConfig{
+			ExtraAptPackages: []string{"a", "b"},
+		},
+	}
+	out := cfg.ContainerRunnerImageExtraAptPackages()
+	out[0] = "z"
+	if cfg.ContainerRunnerImage.ExtraAptPackages[0] != "a" {
+		t.Fatal("ContainerRunnerImageExtraAptPackages should return a copy")
 	}
 }

@@ -2,6 +2,15 @@
 # Edit this file, then run: gh sr up
 # Authentication: run `gh auth login` — gh sr uses the GitHub CLI token only.
 
+# Optional: extra Debian packages for the locally built container runner image
+# (runner_mode: container). Applies globally; the image tag gains a suffix when set.
+# See docs: guides/agentic-workflows.md (container mode).
+#
+# container_runner_image:
+#   extra_apt_packages:
+#     - ffmpeg
+#     - sqlite3
+
 hosts:
   # Example hosts (os and arch are auto-detected over SSH -- you only need addr):
   #

@@ -666,7 +666,9 @@ func rebuildCmd() *cobra.Command {
 		Short: "Rebuild the container runner image and restart containers (container-mode only)",
 		Long: `Rebuilds the gh-sr/agentic-runner Docker image from the embedded sources
 (same image for all runner_mode: container runners, agentic or not), recreates
-the runner containers, and starts them.
+the runner containers, and starts them. The image includes global
+container_runner_image.extra_apt_packages from runners.yml when set (see the
+agentic workflows guide).
 
 Runner state (the .runner registration file, work directories, and Docker layer
 cache inside the container) is preserved across the rebuild, so runners stay

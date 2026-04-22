@@ -16,6 +16,9 @@ type Manager struct {
 	GitHub *GitHubClient
 	// Out receives progress messages from runner operations. If nil, os.Stdout is used.
 	Out io.Writer
+	// ContainerImageExtraApt is global extra apt packages for the gh-sr/agentic-runner
+	// image (from runners.yml container_runner_image). Set by ops before container setup.
+	ContainerImageExtraApt []string
 }
 
 func (m *Manager) out() io.Writer {
@@ -47,6 +50,13 @@ func (m *Manager) Setup(h *host.Host, rc config.RunnerConfig) error {
 		return m.setupContainer(h, rc)
 	}
 	return m.setupNative(h, rc)
+}
+
+func (m *Manager) containerImageExtraApt() []string {
+	if m == nil {
+		return nil
+	}
+	return m.ContainerImageExtraApt
 }
 
 // NeedsSetup checks whether a runner requires setup before it can start.

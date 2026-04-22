@@ -110,6 +110,30 @@ func TestAgenticRunnerImageTag(t *testing.T) {
 	}
 }
 
+func TestContainerRunnerImageTag(t *testing.T) {
+	t.Parallel()
+	base := AgenticRunnerImageTag + ":2.320.0"
+	if got := ContainerRunnerImageTag("2.320.0", nil); got != base {
+		t.Errorf("empty extras: got %q want %q", got, base)
+	}
+	if got := ContainerRunnerImageTag("2.320.0", []string{}); got != base {
+		t.Errorf("empty slice: got %q want %q", got, base)
+	}
+	a := ContainerRunnerImageTag("2.320.0", []string{"sqlite3", "ffmpeg"})
+	b := ContainerRunnerImageTag("2.320.0", []string{"ffmpeg", "sqlite3"})
+	if a != b {
+		t.Errorf("order should not matter: %q vs %q", a, b)
+	}
+	if want := base + "-x908d9db2"; a != want {
+		t.Errorf("tag with extras: got %q want %q", a, want)
+	}
+	dup := ContainerRunnerImageTag("1.0.0", []string{"curl", "curl"})
+	once := ContainerRunnerImageTag("1.0.0", []string{"curl"})
+	if dup != once {
+		t.Errorf("duplicates should be ignored: got %q vs %q", dup, once)
+	}
+}
+
 // TestBuildAgenticRunnerImageCmdShape verifies the docker build command shape
 // produced by buildAgenticRunnerImage (calls h.Run but we inspect the structure
 // by constructing the expected command string rather than executing it).
