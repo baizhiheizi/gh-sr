@@ -48,7 +48,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libgmp-dev \
         python3-dev \
         libsodium-dev \
-        unzip \
     && rm -rf /var/lib/apt/lists/*
 
 # Docker CE (for DinD — the inner dockerd that gh-aw uses)
