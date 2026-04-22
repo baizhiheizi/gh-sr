@@ -1,0 +1,30 @@
+{
+  "cli_version": "dev",
+  "checkpoint_id": "f35f66632aa3",
+  "session_id": "1d3338e8-f27c-40e8-b0de-08047e52dbcd",
+  "strategy": "manual-commit",
+  "created_at": "2026-04-22T02:42:00.908658976Z",
+  "branch": "main",
+  "checkpoints_count": 1,
+  "files_touched": [
+    ".github/workflows/pages.yml"
+  ],
+  "agent": "Cursor",
+  "model": "composer-2",
+  "turn_id": "81a8f957342d",
+  "session_metrics": {
+    "turn_count": 2
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-04-22T02:42:00.881090401Z",
+    "agent_lines": 4,
+    "agent_removed": 2,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 4,
+    "total_lines_changed": 6,
+    "agent_percentage": 100,
+    "metric_version": 2
+  }
+}
