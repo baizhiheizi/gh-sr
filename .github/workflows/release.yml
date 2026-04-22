@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   release:
-    runs-on: [self-hosted, linux, ci]
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
 

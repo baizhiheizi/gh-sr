@@ -9,7 +9,7 @@ on:
 jobs:
   test:
     name: test
-    runs-on: [self-hosted, linux, ci]
+    runs-on: [self-hosted, linux]
     steps:
       - uses: actions/checkout@v4
 
