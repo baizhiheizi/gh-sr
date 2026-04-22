@@ -285,3 +285,46 @@ func TestGitHubClient_GetLatestRunnerVersion_emptyTag(t *testing.T) {
 		t.Fatalf("expected empty version err: %v", err)
 	}
 }
+
+func TestGitHubClient_GetLatestRunnerVersion_cachesResult(t *testing.T) {
+	var requestCount int
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestCount++
+		_ = json.NewEncoder(w).Encode(releaseResponse{TagName: "v2.331.0"})
+	}))
+	defer ts.Close()
+
+	g := NewGitHubClientWithHTTP("pat", ts.Client(), ts.URL)
+	for i := 0; i < 5; i++ {
+		v, err := g.GetLatestRunnerVersion()
+		if err != nil {
+			t.Fatalf("call %d: got %v", i+1, err)
+		}
+		if v != "2.331.0" {
+			t.Fatalf("call %d: got %q, want 2.331.0", i+1, v)
+		}
+	}
+	if requestCount != 1 {
+		t.Errorf("expected 1 request, got %d", requestCount)
+	}
+}
+
+func TestGitHubClient_GetLatestRunnerVersion_errorNotRetried(t *testing.T) {
+	var requestCount int
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestCount++
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer ts.Close()
+
+	g := NewGitHubClientWithHTTP("pat", ts.Client(), ts.URL)
+	for i := 0; i < 3; i++ {
+		_, err := g.GetLatestRunnerVersion()
+		if err == nil {
+			t.Fatalf("call %d: expected error", i+1)
+		}
+	}
+	if requestCount != 1 {
+		t.Errorf("expected 1 request (error should not be retried), got %d", requestCount)
+	}
+}

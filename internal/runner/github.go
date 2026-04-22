@@ -6,12 +6,18 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 )
 
 type GitHubClient struct {
 	pat     string
 	client  *http.Client
 	apiBase string // e.g. https://api.github.com; no trailing slash
+
+	// Cached latest runner version, fetched once per client instance.
+	latestVersion     string
+	latestVersionOnce sync.Once
+	latestVersionErr  error
 }
 
 type GitHubRunner struct {
@@ -176,22 +182,28 @@ func (g *GitHubClient) DeleteRunnerScoped(scope, target string, runnerID int64) 
 }
 
 func (g *GitHubClient) GetLatestRunnerVersion() (string, error) {
-	url := fmt.Sprintf("%s/repos/actions/runner/releases/latest", g.apiBase)
-	resp, err := g.get(url)
-	if err != nil {
-		return "", fmt.Errorf("fetching latest runner version: %w", err)
-	}
+	g.latestVersionOnce.Do(func() {
+		url := fmt.Sprintf("%s/repos/actions/runner/releases/latest", g.apiBase)
+		resp, err := g.get(url)
+		if err != nil {
+			g.latestVersionErr = fmt.Errorf("fetching latest runner version: %w", err)
+			return
+		}
 
-	var rel releaseResponse
-	if err := json.Unmarshal(resp, &rel); err != nil {
-		return "", fmt.Errorf("parsing release: %w", err)
-	}
+		var rel releaseResponse
+		if err := json.Unmarshal(resp, &rel); err != nil {
+			g.latestVersionErr = fmt.Errorf("parsing release: %w", err)
+			return
+		}
 
-	version := strings.TrimPrefix(rel.TagName, "v")
-	if version == "" {
-		return "", fmt.Errorf("empty version from GitHub releases API")
-	}
-	return version, nil
+		version := strings.TrimPrefix(rel.TagName, "v")
+		if version == "" {
+			g.latestVersionErr = fmt.Errorf("empty version from GitHub releases API")
+			return
+		}
+		g.latestVersion = version
+	})
+	return g.latestVersion, g.latestVersionErr
 }
 
 func (g *GitHubClient) setHeaders(req *http.Request) {
