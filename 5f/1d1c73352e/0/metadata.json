@@ -1,0 +1,30 @@
+{
+  "cli_version": "dev",
+  "checkpoint_id": "5f1d1c73352e",
+  "session_id": "31c58ec3-593e-4215-a154-3ac39f433a75",
+  "strategy": "manual-commit",
+  "created_at": "2026-04-22T01:49:13.006972073Z",
+  "branch": "main",
+  "checkpoints_count": 3,
+  "files_touched": [
+    ".github/workflows/ci.yml"
+  ],
+  "agent": "Cursor",
+  "model": "composer-2",
+  "turn_id": "b268ddfd484b",
+  "session_metrics": {
+    "turn_count": 4
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-04-22T01:49:12.982074055Z",
+    "agent_lines": 2,
+    "agent_removed": 0,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 2,
+    "total_lines_changed": 2,
+    "agent_percentage": 100,
+    "metric_version": 2
+  }
+}

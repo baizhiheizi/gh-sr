@@ -1,0 +1,7 @@
+@\home\an-lee\.cursor\projects\home-an-lee-projects-gh-sr\terminals\2.txt:990-1024 This is the failed logs of @.github/workflows/ci.yml , help me to identify the root cause and fix it.
+
+---
+
+Implement the plan as specified, it is attached for your reference. Do NOT edit the plan file itself.
+
+To-do's from the plan have already been created. Do not create them again. Mark them as in_progress as you work, starting with the first one. Don't stop until you have completed all the to-dos.
