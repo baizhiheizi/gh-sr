@@ -25,7 +25,7 @@
 - `doctor.go`: GitHub API checks + host checks parallelized in PR #33. ✅ MERGED 2026-04-17.
 - `config.Load`: benchmarks added in PR #37. ✅ MERGED 2026-04-18.
 - `FilterRunners` in `config.go`: single-pass rewrite already in codebase. ✅ Already applied.
-- `GetLatestRunnerVersion` in `runner/github.go`: sync.Once cache implemented PR #38 (2026-04-22).
+- `GetLatestRunnerVersion` in `runner/github.go`: sync.Once cache — PR #49 merged 2026-04-22.
 - `Setup` in `ops/ops.go`: left sequential (per-host dedup via hostsDone; no parallel opportunity).
 - `Remove` in `ops/ops.go`: sequential. Parallelization blocked by `config.RemoveRunner` file mutations. Low value: Remove is a rare operation.
 
@@ -41,13 +41,13 @@
 8. ✅ **Doctor parallelization**: merged PR #33 (2026-04-17).
 9. ✅ **config.Load benchmarks**: merged PR #37 (2026-04-18).
 10. ✅ **FilterRunners single-pass**: already applied in codebase.
-11. ✅ **GetLatestRunnerVersion sync.Once cache**: PR #38 created 2026-04-22.
-12. **Remove parallelization**: blocked by config mutation concerns. Low value (rare operation).
+11. ✅ **GetLatestRunnerVersion sync.Once cache**: PR #49 merged 2026-04-22.
+12. **`Remove` parallelization**: blocked by config mutation concerns. Low value (rare operation).
 13. **FilterRunners single-pass patch**: patch artifact at run 24629040505. Still pending review.
 
 ## Work In Progress
 
-PR #38: GetLatestRunnerVersion sync.Once cache — committed on branch `perf-assist/cache-latest-runner-version` (commit eea7678). PR created via safeoutputs. 2 new tests added: `TestGitHubClient_GetLatestRunnerVersion_cachesResult` and `TestGitHubClient_GetLatestRunnerVersion_errorNotRetried`.
+PR #49 (formerly PR #38): GetLatestRunnerVersion sync.Once cache — **MERGED 2026-04-22**. Closed as PR #49.
 
 ## Completed Work
 
@@ -59,15 +59,15 @@ PR #38: GetLatestRunnerVersion sync.Once cache — committed on branch `perf-ass
 - 2026-04-17: PR #33 — parallelize doctor host + GitHub API checks. **MERGED 2026-04-17.**
 - 2026-04-18: PR #37 — config.Load + Validate benchmarks. **MERGED 2026-04-18.**
 - 2026-04-19: FilterRunners single-pass — patch artifact created (branch perf-assist/filter-runners-single-pass).
-- 2026-04-22: PR #38 — GetLatestRunnerVersion sync.Once cache. Created.
+- 2026-04-22: PR #38/PR #49 — GetLatestRunnerVersion sync.Once cache. **MERGED 2026-04-22.**
 
 ## Backlog Cursor
 
-Last checked: Tasks 3, 7 on 2026-04-22. Next run: Tasks 1 (re-validate commands), 4, 5, 7.
+Last checked: Tasks 1, 4, 5, 7 on 2026-04-22. Next run: Tasks 2, 3, 6, 7.
 
 ## Last Run
 
-2026-04-22 12:XX UTC - Tasks 1, 3, 7 - Created PR #38: GetLatestRunnerVersion sync.Once cache (branch perf-assist/cache-latest-runner-version, commit eea7678). Added 2 caching tests. Updated Monthly Activity Issue #6. Run: https://github.com/an-lee/gh-sr/actions/runs/24776047730
+2026-04-22 13:XX UTC - Tasks 1, 4, 5, 7. Verified PR #49 merged (was PR #38). No open Perf Improver PRs. No performance issues to comment on. Updated Monthly Activity Issue #6. Run: https://github.com/an-lee/gh-sr/actions/runs/24778617834
 
 ## Previously Checked-Off Items by Maintainer
 
