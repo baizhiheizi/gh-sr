@@ -33,7 +33,22 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         imagemagick \
         libvips \
         libyaml-0-2 \
+        build-essential \
+        libpq-dev \
+        libvips \
+        libyaml-dev \
+        node-gyp \
+        pkg-config \
+        python-is-python3 \
+        redis \
+        automake \
+        libtool \
+        libffi-dev \
+        libssl-dev \
+        libgmp-dev \
+        python3-dev \
         libsodium-dev \
+        unzip \
     && rm -rf /var/lib/apt/lists/*
 
 # Docker CE (for DinD — the inner dockerd that gh-aw uses)
