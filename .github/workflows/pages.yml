@@ -16,7 +16,9 @@ concurrency:
 
 jobs:
   build:
-    runs-on: [self-hosted, linux, ci]
+    # GitHub-hosted: configure-pages needs stable TLS to api.github.com.
+    # Self-hosted runners often hit "socket disconnected before TLS" on that call.
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
 
@@ -43,7 +45,7 @@ jobs:
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
-    runs-on: [self-hosted, linux, ci]
+    runs-on: ubuntu-latest
     needs: build
     steps:
       - id: deployment
