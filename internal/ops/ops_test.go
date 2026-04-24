@@ -32,8 +32,8 @@ func TestApplyContainerImageExtras(t *testing.T) {
 		mgr := &runner.Manager{ContainerImageExtraApt: []string{"curl"}}
 		cfg := &config.Config{}
 		applyContainerImageExtras(mgr, cfg)
-		if mgr.ContainerImageExtraApt != nil {
-			t.Errorf("expected nil, got %v", mgr.ContainerImageExtraApt)
+		if len(mgr.ContainerImageExtraApt) != 0 {
+			t.Errorf("expected empty, got %v", mgr.ContainerImageExtraApt)
 		}
 	})
 
