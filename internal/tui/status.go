@@ -17,7 +17,7 @@ func PrintStatusTable(statuses []runner.RunnerStatus) {
 
 	fmt.Println(titleStyle.Render("Runner Status"))
 
-	headers := []string{"INSTANCE", "HOST", "REPO", "MODE", "LOCAL", "GITHUB", "LABELS"}
+	headers := []string{"INSTANCE", "HOST", "REPO", "MODE", "IMAGE", "LOCAL", "GITHUB", "LABELS"}
 	widths := make([]int, len(headers))
 	for i, h := range headers {
 		widths[i] = len(h)
@@ -26,7 +26,11 @@ func PrintStatusTable(statuses []runner.RunnerStatus) {
 	rows := make([][]string, len(statuses))
 	for i, s := range statuses {
 		githubStatus := formatGitHubStatus(s)
-		rows[i] = []string{s.Instance, s.Host, s.Repo, s.Mode, s.Local, githubStatus, s.Labels}
+		img := s.ContainerImage
+		if img == "" {
+			img = "-"
+		}
+		rows[i] = []string{s.Instance, s.Host, s.Repo, s.Mode, img, s.Local, githubStatus, s.Labels}
 		for j, cell := range rows[i] {
 			if len(cell) > widths[j] {
 				widths[j] = len(cell)
@@ -45,9 +49,9 @@ func PrintStatusTable(statuses []runner.RunnerStatus) {
 		for j, cell := range row {
 			styled := cell
 			switch j {
-			case 4: // LOCAL
+			case 5: // LOCAL
 				styled = colorizeLocalStatus(cell)
-			case 5: // GITHUB
+			case 6: // GITHUB
 				styled = colorizeGitHubStatus(cell)
 			}
 			line += cellStyle.Width(widths[j] + 2).Render(styled)

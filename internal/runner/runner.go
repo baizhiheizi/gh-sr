@@ -39,10 +39,13 @@ type RunnerStatus struct {
 	Host     string
 	Repo     string // owner/repo for repo-scoped, "org:name" for org-scoped
 	Labels   string
-	Mode     string
-	Local    string // "running", "stopped", "not installed"
-	Remote   string // from GitHub API: "online", "offline", ""
-	Busy     bool
+	Mode string
+	// ContainerImage is the Docker image ref from the container config (runner_mode: container only).
+	// Empty for native runners or when the container does not exist.
+	ContainerImage string
+	Local          string // "running", "stopped", "not installed"
+	Remote         string // from GitHub API: "online", "offline", ""
+	Busy           bool
 }
 
 func (m *Manager) Setup(h *host.Host, rc config.RunnerConfig) error {
@@ -225,7 +228,7 @@ func (m *Manager) Status(h *host.Host, rc config.RunnerConfig) ([]RunnerStatus, 
 		}
 
 		if rc.IsContainerMode() {
-			s.Local = m.statusContainer(h, name)
+			s.Local, s.ContainerImage = m.containerLocalStatusAndImage(h, name)
 		} else {
 			s.Local = m.statusNative(h, name)
 		}

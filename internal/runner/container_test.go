@@ -270,34 +270,27 @@ func TestContainerRunnerImageExtraSorted(t *testing.T) {
 	}
 }
 
-// TestStatusContainer_parseOutput verifies the status string mapping from
-// docker inspect output to RunnerStatus.Local values.
-func TestStatusContainer_parseOutput(t *testing.T) {
+// TestParseContainerInspectLine verifies mapping from combined docker inspect output.
+func TestParseContainerInspectLine(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
-		dockerStatus string
-		wantLocal    string
+		line      string
+		wantLocal string
+		wantImage string
 	}{
-		{"running", "running"},
-		{"exited", "stopped"},
-		{"created", "stopped"},
-		{"paused", "stopped"},
-		{"restarting", "stopped"},
-		{"not installed", "not installed"},
+		{"running|gh-sr/agentic-runner:2.320.0", "running", "gh-sr/agentic-runner:2.320.0"},
+		{"running|gh-sr/agentic-runner:2.320.0-xa1b2c3d", "running", "gh-sr/agentic-runner:2.320.0-xa1b2c3d"},
+		{"exited|gh-sr/agentic-runner:1.0.0", "stopped", "gh-sr/agentic-runner:1.0.0"},
+		{"created|repo:tag", "stopped", "repo:tag"},
+		{"paused|x:y", "stopped", "x:y"},
+		{"restarting|x:y", "stopped", "x:y"},
+		{"not installed|", "not installed", ""},
+		{"not installed|ignored", "not installed", ""},
 	}
 	for _, tc := range cases {
-		// Replicate the switch from statusContainer.
-		var got string
-		switch strings.TrimSpace(tc.dockerStatus) {
-		case "running":
-			got = "running"
-		case "not installed":
-			got = "not installed"
-		default:
-			got = "stopped"
-		}
-		if got != tc.wantLocal {
-			t.Errorf("docker status %q → local status %q, want %q", tc.dockerStatus, got, tc.wantLocal)
+		gotLocal, gotImage := parseContainerInspectLine(tc.line)
+		if gotLocal != tc.wantLocal || gotImage != tc.wantImage {
+			t.Errorf("line %q → (%q,%q), want (%q,%q)", tc.line, gotLocal, gotImage, tc.wantLocal, tc.wantImage)
 		}
 	}
 }

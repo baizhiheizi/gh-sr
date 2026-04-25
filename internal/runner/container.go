@@ -253,26 +253,39 @@ func (m *Manager) removeContainer(h *host.Host, rc config.RunnerConfig, instance
 	return nil
 }
 
-// statusContainer returns the local status of a runner container.
-func (m *Manager) statusContainer(h *host.Host, instanceName string) string {
+// parseContainerInspectLine maps one line of `docker inspect --format='{{.State.Status}}|{{.Config.Image}}'`
+// (or the fallback `not installed|`) to local status and image ref.
+func parseContainerInspectLine(line string) (local, image string) {
+	line = strings.TrimSpace(line)
+	status, image, _ := strings.Cut(line, "|")
+	status = strings.TrimSpace(status)
+	image = strings.TrimSpace(image)
+	switch status {
+	case "running":
+		local = "running"
+	case "not installed":
+		local = "not installed"
+	default:
+		// exited, created, paused, restarting, etc.
+		local = "stopped"
+	}
+	if local == "not installed" {
+		return local, ""
+	}
+	return local, image
+}
+
+// containerLocalStatusAndImage returns local runner status and Config.Image in one docker inspect.
+func (m *Manager) containerLocalStatusAndImage(h *host.Host, instanceName string) (string, string) {
 	name := containerName(instanceName)
 	out, err := h.Run(fmt.Sprintf(
-		"docker inspect --format='{{.State.Status}}' %s 2>/dev/null || echo 'not installed'",
+		"docker inspect --format='{{.State.Status}}|{{.Config.Image}}' %s 2>/dev/null || echo 'not installed|'",
 		name,
 	))
 	if err != nil {
-		return "not installed"
+		return "not installed", ""
 	}
-	status := strings.TrimSpace(out)
-	switch status {
-	case "running":
-		return "running"
-	case "not installed":
-		return "not installed"
-	default:
-		// exited, created, paused, restarting, etc.
-		return "stopped"
-	}
+	return parseContainerInspectLine(out)
 }
 
 // logsContainer returns recent log lines from a runner container.
