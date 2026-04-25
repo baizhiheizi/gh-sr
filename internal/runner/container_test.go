@@ -188,6 +188,88 @@ func TestBuildAgenticRunnerImageCmdShape(t *testing.T) {
 	}
 }
 
+func TestContainerRunnerImageExtraSorted(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name  string
+		in    []string
+		want  []string
+		empty bool // if true, want nil not empty slice
+	}{
+		{
+			name:  "nil",
+			in:    nil,
+			want:  nil,
+			empty: true,
+		},
+		{
+			name:  "empty slice",
+			in:    []string{},
+			want:  nil,
+			empty: true,
+		},
+		{
+			name:  "single item",
+			in:    []string{"curl"},
+			want:  []string{"curl"},
+			empty: false,
+		},
+		{
+			name:  "whitespace trimmed",
+			in:    []string{"  git  ", "  curl  "},
+			want:  []string{"curl", "git"},
+			empty: false,
+		},
+		{
+			name:  "empty strings filtered",
+			in:    []string{"curl", "", "  ", "git"},
+			want:  []string{"curl", "git"},
+			empty: false,
+		},
+		{
+			name:  "duplicates removed",
+			in:    []string{"curl", "curl", "git"},
+			want:  []string{"curl", "git"},
+			empty: false,
+		},
+		{
+			name:  "sorted ascending",
+			in:    []string{"zlib", "curl", "ffmpeg"},
+			want:  []string{"curl", "ffmpeg", "zlib"},
+			empty: false,
+		},
+		{
+			name:  "unsorted input, sorted output",
+			in:    []string{"sqlite3", "ffmpeg", "curl"},
+			want:  []string{"curl", "ffmpeg", "sqlite3"},
+			empty: false,
+		},
+		{
+			name:  "case sensitive dedup",
+			in:    []string{"curl", "CURL", "Curl"},
+			want:  []string{"CURL", "Curl", "curl"},
+			empty: false,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := containerRunnerImageExtraSorted(tc.in)
+			if tc.empty && got != nil {
+				t.Fatalf("want nil, got %v", got)
+			}
+			if !tc.empty && len(got) != len(tc.want) {
+				t.Fatalf("got %v (len %d), want %v (len %d)", got, len(got), tc.want, len(tc.want))
+			}
+			for i, w := range tc.want {
+				if got[i] != w {
+					t.Errorf("[%d]: got %q, want %q", i, got[i], w)
+				}
+			}
+		})
+	}
+}
+
 // TestStatusContainer_parseOutput verifies the status string mapping from
 // docker inspect output to RunnerStatus.Local values.
 func TestStatusContainer_parseOutput(t *testing.T) {
