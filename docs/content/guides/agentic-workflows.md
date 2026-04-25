@@ -629,7 +629,7 @@ Each runner instance runs as a Docker container named `gh-sr-<instance>` with `-
 
 ### Rebuild the runner image
 
-The image (`gh-sr/agentic-runner:<version>`) is built once per runner version. To force a rebuild after local changes or a new runner version, use `gh sr rebuild <runner-name>` (native-mode runners in the selection are skipped; only `runner_mode: container` runners are rebuilt) or remove the image and re-run `gh sr setup`:
+The image (`gh-sr/agentic-runner:<version>`) is built once per runner version. To force a rebuild after local changes or a new runner version, use `gh sr rebuild <runner-name>` (native-mode runners in the selection are skipped; only `runner_mode: container` runners are rebuilt) or remove the image and re-run `gh sr setup`. Rebuild removes **only** the resolved image tag for that build (not every `gh-sr/agentic-runner` image on the host), so other container-mode runners on the same machine keep their Docker image metadata and `gh sr status` **BUILD** column accurate.
 
 ```bash
 gh sr rebuild <runner-name>   # preferred: tears down containers, rebuilds, restarts

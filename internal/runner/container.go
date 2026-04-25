@@ -363,20 +363,20 @@ func (m *Manager) rebuildContainerImage(h *host.Host, rc config.RunnerConfig) er
 		_, _ = h.Run(fmt.Sprintf("docker rm -f %s 2>/dev/null || true", cName))
 	}
 
-	// Remove all local gh-sr/agentic-runner images so the build is forced.
-	fmt.Fprintf(m.out(), "  %s: removing old container runner image(s)...\n", rc.Name)
-	_, _ = h.Run(fmt.Sprintf(
-		"docker images %s -q | xargs -r docker rmi -f 2>/dev/null || true",
-		posixSingleQuote(AgenticRunnerImageTag),
-	))
-
-	// Resolve runner version and architecture for the build.
+	// Resolve runner version and image tag before rmi/build.
 	version, err := m.GitHub.GetLatestRunnerVersion()
 	if err != nil {
 		return fmt.Errorf("resolving runner version: %w", err)
 	}
 	arch := archForGitHub(h.Arch)
 	imageTag := ContainerRunnerImageTag(version, m.containerImageExtraApt())
+
+	// Remove only this tag so we force a fresh build. Do not `docker rmi` every
+	// gh-sr/agentic-runner image on the host: other runners' containers may still
+	// reference those digests; removing them breaks `docker image inspect` and
+	// BUILD shows "?" until those runners are rebuilt too.
+	fmt.Fprintf(m.out(), "  %s: removing image %s (if present)...\n", rc.Name, imageTag)
+	_, _ = h.Run(fmt.Sprintf("docker rmi -f %s 2>/dev/null || true", posixSingleQuote(imageTag)))
 
 	fmt.Fprintf(m.out(), "  %s: building container runner image %s (this may take several minutes)...\n", rc.Name, imageTag)
 	if err := buildAgenticRunnerImage(h, imageTag, version, arch, m.GhSrVersion, m.containerImageExtraApt()); err != nil {
