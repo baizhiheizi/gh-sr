@@ -1,0 +1,38 @@
+{
+  "cli_version": "dev",
+  "checkpoint_id": "0da427b7a017",
+  "session_id": "3b0e3749-ac51-4bb0-b97e-a2232c93a93f",
+  "strategy": "manual-commit",
+  "created_at": "2026-04-25T08:28:15.263984809Z",
+  "branch": "main",
+  "checkpoints_count": 3,
+  "files_touched": [
+    "docs/content/guides/agentic-workflows.md",
+    "internal/agentic/agentic.go"
+  ],
+  "agent": "Claude Code",
+  "model": "composer-2",
+  "turn_id": "67c5dc2f6e39",
+  "token_usage": {
+    "input_tokens": 0,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 0,
+    "output_tokens": 0,
+    "api_call_count": 0
+  },
+  "session_metrics": {
+    "turn_count": 4
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-04-25T08:28:15.225909565Z",
+    "agent_lines": 134,
+    "agent_removed": 7,
+    "human_added": 111,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 245,
+    "total_lines_changed": 276,
+    "agent_percentage": 51.08695652173913,
+    "metric_version": 2
+  }
+}
