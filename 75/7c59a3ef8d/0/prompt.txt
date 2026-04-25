@@ -1,0 +1,21 @@
+I rebuild and run a new workflow. A new error: `sudo: awf: command not found`.
+
+you can review the full logs from `gh run view 24929802977 --job=73005645420 --log-failed`
+
+help me to identify the root cause, is it related what we have updated for the runner?
+
+---
+
+I rebuild and run a new workflow. A new error: `sudo: awf: command not found`.
+
+you can review the full logs from `gh run view 24929802977 --job=73005645420 --log-failed`
+
+help me to identify the root cause, is it related what we have updated for the runner?
+
+---
+
+Help me to fix it.
+
+---
+
+Help me to fix it.
