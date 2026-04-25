@@ -536,6 +536,7 @@ Checks performed:
 - Passwordless `sudo` is available for `iptables` rules
 - `host.docker.internal` resolves to a non-loopback IP inside default-bridge containers
 - The same name resolves from a `--network host` container (MCP gateway style); **warns** if not
+- Inner `docker run` with `--add-host=host.docker.internal:host-gateway` can reach an HTTP probe on the runner (same route gh-sr enforces for `ghcr.io/github/gh-aw-firewall/agent` containers to the MCP gateway)
 - External DNS (`github.com`) resolves inside containers
 
 ## 11. Quick Reference Troubleshooting
@@ -551,7 +552,7 @@ Checks performed:
 | 503 from model API inside container | dnsmasq has no upstream `server=` directives | `gh sr setup` fixes this; manually add `server=127.0.0.53` + `server=8.8.8.8` to dnsmasq config |
 | `ERR_API: MCP server(s) failed to launch` (job step **Parse agent logs**) | Often `host.docker.internal` / DNS from **host-network** containers, AWF mount permissions, or stale inner Docker state | Run `gh sr doctor` (native: host checks; container mode: inner Docker reachability checks), then follow [§11a](#11a-diagnosing-parse-agent-logs--mcp_servers-failed-inside-awf) |
 | Claude init shows `"mcp_servers":[{"name":"github","status":"failed"},…]` | MCP clients could not start inside the AWF sandbox (network, token, or mounts) | Same as row above; collect **Execute Claude Code CLI** + **Print firewall logs** output |
-| `[entrypoint][WARN] Failed to transfer …/safeoutputs ownership to chroot user` | AWF could not `chown` the bind-mounted `gh-aw/safeoutputs` tree for the sandbox user | Ensure passwordless `sudo` for AWF entrypoint expectations; avoid root-only files under `${RUNNER_TEMP}/gh-aw`; upgrade gh-aw/AWF if a release notes a fix |
+| `[entrypoint][WARN] Failed to transfer …/safeoutputs ownership to chroot user` | AWF could not `chown` the bind-mounted `gh-aw/safeoutputs` tree for the sandbox user | This warning can appear on **successful** runs too; treat it as noise unless MCP actually fails. If Claude init lists MCP servers as failed, focus on gateway reachability from the **agent** container (see §11a). Otherwise: ensure passwordless `sudo` for AWF entrypoint expectations; avoid root-only files under `${RUNNER_TEMP}/gh-aw`; upgrade gh-aw/AWF if a release notes a fix |
 
 ### 11a. Diagnosing **Parse agent logs** / `mcp_servers` failed inside AWF
 
@@ -574,15 +575,17 @@ Upstream, Claude Code’s JSON init line can list both servers as `"status":"fai
 
    Both must resolve to the **docker bridge gateway**, not `127.0.0.1`. `gh sr doctor` now warns when the second check fails while default-bridge DNS still works.
 
-2. **AWF entrypoint** — In the same job log, search for `Failed to transfer` and `safeoutputs`. A failed ownership transfer on `${RUNNER_TEMP}/gh-aw/safeoutputs` can leave MCP clients unable to read tools config inside the chroot even when the Safe Outputs HTTP server started successfully on the host.
+2. **Distinguish gateway health vs agent reachability** — If **Start MCP Gateway** / gateway health checks are green but Claude’s init JSON shows `"mcp_servers":[{"name":"github","status":"failed"},…]`, both tools often fail together because they share the same gateway URL (`http://host.docker.internal:80/...`). The break is usually the **AWF agent container → gateway** hop (inner Docker DNS on custom networks), not the gateway processes themselves.
 
-3. **Firewall / MCP gateway** — Use the workflow’s **Print firewall logs** (and MCP gateway debug if enabled) to confirm the gateway spawned child MCP containers and that egress allowlists include `host.docker.internal`.
+3. **AWF entrypoint** — In the same job log, search for `Failed to transfer` and `safeoutputs`. That line can appear on successful runs; only treat it as primary evidence when it lines up with real MCP/tool failures **and** mount permission errors.
 
-4. **Workflow bundle** — If the host matches [§10](#10-end-to-end-verification-script) but jobs still fail, recompile workflows with a current `gh aw` (`gh aw compile` in the repo) so lockfiles pick up upstream gh-aw / AWF fixes.
+4. **Firewall / MCP gateway** — Use the workflow’s **Print firewall logs** (and MCP gateway debug if enabled) to confirm the gateway spawned child MCP containers and that egress allowlists include `host.docker.internal`.
+
+5. **Workflow bundle** — If the host matches [§10](#10-end-to-end-verification-script) but jobs still fail, recompile workflows with a current `gh aw` (`gh aw compile` in the repo) so lockfiles pick up upstream gh-aw / AWF fixes.
 
 **Observed correlation (example):** In one failing **agent** job, **Start MCP Gateway** set `MCP_GATEWAY_DOMAIN=host.docker.internal` (with `gh-aw-mcpg` on `--network host`) while **Execute Claude Code CLI** logged `[entrypoint][WARN] Failed to transfer …/gh-aw/safeoutputs ownership to chroot user` immediately before Claude’s init JSON listed `"github"` and `"safeoutputs"` MCP servers with `"status":"failed"`, leading to `ERR_API: MCP server(s) failed to launch: github, safeoutputs` in **Parse agent logs**. That sequence points to **in-sandbox MCP startup** (DNS + mounts), not to a missing Actions checkout.
 
-**Container-mode note:** `runner_mode: container` isolates cross-runner `/tmp/gh-aw`, inner Docker, iptables, and MCP port 80 state. Random MCP init failures in container mode are therefore more likely to be **per runner instance** issues: stale inner Docker containers/rules from a previous crash, broken `host.docker.internal` reachability inside the runner container, or persistent mount permissions under `/runner-state`.
+**Container-mode note:** `runner_mode: container` isolates cross-runner `/tmp/gh-aw`, inner Docker, iptables, and MCP port 80 state. Random MCP init failures in container mode are therefore more likely to be **per runner instance** issues: stale inner Docker containers/rules from a previous crash, broken `host.docker.internal` reachability from **nested** agent containers (not only from the runner rootfs), or persistent mount permissions under `/runner-state`. Current gh-sr images install a `/usr/local/bin/docker` wrapper that injects `--add-host=host.docker.internal:host-gateway` for `ghcr.io/github/gh-aw-firewall/agent:*` `docker run`/`create` so the agent uses Docker’s host-gateway mapping for that URL instead of relying solely on inner DNS.
 
 ## Files created on the host
 
@@ -652,7 +655,7 @@ For **container** runners on Linux it additionally checks:
 - **Inner DinD**: `docker exec gh-sr-<instance> docker info` succeeds.
 - **Registration**: `.runner` exists at `/home/runner/actions-runner/.runner` inside the outer container.
 
-For **native** `profile: agentic`, it runs host-level AWF orphan / `DOCKER-USER` hygiene (same as before). For **container** `profile: agentic`, it runs the same style of checks against the **inner** Docker daemon (`docker exec gh-sr-<instance> docker ps …`), because AWF containers live under inner dockerd, not on the host. It also verifies that inner containers can resolve `host.docker.internal` and reach a temporary listener in the runner container namespace, matching the path gh-aw uses for MCP gateway access.
+For **native** `profile: agentic`, it runs host-level AWF orphan / `DOCKER-USER` hygiene (same as before). For **container** `profile: agentic`, it runs the same style of checks against the **inner** Docker daemon (`docker exec gh-sr-<instance> docker ps …`), because AWF containers live under inner dockerd, not on the host. It also verifies that inner containers can resolve `host.docker.internal`, reach a temporary HTTP listener in the runner namespace from a default-bridge inner container, **and** reach the same listener using `--add-host=host.docker.internal:host-gateway` (the path enforced for AWF agent images by gh-sr’s inner `docker` wrapper).
 
 ### Attach to a running runner container
 

@@ -1,6 +1,9 @@
 package runner
 
 import (
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -134,6 +137,20 @@ func TestContainerRunnerImageTag(t *testing.T) {
 	}
 }
 
+func TestAgenticRunnerDockerWrapperEmbedsHostGatewayLogic(t *testing.T) {
+	t.Parallel()
+	for _, needle := range []string{
+		"needs_awf_agent_host_gateway",
+		"--add-host=host.docker.internal:host-gateway",
+		"gh-aw-firewall/agent:",
+		"GH_SR_DOCKER_WRAPPER_REAL",
+	} {
+		if !strings.Contains(agenticRunnerDockerWrapper, needle) {
+			t.Fatalf("embedded docker-wrapper must contain %q", needle)
+		}
+	}
+}
+
 func TestAgenticRunnerEntrypointUsesBridgeDNSForInnerContainers(t *testing.T) {
 	t.Parallel()
 
@@ -143,6 +160,107 @@ func TestAgenticRunnerEntrypointUsesBridgeDNSForInnerContainers(t *testing.T) {
 	if !strings.Contains(agenticRunnerEntrypoint, `"dns": ["${DOCKER0_IP}", "8.8.8.8"]`) {
 		t.Fatalf("entrypoint should configure inner Docker DNS to the bridge IP, got:\n%s", agenticRunnerEntrypoint)
 	}
+}
+
+// TestDockerWrapperInjection runs docker-wrapper.sh with GH_SR_DOCKER_WRAPPER_REAL=/bin/echo
+// so argv transformations are observable without a Docker daemon.
+func TestDockerWrapperInjection(t *testing.T) {
+	t.Parallel()
+	wrapper := filepath.Join("agentic-runner-image", "docker-wrapper.sh")
+	if _, err := os.Stat(wrapper); err != nil {
+		t.Fatalf("docker-wrapper.sh: %v", err)
+	}
+
+	echoWrap := func(t *testing.T, args ...string) string {
+		t.Helper()
+		cmd := exec.Command("bash", append([]string{wrapper}, args...)...)
+		cmd.Env = append(os.Environ(), "GH_SR_DOCKER_WRAPPER_REAL=/bin/echo")
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("bash %v: %v\n%s", args, err, out)
+		}
+		return strings.TrimSpace(string(out))
+	}
+
+	t.Run("mcpg_hostname", func(t *testing.T) {
+		t.Parallel()
+		got := echoWrap(t, "run", "-i", "--rm", "--network", "host", "ghcr.io/github/gh-aw-mcpg:1.0.0")
+		want := "run --hostname gh-aw-mcpg -i --rm --network host ghcr.io/github/gh-aw-mcpg:1.0.0"
+		if got != want {
+			t.Fatalf("got %q want %q", got, want)
+		}
+	})
+
+	t.Run("mcpg_skips_when_hostname_present", func(t *testing.T) {
+		t.Parallel()
+		args := []string{"run", "--hostname", "custom", "ghcr.io/github/gh-aw-mcpg:1"}
+		got := echoWrap(t, args...)
+		want := strings.Join(args, " ")
+		if got != want {
+			t.Fatalf("got %q want %q", got, want)
+		}
+	})
+
+	t.Run("awf_agent_host_gateway", func(t *testing.T) {
+		t.Parallel()
+		got := echoWrap(t, "run", "--rm", "ghcr.io/github/gh-aw-firewall/agent:2.3.4")
+		want := "run --add-host=host.docker.internal:host-gateway --rm ghcr.io/github/gh-aw-firewall/agent:2.3.4"
+		if got != want {
+			t.Fatalf("got %q want %q", got, want)
+		}
+	})
+
+	t.Run("awf_agent_create", func(t *testing.T) {
+		t.Parallel()
+		got := echoWrap(t, "create", "ghcr.io/github/gh-aw-firewall/agent:edge")
+		want := "create --add-host=host.docker.internal:host-gateway ghcr.io/github/gh-aw-firewall/agent:edge"
+		if got != want {
+			t.Fatalf("got %q want %q", got, want)
+		}
+	})
+
+	t.Run("awf_agent_skips_duplicate_add_host_equals", func(t *testing.T) {
+		t.Parallel()
+		args := []string{"run", "--add-host=host.docker.internal:172.17.0.1", "ghcr.io/github/gh-aw-firewall/agent:1"}
+		got := echoWrap(t, args...)
+		want := strings.Join(args, " ")
+		if got != want {
+			t.Fatalf("got %q want %q", got, want)
+		}
+	})
+
+	t.Run("awf_agent_skips_duplicate_add_host_two_arg", func(t *testing.T) {
+		t.Parallel()
+		args := []string{"run", "--add-host", "host.docker.internal:172.18.0.1", "ghcr.io/github/gh-aw-firewall/agent:1"}
+		got := echoWrap(t, args...)
+		want := strings.Join(args, " ")
+		if got != want {
+			t.Fatalf("got %q want %q", got, want)
+		}
+	})
+
+	t.Run("passthrough_non_aw", func(t *testing.T) {
+		t.Parallel()
+		args := []string{"run", "--rm", "alpine:latest", "sh", "-c", "true"}
+		got := echoWrap(t, args...)
+		want := strings.Join(args, " ")
+		if got != want {
+			t.Fatalf("got %q want %q", got, want)
+		}
+	})
+
+	t.Run("mcpg_takes_precedence_over_agent_image_name_collision", func(t *testing.T) {
+		t.Parallel()
+		// Hypothetical tag containing substring "agent" must not confuse parser;
+		// only gh-aw-mcpg image constant is matched for hostname injection.
+		got := echoWrap(t, "run", "ghcr.io/github/gh-aw-mcpg:agent-test")
+		if !strings.Contains(got, "--hostname gh-aw-mcpg") {
+			t.Fatalf("expected mcpg hostname injection, got %q", got)
+		}
+		if strings.Contains(got, "host.docker.internal:host-gateway") {
+			t.Fatalf("did not expect host-gateway for mcpg image, got %q", got)
+		}
+	})
 }
 
 func TestAgenticRunnerDockerfileInstallsAWF(t *testing.T) {

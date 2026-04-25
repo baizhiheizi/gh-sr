@@ -486,13 +486,14 @@ func ValidateContainerInnerNetwork(h *host.Host, outerContainer, runnerName stri
 		return []PrereqFailure{{
 			Name:     "container-inner-host-docker-internal",
 			Severity: SeverityWarning,
-			Message:  fmt.Sprintf("host.docker.internal is not fully usable inside runner container %s", outerContainer),
+			Message:  fmt.Sprintf("host.docker.internal is not fully usable inside runner container %s (includes default-bridge and host-gateway MCP routes)", outerContainer),
 			Remediation: fmt.Sprintf(`Inspect the runner container's inner Docker DNS and restart/rebuild it if stale:
 
   docker exec -it %s bash
   getent hosts host.docker.internal
   docker run --rm alpine sh -c 'getent hosts host.docker.internal'
   docker run --rm --network host alpine sh -c 'getent hosts host.docker.internal'
+  docker run --rm --add-host=host.docker.internal:host-gateway alpine sh -c 'wget -qO- --timeout=2 http://host.docker.internal:80/'
 
 If resolution or reachability fails, restart the runner container. If it persists, run:
 
@@ -539,13 +540,32 @@ log=/tmp/gh-sr-doctor-http.log
 python3 -m http.server "$port" --bind 0.0.0.0 >"$log" 2>&1 &
 pid=$!
 trap "kill $pid 2>/dev/null || true; rm -f $log" EXIT
+bridge_ok=0
 for i in 1 2 3 4 5; do
   if timeout 10s docker run --rm alpine wget -qO- --timeout=2 http://host.docker.internal:$port/ >/dev/null 2>&1; then
-    exit 0
+    bridge_ok=1
+    break
   fi
   sleep 1
 done
-exit 1'`
+if [[ "$bridge_ok" -ne 1 ]]; then
+  exit 1
+fi
+# AWF agent containers reach the MCP gateway via host.docker.internal; gh-sr
+# injects --add-host=host.docker.internal:host-gateway for gh-aw-firewall/agent
+# images so they do not rely on inner Docker DNS alone. Mirror that path here.
+hg_ok=0
+for i in 1 2 3 4 5; do
+  if timeout 10s docker run --rm --add-host=host.docker.internal:host-gateway alpine sh -c "wget -qO- --timeout=2 http://host.docker.internal:$port/" >/dev/null 2>&1; then
+    hg_ok=1
+    break
+  fi
+  sleep 1
+done
+if [[ "$hg_ok" -ne 1 ]]; then
+  exit 1
+fi
+exit 0'`
 }
 
 func containerAWFCheckCommand(outerContainer string) string {

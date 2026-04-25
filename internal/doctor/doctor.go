@@ -615,7 +615,7 @@ func checkContainerAgenticInnerHygiene(w io.Writer, hostName string, h *host.Hos
 		failures = append(failures, agentic.ValidateContainerAWF(h, cname, runnerName)...)
 		failures = append(failures, agentic.ValidateContainerInnerNetwork(h, cname, runnerName)...)
 		if len(failures) == 0 {
-			printLine(w, sevOK, hostName, fmt.Sprintf("container(agent): awf installed, inner Docker clean, and host.docker.internal reachable (%s)", cname))
+			printLine(w, sevOK, hostName, fmt.Sprintf("container(agent): awf installed, inner Docker clean, and host.docker.internal reachable (bridge + host-gateway MCP route) (%s)", cname))
 			continue
 		}
 		for _, f := range failures {
