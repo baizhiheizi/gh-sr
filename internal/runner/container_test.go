@@ -167,10 +167,16 @@ func TestBuildAgenticRunnerImageCmdShape(t *testing.T) {
 	version := "2.320.0"
 	arch := "x64"
 	imageTag := AgenticRunnerImageTag + ":" + version
+	ghVer := "vtest"
+	rev := ContainerImageLayoutRevision(ghVer, nil)
+	labelRev := posixSingleQuote(dockerLabelImageRevision + "=" + rev)
+	labelCLI := posixSingleQuote(dockerLabelCLIVersion + "=" + ghVer)
 
 	// Replicate the docker build command from buildAgenticRunnerImage.
 	buildCmd := "docker build --build-arg RUNNER_VERSION=" + posixSingleQuote(version) +
 		" --build-arg RUNNER_ARCH=" + posixSingleQuote(arch) +
+		" --label " + labelRev +
+		" --label " + labelCLI +
 		" -t " + posixSingleQuote(imageTag) +
 		" " + posixSingleQuote("/tmp/gh-sr-agentic-runner-build")
 
@@ -179,6 +185,15 @@ func TestBuildAgenticRunnerImageCmdShape(t *testing.T) {
 	}
 	if !strings.Contains(buildCmd, "RUNNER_ARCH=") {
 		t.Error("build cmd must pass RUNNER_ARCH build-arg")
+	}
+	if !strings.Contains(buildCmd, "--label ") {
+		t.Error("build cmd must pass image revision labels")
+	}
+	if !strings.Contains(buildCmd, dockerLabelImageRevision) {
+		t.Errorf("build cmd must reference label %q", dockerLabelImageRevision)
+	}
+	if !strings.Contains(buildCmd, rev) {
+		t.Errorf("build cmd must contain layout revision %q", rev)
 	}
 	if !strings.Contains(buildCmd, "-t ") {
 		t.Error("build cmd must specify image tag with -t")
@@ -270,27 +285,60 @@ func TestContainerRunnerImageExtraSorted(t *testing.T) {
 	}
 }
 
-// TestParseContainerInspectLine verifies mapping from combined docker inspect output.
-func TestParseContainerInspectLine(t *testing.T) {
+// TestParseContainerStatusInspectOutput verifies mapping from container+image inspect output.
+func TestParseContainerStatusInspectOutput(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
-		line      string
-		wantLocal string
-		wantImage string
+		line          string
+		wantLocal     string
+		wantImage     string
+		wantImageRev  string
 	}{
-		{"running|gh-sr/agentic-runner:2.320.0", "running", "gh-sr/agentic-runner:2.320.0"},
-		{"running|gh-sr/agentic-runner:2.320.0-xa1b2c3d", "running", "gh-sr/agentic-runner:2.320.0-xa1b2c3d"},
-		{"exited|gh-sr/agentic-runner:1.0.0", "stopped", "gh-sr/agentic-runner:1.0.0"},
-		{"created|repo:tag", "stopped", "repo:tag"},
-		{"paused|x:y", "stopped", "x:y"},
-		{"restarting|x:y", "stopped", "x:y"},
-		{"not installed|", "not installed", ""},
-		{"not installed|ignored", "not installed", ""},
+		{"running|gh-sr/agentic-runner:2.320.0|sha256:abc|deadbeef", "running", "gh-sr/agentic-runner:2.320.0", "deadbeef"},
+		{"running|gh-sr/agentic-runner:2.320.0-xa1b2c3d|sha256:x|", "running", "gh-sr/agentic-runner:2.320.0-xa1b2c3d", ""},
+		{"exited|gh-sr/agentic-runner:1.0.0|sha256:1|rev1", "stopped", "gh-sr/agentic-runner:1.0.0", "rev1"},
+		{"created|repo:tag|sha256:2|", "stopped", "repo:tag", ""},
+		{"paused|x:y|sha256:3|r", "stopped", "x:y", "r"},
+		{"restarting|x:y|sha256:4|r", "stopped", "x:y", "r"},
+		{"not installed|||", "not installed", "", ""},
+		{"not installed|a|b|c", "not installed", "", ""},
 	}
 	for _, tc := range cases {
-		gotLocal, gotImage := parseContainerInspectLine(tc.line)
-		if gotLocal != tc.wantLocal || gotImage != tc.wantImage {
-			t.Errorf("line %q → (%q,%q), want (%q,%q)", tc.line, gotLocal, gotImage, tc.wantLocal, tc.wantImage)
+		gotLocal, gotImage, gotRev := parseContainerStatusInspectOutput(tc.line)
+		if gotLocal != tc.wantLocal || gotImage != tc.wantImage || gotRev != tc.wantImageRev {
+			t.Errorf("line %q → (%q,%q,%q), want (%q,%q,%q)", tc.line, gotLocal, gotImage, gotRev, tc.wantLocal, tc.wantImage, tc.wantImageRev)
 		}
+	}
+}
+
+func TestContainerImageLayoutRevision_stable(t *testing.T) {
+	t.Parallel()
+	a := ContainerImageLayoutRevision("1.0.0", []string{"curl"})
+	b := ContainerImageLayoutRevision("1.0.0", []string{"curl"})
+	if a != b {
+		t.Fatalf("expected stable revision, %q vs %q", a, b)
+	}
+	if len(a) != 12 {
+		t.Fatalf("expected 12 hex chars, got %q len %d", a, len(a))
+	}
+	c := ContainerImageLayoutRevision("1.0.0", []string{"git"})
+	if c == a {
+		t.Fatal("different extras should change revision")
+	}
+}
+
+func TestFormatContainerImageBuild(t *testing.T) {
+	t.Parallel()
+	if got := formatContainerImageBuild("not installed", "aaa", "bbb"); got != "-" {
+		t.Errorf("not installed: got %q", got)
+	}
+	if got := formatContainerImageBuild("running", "aaa", ""); got != "?" {
+		t.Errorf("missing label: got %q", got)
+	}
+	if got := formatContainerImageBuild("running", "abcd12345678", "abcd12345678"); got != "ok (abcd1234)" {
+		t.Errorf("match: got %q", got)
+	}
+	if got := formatContainerImageBuild("running", "aaa", "bbbbbbbbbbbb"); got != "stale (bbbbbbbb)" {
+		t.Errorf("stale: got %q", got)
 	}
 }

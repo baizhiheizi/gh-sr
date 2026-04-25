@@ -359,11 +359,12 @@ func CollectStatus(w io.Writer, cfg *config.Config, mgr *runner.Manager, filterH
 							repoDisplay = "org:" + rc.Org
 						}
 						unreachable = append(unreachable, runner.RunnerStatus{
-							Instance: name,
-							Host:     rc.Host,
-							Repo:     repoDisplay,
-							Mode:     "native",
-							Local:    "unreachable",
+							Instance:            name,
+							Host:                rc.Host,
+							Repo:                repoDisplay,
+							Mode:                "native",
+							Local:               "unreachable",
+							ContainerImageBuild: "-",
 						})
 					}
 				}

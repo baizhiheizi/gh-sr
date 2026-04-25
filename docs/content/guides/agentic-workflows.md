@@ -374,6 +374,8 @@ runners:
 
 gh-sr will build the runner container image locally on first `gh sr setup` (Ubuntu 24.04 + Docker CE + gh-aw + dnsmasq + actions runner). Core apt dependencies live in the repo manifest `internal/runner/agentic-runner-image/apt-packages-core.txt` (baked into the gh-sr binary). Optional tools: add a global `container_runner_image.extra_apt_packages` list in `runners.yml` (Debian package names only). Subsequent setups skip the build if the image for that tag already exists; after changing the extra list or upgrading gh-sr when the core manifest changed, run `gh sr rebuild` for container-mode runners if needed.
 
+In `gh sr status` (and the dashboard), the **IMAGE** column shows the Docker image reference; its tag is the **GitHub Actions runner** package version (not the gh-sr CLI version). The **BUILD** column compares a short **layout revision** baked into the image at `docker build` time with the revision your current `gh`/`gh sr` binary expects: **ok (…)** means the running container’s image matches this gh-sr build; **stale (…)** means you should run `gh sr rebuild` (or rebuild after upgrading gh-sr); **?** means the image predates revision labels (rebuild once to stamp them).
+
 **When to use which mode:**
 
 - **`runner_mode: native`** — default; suitable when you run only one agentic job at a time per host, or already manage port assignments via [§8a](#8a-concurrent-jobs-mcp-gateway-ports-and-gh-sr). Zero extra disk space beyond the runner binaries.

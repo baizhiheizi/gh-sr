@@ -16,6 +16,9 @@ type Manager struct {
 	GitHub *GitHubClient
 	// Out receives progress messages from runner operations. If nil, os.Stdout is used.
 	Out io.Writer
+	// GhSrVersion is the gh-sr CLI version (e.g. Makefile -X main.version). Used for
+	// container image layout revision and Docker image labels.
+	GhSrVersion string
 	// ContainerImageExtraApt is global extra apt packages for the gh-sr/agentic-runner
 	// image (from runners.yml container_runner_image). Set by ops before container setup.
 	ContainerImageExtraApt []string
@@ -43,7 +46,11 @@ type RunnerStatus struct {
 	// ContainerImage is the Docker image ref from the container config (runner_mode: container only).
 	// Empty for native runners or when the container does not exist.
 	ContainerImage string
-	Local          string // "running", "stopped", "not installed"
+	// ContainerImageRevision is the gh-sr.image-revision label on the running image (empty if missing).
+	ContainerImageRevision string
+	// ContainerImageBuild is a short match hint: "-", "?", "ok (hexprefix)", "stale (hexprefix)".
+	ContainerImageBuild string
+	Local string // "running", "stopped", "not installed"
 	Remote         string // from GitHub API: "online", "offline", ""
 	Busy           bool
 }
@@ -228,9 +235,12 @@ func (m *Manager) Status(h *host.Host, rc config.RunnerConfig) ([]RunnerStatus, 
 		}
 
 		if rc.IsContainerMode() {
-			s.Local, s.ContainerImage = m.containerLocalStatusAndImage(h, name)
+			s.Local, s.ContainerImage, s.ContainerImageRevision = m.containerLocalStatusImageAndRevision(h, name)
+			expected := ContainerImageLayoutRevision(m.GhSrVersion, m.containerImageExtraApt())
+			s.ContainerImageBuild = formatContainerImageBuild(s.Local, expected, s.ContainerImageRevision)
 		} else {
 			s.Local = m.statusNative(h, name)
+			s.ContainerImageBuild = "-"
 		}
 		statuses = append(statuses, s)
 	}
@@ -342,4 +352,23 @@ func (m *Manager) CleanupOffline(cfg *config.Config) (int, error) {
 		}
 	}
 	return removed, nil
+}
+
+func formatContainerImageBuild(local, expected, actual string) string {
+	if local == "not installed" {
+		return "-"
+	}
+	if actual == "" {
+		return "?"
+	}
+	short := func(s string) string {
+		if len(s) <= 8 {
+			return s
+		}
+		return s[:8]
+	}
+	if actual == expected {
+		return "ok (" + short(expected) + ")"
+	}
+	return "stale (" + short(actual) + ")"
 }

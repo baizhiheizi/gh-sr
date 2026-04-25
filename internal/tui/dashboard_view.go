@@ -84,7 +84,7 @@ func (m *dashboardModel) viewMain() tea.View {
 		return v
 	}
 
-	headers := []string{"INSTANCE", "HOST", "REPO", "MODE", "IMAGE", "LOCAL", "GITHUB", "LABELS"}
+	headers := []string{"INSTANCE", "HOST", "REPO", "MODE", "IMAGE", "BUILD", "LOCAL", "GITHUB", "LABELS"}
 	widths := computeWidths(headers, m.statuses)
 
 	var headerLine string
@@ -99,15 +99,21 @@ func (m *dashboardModel) viewMain() tea.View {
 		if img == "" {
 			img = "-"
 		}
-		cells := []string{s.Instance, s.Host, s.Repo, s.Mode, img, s.Local, ghStatus, s.Labels}
+		build := s.ContainerImageBuild
+		if build == "" {
+			build = "-"
+		}
+		cells := []string{s.Instance, s.Host, s.Repo, s.Mode, img, build, s.Local, ghStatus, s.Labels}
 
 		var line string
 		for j, cell := range cells {
 			styled := cell
 			switch j {
 			case 5:
-				styled = colorizeLocalStatus(cell)
+				styled = colorizeImageBuild(cell)
 			case 6:
+				styled = colorizeLocalStatus(cell)
+			case 7:
 				styled = colorizeGitHubStatus(cell)
 			}
 			style := cellStyle.Width(widths[j] + 2)
@@ -341,7 +347,11 @@ func computeWidths(headers []string, statuses []runner.RunnerStatus) []int {
 		if img == "" {
 			img = "-"
 		}
-		cells := []string{s.Instance, s.Host, s.Repo, s.Mode, img, s.Local, ghStatus, s.Labels}
+		build := s.ContainerImageBuild
+		if build == "" {
+			build = "-"
+		}
+		cells := []string{s.Instance, s.Host, s.Repo, s.Mode, img, build, s.Local, ghStatus, s.Labels}
 		for j, cell := range cells {
 			if len(cell) > widths[j] {
 				widths[j] = len(cell)

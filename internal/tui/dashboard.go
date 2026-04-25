@@ -25,10 +25,11 @@ const NonTTYHint = `gh sr: stdout is not a terminal; open the dashboard on a TTY
 
 // DashboardOpts configures the interactive dashboard (paths for reload and doctor).
 type DashboardOpts struct {
-	ConfigPath string
-	EnvPath    string
-	FilterHost string
-	FilterRepo string
+	ConfigPath  string
+	EnvPath     string
+	FilterHost  string
+	FilterRepo  string
+	GhSrVersion string
 }
 
 type panelKind int
@@ -141,6 +142,7 @@ func RunDashboard(cfg *config.Config, opts DashboardOpts) error {
 	}
 	mgr := runner.NewManager(tok)
 	mgr.Out = io.Discard
+	mgr.GhSrVersion = opts.GhSrVersion
 	m := &dashboardModel{
 		opts:          opts,
 		cfg:           cfg,
@@ -418,6 +420,7 @@ func (m *dashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		mgr := runner.NewManager(tok)
 		mgr.Out = io.Discard
+		mgr.GhSrVersion = m.opts.GhSrVersion
 		m.mgr = mgr
 		m.toast = "Config reloaded."
 		m.loading = true

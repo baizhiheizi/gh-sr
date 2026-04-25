@@ -113,10 +113,11 @@ func runDashboard() error {
 		return err
 	}
 	return tui.RunDashboard(cfg, tui.DashboardOpts{
-		ConfigPath: cfgPath,
-		EnvPath:    envPath,
-		FilterHost: filterHost,
-		FilterRepo: filterRepo,
+		ConfigPath:  cfgPath,
+		EnvPath:     envPath,
+		FilterHost:  filterHost,
+		FilterRepo:  filterRepo,
+		GhSrVersion: version,
 	})
 }
 
@@ -138,6 +139,7 @@ func newManager(cfg *config.Config, w io.Writer) (*runner.Manager, error) {
 	}
 	m := runner.NewManager(tok)
 	m.Out = w
+	m.GhSrVersion = version
 	return m, nil
 }
 

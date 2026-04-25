@@ -14,6 +14,35 @@ import (
 // AgenticRunnerImageTag is the local Docker image tag built by gh sr setup.
 const AgenticRunnerImageTag = "gh-sr/agentic-runner"
 
+// Docker image labels stamped at build time (see buildAgenticRunnerImage).
+const (
+	dockerLabelImageRevision = "gh-sr.image-revision"
+	dockerLabelCLIVersion    = "gh-sr.cli-version"
+)
+
+// ContainerImageLayoutRevision returns a short hex fingerprint of the embedded
+// container image layout (Dockerfile, manifests, entrypoint, wrapper), gh-sr
+// CLI version, and extra apt package list. It changes when any of those inputs change.
+func ContainerImageLayoutRevision(ghSrVersion string, extraApt []string) string {
+	if ghSrVersion == "" {
+		ghSrVersion = "unknown"
+	}
+	var b strings.Builder
+	b.WriteString("gh-sr-container-image/v1\x00")
+	b.WriteString(ghSrVersion)
+	b.WriteByte(0)
+	for _, p := range containerRunnerImageExtraSorted(extraApt) {
+		b.WriteString(p)
+		b.WriteByte('\n')
+	}
+	b.WriteString(agenticRunnerDockerfile)
+	b.WriteString(agenticRunnerAptPackagesCore)
+	b.WriteString(agenticRunnerEntrypoint)
+	b.WriteString(agenticRunnerDockerWrapper)
+	sum := sha256.Sum256([]byte(b.String()))
+	return hex.EncodeToString(sum[:])[:12]
+}
+
 // containerRunnerImageExtraSorted returns a sorted copy of unique non-empty package names.
 func containerRunnerImageExtraSorted(extra []string) []string {
 	seen := make(map[string]struct{})
@@ -119,7 +148,7 @@ func (m *Manager) setupContainer(h *host.Host, rc config.RunnerConfig) error {
 
 	if !imageExists {
 		fmt.Fprintf(m.out(), "  %s: building container runner image (this may take several minutes)...\n", rc.Name)
-		if err := buildAgenticRunnerImage(h, imageTag, version, arch, m.containerImageExtraApt()); err != nil {
+		if err := buildAgenticRunnerImage(h, imageTag, version, arch, m.GhSrVersion, m.containerImageExtraApt()); err != nil {
 			return fmt.Errorf("building container runner image: %w", err)
 		}
 		fmt.Fprintf(m.out(), "  %s: image built: %s\n", rc.Name, imageTag)
@@ -253,13 +282,17 @@ func (m *Manager) removeContainer(h *host.Host, rc config.RunnerConfig, instance
 	return nil
 }
 
-// parseContainerInspectLine maps one line of `docker inspect --format='{{.State.Status}}|{{.Config.Image}}'`
-// (or the fallback `not installed|`) to local status and image ref.
-func parseContainerInspectLine(line string) (local, image string) {
-	line = strings.TrimSpace(line)
-	status, image, _ := strings.Cut(line, "|")
-	status = strings.TrimSpace(status)
-	image = strings.TrimSpace(image)
+// parseContainerStatusInspectOutput parses one line of the form
+// status|configImage|digest|imageRevision (from containerLocalStatusImageAndRevision).
+func parseContainerStatusInspectOutput(out string) (local, image, imageRev string) {
+	line := strings.TrimSpace(out)
+	parts := strings.Split(line, "|")
+	for len(parts) < 4 {
+		parts = append(parts, "")
+	}
+	status := strings.TrimSpace(parts[0])
+	image = strings.TrimSpace(parts[1])
+	imageRev = strings.TrimSpace(parts[3])
 	switch status {
 	case "running":
 		local = "running"
@@ -270,22 +303,35 @@ func parseContainerInspectLine(line string) (local, image string) {
 		local = "stopped"
 	}
 	if local == "not installed" {
-		return local, ""
+		return local, "", ""
 	}
-	return local, image
+	return local, image, imageRev
 }
 
-// containerLocalStatusAndImage returns local runner status and Config.Image in one docker inspect.
-func (m *Manager) containerLocalStatusAndImage(h *host.Host, instanceName string) (string, string) {
-	name := containerName(instanceName)
-	out, err := h.Run(fmt.Sprintf(
-		"docker inspect --format='{{.State.Status}}|{{.Config.Image}}' %s 2>/dev/null || echo 'not installed|'",
-		name,
-	))
+// containerLocalStatusImageAndRevision returns local status, Config.Image, and the
+// gh-sr.image-revision label on the container's image (one SSH round-trip).
+func (m *Manager) containerLocalStatusImageAndRevision(h *host.Host, instanceName string) (string, string, string) {
+	cid := posixSingleQuote(containerName(instanceName))
+	script := fmt.Sprintf(
+		"cid=%s\n"+
+			"line=$(docker inspect --format '{{.State.Status}}|{{.Config.Image}}|{{.Image}}' \"$cid\" 2>/dev/null) || line=\"\"\n"+
+			"if [ -z \"$line\" ]; then\n"+
+			"  echo 'not installed|||'\n"+
+			"else\n"+
+			"  digest=${line##*|}\n"+
+			"  rev=\"\"\n"+
+			"  if [ -n \"$digest\" ]; then\n"+
+			"    rev=$(docker image inspect \"$digest\" --format '{{index .Config.Labels \"gh-sr.image-revision\"}}' 2>/dev/null || true)\n"+
+			"  fi\n"+
+			"  printf '%%s|%%s\\n' \"$line\" \"$rev\"\n"+
+			"fi\n",
+		cid,
+	)
+	out, err := h.Run(script)
 	if err != nil {
-		return "not installed", ""
+		return "not installed", "", ""
 	}
-	return parseContainerInspectLine(out)
+	return parseContainerStatusInspectOutput(out)
 }
 
 // logsContainer returns recent log lines from a runner container.
@@ -333,7 +379,7 @@ func (m *Manager) rebuildContainerImage(h *host.Host, rc config.RunnerConfig) er
 	imageTag := ContainerRunnerImageTag(version, m.containerImageExtraApt())
 
 	fmt.Fprintf(m.out(), "  %s: building container runner image %s (this may take several minutes)...\n", rc.Name, imageTag)
-	if err := buildAgenticRunnerImage(h, imageTag, version, arch, m.containerImageExtraApt()); err != nil {
+	if err := buildAgenticRunnerImage(h, imageTag, version, arch, m.GhSrVersion, m.containerImageExtraApt()); err != nil {
 		return fmt.Errorf("building container runner image: %w", err)
 	}
 	fmt.Fprintf(m.out(), "  %s: image built: %s\n", rc.Name, imageTag)
@@ -377,7 +423,7 @@ func containerImageExists(h *host.Host, imageTag string) (bool, error) {
 
 // buildAgenticRunnerImage uploads the embedded Dockerfile+entrypoint to the host
 // and builds the image via `docker build`.
-func buildAgenticRunnerImage(h *host.Host, imageTag, runnerVersion, runnerArch string, extraApt []string) error {
+func buildAgenticRunnerImage(h *host.Host, imageTag, runnerVersion, runnerArch, ghSrVersion string, extraApt []string) error {
 	buildDir := "/tmp/gh-sr-agentic-runner-build"
 
 	// Write Dockerfile.
@@ -455,11 +501,16 @@ chmod +x %s`,
 		return fmt.Errorf("writing docker-wrapper.sh: %w", err)
 	}
 
-	// Build.
+	// Build (stamp labels so gh sr status can compare layout to this binary).
+	rev := ContainerImageLayoutRevision(ghSrVersion, extraApt)
+	labelRev := posixSingleQuote(dockerLabelImageRevision + "=" + rev)
+	labelCLI := posixSingleQuote(dockerLabelCLIVersion + "=" + ghSrVersion)
 	buildCmd := fmt.Sprintf(
-		"docker build --build-arg RUNNER_VERSION=%s --build-arg RUNNER_ARCH=%s -t %s %s",
+		"docker build --build-arg RUNNER_VERSION=%s --build-arg RUNNER_ARCH=%s --label %s --label %s -t %s %s",
 		posixSingleQuote(runnerVersion),
 		posixSingleQuote(runnerArch),
+		labelRev,
+		labelCLI,
 		posixSingleQuote(imageTag),
 		posixSingleQuote(buildDir),
 	)
