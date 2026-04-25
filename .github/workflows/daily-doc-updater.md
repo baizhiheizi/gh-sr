@@ -5,6 +5,7 @@ on:
   schedule: daily
   workflow_dispatch:
 runs-on: [self-hosted, linux, agentic]
+runs-on-slim: "self-hosted"
 imports:
   - shared/self-hosted-runner.md
 network:

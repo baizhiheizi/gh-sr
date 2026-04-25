@@ -5,6 +5,7 @@ on:
     name: grumpy
     events: [pull_request_comment, pull_request_review_comment]
 runs-on: [self-hosted, linux, agentic]
+runs-on-slim: "self-hosted"
 imports:
   - shared/self-hosted-runner.md
 permissions:

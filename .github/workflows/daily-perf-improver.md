@@ -16,6 +16,7 @@ on:
     name: perf-assist
   reaction: "eyes"
 runs-on: [self-hosted, linux, agentic]
+runs-on-slim: "self-hosted"
 imports:
   - shared/self-hosted-runner.md
 timeout-minutes: 60

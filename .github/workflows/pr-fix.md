@@ -10,6 +10,7 @@ on:
     name: pr-fix
   reaction: "eyes"
 runs-on: [self-hosted, linux, agentic]
+runs-on-slim: "self-hosted"
 imports:
   - shared/self-hosted-runner.md
 permissions: read-all

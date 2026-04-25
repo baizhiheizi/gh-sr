@@ -6,6 +6,7 @@ on:
     name: plan
     events: [issue_comment, discussion_comment]
 runs-on: [self-hosted, linux, agentic]
+runs-on-slim: "self-hosted"
 imports:
   - shared/self-hosted-runner.md
 permissions:
