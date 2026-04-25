@@ -1,0 +1,22 @@
+{
+  "cli_version": "dev",
+  "checkpoint_id": "ffe70ce92f4d",
+  "strategy": "manual-commit",
+  "branch": "main",
+  "checkpoints_count": 3,
+  "files_touched": [
+    "internal/runner/container.go",
+    "internal/runner/container_test.go",
+    "internal/runner/runner.go",
+    "internal/tui/dashboard_view.go",
+    "internal/tui/status.go"
+  ],
+  "sessions": [
+    {
+      "metadata": "/ff/e70ce92f4d/0/metadata.json",
+      "transcript": "/ff/e70ce92f4d/0/full.jsonl",
+      "content_hash": "/ff/e70ce92f4d/0/content_hash.txt",
+      "prompt": "/ff/e70ce92f4d/0/prompt.txt"
+    }
+  ]
+}
