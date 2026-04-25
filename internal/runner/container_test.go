@@ -145,6 +145,20 @@ func TestAgenticRunnerEntrypointUsesBridgeDNSForInnerContainers(t *testing.T) {
 	}
 }
 
+func TestAgenticRunnerDockerfileInstallsAWF(t *testing.T) {
+	t.Parallel()
+
+	for _, want := range []string{
+		"https://raw.githubusercontent.com/github/gh-aw-firewall/main/install.sh",
+		"AWF_FORCE_BINARY=1",
+		"awf --version",
+	} {
+		if !strings.Contains(agenticRunnerDockerfile, want) {
+			t.Fatalf("Dockerfile should install and verify awf with %q, got:\n%s", want, agenticRunnerDockerfile)
+		}
+	}
+}
+
 // TestBuildAgenticRunnerImageCmdShape verifies the docker build command shape
 // produced by buildAgenticRunnerImage (calls h.Run but we inspect the structure
 // by constructing the expected command string rather than executing it).

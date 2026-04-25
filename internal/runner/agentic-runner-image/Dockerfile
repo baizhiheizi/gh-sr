@@ -81,6 +81,13 @@ RUN if [ -z "$RUNNER_VERSION" ]; then \
 # gh-aw CLI extension
 RUN su - runner -c "curl -sL https://raw.githubusercontent.com/github/gh-aw/main/install-gh-aw.sh | bash"
 
+# Agentic Workflow Firewall CLI. Compiled gh-aw workflows invoke `sudo -E awf`
+# directly, so this must be installed globally instead of relying on the gh-aw
+# extension installer.
+RUN curl -sSL https://raw.githubusercontent.com/github/gh-aw-firewall/main/install.sh \
+        | AWF_FORCE_BINARY=1 bash \
+    && awf --version
+
 # Optional extra apt packages (from runners.yml; empty file skips this step)
 COPY apt-packages-extra.txt /tmp/apt-packages-extra.txt
 RUN apt-get update \

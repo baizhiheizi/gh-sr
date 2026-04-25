@@ -503,6 +503,31 @@ If resolution or reachability fails, restart the runner container. If it persist
 	return nil
 }
 
+// ValidateContainerAWF checks that the gh-aw firewall CLI is available exactly
+// the way compiled workflows invoke it.
+func ValidateContainerAWF(h *host.Host, outerContainer, runnerName string) []PrereqFailure {
+	if h.OS != "linux" {
+		return nil
+	}
+
+	if _, err := h.Run(containerAWFCheckCommand(outerContainer)); err != nil {
+		return []PrereqFailure{{
+			Name:     "container-awf",
+			Severity: SeverityWarning,
+			Message:  fmt.Sprintf("awf is not available via sudo inside runner container %s", outerContainer),
+			Remediation: fmt.Sprintf(`Rebuild the runner image so it includes github/gh-aw-firewall:
+
+  gh sr rebuild %s
+
+For a temporary live-container unblock only:
+
+  docker exec %s sh -lc 'curl -sSL https://raw.githubusercontent.com/github/gh-aw-firewall/main/install.sh | AWF_FORCE_BINARY=1 bash'`, runnerName, outerContainer),
+			DocRef: "agentic-workflows.md §12",
+		}}
+	}
+	return nil
+}
+
 func containerInnerNetworkCheckCommand(outerContainer string) string {
 	q := strconv.Quote(outerContainer)
 	return `docker exec ` + q + ` sh -c 'set -eu
@@ -521,6 +546,13 @@ for i in 1 2 3 4 5; do
   sleep 1
 done
 exit 1'`
+}
+
+func containerAWFCheckCommand(outerContainer string) string {
+	q := strconv.Quote(outerContainer)
+	return `docker exec ` + q + ` sh -lc 'set -eu
+command -v awf >/dev/null
+sudo -n -E awf --version >/dev/null'`
 }
 
 // HasBlockingFailures returns true if any failure has severity "error".
