@@ -1,0 +1,26 @@
+{
+  "cli_version": "dev",
+  "checkpoint_id": "472d1cd1e6db",
+  "strategy": "manual-commit",
+  "branch": "main",
+  "checkpoints_count": 4,
+  "files_touched": [
+    "cmd/gh-sr/main.go",
+    "docs/content/guides/agentic-workflows.md",
+    "internal/ops/ops.go",
+    "internal/runner/container.go",
+    "internal/runner/container_test.go",
+    "internal/runner/runner.go",
+    "internal/tui/dashboard.go",
+    "internal/tui/dashboard_view.go",
+    "internal/tui/status.go"
+  ],
+  "sessions": [
+    {
+      "metadata": "/47/2d1cd1e6db/0/metadata.json",
+      "transcript": "/47/2d1cd1e6db/0/full.jsonl",
+      "content_hash": "/47/2d1cd1e6db/0/content_hash.txt",
+      "prompt": "/47/2d1cd1e6db/0/prompt.txt"
+    }
+  ]
+}
