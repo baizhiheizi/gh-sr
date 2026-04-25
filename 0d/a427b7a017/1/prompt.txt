@@ -1,0 +1,76 @@
+So help me to fix them.ed workflows.
+
+You can check them by
+-  `gh run view 24923150582 --repo=an-lee/rune`
+- `gh run view 24923585348 --repo=an-lee/rune`
+
+Here are what I found so far. Could you identify the root cause of `gh-sr`, would we improve the runner config in gh-sr to fix these bugs?
+
+---
+
+We’re seeing intermittent gh-aw agent failures on self-hosted runners.
+
+The symptom in failed runs is:
+
+ERR_API: MCP server(s) failed to launch: github, safeoutputs
+No such tool available: create_pull_request
+No such tool available: noop
+But the MCP gateway startup step itself says both servers are healthy and connected. So the failure is not “safeoutputs didn’t start”; it is that Claude’s own MCP client sometimes fails to attach to the already-running gateway.
+
+The risky setup appears to be:
+
+multiple self-hosted runner containers
+        |
+        | likely share host Docker socket
+        v
+same Docker host / same host network
+        |
+        | gh-aw starts MCP gateway with --network host
+        v
+fixed host port 80 + fixed /tmp/gh-aw paths
+Generated gh-aw jobs use shared host resources:
+
+MCP gateway binds MCP_GATEWAY_PORT="80".
+MCP config points Claude at http://host.docker.internal:80/mcp/github.
+Gateway starts via docker run --network host.
+Paths like /tmp/gh-aw/mcp-logs, /tmp/gh-aw/mcp-config, /tmp/gh-aw/mcp-payloads, and /tmp/gh-aw/agent-stdio.log are fixed.
+The generated concurrency group is per workflow, so different workflows can overlap:
+concurrency:
+  group: "gh-aw-claude-${{ github.workflow }}"
+That means Docker runner containers only isolate the GitHub runner process. If they share /var/run/docker.sock, the MCP gateway containers are all created on the same Docker host and host network. Two agentic workflows on the same host can then collide on port 80, /tmp/gh-aw, gateway logs, or gateway state.
+
+Evidence from the two compared runs:
+
+Successful run 24923150582: Claude init lists github and safeoutputs as connected; mcp__safeoutputs__create_pull_request works.
+Failed run 24923585348: gateway health check passed, but Claude init lists both MCP servers as failed; safe-output tool names never appear in Claude’s tool list.
+The EACCES log parsing annotations are red herrings: they appear even in the successful run.
+What to check in runner config:
+
+Do runner containers share /var/run/docker.sock?
+Are multiple agentic runners allowed on one physical host?
+Does gh-aw gateway run in the host Docker daemon with --network host?
+Can two agentic jobs bind host port 80 or write /tmp/gh-aw at the same time?
+Does each runner container have a private /tmp, or is gh-aw’s /tmp/gh-aw effectively shared through host mounts or gateway containers?
+Likely mitigations:
+
+Run only one agentic runner per host.
+Use separate hosts/VMs for each agentic runner.
+Use separate Docker daemons per runner, e.g. DinD/rootless Docker per runner.
+Add repo-wide concurrency for all self-hosted gh-aw agent jobs.
+Longer term: avoid fixed port 80 and fixed /tmp/gh-aw in gh-aw if configurable.
+
+---
+
+So in technically, can we support multiple agentic workflow on the save host running at the same time?
+
+---
+
+What about the `/tmp/gh-aw` path? Would that be a racing issue?
+
+---
+
+All runners are running in `container` mode, you could check by `gh sr`. Is there any chance that there still have racing issue causing the workflow failed randomly? Help me to dig into it and review everything again.
+
+---
+
+So help me to fix them.

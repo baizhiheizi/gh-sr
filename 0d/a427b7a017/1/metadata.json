@@ -1,9 +1,11 @@
 {
   "cli_version": "dev",
   "checkpoint_id": "0da427b7a017",
+  "session_id": "8d30d794-daa9-4dc9-9d5c-851ba2d4c4c9",
   "strategy": "manual-commit",
+  "created_at": "2026-04-25T08:28:15.318454646Z",
   "branch": "main",
-  "checkpoints_count": 8,
+  "checkpoints_count": 5,
   "files_touched": [
     "docs/content/guides/agentic-workflows.md",
     "internal/agentic/agentic.go",
@@ -16,25 +18,31 @@
     "internal/tui/status.go",
     "internal/tui/status_test.go"
   ],
-  "sessions": [
-    {
-      "metadata": "/0d/a427b7a017/0/metadata.json",
-      "transcript": "/0d/a427b7a017/0/full.jsonl",
-      "content_hash": "/0d/a427b7a017/0/content_hash.txt",
-      "prompt": "/0d/a427b7a017/0/prompt.txt"
-    },
-    {
-      "metadata": "/0d/a427b7a017/1/metadata.json",
-      "transcript": "/0d/a427b7a017/1/full.jsonl",
-      "content_hash": "/0d/a427b7a017/1/content_hash.txt",
-      "prompt": "/0d/a427b7a017/1/prompt.txt"
-    }
-  ],
+  "agent": "Claude Code",
+  "model": "gpt-5.5",
+  "turn_id": "437d00bf1829",
   "token_usage": {
     "input_tokens": 0,
     "cache_creation_tokens": 0,
     "cache_read_tokens": 0,
     "output_tokens": 0,
     "api_call_count": 0
+  },
+  "session_metrics": {
+    "turn_count": 10,
+    "context_tokens": 252374,
+    "context_window_size": 272000
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-04-25T08:28:15.285999419Z",
+    "agent_lines": 245,
+    "agent_removed": 31,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 245,
+    "total_lines_changed": 276,
+    "agent_percentage": 100,
+    "metric_version": 2
   }
 }
