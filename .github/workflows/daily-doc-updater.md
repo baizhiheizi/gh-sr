@@ -11,11 +11,7 @@ imports:
 network:
   allowed:
     - defaults
-    - dotnet
-    - node
-    - python
-    - rust
-    - java
+    - go
 permissions:
   contents: read
   issues: read

@@ -24,11 +24,7 @@ permissions: read-all
 network:
   allowed:
     - defaults
-    - dotnet
-    - node
-    - python
-    - rust
-    - java
+    - go
 safe-outputs:
   add-comment:
     max: 10
