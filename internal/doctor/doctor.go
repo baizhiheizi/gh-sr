@@ -597,10 +597,11 @@ func checkContainerRunnerInstall(w io.Writer, hostName string, h *host.Host, run
 	}
 }
 
-// checkContainerAgenticInnerHygiene runs AWF orphan checks against the inner Docker in each running DinD agentic runner.
+// checkContainerAgenticInnerHygiene runs AWF orphan and network checks against the inner Docker in each running DinD agentic runner.
 func checkContainerAgenticInnerHygiene(w io.Writer, hostName string, h *host.Host, runners []config.RunnerConfig, r *Result) {
 	for _, pair := range containerAgenticInstallTargetsForHost(runners, hostName) {
 		inst := pair[0]
+		runnerName := pair[1]
 		cname := runner.ContainerDockerName(inst)
 		q := strconv.Quote(cname)
 
@@ -611,8 +612,9 @@ func checkContainerAgenticInnerHygiene(w io.Writer, hostName string, h *host.Hos
 		}
 
 		failures := agentic.ValidateAWFHygieneInner(h, cname)
+		failures = append(failures, agentic.ValidateContainerInnerNetwork(h, cname, runnerName)...)
 		if len(failures) == 0 {
-			printLine(w, sevOK, hostName, fmt.Sprintf("container(agent): inner Docker clean (%s)", cname))
+			printLine(w, sevOK, hostName, fmt.Sprintf("container(agent): inner Docker clean and host.docker.internal reachable (%s)", cname))
 			continue
 		}
 		for _, f := range failures {

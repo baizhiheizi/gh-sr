@@ -134,6 +134,17 @@ func TestContainerRunnerImageTag(t *testing.T) {
 	}
 }
 
+func TestAgenticRunnerEntrypointUsesBridgeDNSForInnerContainers(t *testing.T) {
+	t.Parallel()
+
+	if strings.Contains(agenticRunnerEntrypoint, `"dns": ["${DNSMASQ_LISTEN}", "8.8.8.8"]`) {
+		t.Fatal("inner Docker containers must not use 127.0.0.1 as DNS; that loopback points at the child container")
+	}
+	if !strings.Contains(agenticRunnerEntrypoint, `"dns": ["${DOCKER0_IP}", "8.8.8.8"]`) {
+		t.Fatalf("entrypoint should configure inner Docker DNS to the bridge IP, got:\n%s", agenticRunnerEntrypoint)
+	}
+}
+
 // TestBuildAgenticRunnerImageCmdShape verifies the docker build command shape
 // produced by buildAgenticRunnerImage (calls h.Run but we inspect the structure
 // by constructing the expected command string rather than executing it).

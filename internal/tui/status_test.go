@@ -44,6 +44,27 @@ func TestFormatConfig_containsHostsAndRunners(t *testing.T) {
 	}
 }
 
+func TestFormatConfigShowsEffectiveRunnerMode(t *testing.T) {
+	t.Parallel()
+	cfg := &config.Config{
+		Hosts: map[string]config.HostConfig{
+			"h1": {Addr: "local", OS: "linux", Arch: "amd64"},
+		},
+		Runners: []config.RunnerConfig{
+			{Name: "native", Repo: "o/native", Host: "h1"},
+			{Name: "container", Repo: "o/container", Host: "h1", RunnerMode: config.RunnerModeContainer},
+		},
+	}
+
+	out := FormatConfig(cfg)
+	if !strings.Contains(out, "native  repo=o/native  host=h1  count=0  mode=native") {
+		t.Fatalf("expected native runner to show native mode, got:\n%s", out)
+	}
+	if !strings.Contains(out, "container  repo=o/container  host=h1  count=0  mode=container") {
+		t.Fatalf("expected container runner to show container mode, got:\n%s", out)
+	}
+}
+
 func TestClampCursor(t *testing.T) {
 	t.Parallel()
 	if got := clampCursor(3, 2); got != 1 {

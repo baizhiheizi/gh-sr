@@ -97,16 +97,16 @@ const RunnerModeNative = "native"
 const RunnerModeContainer = "container"
 
 type RunnerConfig struct {
-	Name      string   `yaml:"name"`
-	Repo      string   `yaml:"repo"`
-	Org       string   `yaml:"org"`
-	Group     string   `yaml:"group"`
-	Host      string   `yaml:"host"`
-	Count     int      `yaml:"count"`
-	Labels    []string `yaml:"labels"`
-	Ephemeral bool     `yaml:"ephemeral"`
-	Profile   string   `yaml:"profile"`     // "agentic" for GitHub Agentic Workflows
-	RunnerMode string  `yaml:"runner_mode"` // "native" (default) or "container"
+	Name       string   `yaml:"name"`
+	Repo       string   `yaml:"repo"`
+	Org        string   `yaml:"org"`
+	Group      string   `yaml:"group"`
+	Host       string   `yaml:"host"`
+	Count      int      `yaml:"count"`
+	Labels     []string `yaml:"labels"`
+	Ephemeral  bool     `yaml:"ephemeral"`
+	Profile    string   `yaml:"profile"`     // "agentic" for GitHub Agentic Workflows
+	RunnerMode string   `yaml:"runner_mode"` // "native" (default) or "container"
 	// AgenticMCPPorts assigns one MCP gateway port per runner instance (length must equal count).
 	// Mutually exclusive with AgenticMCPPortBase.
 	AgenticMCPPorts []int `yaml:"agentic_mcp_ports,omitempty"`
@@ -392,6 +392,7 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("at least one runner must be defined")
 	}
 
+	instanceOwners := make(map[string]string)
 	for _, r := range c.Runners {
 		if r.Name == "" {
 			return fmt.Errorf("runner name is required")
@@ -422,6 +423,13 @@ func (c *Config) Validate() error {
 		}
 		if err := validateAgenticMCPPorts(&r); err != nil {
 			return err
+		}
+		for _, instance := range r.InstanceNames() {
+			key := r.Host + "\x00" + instance
+			if prev, ok := instanceOwners[key]; ok {
+				return fmt.Errorf("runner instance %q is defined more than once on host %q (runners %q and %q); runner names must be unique per host", instance, r.Host, prev, r.Name)
+			}
+			instanceOwners[key] = r.Name
 		}
 	}
 

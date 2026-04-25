@@ -226,6 +226,37 @@ Fix by running on the host:
 		})
 	}
 
+	// gh-aw-mcpg runs with --network host; DNS there follows the host resolver, not only
+	// Docker's default-bridge embedded DNS. Catch misconfigured /etc/hosts after the
+	// default-bridge getent check already passed.
+	hasHostDOCKERErr := false
+	for _, f := range failures {
+		if f.Name == "host-docker-internal" || f.Name == "host-docker-internal-loopback" {
+			hasHostDOCKERErr = true
+			break
+		}
+	}
+	if !hasHostDOCKERErr {
+		outHN, errHN := h.Run(`docker run --rm --network host alpine sh -c "getent hosts host.docker.internal 2>/dev/null" 2>/dev/null`)
+		outHN = strings.TrimSpace(outHN)
+		fields := strings.Fields(outHN)
+		badHN := errHN != nil || len(fields) == 0 || fields[0] == "127.0.0.1" || fields[0] == "::1"
+		if badHN {
+			failures = append(failures, PrereqFailure{
+				Name:     "host-docker-internal-host-network",
+				Severity: SeverityWarning,
+				Message:  "`host.docker.internal` not usable from `docker run --network host` (same mode as gh-aw-mcpg); MCP gateway or in-sandbox MCP clients may still fail",
+				Remediation: `Verify on the host (must not be 127.0.0.1):
+
+  getent hosts host.docker.internal
+  docker run --rm --network host alpine sh -c "getent hosts host.docker.internal"
+
+Map host.docker.internal to the docker0 bridge gateway; see agentic-workflows.md §4b.`,
+				DocRef: "agentic-workflows.md §4b",
+			})
+		}
+	}
+
 	// External DNS check from containers
 	out, err = h.Run(`docker run --rm alpine sh -c "nslookup github.com >/dev/null 2>&1 && echo ok || echo failed" 2>/dev/null`)
 	if err != nil || strings.TrimSpace(out) != "ok" {
@@ -266,11 +297,11 @@ func ValidateContainerPrereqs(h *host.Host) []PrereqFailure {
 
 	if h.OS != "linux" {
 		failures = append(failures, PrereqFailure{
-			Name:     "linux-required",
-			Severity: SeverityError,
-			Message:  "runner_mode: container is only supported on Linux hosts",
+			Name:        "linux-required",
+			Severity:    SeverityError,
+			Message:     "runner_mode: container is only supported on Linux hosts",
 			Remediation: "Use a Linux host with Docker. Container-mode self-hosted runners require Linux on the host.",
-			DocRef: "agentic-workflows.md §8b",
+			DocRef:      "agentic-workflows.md §8b",
 		})
 		return failures
 	}
@@ -440,6 +471,56 @@ func ValidateAWFHygieneInner(h *host.Host, outerContainer string) []PrereqFailur
 	}
 
 	return failures
+}
+
+// ValidateContainerInnerNetwork checks the network paths gh-aw depends on inside
+// a container-mode runner. The MCP gateway runs in the inner host network, while
+// agent/AWF child containers use the default bridge and reach the gateway via
+// host.docker.internal.
+func ValidateContainerInnerNetwork(h *host.Host, outerContainer, runnerName string) []PrereqFailure {
+	if h.OS != "linux" {
+		return nil
+	}
+
+	if _, err := h.Run(containerInnerNetworkCheckCommand(outerContainer)); err != nil {
+		return []PrereqFailure{{
+			Name:     "container-inner-host-docker-internal",
+			Severity: SeverityWarning,
+			Message:  fmt.Sprintf("host.docker.internal is not fully usable inside runner container %s", outerContainer),
+			Remediation: fmt.Sprintf(`Inspect the runner container's inner Docker DNS and restart/rebuild it if stale:
+
+  docker exec -it %s bash
+  getent hosts host.docker.internal
+  docker run --rm alpine sh -c 'getent hosts host.docker.internal'
+  docker run --rm --network host alpine sh -c 'getent hosts host.docker.internal'
+
+If resolution or reachability fails, restart the runner container. If it persists, run:
+
+  gh sr rebuild %s`, outerContainer, runnerName),
+			DocRef: "agentic-workflows.md §11a",
+		}}
+	}
+	return nil
+}
+
+func containerInnerNetworkCheckCommand(outerContainer string) string {
+	q := strconv.Quote(outerContainer)
+	return `docker exec ` + q + ` sh -c 'set -eu
+getent hosts host.docker.internal >/dev/null
+docker run --rm alpine sh -c "getent hosts host.docker.internal >/dev/null"
+docker run --rm --network host alpine sh -c "getent hosts host.docker.internal >/dev/null"
+port=$((18080 + $$ % 1000))
+log=/tmp/gh-sr-doctor-http.log
+python3 -m http.server "$port" --bind 0.0.0.0 >"$log" 2>&1 &
+pid=$!
+trap "kill $pid 2>/dev/null || true; rm -f $log" EXIT
+for i in 1 2 3 4 5; do
+  if timeout 10s docker run --rm alpine wget -qO- --timeout=2 http://host.docker.internal:$port/ >/dev/null 2>&1; then
+    exit 0
+  fi
+  sleep 1
+done
+exit 1'`
 }
 
 // HasBlockingFailures returns true if any failure has severity "error".

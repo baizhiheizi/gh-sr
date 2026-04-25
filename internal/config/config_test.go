@@ -228,7 +228,7 @@ func TestDefaultLabels(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
 		os, arch string
-		want      []string
+		want     []string
 	}{
 		{"linux", "amd64", []string{"self-hosted", "Linux", "X64"}},
 		{"linux", "arm64", []string{"self-hosted", "Linux", "ARM64"}},
@@ -328,8 +328,8 @@ func TestIsLocalAddr(t *testing.T) {
 func TestValidate_localHost(t *testing.T) {
 	t.Parallel()
 	cfg := Config{
-		GitHub:  GitHubConfig{},
-		Hosts:   map[string]HostConfig{"laptop": {Addr: "local", OS: "linux", Arch: "amd64"}},
+		GitHub: GitHubConfig{},
+		Hosts:  map[string]HostConfig{"laptop": {Addr: "local", OS: "linux", Arch: "amd64"}},
 		Runners: []RunnerConfig{
 			{Name: "r", Repo: "o/r", Host: "laptop"},
 		},
@@ -342,8 +342,8 @@ func TestValidate_localHost(t *testing.T) {
 func TestApplyDefaults_localHostAutoDetect(t *testing.T) {
 	t.Parallel()
 	cfg := Config{
-		GitHub:  GitHubConfig{},
-		Hosts:   map[string]HostConfig{"laptop": {Addr: "local"}},
+		GitHub: GitHubConfig{},
+		Hosts:  map[string]HostConfig{"laptop": {Addr: "local"}},
 		Runners: []RunnerConfig{
 			{Name: "r", Repo: "o/r", Host: "laptop"},
 		},
@@ -885,6 +885,25 @@ func TestValidate_runnerMode_container_valid(t *testing.T) {
 	}
 }
 
+func TestValidate_duplicateRunnerInstanceNames(t *testing.T) {
+	t.Parallel()
+	cfg := Config{
+		Hosts: map[string]HostConfig{"h": {Addr: "local", OS: "linux", Arch: "amd64"}},
+		Runners: []RunnerConfig{
+			{Name: "agentic", Repo: "o/one", Host: "h", RunnerMode: RunnerModeContainer},
+			{Name: "agentic", Repo: "o/two", Host: "h", RunnerMode: RunnerModeContainer},
+		},
+	}
+
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("expected duplicate instance name error")
+	}
+	if !strings.Contains(err.Error(), `runner instance "agentic-1" is defined more than once`) {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestValidate_containerRunnerImage_extraApt_ok(t *testing.T) {
 	t.Parallel()
 	cfg := Config{
@@ -934,8 +953,8 @@ func TestValidate_containerRunnerImage_extraApt_tooMany(t *testing.T) {
 		pkgs[i] = fmt.Sprintf("p%d", i)
 	}
 	cfg := Config{
-		Hosts:   map[string]HostConfig{"h": {Addr: "local", OS: "linux", Arch: "amd64"}},
-		Runners: []RunnerConfig{{Name: "r", Repo: "o/r", Host: "h"}},
+		Hosts:                map[string]HostConfig{"h": {Addr: "local", OS: "linux", Arch: "amd64"}},
+		Runners:              []RunnerConfig{{Name: "r", Repo: "o/r", Host: "h"}},
 		ContainerRunnerImage: ContainerRunnerImageConfig{ExtraAptPackages: pkgs},
 	}
 	if err := cfg.Validate(); err == nil {

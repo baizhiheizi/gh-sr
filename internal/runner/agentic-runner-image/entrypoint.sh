@@ -90,12 +90,13 @@ EOF
         dnsmasq --no-daemon --conf-dir=/etc/dnsmasq.d &
     fi
 
-    # Pass our dnsmasq to inner Docker containers via daemon.json.
-    DNSMASQ_LISTEN="127.0.0.1"
+    # Pass our dnsmasq to inner Docker containers via daemon.json. Use the
+    # docker0 bridge address; 127.0.0.1 inside child containers is their own
+    # loopback and will bypass the runner container's dnsmasq.
     mkdir -p /etc/docker
     cat > /etc/docker/daemon.json <<EOF
 {
-  "dns": ["${DNSMASQ_LISTEN}", "8.8.8.8"],
+  "dns": ["${DOCKER0_IP}", "8.8.8.8"],
   "dns-search": []
 }
 EOF

@@ -99,8 +99,8 @@ func FormatConfig(cfg *config.Config) string {
 		if r.Ephemeral {
 			extra += "  ephemeral"
 		}
-		b.WriteString(fmt.Sprintf("  %s  %s=%s  host=%s  count=%d  mode=native  labels=[%s]%s\n",
-			configVal.Render(r.Name), targetKey, target, r.Host, r.Count, strings.Join(r.Labels, ", "), extra))
+		b.WriteString(fmt.Sprintf("  %s  %s=%s  host=%s  count=%d  mode=%s  labels=[%s]%s\n",
+			configVal.Render(r.Name), targetKey, target, r.Host, r.Count, r.EffectiveRunnerMode(), strings.Join(r.Labels, ", "), extra))
 	}
 	return b.String()
 }
