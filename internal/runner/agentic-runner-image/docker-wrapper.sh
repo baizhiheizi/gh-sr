@@ -47,11 +47,13 @@
 # passthrough; run uses the supervisor path above regardless of whether hostname
 # was already supplied).
 #
-# For `docker run ... ghcr.io/github/gh-aw-mcpg:* ...`, it rewrites the
-# gateway domain in gh-aw's piped JSON from host.docker.internal to the AWF
-# bridge gateway IP. Claude's HTTP MCP client can intermittently route
-# host.docker.internal through the proxy despite NO_PROXY, while 172.30.0.1 is
-# already exempted by AWF as a host-access gateway.
+# For `docker run ... ghcr.io/github/gh-aw-mcpg:* ...`, it leaves gh-aw's
+# piped gateway JSON schema-valid, then rewrites the generated Claude MCP
+# config URLs from host.docker.internal to the AWF bridge gateway IP. Claude's
+# HTTP MCP client can intermittently route host.docker.internal through the
+# proxy despite NO_PROXY, while 172.30.0.1 is already exempted by AWF as a
+# host-access gateway. When a rewrite runs, it prints grep-safe diagnostics to
+# stderr prefixed with `[gh-sr:mcp-claude-urls]` (visible in Actions job logs).
 #
 # It also intercepts `docker run|create ... ghcr.io/github/gh-aw-firewall/agent:* ...`
 # and injects `--add-host=host.docker.internal:host-gateway` when the caller did
@@ -129,6 +131,65 @@ has_hostname_arg() {
     return 1
 }
 
+rewrite_claude_mcp_gateway_urls() {
+    local config_path="${1:-/tmp/gh-aw/mcp-config/mcp-servers.json}"
+    local previous_sig=""
+    local current_sig=""
+    local i
+    local saw_file=false
+
+    on_rewrite_watcher_signal() {
+        echo "[gh-sr:mcp-claude-urls] watcher_stop signal path=${config_path}" >&2
+        trap - TERM INT
+        exit 0
+    }
+    trap 'on_rewrite_watcher_signal' TERM INT
+
+    echo "[gh-sr:mcp-claude-urls] watcher_start path=${config_path} max_iterations=120" >&2
+
+    for i in $(seq 1 120); do
+        if [[ -f "$config_path" ]]; then
+            if [[ "$saw_file" == false ]]; then
+                echo "[gh-sr:mcp-claude-urls] config_appeared size_bytes=$(stat -c '%s' "$config_path" 2>/dev/null || echo '?')" >&2
+                saw_file=true
+            fi
+            current_sig=$(stat -c '%s:%Y' "$config_path" 2>/dev/null || true)
+            if [[ -n "$current_sig" && "$current_sig" == "$previous_sig" ]]; then
+                if grep -qE 'http://host\.docker\.internal:80/mcp/' "$config_path" 2>/dev/null; then
+                    local hb ha br
+                    hb=$(grep -cE 'http://host\.docker\.internal:80/mcp/' "$config_path" 2>/dev/null || true)
+                    hb=${hb:-0}
+                    echo "[gh-sr:mcp-claude-urls] stable_file iteration=${i} sig=${current_sig} host_mcp_url_hits=${hb} applying_rewrite" >&2
+                    sed -i 's#http://host\.docker\.internal:80/mcp/#http://172.30.0.1:80/mcp/#g' "$config_path" 2>/dev/null || true
+                    ha=$(grep -cE 'http://host\.docker\.internal:80/mcp/' "$config_path" 2>/dev/null || true)
+                    ha=${ha:-0}
+                    br=$(grep -cE 'http://172\.30\.0\.1:80/mcp/' "$config_path" 2>/dev/null || true)
+                    br=${br:-0}
+                    echo "[gh-sr:mcp-claude-urls] rewrite_applied iteration=${i} host_mcp_url_hits_after=${ha} bridge_mcp_url_hits=${br}" >&2
+                fi
+            fi
+            previous_sig="$current_sig"
+        else
+            previous_sig=""
+        fi
+        sleep 1
+    done
+
+    trap - TERM INT
+
+    if [[ -f "$config_path" ]] && grep -qE 'http://host\.docker\.internal:80/mcp/' "$config_path" 2>/dev/null; then
+        local fh fb
+        fh=$(grep -cE 'http://host\.docker\.internal:80/mcp/' "$config_path" 2>/dev/null || true)
+        fh=${fh:-0}
+        fb=$(grep -cE 'http://172\.30\.0\.1:80/mcp/' "$config_path" 2>/dev/null || true)
+        fb=${fb:-0}
+        echo "[gh-sr:mcp-claude-urls] watcher_exit WARNING still_host_mcp_urls path=${config_path} host_mcp_url_hits=${fh} bridge_mcp_url_hits=${fb}" >&2
+    else
+        echo "[gh-sr:mcp-claude-urls] watcher_exit path=${config_path}" >&2
+    fi
+    return 0
+}
+
 needs_awf_agent_host_gateway() {
     local sub="${1:-}"
     case "$sub" in
@@ -193,6 +254,7 @@ if is_mcpg_invocation "$@"; then
         fi
 
         mcpg_docker_child_pid=""
+        mcpg_rewriter_pid=""
 
         cleanup_mcpg_container() {
             local cid=""
@@ -209,6 +271,10 @@ if is_mcpg_invocation "$@"; then
             if [[ "$mcpg_own_tmpdir" == true && -n "$mcpg_tmpdir" ]]; then
                 rm -rf "$mcpg_tmpdir" 2>/dev/null || true
             fi
+            if [[ -n "$mcpg_rewriter_pid" ]] && kill -0 "$mcpg_rewriter_pid" 2>/dev/null; then
+                kill -TERM "$mcpg_rewriter_pid" 2>/dev/null || true
+                wait "$mcpg_rewriter_pid" 2>/dev/null || true
+            fi
             if [[ -n "$mcpg_docker_child_pid" ]] && kill -0 "$mcpg_docker_child_pid" 2>/dev/null; then
                 kill -TERM "$mcpg_docker_child_pid" 2>/dev/null || true
                 wait "$mcpg_docker_child_pid" 2>/dev/null || true
@@ -224,9 +290,11 @@ if is_mcpg_invocation "$@"; then
         trap on_mcpg_signal INT TERM HUP
 
         set +e
+        rewrite_claude_mcp_gateway_urls "${GH_SR_MCP_CONFIG_REWRITE_PATH:-/tmp/gh-aw/mcp-config/mcp-servers.json}" &
+        mcpg_rewriter_pid=$!
         # Background jobs in non-interactive bash get /dev/null stdin unless
         # attached explicitly; gh-aw pipes MCP JSON into this docker run -i.
-        "$real" "$sub" "${extra[@]}" "$@" < <(sed 's/"domain"[[:space:]]*:[[:space:]]*"host\.docker\.internal"/"domain":"172.30.0.1"/g' <&0) &
+        "$real" "$sub" "${extra[@]}" "$@" <&0 &
         mcpg_docker_child_pid=$!
         wait "$mcpg_docker_child_pid"
         code=$?

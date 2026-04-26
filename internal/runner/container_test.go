@@ -183,11 +183,115 @@ func TestAgenticRunnerDockerWrapperStreamsMcpgConfig(t *testing.T) {
 	}
 }
 
+func TestAgenticRunnerDockerWrapperRewritesGeneratedClaudeMCPConfig(t *testing.T) {
+	t.Parallel()
+	tmp := t.TempDir()
+	configPath := filepath.Join(tmp, "mcp-servers.json")
+
+	stdinLog := filepath.Join(tmp, "stdin-captured.txt")
+	fakeDocker := filepath.Join(tmp, "docker")
+	script := `#!/bin/bash
+set -euo pipefail
+cmd=${1:-}
+shift || true
+case "$cmd" in
+rm)
+	exit 0
+	;;
+run)
+	prev=""
+	for a in "$@"; do
+		if [[ "$prev" == "--cidfile" ]]; then
+			printf 'deadbeefcafe\n' >"$a"
+			prev=""
+			continue
+		fi
+		prev=""
+		case "$a" in
+		--cidfile) prev="--cidfile" ;;
+		--cidfile=*) f="${a#*=}"; printf 'deadbeefcafe\n' >"$f" ;;
+		esac
+	done
+	cat >"${FAKE_DOCKER_STDIN_LOG:?}"
+	sleep 0.2
+	printf '%s' '{"mcpServers":{"github":{"url":"http://host.docker.internal:80/mcp/github"},"safeoutputs":{"url":"http://host.docker.internal:80/mcp/safeoutputs"}}}' >"${FAKE_MCP_CONFIG_PATH:?}"
+	sleep 2.2
+	exit 0
+	;;
+*)
+	exit 0
+	;;
+esac
+`
+	if err := os.WriteFile(fakeDocker, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	wrapper := filepath.Join("agentic-runner-image", "docker-wrapper.sh")
+	payload := `{"gateway":{"port":80,"domain":"host.docker.internal"}}`
+	cmd := exec.Command("bash", "-c", `printf '%s' "$GHSR_PAYLOAD" | bash "$GHSR_WRAPPER" run -i --rm --network host ghcr.io/github/gh-aw-mcpg:1.0.0`)
+	cmd.Env = append(os.Environ(),
+		"GHSR_PAYLOAD="+payload,
+		"GHSR_WRAPPER="+wrapper,
+		"GH_SR_DOCKER_WRAPPER_REAL="+fakeDocker,
+		"GH_SR_MCP_CONFIG_REWRITE_PATH="+configPath,
+		"FAKE_MCP_CONFIG_PATH="+configPath,
+		"FAKE_DOCKER_STDIN_LOG="+stdinLog,
+	)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("wrapper generated config rewrite: %v\n%s", err, out)
+	}
+	combined := string(out)
+	for _, needle := range []string{
+		"[gh-sr:mcp-claude-urls] watcher_start",
+		"[gh-sr:mcp-claude-urls] config_appeared",
+		"[gh-sr:mcp-claude-urls] stable_file",
+		"[gh-sr:mcp-claude-urls] rewrite_applied",
+	} {
+		if !strings.Contains(combined, needle) {
+			t.Fatalf("expected docker-wrapper diagnostics missing %q; combined:\n%s", needle, out)
+		}
+	}
+	if !strings.Contains(combined, "[gh-sr:mcp-claude-urls] watcher_exit") &&
+		!strings.Contains(combined, "[gh-sr:mcp-claude-urls] watcher_stop") {
+		t.Fatalf("expected watcher_exit or watcher_stop log; combined:\n%s", out)
+	}
+	if strings.Contains(combined, "[gh-sr:mcp-claude-urls] watcher_exit WARNING still_host_mcp_urls") {
+		t.Fatalf("unexpected rewrite-failure log; combined:\n%s", out)
+	}
+
+	gotStdin, err := os.ReadFile(stdinLog)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(gotStdin) != payload {
+		t.Fatalf("gateway stdin must remain schema-valid: got %q want %q", gotStdin, payload)
+	}
+
+	gotConfig, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(gotConfig), "host.docker.internal:80/mcp") {
+		t.Fatalf("generated Claude MCP config was not rewritten:\n%s", gotConfig)
+	}
+	for _, want := range []string{
+		"http://172.30.0.1:80/mcp/github",
+		"http://172.30.0.1:80/mcp/safeoutputs",
+	} {
+		if !strings.Contains(string(gotConfig), want) {
+			t.Fatalf("generated Claude MCP config missing %q:\n%s", want, gotConfig)
+		}
+	}
+}
+
 func TestAgenticRunnerDockerWrapperHeaderDocumentsConcurrencyVsShim(t *testing.T) {
 	t.Parallel()
 	for _, needle := range []string{
 		"runner_mode: container",
 		"/opt/gh-sr/docker-shim/docker",
+		"[gh-sr:mcp-claude-urls]",
 	} {
 		if !strings.Contains(agenticRunnerDockerWrapper, needle) {
 			t.Fatalf("embedded docker-wrapper header should mention %q", needle)
@@ -398,9 +502,8 @@ esac
 	if err != nil {
 		t.Fatal(err)
 	}
-	wantPayload := `{"gateway":{"port":80,"domain":"172.30.0.1"}}`
-	if string(gotStdin) != wantPayload {
-		t.Fatalf("fake docker stdin: got %q want %q", gotStdin, wantPayload)
+	if string(gotStdin) != jsonPayload {
+		t.Fatalf("fake docker stdin: got %q want %q", gotStdin, jsonPayload)
 	}
 
 	logData, err := os.ReadFile(logPath)
@@ -662,10 +765,10 @@ func TestContainerRunnerImageExtraSorted(t *testing.T) {
 func TestParseContainerStatusInspectOutput(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
-		line          string
-		wantLocal     string
-		wantImage     string
-		wantImageRev  string
+		line         string
+		wantLocal    string
+		wantImage    string
+		wantImageRev string
 	}{
 		{"running|gh-sr/agentic-runner:2.320.0|sha256:abc|deadbeef", "running", "gh-sr/agentic-runner:2.320.0", "deadbeef"},
 		{"running|gh-sr/agentic-runner:2.320.0-xa1b2c3d|sha256:x|", "running", "gh-sr/agentic-runner:2.320.0-xa1b2c3d", ""},
