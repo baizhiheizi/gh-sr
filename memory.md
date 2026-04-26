@@ -1,89 +1,87 @@
 # Test Improver Memory - an-lee/gh-sr
 
-## Build/Test/Coverage Commands
+## Run History
+
+### 2026-04-26 13:XX UTC - [Run](https://github.com/an-lee/gh-sr/actions/runs/24957479847)
+- 🔧 Added `Test_nativeConfigURL` (2 cases) + `Test_powerShellSingleQuoted` (8 cases) + `Test_windowsDeleteRunnerConfig_removesCredentialFiles` in `internal/runner/native_test.go`
+- 🔍 Task 6: Identified SSH mock executor infrastructure opportunity — `Executor` interface already exists; `Host.conn` typed as `Executor`; can inject `mockExecutor` for testing SSH-dependent code
+- ⚠️ Infrastructure: git push fails; fallback issue created with patch artifact
+
+### 2026-04-24 13:22 UTC - [Run](https://github.com/an-lee/gh-sr/actions/runs/24891385637)
+- 🔧 Added `TestContainerRunnerImageExtraSorted` (9 cases) to `internal/runner/container_test.go`
+
+### 2026-04-23 13:XX UTC - [Run](https://github.com/an-lee/gh-sr/actions/runs/24837288650)
+- 🔧 Added `TestApplyContainerImageExtras` (4 cases) + `TestLockedWriter_Sequential` + `TestLockedWriter_Concurrent` in `internal/ops/ops_test.go`
+
+### 2026-04-22 10:36 UTC - [Run](https://github.com/an-lee/gh-sr/actions/runs/24780298651)
+- 🔧 Added `TestUniqueOrgs` to `internal/doctor/doctor_test.go`; created `internal/ops/ops_test.go`
+
+### 2026-04-19 13:12 UTC - [Run](https://github.com/an-lee/gh-sr/actions/runs/24629908609)
+- 🔧 `posixSingleQuote` (7 cases) + `editor.Preferred`/`Command` (4 tests) — merged as PR #40 ✅
+
+## Discovered Commands
 
 - **Build**: `go build -o gh-sr ./cmd/gh-sr/`
-- **Test**: `go test ./... -race -count=1` (via `make test`)
-- **Vet**: `go vet ./...` (via `make vet`)
-- **Coverage**: No dedicated coverage pipeline; can use `go test ./... -coverprofile=cov.out && go tool cover -html=cov.out`
+- **Test**: `go test ./... -race -count=1` (also `make test`)
+- **Vet**: `go vet ./...` (also `make vet`)
+- **Coverage**: `go test ./... -coverprofile=cov.out && go tool cover -html=cov.out`
 - **CI**: `.github/workflows/ci.yml` — runs `go vet ./...` and `go test ./... -race -count=1`
-
-### Known Infrastructure Issues
-- `go.mod` requires `go 1.25.0` but Go proxy is blocked in the agent sandbox (Forbidden).
-- Only `go 1.24.13` is available locally; GOTOOLCHAIN=local fails with version mismatch.
-- **Tests cannot be run in this sandbox** — infrastructure limitation. Note in PRs as "Infrastructure failure".
-- **Git push consistently fails (exit code 128)** — safeoutputs create_pull_request saves patches but cannot push branches. Issues are created as fallback with patch artifacts instead.
 
 ## Testing Notes
 
 - Test framework: standard `testing` package (no third-party assertions)
 - All test packages use `t.Parallel()` for unit tests
 - HTTP client mocking via `net/http/httptest`
-- Integration with GitHub API mocked via custom `httptest.Server`
-- Config tests use `t.TempDir()` for temp config files
+- `host.Host.conn` is typed as `Executor` interface — can inject mock for SSH-dependent tests without production code changes
 - Pattern: `*_test.go` in same package (white-box testing)
-- Table-driven tests are the preferred pattern in this repo
+- Table-driven tests are the preferred pattern
+- Go proxy blocked: `proxy.golang.org` firewall-blocked; Go 1.25.9 available but modules can't be downloaded
+- Git push consistently fails (exit 128) — safeoutputs saves patches as artifacts
 
-## Testing Landscape
+## Testing Backlog (Prioritized)
 
-### Well-tested packages
-- `internal/config`: extensive tests (validate, load, filter, resolve env, ApplyEnvFile)
-- `internal/runner`: tests for github client, enrich status, OS mismatch, docker functions
-- `internal/host`: tests for SSH parsing, PowerShell encoding, metrics, normalizeArch, IsLocal, paths, local connection
-- `internal/autostart`: tests for sanitize (expanded table-driven), generate, and posixSingleQuote (patch in run 24629908609)
-- `internal/doctor`: tests for exit code, uniqueRepos
-- `internal/tui`: status_test.go present
-- `internal/ops`: metrics_test.go (sortedHostNames)
-- `internal/agentic`: agentic_test.go MERGED (PR #31) — HasBlockingFailures, FormatRemediation, FormatAllRemediations
-- `internal/editor`: editor_test.go for Preferred/Command (patch in run 24629908609)
+1. **`internal/runner/container.go`** — container lifecycle (setup/start/stop/remove/rebuild) — requires SSH/Docker; high-complexity
+2. **`internal/host/detect.go`** — `DetectOS`/`DetectArch` require SSH; testable with mock executor
+3. **`internal/autostart/autostart.go`** — `Detect`, `Install`, `Start`, `Stop`, `Uninstall` require SSH; testable with mock executor
+4. **SSH mock executor infrastructure** — `host.Executor` interface already exists; inject `mockExecutor` into `Host.conn` for testing; no production code changes needed
 
-### Recently merged
-- normalizeArch + SanitizeInstance tests: confirmed merged in PR #37 by maintainer
+## Package Test Status
 
-### Remaining gaps
-- `internal/ops/ops.go`, `service.go` — orchestration-heavy, needs mocks
-- `internal/host/detect.go` — DetectOS/DetectArch require SSH; normalizeArch now tested
-- `internal/autostart/shell.go` + `internal/editor/editor.go` — patch pending in run 24629908609
-
-## Testing Backlog
-
-1. **ops/metrics.go** — `sortedHostNames` MERGED (PR #8)
-2. **runner/runner.go** — `expectedGitHubRunnerOS` MERGED (PR #8)
-3. **runner/docker.go** — `shellSingleQuote`, `dockerRunnerEntryScript` MERGED (PR #11)
-4. **agentic/agentic.go** — `HasBlockingFailures`, `FormatRemediation`, `FormatAllRemediations` MERGED (PR #31)
-5. **host/detect.go** — `normalizeArch` tests — MERGED (included in PR #37 by maintainer)
-6. **autostart/sanitize.go** — expanded table-driven tests — MERGED (included in PR #37 by maintainer)
-7. **autostart/shell.go** — `posixSingleQuote` (7 cases) — PATCH READY (run 24629908609)
-8. **editor/editor.go** — `Preferred` + `Command` (4 tests) — PATCH READY (run 24629908609)
-9. **ops/ops.go** — orchestration functions are integration-heavy; skip unless mock infra added
-
-## Task Schedule (Round-Robin)
-
-Last run: 2026-04-19 — Tasks 3 (posixSingleQuote+editor patch), 7 (monthly activity updated)
-Next run should prioritize: Task 4 (maintain PRs), Task 5 (comment on testing issues), Task 2 (rescan for opportunities)
-
-## Open Issues with Patches
-
-- Issue #35: normalizeArch/SanitizeInstance tests — COMPLETED (tests now merged into main via PR #37)
-- Issue #32: agentic tests fallback issue — superseded by merged PR #31
-
-## Current Patches
-
-- Run 24629908609: posixSingleQuote (7 cases) + editor.Preferred/Command (4 tests)
-  - Files: internal/autostart/shell_test.go, internal/editor/editor_test.go
-  - Branch: test-assist/posixsinglequote-editor-preferred-2026-04-19
+| Package | Status | Notes |
+|---------|--------|-------|
+| internal/agentic/ | Good | PR #31 merged |
+| internal/config/ | Good | Extensive tests |
+| internal/ops/ | Good | ops_test.go: applyContainerImageExtras, lockedWriter, partitionRebuildTargets, sortedHostNames |
+| internal/runner/ | Good | github_test.go, native_test.go, container_test.go, runner_test.go all improving |
+| internal/doctor/ | Good | Run (config/GitHub API paths), uniqueOrgs, uniqueHostNames, install targets tested |
+| internal/editor/ | Good | Preferred/Command tested (PR #40) |
+| internal/autostart/ | Good | sanitize_test.go, shell_test.go (PR #40) |
+| internal/host/ | Good | normalizeArch, IsLocal, paths, SSH parsing, metrics tested |
 
 ## Completed Work
 
-- PR #8 [MERGED]: Tests for `expectedGitHubRunnerOS` and `sortedHostNames` pure functions
-- PR #11 [MERGED]: Tests for `shellSingleQuote`, `dockerRunnerEntryScript`, `docker_pre_setup`
-- PR #31 [MERGED]: Tests for `HasBlockingFailures`, `FormatRemediation`, `FormatAllRemediations` in `internal/agentic`
-- normalizeArch + SanitizeInstance: tests merged into main (included in PR #37, applied by maintainer)
+- PR #8 [MERGED]: `expectedGitHubRunnerOS` and `sortedHostNames` pure functions
+- PR #11 [MERGED]: `shellSingleQuote`, `dockerRunnerEntryScript`, `docker_pre_setup`
+- PR #31 [MERGED]: `HasBlockingFailures`, `FormatRemediation`, `FormatAllRemediations` in `internal/agentic`
+- PR #37 [MERGED] (maintainer): `normalizeArch`, `SanitizeInstance` tests
+- PR #40 [MERGED]: `posixSingleQuote` (7 cases) + `editor.Preferred`/`Command` (4 tests)
 
-## Maintainer Priorities
+## Open Fallback Issues
 
-No maintainer comments yet.
+- Issue #41: `posixSingleQuote` + `editor.Preferred`/`Command` — superseded by PR #40; safe to close
+- Issue #35: normalizeArch/SanitizeInstance — safe to close (merged via PR #37)
+- Issue #32: agentic tests fallback — superseded by PR #31; safe to close
+- New issue from this run: `nativeConfigURL`, `powerShellSingleQuoted`, `windowsDeleteRunnerConfig` tests
+
+## Infrastructure Issues
+
+- Go proxy blocked: tests cannot run locally; CI validates
+- Git push fails (exit 128): safeoutputs create_pull_request saves patches; fallback issues created
 
 ## Monthly Activity Issue
 
-- Issue #4: "[Test Improver] Monthly Activity 2026-04" — open, updated 2026-04-19
+- Issue #4: "[Test Improver] Monthly Activity 2026-04" — updated 2026-04-26
+
+## Last Run
+
+2026-04-26 (this run)
