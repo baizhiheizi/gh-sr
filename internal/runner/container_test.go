@@ -1,11 +1,14 @@
 package runner
 
 import (
+	"bytes"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
+	"time"
 
 	"github.com/an-lee/gh-sr/internal/config"
 	"github.com/an-lee/gh-sr/internal/host"
@@ -151,6 +154,22 @@ func TestAgenticRunnerDockerWrapperEmbedsHostGatewayLogic(t *testing.T) {
 	}
 }
 
+func TestAgenticRunnerDockerWrapperEmbedsMcpgSupervisorLogic(t *testing.T) {
+	t.Parallel()
+	for _, needle := range []string{
+		"cleanup_mcpg_container",
+		"mcpg_docker_child_pid",
+		"gh-aw-mcpg-ghsr-",
+		"docker_option_value",
+		"is_mcpg_invocation",
+		"mktemp -d",
+	} {
+		if !strings.Contains(agenticRunnerDockerWrapper, needle) {
+			t.Fatalf("embedded docker-wrapper must contain %q", needle)
+		}
+	}
+}
+
 func TestAgenticRunnerEntrypointUsesBridgeDNSForInnerContainers(t *testing.T) {
 	t.Parallel()
 
@@ -185,19 +204,36 @@ func TestDockerWrapperInjection(t *testing.T) {
 	t.Run("mcpg_hostname", func(t *testing.T) {
 		t.Parallel()
 		got := echoWrap(t, "run", "-i", "--rm", "--network", "host", "ghcr.io/github/gh-aw-mcpg:1.0.0")
-		want := "run --hostname gh-aw-mcpg -i --rm --network host ghcr.io/github/gh-aw-mcpg:1.0.0"
-		if got != want {
-			t.Fatalf("got %q want %q", got, want)
+		// /bin/echo exits immediately; wrapper then runs cleanup (more echo lines).
+		if !strings.Contains(got, "run --hostname gh-aw-mcpg") {
+			t.Fatalf("got %q, missing hostname injection", got)
+		}
+		if !strings.Contains(got, "--cidfile") {
+			t.Fatalf("got %q, missing --cidfile", got)
+		}
+		if !strings.Contains(got, "--name gh-aw-mcpg-ghsr-") {
+			t.Fatalf("got %q, missing gh-sr MCP gateway name prefix", got)
+		}
+		if !strings.Contains(got, "ghcr.io/github/gh-aw-mcpg:1.0.0") {
+			t.Fatalf("got %q, missing image", got)
 		}
 	})
 
-	t.Run("mcpg_skips_when_hostname_present", func(t *testing.T) {
+	t.Run("mcpg_supervises_when_hostname_present", func(t *testing.T) {
 		t.Parallel()
 		args := []string{"run", "--hostname", "custom", "ghcr.io/github/gh-aw-mcpg:1"}
 		got := echoWrap(t, args...)
-		want := strings.Join(args, " ")
-		if got != want {
-			t.Fatalf("got %q want %q", got, want)
+		if strings.Contains(got, "--hostname gh-aw-mcpg") {
+			t.Fatalf("got %q, should not duplicate hostname", got)
+		}
+		if !strings.Contains(got, "run --name gh-aw-mcpg-ghsr-") {
+			t.Fatalf("got %q, missing supervised MCP gateway name", got)
+		}
+		if !strings.Contains(got, "--cidfile") {
+			t.Fatalf("got %q, missing supervised MCP gateway cidfile", got)
+		}
+		if !strings.Contains(got, "--hostname custom") {
+			t.Fatalf("got %q, missing caller hostname", got)
 		}
 	})
 
@@ -261,6 +297,83 @@ func TestDockerWrapperInjection(t *testing.T) {
 			t.Fatalf("did not expect host-gateway for mcpg image, got %q", got)
 		}
 	})
+}
+
+// TestDockerWrapperMcpgSigtermRunsDockerRm verifies SIGTERM triggers docker rm -f cleanup
+// against the recorded gateway name/cidfile (gh-aw stop_mcp_gateway.sh tracks wrapper PID).
+func TestDockerWrapperMcpgSigtermRunsDockerRm(t *testing.T) {
+	t.Parallel()
+	tmp := t.TempDir()
+	logPath := filepath.Join(tmp, "fake-docker.log")
+	fakeDocker := filepath.Join(tmp, "docker")
+	script := `#!/bin/bash
+set -euo pipefail
+LOG="${FAKE_DOCKER_LOG:?}"
+echo "FULL:$*" >>"$LOG"
+cmd=${1:-}
+shift || true
+case "$cmd" in
+rm)
+	echo "rm-line:$*" >>"$LOG"
+	exit 0
+	;;
+run)
+	prev=""
+	for a in "$@"; do
+		if [[ "$prev" == "--cidfile" ]]; then
+			printf 'deadbeefcafe\n' >"$a"
+			prev=""
+			continue
+		fi
+		prev=""
+		case "$a" in
+		--cidfile) prev="--cidfile" ;;
+		--cidfile=*) f="${a#*=}"; printf 'deadbeefcafe\n' >"$f" ;;
+		esac
+	done
+	sleep 120
+	exit 0
+	;;
+*)
+	exit 0
+	;;
+esac
+`
+	if err := os.WriteFile(fakeDocker, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	wrapper := filepath.Join("agentic-runner-image", "docker-wrapper.sh")
+	cmd := exec.Command("bash", wrapper, "run", "-i", "--rm", "--network", "host", "ghcr.io/github/gh-aw-mcpg:1.0.0")
+	cmd.Env = append(os.Environ(),
+		"GH_SR_DOCKER_WRAPPER_REAL="+fakeDocker,
+		"FAKE_DOCKER_LOG="+logPath,
+	)
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(200 * time.Millisecond)
+	if err := cmd.Process.Signal(syscall.SIGTERM); err != nil {
+		t.Fatal(err)
+	}
+	waitErr := cmd.Wait()
+	if waitErr != nil {
+		if exitErr, ok := waitErr.(*exec.ExitError); ok && exitErr.ExitCode() == 143 {
+			// bash trap exit 143 is expected
+		} else {
+			t.Fatalf("wait: %v", waitErr)
+		}
+	}
+	data, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(data, []byte("rm-line:")) {
+		t.Fatalf("expected fake docker to receive rm cleanup, log:\n%s", data)
+	}
+	if !bytes.Contains(data, []byte("deadbeefcafe")) && !bytes.Contains(data, []byte("gh-aw-mcpg-ghsr-")) {
+		t.Fatalf("expected rm to target container id or gh-aw-mcpg-ghsr name, log:\n%s", data)
+	}
 }
 
 func TestAgenticRunnerDockerfileInstallsAWF(t *testing.T) {
