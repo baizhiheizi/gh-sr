@@ -111,11 +111,79 @@ func Test_windowsStartNative_usesCimProcessCreateForMergedLogs(t *testing.T) {
 	}
 }
 
+func Test_nativeConfigURL(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name string
+		rc   config.RunnerConfig
+		want string
+	}{
+		{
+			name: "repo scoped",
+			rc:   config.RunnerConfig{Repo: "owner/repo"},
+			want: "https://github.com/owner/repo",
+		},
+		{
+			name: "org scoped",
+			rc:   config.RunnerConfig{Repo: "owner/repo", Org: "my-org"},
+			want: "https://github.com/my-org",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := nativeConfigURL(tc.rc); got != tc.want {
+				t.Errorf("nativeConfigURL(%+v): got %q, want %q", tc.rc, got, tc.want)
+			}
+		})
+	}
+}
+
+func Test_powerShellSingleQuoted(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		input string
+		want  string
+	}{
+		{`hello`, `'hello'`},
+		{`didn't`, `'didn''t'`},
+		{`it's "quoted"`, `'it''s "quoted"'`},
+		{`a'b`, `'a''b'`},
+		{``, `''`},
+		{`no quotes`, `'no quotes'`},
+		{`trailing'`, `'trailing'''`},
+		{`'leading'`, `'''leading'''`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.input, func(t *testing.T) {
+			t.Parallel()
+			if got := powerShellSingleQuoted(tc.input); got != tc.want {
+				t.Errorf("powerShellSingleQuoted(%q): got %q, want %q", tc.input, got, tc.want)
+			}
+		})
+	}
+}
+
 func Test_staleRegistrationMsg(t *testing.T) {
 	t.Parallel()
 	logLine := `Failed to create a session. The runner registration has been deleted from the server, please re-configure.`
 	if !strings.Contains(logLine, staleRegistrationMsg) {
 		t.Fatalf("staleRegistrationMsg %q not found in typical log line", staleRegistrationMsg)
+	}
+}
+
+func Test_windowsDeleteRunnerConfig_removesCredentialFiles(t *testing.T) {
+	t.Parallel()
+	h := host.NewHost("win", config.HostConfig{Addr: "u@h", OS: "windows", Arch: "amd64"})
+	script := windowsDeleteRunnerConfig(h, "runner-x")
+
+	for _, file := range []string{".runner", ".credentials", ".credentials_rsaparams"} {
+		if !strings.Contains(script, "Remove-Item") || !strings.Contains(script, file) {
+			t.Errorf("script should Remove-Item %s: %q", file, script)
+		}
+	}
+	if !strings.Contains(script, "-Force") || !strings.Contains(script, "-EA SilentlyContinue") {
+		t.Errorf("script should use -Force and -EA SilentlyContinue: %q", script)
 	}
 }
 
