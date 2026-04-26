@@ -1,0 +1,15 @@
+Help me to dig into the failed workflow, figure out why it fail. And notice that, sometime it failed, but sometimes it didn't. And also, there are multiple repos running multiple agentic runners at the same host, using gh-sr's container agentic runner.
+
+You could check the logs via `gh run view 24954908109 --job=73071417350 --repo=an-lee/rune`
+
+---
+
+I can narrow your diagnotic, the runner has been rebuilt, it's using the latest image. Go on the deeper diagnotic
+
+---
+
+So what's next? Keep dig into it to find out the root cause.
+
+---
+
+So go ahead to fix it.
