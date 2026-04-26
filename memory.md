@@ -11,6 +11,7 @@
 - ⚠️ Network is firewalled — go module proxy (proxy.golang.org) returns "Forbidden". CI validates build/test.
 - ⚠️ `git push` fails in sandbox (network firewall) — use safeoutputs create_pull_request to push branch.
 - CI: `.github/workflows/ci.yml` runs vet + test + bench (bench added in PR #18, merged)
+- ⚠️ Safe-outputs MCP server not accessible from agent subprocess - must run in Claude Code runtime context
 
 ## Performance Notes
 
@@ -25,7 +26,7 @@
 - `doctor.go`: GitHub API checks + host checks parallelized in PR #33. ✅ MERGED 2026-04-17.
 - `config.Load`: benchmarks added in PR #37. ✅ MERGED 2026-04-18.
 - `FilterRunners` in `config.go`: single-pass rewrite already in codebase (lines 609-649). ✅ Already applied.
-- `GetLatestRunnerVersion` in `runner/github.go`: sync.Once cache — PR #49 merged 2026-04-22.
+- `GetLatestRunnerVersion` in `runner/github.go`: sync.Once cache — PR #38 merged 2026-04-22.
 - `Setup` in `ops/ops.go`: left sequential (per-host dedup via hostsDone; no parallel opportunity).
 - `Remove` in `ops/ops.go`: sequential. Parallelization blocked by `config.RemoveRunner` file mutations. Low value: Remove is a rare operation.
 - `CleanupOffline` in `runner/runner.go`: iterates scopes sequentially; parallelization would require significant refactoring for marginal benefit (cleanup is rare).
@@ -42,9 +43,11 @@
 8. ✅ **Doctor parallelization**: merged PR #33 (2026-04-17).
 9. ✅ **config.Load benchmarks**: merged PR #37 (2026-04-18).
 10. ✅ **FilterRunners single-pass**: already applied in codebase.
-11. ✅ **GetLatestRunnerVersion sync.Once cache**: PR #49 merged 2026-04-22.
+11. ✅ **GetLatestRunnerVersion sync.Once cache**: PR #38 merged 2026-04-22.
 12. **`Remove` parallelization**: blocked by config mutation concerns. Low value (rare operation).
 13. **`CleanupOffline` parallelization**: possible but low value (cleanup is rare). Would require significant refactoring.
+
+**Repository is in maintenance mode.** All major performance optimizations have been implemented.
 
 ## Work In Progress
 
@@ -60,7 +63,7 @@ None. All major optimizations complete.
 - 2026-04-17: PR #33 — parallelize doctor host + GitHub API checks. **MERGED 2026-04-17.**
 - 2026-04-18: PR #37 — config.Load + Validate benchmarks. **MERGED 2026-04-18.**
 - 2026-04-19: FilterRunners single-pass — verified already in codebase.
-- 2026-04-22: PR #38/PR #49 — GetLatestRunnerVersion sync.Once cache. **MERGED 2026-04-22.**
+- 2026-04-22: PR #38 — GetLatestRunnerVersion sync.Once cache. **MERGED 2026-04-22.**
 
 ## Backlog Cursor
 
@@ -68,7 +71,7 @@ Last checked: Tasks 2, 3, 6, 7 on 2026-04-23. Most optimization work complete. R
 
 ## Last Run
 
-2026-04-23 12:XX UTC - Tasks 2, 3, 6, 7. Code review found most optimizations already complete. `FilterRunners` single-pass already in codebase. `Remove` parallelization blocked by config mutation. `CleanupOffline` parallelization possible but low value. Build/test blocked by network firewall (noted in memory). Updated memory. Run: https://github.com/an-lee/gh-sr/actions/runs/24835575051
+2026-04-26 12:00 UTC - Task 7 + Task 2. Repository is in maintenance mode. PR #38 merged 2026-04-22. Issue #44 tracks multiple infrastructure failures (runs 24667035754, 24722771949, 24778617834, 24835575051, 24889841212) showing "No Safe Outputs Generated" and "Engine Failure" errors. Attempted to update issue #6 but safe-outputs tools not accessible from agent subprocess. Run: https://github.com/an-lee/gh-sr/actions/runs/24956643201
 
 ## Previously Checked-Off Items by Maintainer
 

@@ -32,3 +32,9 @@ Note: Sandbox cannot download Go modules (proxy.golang.org blocked). CI runs on 
 
 ## Key Insight
 All major performance optimizations from the backlog have been implemented. Repo is in maintenance mode — monitor for new opportunities via issue comments and real-world usage patterns.
+
+## Infrastructure Status (2026-04-26)
+- Issue #44 tracks multiple Daily Perf Improver failures (runs 24667035754, 24722771949, 24778617834, 24835575051, 24889841212)
+- Failures show "No Safe Outputs Generated" and "Engine Failure" (claude engine terminated)
+- Recent runs (this one included) appear to succeed but safe-outputs tools not accessible from agent subprocess
+- Safe-outputs MCP server runs at host.docker.internal:80/mcp/safeoutputs
