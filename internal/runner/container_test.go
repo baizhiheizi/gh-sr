@@ -171,6 +171,18 @@ func TestAgenticRunnerDockerWrapperEmbedsMcpgSupervisorLogic(t *testing.T) {
 	}
 }
 
+func TestAgenticRunnerDockerWrapperStreamsMcpgConfig(t *testing.T) {
+	t.Parallel()
+	for _, forbidden := range []string{
+		"stdin.json",
+		">\"$mcpg_stdin\"",
+	} {
+		if strings.Contains(agenticRunnerDockerWrapper, forbidden) {
+			t.Fatalf("embedded docker-wrapper must stream MCP config without temp-file stdin, found %q", forbidden)
+		}
+	}
+}
+
 func TestAgenticRunnerDockerWrapperHeaderDocumentsConcurrencyVsShim(t *testing.T) {
 	t.Parallel()
 	for _, needle := range []string{
@@ -386,8 +398,9 @@ esac
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(gotStdin) != jsonPayload {
-		t.Fatalf("fake docker stdin: got %q want %q", gotStdin, jsonPayload)
+	wantPayload := `{"gateway":{"port":80,"domain":"172.30.0.1"}}`
+	if string(gotStdin) != wantPayload {
+		t.Fatalf("fake docker stdin: got %q want %q", gotStdin, wantPayload)
 	}
 
 	logData, err := os.ReadFile(logPath)

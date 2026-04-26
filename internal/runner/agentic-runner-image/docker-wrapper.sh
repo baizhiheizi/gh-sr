@@ -5,7 +5,7 @@
 # runner_mode: container for that (each outer runner container gets its own inner dockerd,
 # network namespace, MCP port 80, and /tmp/gh-aw). This script is a gh-aw compatibility
 # layer for jobs running inside those containers: MCP gateway self-inspect bypass, gateway
-# container cleanup, and AWF agent host.docker.internal routing (see below).
+# container cleanup, and AWF agent gateway routing (see below).
 #
 # Makes gh-aw-mcpg's self-inspect validation block a no-op by forcing a
 # non-hex container hostname.
@@ -46,6 +46,12 @@
 # It injects `--hostname gh-aw-mcpg` only when missing (create keeps exec
 # passthrough; run uses the supervisor path above regardless of whether hostname
 # was already supplied).
+#
+# For `docker run ... ghcr.io/github/gh-aw-mcpg:* ...`, it rewrites the
+# gateway domain in gh-aw's piped JSON from host.docker.internal to the AWF
+# bridge gateway IP. Claude's HTTP MCP client can intermittently route
+# host.docker.internal through the proxy despite NO_PROXY, while 172.30.0.1 is
+# already exempted by AWF as a host-access gateway.
 #
 # It also intercepts `docker run|create ... ghcr.io/github/gh-aw-firewall/agent:* ...`
 # and injects `--add-host=host.docker.internal:host-gateway` when the caller did
@@ -220,7 +226,7 @@ if is_mcpg_invocation "$@"; then
         set +e
         # Background jobs in non-interactive bash get /dev/null stdin unless
         # attached explicitly; gh-aw pipes MCP JSON into this docker run -i.
-        "$real" "$sub" "${extra[@]}" "$@" <&0 &
+        "$real" "$sub" "${extra[@]}" "$@" < <(sed 's/"domain"[[:space:]]*:[[:space:]]*"host\.docker\.internal"/"domain":"172.30.0.1"/g' <&0) &
         mcpg_docker_child_pid=$!
         wait "$mcpg_docker_child_pid"
         code=$?

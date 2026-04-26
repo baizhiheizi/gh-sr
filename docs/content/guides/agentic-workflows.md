@@ -1,7 +1,7 @@
 ---
-title: "Agentic Workflows"
+
+## title: "Agentic Workflows"
 weight: 20
----
 
 # Preparing a Self-Hosted Runner for GitHub Agentic Workflows (gh-aw)
 
@@ -13,7 +13,7 @@ Two key runtime components underpin every agentic workflow run:
 
 **AWF (Agent Workflow Firewall)** — manages the agent sandbox container and enforces network egress policy. It writes `iptables` rules directly to the `DOCKER-USER` chain on the host kernel to control what domains the agent container can reach.
 
-**MCP Gateway** (`ghcr.io/github/gh-aw-mcpg`) — runs on the host network (`--network host`) and hosts the MCP servers that give the agent its tools (GitHub API access, safe output handling, etc.). The agent container connects to it at `http://host.docker.internal:80`.
+**MCP Gateway** (`ghcr.io/github/gh-aw-mcpg`) — runs on the host network (`--network host`) and hosts the MCP servers that give the agent its tools (GitHub API access, safe output handling, etc.). Native runners expose it to the agent container at `http://host.docker.internal:80`; container-mode runners rewrite the agent-facing gateway domain to the AWF bridge gateway IP to avoid proxying local MCP traffic.
 
 GitHub-hosted `ubuntu-latest` runners have everything pre-installed and pre-configured. Self-hosted runners need explicit preparation because:
 
@@ -24,12 +24,14 @@ GitHub-hosted `ubuntu-latest` runners have everything pre-installed and pre-conf
 
 ## 2. System Requirements
 
-| Requirement | Details |
-|---|---|
-| **OS** | Linux only — Ubuntu/Debian strongly recommended. macOS and Windows are **not supported**. |
-| **Architecture** | `amd64` or `arm64` |
-| **`sudo` access** | **Mandatory.** AWF writes `iptables` rules to the `DOCKER-USER` chain. ARC configurations with `allowPrivilegeEscalation: false` are explicitly not supported. |
-| **`RUNNER_TEMP`** | Must **not** be `/tmp`. gh-aw writes its runtime tree to `/tmp/gh-aw` and the setup script will error if `RUNNER_TEMP` resolves to `/tmp`. |
+
+| Requirement       | Details                                                                                                                                                        |
+| ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **OS**            | Linux only — Ubuntu/Debian strongly recommended. macOS and Windows are **not supported**.                                                                      |
+| **Architecture**  | `amd64` or `arm64`                                                                                                                                             |
+| `**sudo` access** | **Mandatory.** AWF writes `iptables` rules to the `DOCKER-USER` chain. ARC configurations with `allowPrivilegeEscalation: false` are explicitly not supported. |
+| `**RUNNER_TEMP`** | Must **not** be `/tmp`. gh-aw writes its runtime tree to `/tmp/gh-aw` and the setup script will error if `RUNNER_TEMP` resolves to `/tmp`.                     |
+
 
 ## 3. Required Software Installation
 
@@ -138,15 +140,17 @@ docker run hello-world
 
 ### Software summary
 
-| Tool | Minimum version | Install method | Verify |
-|---|---|---|---|
-| `gh` (GitHub CLI) | latest | official apt repo | `gh --version` + `gh auth status` |
-| `gh-aw` extension | latest | `curl … install-gh-aw.sh \| bash` | `gh aw version` |
-| Go | matching `go.mod` | tarball or `actions/setup-go` | `go version` |
-| Node.js | v20 (v24 recommended) | nvm or `actions/setup-node` | `node --version` |
-| `uv` | latest | astral installer or `astral-sh/setup-uv` | `uv --version` |
-| Docker | latest stable | `docker.io` apt package | `docker run hello-world` |
-| `make`, `git`, `jq`, `curl` | any | apt | `--version` checks |
+
+| Tool                        | Minimum version       | Install method                           | Verify                            |
+| --------------------------- | --------------------- | ---------------------------------------- | --------------------------------- |
+| `gh` (GitHub CLI)           | latest                | official apt repo                        | `gh --version` + `gh auth status` |
+| `gh-aw` extension           | latest                | `curl … install-gh-aw.sh | bash`         | `gh aw version`                   |
+| Go                          | matching `go.mod`     | tarball or `actions/setup-go`            | `go version`                      |
+| Node.js                     | v20 (v24 recommended) | nvm or `actions/setup-node`              | `node --version`                  |
+| `uv`                        | latest                | astral installer or `astral-sh/setup-uv` | `uv --version`                    |
+| Docker                      | latest stable         | `docker.io` apt package                  | `docker run hello-world`          |
+| `make`, `git`, `jq`, `curl` | any                   | apt                                      | `--version` checks                |
+
 
 ## 4. Critical Docker Configuration
 
@@ -257,13 +261,15 @@ grep RUNNER_TEMP ~/actions-runner/.env
 
 ### 7a. Outbound HTTPS domains the runner must reach
 
-| Category | Domains |
-|---|---|
-| GitHub core | `github.com`, `api.github.com`, `*.actions.githubusercontent.com` |
-| Go modules | `proxy.golang.org`, `sum.golang.org` |
-| npm | `registry.npmjs.org` |
-| Containers | `ghcr.io` |
+
+| Category                        | Domains                                                                                           |
+| ------------------------------- | ------------------------------------------------------------------------------------------------- |
+| GitHub core                     | `github.com`, `api.github.com`, `*.actions.githubusercontent.com`                                 |
+| Go modules                      | `proxy.golang.org`, `sum.golang.org`                                                              |
+| npm                             | `registry.npmjs.org`                                                                              |
+| Containers                      | `ghcr.io`                                                                                         |
 | AI endpoints (engine-dependent) | `*.githubcopilot.com`, `api.anthropic.com`, `api.openai.com`, `generativelanguage.googleapis.com` |
+
 
 ### 7b. Workflow `network.allowed` configuration
 
@@ -308,14 +314,14 @@ safe-outputs:
 
 The gh-aw MCP gateway listens on the host network (`docker --network host`). The TCP port comes from workflow frontmatter `sandbox.mcp.port` (default **80** after `gh aw compile`). If several agentic jobs run on the **same physical host**, they must use **different** ports, or only one such job may run at a time.
 
-For **multiple concurrent agentic runner instances on one host**, prefer [`runner_mode: container`](#8b-runner-modes-native-vs-container-recommended-for-concurrency) instead of juggling ports and labels in native mode: each runner container gets its own network namespace and MCP gateway on port 80 without conflicts (see §8b).
+For **multiple concurrent agentic runner instances on one host**, prefer `[runner_mode: container](#8b-runner-modes-native-vs-container-recommended-for-concurrency)` instead of juggling ports and labels in native mode: each runner container gets its own network namespace and MCP gateway on port 80 without conflicts (see §8b).
 
 **Configure per-instance ports in gh-sr** (`runners.yml`): on a runner with `profile: agentic`, set either:
 
 - `agentic_mcp_port_base: 9080` — instances get ports `9080`, `9081`, … up to `count-1`, or
 - `agentic_mcp_ports: [9080, 9081]` — explicit list whose length must equal `count`.
 
-gh-sr then registers each instance with an extra label **`gh-sr-mcp-<port>`** (for example `gh-sr-mcp-9080`) so GitHub can route jobs to a runner whose MCP port matches the workflow.
+gh-sr then registers each instance with an extra label `**gh-sr-mcp-<port>*`* (for example `gh-sr-mcp-9080`) so GitHub can route jobs to a runner whose MCP port matches the workflow.
 
 Match the workflow frontmatter to that port and label:
 
@@ -335,7 +341,7 @@ runs-on:
 
 **Operational checks:** `gh sr doctor` validates config, GitHub API access, and host prerequisites (including agentic/container tooling). It does **not** scan workflow markdown for MCP ports anymore.
 
-For same-host concurrency without hand-maintaining distinct `sandbox.mcp.port` values per workflow, use **`runner_mode: container`** (see §8b). If you stay on native mode with `count > 1`, align ports, `gh-sr-mcp-*` labels, and `runs-on` yourself and re-run `gh aw compile` after editing frontmatter; see [gh-aw Sandbox configuration](https://github.github.com/gh-aw/reference/sandbox/) for `sandbox.mcp` and `features.mcp-gateway`.
+For same-host concurrency without hand-maintaining distinct `sandbox.mcp.port` values per workflow, use `**runner_mode: container`** (see §8b). If you stay on native mode with `count > 1`, align ports, `gh-sr-mcp-*` labels, and `runs-on` yourself and re-run `gh aw compile` after editing frontmatter; see [gh-aw Sandbox configuration](https://github.github.com/gh-aw/reference/sandbox/) for `sandbox.mcp` and `features.mcp-gateway`.
 
 **Limitation:** two concurrent jobs that use the **same compiled workflow** (same `sandbox.mcp.port`) on one host still conflict; fixing that requires different workflow sources, separate machines, limiting concurrency, or changes in gh-aw.
 
@@ -349,13 +355,15 @@ For **agentic** workflows specifically, gh-aw hardcodes `/tmp/gh-aw` in compiled
 
 `runner_mode: container` (opt-in) resolves all `/tmp/gh-aw` conflicts for agentic jobs by running each runner instance in its own **privileged Docker container with an inner dockerd** (Docker-in-Docker). Every container has:
 
-| Resource | Native mode | Container mode |
-|---|---|---|
-| `/tmp/gh-aw` | **shared** — jobs overwrite each other | **isolated** per container filesystem |
-| `iptables` / AWF rules | **shared** host netfilter state | isolated per container network namespace |
-| MCP gateway port 80 | **shared** — conflicts on multi-instance hosts | isolated (`--network host` inside container = that container's network) |
-| `RUNNER_TEMP` | isolated per runner instance | isolated per container |
-| Docker image cache | shared host Docker | per-container (stored in bind-mounted state dir) |
+
+| Resource               | Native mode                                    | Container mode                                                          |
+| ---------------------- | ---------------------------------------------- | ----------------------------------------------------------------------- |
+| `/tmp/gh-aw`           | **shared** — jobs overwrite each other         | **isolated** per container filesystem                                   |
+| `iptables` / AWF rules | **shared** host netfilter state                | isolated per container network namespace                                |
+| MCP gateway port 80    | **shared** — conflicts on multi-instance hosts | isolated (`--network host` inside container = that container's network) |
+| `RUNNER_TEMP`          | isolated per runner instance                   | isolated per container                                                  |
+| Docker image cache     | shared host Docker                             | per-container (stored in bind-mounted state dir)                        |
+
 
 In container mode, `agentic_mcp_ports` / `agentic_mcp_port_base` and the `gh-sr-mcp-<port>` label trick are **not needed**. Each container runs its own MCP gateway on port 80 without conflict.
 
@@ -378,27 +386,29 @@ In `gh sr status` (and the dashboard), the **IMAGE** column shows the Docker ima
 
 **When to use which mode:**
 
-- **`runner_mode: native`** — default; suitable when you run only one agentic job at a time per host, or already manage port assignments via [§8a](#8a-concurrent-jobs-mcp-gateway-ports-and-gh-sr). Zero extra disk space beyond the runner binaries.
-- **`runner_mode: container`** — use for concurrent **agentic** jobs on one host without MCP port labels, **or** for ordinary CI when you want each runner instance in its own DinD sandbox (no `profile: agentic` required). The image includes Docker CE, dnsmasq, and the actions runner; gh-aw is pre-installed inside the image but is only needed for agentic jobs.
+- `**runner_mode: native`** — default; suitable when you run only one agentic job at a time per host, or already manage port assignments via [§8a](#8a-concurrent-jobs-mcp-gateway-ports-and-gh-sr). Zero extra disk space beyond the runner binaries.
+- `**runner_mode: container**` — use for concurrent **agentic** jobs on one host without MCP port labels, **or** for ordinary CI when you want each runner instance in its own DinD sandbox (no `profile: agentic` required). The image includes Docker CE, dnsmasq, and the actions runner; gh-aw is pre-installed inside the image but is only needed for agentic jobs.
 
 #### Inner Docker CLI shim (container mode only)
 
 Same-host **concurrency** comes from `runner_mode: container` itself (each outer `gh-sr-<instance>` container has its own inner `dockerd`, network namespace, MCP gateway on port 80, and `/tmp/gh-aw`). That isolation is **not** implemented by the Docker shim.
 
-The container image installs `internal/runner/agentic-runner-image/docker-wrapper.sh` as **`/opt/gh-sr/docker-shim/docker`** and puts that directory first on the **runner** user's `PATH` (`/etc/profile.d/gh-sr-docker-shim.sh`, `entrypoint.sh` `RUNNER_ENV`, and `Defaults:runner secure_path=…` so `sudo -E awf` still sees the shim). Root and the entrypoint continue to use the real **`/usr/bin/docker`** for `docker info` / `dockerd` startup. The shim only adjusts selected `docker run`/`create` invocations for `gh-aw-mcpg` and `gh-aw-firewall/agent` images — see the script header in-repo for the full rationale.
+The container image installs `internal/runner/agentic-runner-image/docker-wrapper.sh` as `**/opt/gh-sr/docker-shim/docker`** and puts that directory first on the **runner** user's `PATH` (`/etc/profile.d/gh-sr-docker-shim.sh`, `entrypoint.sh` `RUNNER_ENV`, and `Defaults:runner secure_path=…` so `sudo -E awf` still sees the shim). Root and the entrypoint continue to use the real `**/usr/bin/docker`** for `docker info` / `dockerd` startup. The shim only adjusts selected `docker run`/`create` invocations for `gh-aw-mcpg` and `gh-aw-firewall/agent` images — see the script header in-repo for the full rationale.
 
 ## 9. What `profile: agentic` automates
 
 gh-sr handles the following during `gh sr setup` for runners with `profile: agentic` on Linux:
 
-| Step | What gh-sr does | Why |
-|------|----------------|-----|
-| **Docker DNS (dnsmasq)** | Installs dnsmasq, writes `/etc/dnsmasq.d/gh-sr-docker.conf`, merges DNS into `/etc/docker/daemon.json`, restarts services | Agent containers must resolve `host.docker.internal` to reach the MCP Gateway; external DNS must work for model API calls |
-| **dnsmasq config** | Listens on docker0 bridge IP, resolves `host.docker.internal` statically, forwards all other queries upstream with `server=127.0.0.53` and `server=8.8.8.8` | Without upstream `server=` directives dnsmasq refuses all non-static queries, breaking model API connectivity |
-| **`/opt/hostedtoolcache`** | Bind-mounts npm global prefix to `/opt/hostedtoolcache`, persists in `/etc/fstab` | gh-aw agent containers look for engine binaries (`claude`, `codex`, etc.) in `/opt/hostedtoolcache/*/bin` |
-| **`gh-aw` CLI** | Installs from upstream script (`curl \| bash`) | Provides CLI tooling for managing AWF containers |
-| **`agentic` label** | Appends `agentic` to runner labels | Routes agentic workflow jobs to this runner |
-| **`gh-sr-mcp-*` labels** | When `agentic_mcp_port_base` or `agentic_mcp_ports` is set, each instance gets `gh-sr-mcp-<port>` | Lets `runs-on` target a runner whose MCP listener matches `sandbox.mcp.port` (see [§8a](#8a-concurrent-jobs-mcp-gateway-ports-and-gh-sr)) |
+
+| Step                       | What gh-sr does                                                                                                                                             | Why                                                                                                                                       |
+| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| **Docker DNS (dnsmasq)**   | Installs dnsmasq, writes `/etc/dnsmasq.d/gh-sr-docker.conf`, merges DNS into `/etc/docker/daemon.json`, restarts services                                   | Agent containers must resolve `host.docker.internal` to reach the MCP Gateway; external DNS must work for model API calls                 |
+| **dnsmasq config**         | Listens on docker0 bridge IP, resolves `host.docker.internal` statically, forwards all other queries upstream with `server=127.0.0.53` and `server=8.8.8.8` | Without upstream `server=` directives dnsmasq refuses all non-static queries, breaking model API connectivity                             |
+| `**/opt/hostedtoolcache`** | Bind-mounts npm global prefix to `/opt/hostedtoolcache`, persists in `/etc/fstab`                                                                           | gh-aw agent containers look for engine binaries (`claude`, `codex`, etc.) in `/opt/hostedtoolcache/*/bin`                                 |
+| `**gh-aw` CLI**            | Installs from upstream script (`curl | bash`)                                                                                                               | Provides CLI tooling for managing AWF containers                                                                                          |
+| `**agentic` label**        | Appends `agentic` to runner labels                                                                                                                          | Routes agentic workflow jobs to this runner                                                                                               |
+| `**gh-sr-mcp-`* labels**   | When `agentic_mcp_port_base` or `agentic_mcp_ports` is set, each instance gets `gh-sr-mcp-<port>`                                                           | Lets `runs-on` target a runner whose MCP listener matches `sandbox.mcp.port` (see [§8a](#8a-concurrent-jobs-mcp-gateway-ports-and-gh-sr)) |
+
 
 ## 10. End-to-End Verification Script
 
@@ -536,6 +546,7 @@ gh sr doctor --host your-runner
 ```
 
 Checks performed:
+
 - Docker CLI and daemon are available
 - `docker compose` plugin is available
 - `iptables` is available and `DOCKER-USER` chain exists
@@ -547,19 +558,21 @@ Checks performed:
 
 ## 11. Quick Reference Troubleshooting
 
-| Symptom | Root cause | Fix |
-|---|---|---|
-| MCP tool calls silently fail | `host.docker.internal` not in `/etc/hosts` | Add it pointing to Docker bridge gateway IP (see [§4b](#4b-hostdockerinternal-dns--the-most-common-failure-point)) |
-| AWF fails to start | `sudo iptables` requires a password | Add passwordless sudoers rule for iptables (see [§5](#5-sudo--iptables-setup)) |
-| Setup errors with "RUNNER_TEMP resolves to /tmp" | `RUNNER_TEMP=/tmp` | Set `RUNNER_TEMP=/home/runner/_temp` in `.env` (see [§6](#6-runner_temp-configuration)) |
-| mcpg can't spawn MCP server containers | Runner user not in `docker` group | `sudo usermod -aG docker runner` |
-| Copilot engine can't access GitHub API | Direct `api.github.com` access attempted | Use GitHub MCP toolsets instead (see [§7c](#7c-copilot-engine-use-mcp-toolsets-instead-of-direct-api-access)) |
-| `localhost` MCP URLs broken with firewall | Docker networking isolation | Already handled by compiler rewriting to `host.docker.internal` — no action needed |
-| 503 from model API inside container | dnsmasq has no upstream `server=` directives | `gh sr setup` fixes this; manually add `server=127.0.0.53` + `server=8.8.8.8` to dnsmasq config |
-| `ERR_API: MCP server(s) failed to launch` (job step **Parse agent logs**) | Often `host.docker.internal` / DNS from **host-network** containers, AWF mount permissions, or stale inner Docker state | Run `gh sr doctor` (native: host checks; container mode: inner Docker reachability checks), then follow [§11a](#11a-diagnosing-parse-agent-logs--mcp_servers-failed-inside-awf) |
-| Claude init shows `"mcp_servers":[{"name":"github","status":"failed"},…]` | MCP clients could not start inside the AWF sandbox (network, token, or mounts) | Same as row above; collect **Execute Claude Code CLI** + **Print firewall logs** output |
-| `[entrypoint][WARN] Failed to transfer …/safeoutputs ownership to chroot user` | AWF could not `chown` the bind-mounted `gh-aw/safeoutputs` tree for the sandbox user | This warning can appear on **successful** runs too; treat it as noise unless MCP actually fails. If Claude init lists MCP servers as failed, focus on gateway reachability from the **agent** container (see §11a). Otherwise: ensure passwordless `sudo` for AWF entrypoint expectations; avoid root-only files under `${RUNNER_TEMP}/gh-aw`; upgrade gh-aw/AWF if a release notes a fix |
-| **Stop MCP Gateway** exits `1` after `Gateway shutdown initiated` / `serversTerminated` | `gh-aw`’s `stop_mcp_gateway.sh` waits only ~10s for the **same PID** as **Start MCP Gateway** to disappear; the MCP gateway can still be tearing down child MCP containers for longer. On `runner_mode: container`, that PID is gh-sr’s inner `docker` wrapper, not only the gateway process. | Usually **harmless** if the step has `continue-on-error: true` (compiled workflows do). A **stale** gateway on inner `--network host` port **80** can still break the **next** job on the same runner instance. **Rebuild** the agentic runner image (`gh sr rebuild <runner>`) so the wrapper assigns `gh-aw-mcpg-ghsr-*` + `--cidfile` and can run `docker rm -f` when upstream falls back to signalling the recorded PID. |
+
+| Symptom                                                                                 | Root cause                                                                                                                                                                                                                                                                                    | Fix                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| --------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| MCP tool calls silently fail                                                            | `host.docker.internal` not in `/etc/hosts`                                                                                                                                                                                                                                                    | Add it pointing to Docker bridge gateway IP (see [§4b](#4b-hostdockerinternal-dns--the-most-common-failure-point))                                                                                                                                                                                                                                                                                                           |
+| AWF fails to start                                                                      | `sudo iptables` requires a password                                                                                                                                                                                                                                                           | Add passwordless sudoers rule for iptables (see [§5](#5-sudo--iptables-setup))                                                                                                                                                                                                                                                                                                                                               |
+| Setup errors with "RUNNER_TEMP resolves to /tmp"                                        | `RUNNER_TEMP=/tmp`                                                                                                                                                                                                                                                                            | Set `RUNNER_TEMP=/home/runner/_temp` in `.env` (see [§6](#6-runner_temp-configuration))                                                                                                                                                                                                                                                                                                                                      |
+| mcpg can't spawn MCP server containers                                                  | Runner user not in `docker` group                                                                                                                                                                                                                                                             | `sudo usermod -aG docker runner`                                                                                                                                                                                                                                                                                                                                                                                             |
+| Copilot engine can't access GitHub API                                                  | Direct `api.github.com` access attempted                                                                                                                                                                                                                                                      | Use GitHub MCP toolsets instead (see [§7c](#7c-copilot-engine-use-mcp-toolsets-instead-of-direct-api-access))                                                                                                                                                                                                                                                                                                                |
+| `localhost` MCP URLs broken with firewall                                               | Docker networking isolation                                                                                                                                                                                                                                                                   | Already handled by compiler rewriting to `host.docker.internal` — no action needed                                                                                                                                                                                                                                                                                                                                           |
+| 503 from model API inside container                                                     | dnsmasq has no upstream `server=` directives                                                                                                                                                                                                                                                  | `gh sr setup` fixes this; manually add `server=127.0.0.53` + `server=8.8.8.8` to dnsmasq config                                                                                                                                                                                                                                                                                                                              |
+| `ERR_API: MCP server(s) failed to launch` (job step **Parse agent logs**)               | Often `host.docker.internal` / DNS from **host-network** containers, AWF mount permissions, or stale inner Docker state                                                                                                                                                                       | Run `gh sr doctor` (native: host checks; container mode: inner Docker reachability checks), then follow [§11a](#11a-diagnosing-parse-agent-logs--mcp_servers-failed-inside-awf)                                                                                                                                                                                                                                              |
+| Claude init shows `"mcp_servers":[{"name":"github","status":"failed"},…]`               | MCP clients could not start inside the AWF sandbox (network, token, or mounts)                                                                                                                                                                                                                | Same as row above; collect **Execute Claude Code CLI** + **Print firewall logs** output                                                                                                                                                                                                                                                                                                                                      |
+| `[entrypoint][WARN] Failed to transfer …/safeoutputs ownership to chroot user`          | AWF could not `chown` the bind-mounted `gh-aw/safeoutputs` tree for the sandbox user                                                                                                                                                                                                          | This warning can appear on **successful** runs too; treat it as noise unless MCP actually fails. If Claude init lists MCP servers as failed, focus on gateway reachability from the **agent** container (see §11a). Otherwise: ensure passwordless `sudo` for AWF entrypoint expectations; avoid root-only files under `${RUNNER_TEMP}/gh-aw`; upgrade gh-aw/AWF if a release notes a fix                                    |
+| **Stop MCP Gateway** exits `1` after `Gateway shutdown initiated` / `serversTerminated` | `gh-aw`’s `stop_mcp_gateway.sh` waits only ~10s for the **same PID** as **Start MCP Gateway** to disappear; the MCP gateway can still be tearing down child MCP containers for longer. On `runner_mode: container`, that PID is gh-sr’s inner `docker` wrapper, not only the gateway process. | Usually **harmless** if the step has `continue-on-error: true` (compiled workflows do). A **stale** gateway on inner `--network host` port **80** can still break the **next** job on the same runner instance. **Rebuild** the agentic runner image (`gh sr rebuild <runner>`) so the wrapper assigns `gh-aw-mcpg-ghsr-`* + `--cidfile` and can run `docker rm -f` when upstream falls back to signalling the recorded PID. |
+
 
 ### 11a. Diagnosing **Parse agent logs** / `mcp_servers` failed inside AWF
 
@@ -574,43 +587,39 @@ Upstream, Claude Code’s JSON init line can list both servers as `"status":"fai
 **Correlate evidence in this order:**
 
 1. **Host / DNS (MCP gateway)** — Safe Outputs is reached at `http://host.docker.internal:$GH_AW_SAFE_OUTPUTS_PORT`; the gateway uses `--network host`. On the runner host run:
-
-   ```bash
+  ```bash
    getent hosts host.docker.internal
    docker run --rm --network host alpine sh -c "getent hosts host.docker.internal"
-   ```
-
+  ```
    Both must resolve to the **docker bridge gateway**, not `127.0.0.1`. `gh sr doctor` now warns when the second check fails while default-bridge DNS still works.
-
-2. **Distinguish gateway health vs agent reachability** — If **Start MCP Gateway** / gateway health checks are green but Claude’s init JSON shows `"mcp_servers":[{"name":"github","status":"failed"},…]`, both tools often fail together because they share the same gateway URL (`http://host.docker.internal:80/...`). The break is usually the **AWF agent container → gateway** hop (inner Docker DNS on custom networks), not the gateway processes themselves.
-
+2. **Distinguish gateway health vs agent reachability** — If **Start MCP Gateway** / gateway health checks are green but Claude’s init JSON shows `"mcp_servers":[{"name":"github","status":"failed"},…]`, both tools often fail together because they share the same gateway URL. In native mode this is usually `http://host.docker.internal:80/...`; in current container-mode runner images gh-sr rewrites the agent-facing gateway domain to `172.30.0.1` so Claude does not have to honor `NO_PROXY` for local MCP traffic. The break is usually the **AWF agent container → gateway** hop, not the gateway processes themselves.
 3. **AWF entrypoint** — In the same job log, search for `Failed to transfer` and `safeoutputs`. That line can appear on successful runs; only treat it as primary evidence when it lines up with real MCP/tool failures **and** mount permission errors.
-
 4. **Firewall / MCP gateway** — Use the workflow’s **Print firewall logs** (and MCP gateway debug if enabled) to confirm the gateway spawned child MCP containers and that egress allowlists include `host.docker.internal`.
-
 5. **Workflow bundle** — If the host matches [§10](#10-end-to-end-verification-script) but jobs still fail, recompile workflows with a current `gh aw` (`gh aw compile` in the repo) so lockfiles pick up upstream gh-aw / AWF fixes.
 
 **Observed correlation (example):** In one failing **agent** job, **Start MCP Gateway** set `MCP_GATEWAY_DOMAIN=host.docker.internal` (with `gh-aw-mcpg` on `--network host`) while **Execute Claude Code CLI** logged `[entrypoint][WARN] Failed to transfer …/gh-aw/safeoutputs ownership to chroot user` immediately before Claude’s init JSON listed `"github"` and `"safeoutputs"` MCP servers with `"status":"failed"`, leading to `ERR_API: MCP server(s) failed to launch: github, safeoutputs` in **Parse agent logs**. That sequence points to **in-sandbox MCP startup** (DNS + mounts), not to a missing Actions checkout.
 
-**Container-mode note:** `runner_mode: container` isolates cross-runner `/tmp/gh-aw`, inner Docker, iptables, and MCP port 80 state. Random MCP init failures in container mode are therefore more likely to be **per runner instance** issues: stale inner Docker containers/rules from a previous crash, broken `host.docker.internal` reachability from **nested** agent containers (not only from the runner rootfs), or persistent mount permissions under `/runner-state`.
+**Container-mode note:** `runner_mode: container` isolates cross-runner `/tmp/gh-aw`, inner Docker, iptables, and MCP port 80 state. Current container-mode images also rewrite the MCP gateway domain from `host.docker.internal` to `172.30.0.1` before `gh-aw-mcpg` writes Claude’s MCP config, avoiding intermittent Claude HTTP MCP proxy-bypass failures. If random MCP init failures persist in container mode, check for stale inner Docker containers/rules from a previous crash, broken AWF bridge reachability from **nested** agent containers (not only from the runner rootfs), or persistent mount permissions under `/runner-state`.
 
-Current gh-sr images install a **path-scoped** Docker CLI shim at **`/opt/gh-sr/docker-shim/docker`** (not a global `/usr/local/bin/docker` replacement) so only the actions runner / `sudo awf` job path uses it:
+Current gh-sr images install a **path-scoped** Docker CLI shim at `**/opt/gh-sr/docker-shim/docker`** (not a global `/usr/local/bin/docker` replacement) so only the actions runner / `sudo awf` job path uses it:
 
-- **AWF agent images** (`ghcr.io/github/gh-aw-firewall/agent:*`): inject `--add-host=host.docker.internal:host-gateway` on `docker run`/`create` when missing, so nested agents reach the MCP gateway without relying solely on inner Docker DNS.
-- **MCP gateway** (`ghcr.io/github/gh-aw-mcpg:*`): inject `--hostname gh-aw-mcpg` when missing so upstream skips flaky self-inspect under inner `--network host` / DinD.
-- **`docker run` for mcpg only**: stable `--name gh-aw-mcpg-ghsr-*`, `--cidfile`, and signal/exit cleanup so stale inner host-network listeners on port **80** are removed when upstream escalates from `POST /close` to signalling the recorded gateway PID.
+- **AWF agent images** (`ghcr.io/github/gh-aw-firewall/agent:`*): inject `--add-host=host.docker.internal:host-gateway` on `docker run`/`create` when missing, so nested agents reach the MCP gateway without relying solely on inner Docker DNS.
+- **MCP gateway** (`ghcr.io/github/gh-aw-mcpg:`*): inject `--hostname gh-aw-mcpg` when missing so upstream skips flaky self-inspect under inner `--network host` / DinD.
+- `**docker run` for mcpg only**: stable `--name gh-aw-mcpg-ghsr-`*, `--cidfile`, and signal/exit cleanup so stale inner host-network listeners on port **80** are removed when upstream escalates from `POST /close` to signalling the recorded gateway PID.
 
 ## Files created on the host
 
 When you run `gh sr setup` for an agentic runner, gh-sr may create or modify these files:
 
-| File | Purpose |
-|------|---------|
-| `/etc/dnsmasq.d/gh-sr-docker.conf` | dnsmasq config for `host.docker.internal` + upstream DNS forwarding |
-| `/etc/docker/daemon.json` | Docker daemon DNS settings (merged with existing config) |
-| `/opt/hostedtoolcache` | Bind mount to your npm global prefix |
-| `/etc/fstab` | Persistent entry for the `/opt/hostedtoolcache` bind mount |
-| `~/.local/share/gh/extensions/gh-aw/` | The `gh-aw` CLI installation directory |
+
+| File                                  | Purpose                                                             |
+| ------------------------------------- | ------------------------------------------------------------------- |
+| `/etc/dnsmasq.d/gh-sr-docker.conf`    | dnsmasq config for `host.docker.internal` + upstream DNS forwarding |
+| `/etc/docker/daemon.json`             | Docker daemon DNS settings (merged with existing config)            |
+| `/opt/hostedtoolcache`                | Bind mount to your npm global prefix                                |
+| `/etc/fstab`                          | Persistent entry for the `/opt/hostedtoolcache` bind mount          |
+| `~/.local/share/gh/extensions/gh-aw/` | The `gh-aw` CLI installation directory                              |
+
 
 ```bash
 # Inspect dnsmasq config
@@ -668,7 +677,7 @@ For **container** runners on Linux it additionally checks:
 - **Inner DinD**: `docker exec gh-sr-<instance> docker info` succeeds.
 - **Registration**: `.runner` exists at `/home/runner/actions-runner/.runner` inside the outer container.
 
-For **native** `profile: agentic`, it runs host-level AWF orphan / `DOCKER-USER` hygiene (same as before). For **container** `profile: agentic`, it runs the same style of checks against the **inner** Docker daemon (`docker exec gh-sr-<instance> docker ps …`), because AWF containers live under inner dockerd, not on the host. It also verifies that inner containers can resolve `host.docker.internal`, reach a temporary HTTP listener in the runner namespace from a default-bridge inner container, **and** reach the same listener using `--add-host=host.docker.internal:host-gateway` (the path enforced for AWF agent images by gh-sr’s **`/opt/gh-sr/docker-shim/docker`** shim when jobs invoke `docker`). Orphan checks still flag any `gh-aw-mcpg-*` inner containers (including `gh-aw-mcpg-ghsr-*` names from the MCP gateway wrapper) left over from crashed jobs.
+For **native** `profile: agentic`, it runs host-level AWF orphan / `DOCKER-USER` hygiene (same as before). For **container** `profile: agentic`, it runs the same style of checks against the **inner** Docker daemon (`docker exec gh-sr-<instance> docker ps …`), because AWF containers live under inner dockerd, not on the host. It also verifies that inner containers can resolve `host.docker.internal`, reach a temporary HTTP listener in the runner namespace from a default-bridge inner container, **and** reach the same listener using `--add-host=host.docker.internal:host-gateway` (the path enforced for AWF agent images by gh-sr’s `**/opt/gh-sr/docker-shim/docker`** shim when jobs invoke `docker`). Orphan checks still flag any `gh-aw-mcpg-*` inner containers (including `gh-aw-mcpg-ghsr-*` names from the MCP gateway wrapper) left over from crashed jobs.
 
 ### Attach to a running runner container
 
@@ -714,10 +723,12 @@ By default, container-mode runners use `--privileged` because the inner dockerd 
 
 Each runner container bind-mounts `$HOME/.gh-sr/runners/<instance>` as `/runner-state` inside the container. This directory stores:
 
-| Path | Contents |
-|---|---|
+
+| Path                         | Contents                                                                 |
+| ---------------------------- | ------------------------------------------------------------------------ |
 | `/runner-state/docker-data/` | Inner Docker layer cache (preserves pulled gh-aw images across restarts) |
-| `/runner-state/_work/` | Runner job workspace |
-| `/runner-state/_temp/` | `RUNNER_TEMP` — isolated per container |
-| `/runner-state/dockerd.log` | Inner dockerd log |
+| `/runner-state/_work/`       | Runner job workspace                                                     |
+| `/runner-state/_temp/`       | `RUNNER_TEMP` — isolated per container                                   |
+| `/runner-state/dockerd.log`  | Inner dockerd log                                                        |
+
 
