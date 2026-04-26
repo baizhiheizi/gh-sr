@@ -163,6 +163,7 @@ func TestAgenticRunnerDockerWrapperEmbedsMcpgSupervisorLogic(t *testing.T) {
 		"docker_option_value",
 		"is_mcpg_invocation",
 		"mktemp -d",
+		"<&0",
 	} {
 		if !strings.Contains(agenticRunnerDockerWrapper, needle) {
 			t.Fatalf("embedded docker-wrapper must contain %q", needle)
@@ -309,6 +310,96 @@ func TestDockerWrapperInjection(t *testing.T) {
 			t.Fatalf("did not expect host-gateway for mcpg image, got %q", got)
 		}
 	})
+}
+
+// TestDockerWrapperMcpgSupervisedRunForwardsStdin verifies gh-aw's piped MCP JSON
+// reaches the real docker child when the wrapper supervises docker run in the background.
+func TestDockerWrapperMcpgSupervisedRunForwardsStdin(t *testing.T) {
+	t.Parallel()
+	tmp := t.TempDir()
+	stdinLog := filepath.Join(tmp, "stdin-captured.txt")
+	logPath := filepath.Join(tmp, "fake-docker.log")
+	fakeDocker := filepath.Join(tmp, "docker")
+	script := `#!/bin/bash
+set -euo pipefail
+LOG="${FAKE_DOCKER_LOG:?}"
+STDIN_LOG="${FAKE_DOCKER_STDIN_LOG:?}"
+echo "FULL:$*" >>"$LOG"
+cmd=${1:-}
+shift || true
+case "$cmd" in
+rm)
+	echo "rm-line:$*" >>"$LOG"
+	exit 0
+	;;
+run)
+	prev=""
+	for a in "$@"; do
+		if [[ "$prev" == "--cidfile" ]]; then
+			printf 'deadbeefcafe\n' >"$a"
+			prev=""
+			continue
+		fi
+		prev=""
+		case "$a" in
+		--cidfile) prev="--cidfile" ;;
+		--cidfile=*) f="${a#*=}"; printf 'deadbeefcafe\n' >"$f" ;;
+		esac
+	done
+	cat >"$STDIN_LOG"
+	exit 0
+	;;
+*)
+	exit 0
+	;;
+esac
+`
+	if err := os.WriteFile(fakeDocker, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	payloadPath := filepath.Join(tmp, "mcp-config.json")
+	jsonPayload := `{"gateway":{"port":80,"domain":"host.docker.internal"}}`
+	if err := os.WriteFile(payloadPath, []byte(jsonPayload), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	wrapper := filepath.Join("agentic-runner-image", "docker-wrapper.sh")
+	if _, err := os.Stat(wrapper); err != nil {
+		t.Fatalf("docker-wrapper.sh: %v", err)
+	}
+
+	cmd := exec.Command("bash", "-c", `cat "$GHSR_PAYLOAD" | bash "$GHSR_WRAPPER" run -i --rm --network host ghcr.io/github/gh-aw-mcpg:1.0.0`)
+	cmd.Env = append(os.Environ(),
+		"GHSR_PAYLOAD="+payloadPath,
+		"GHSR_WRAPPER="+wrapper,
+		"GH_SR_DOCKER_WRAPPER_REAL="+fakeDocker,
+		"FAKE_DOCKER_LOG="+logPath,
+		"FAKE_DOCKER_STDIN_LOG="+stdinLog,
+	)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("wrapper stdin pipe: %v\n%s", err, out)
+	}
+
+	gotStdin, err := os.ReadFile(stdinLog)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(gotStdin) != jsonPayload {
+		t.Fatalf("fake docker stdin: got %q want %q", gotStdin, jsonPayload)
+	}
+
+	logData, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(logData, []byte("run --hostname gh-aw-mcpg")) {
+		t.Fatalf("expected supervised mcpg argv in fake docker log, got:\n%s", logData)
+	}
+	if !bytes.Contains(logData, []byte("gh-aw-mcpg-ghsr-")) {
+		t.Fatalf("expected injected gateway name in fake docker log, got:\n%s", logData)
+	}
 }
 
 // TestDockerWrapperMcpgSigtermRunsDockerRm verifies SIGTERM triggers docker rm -f cleanup

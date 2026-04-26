@@ -218,7 +218,9 @@ if is_mcpg_invocation "$@"; then
         trap on_mcpg_signal INT TERM HUP
 
         set +e
-        "$real" "$sub" "${extra[@]}" "$@" &
+        # Background jobs in non-interactive bash get /dev/null stdin unless
+        # attached explicitly; gh-aw pipes MCP JSON into this docker run -i.
+        "$real" "$sub" "${extra[@]}" "$@" <&0 &
         mcpg_docker_child_pid=$!
         wait "$mcpg_docker_child_pid"
         code=$?
