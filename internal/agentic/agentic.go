@@ -552,8 +552,8 @@ if [[ "$bridge_ok" -ne 1 ]]; then
   exit 1
 fi
 # AWF agent containers reach the MCP gateway via host.docker.internal; gh-sr
-# injects --add-host=host.docker.internal:host-gateway for gh-aw-firewall/agent
-# images so they do not rely on inner Docker DNS alone. Mirror that path here.
+# /opt/gh-sr/docker-shim/docker injects --add-host=host.docker.internal:host-gateway
+# for gh-aw-firewall/agent images so they do not rely on inner Docker DNS alone. Mirror that path here.
 hg_ok=0
 for i in 1 2 3 4 5; do
   if timeout 10s docker run --rm --add-host=host.docker.internal:host-gateway alpine sh -c "wget -qO- --timeout=2 http://host.docker.internal:$port/" >/dev/null 2>&1; then

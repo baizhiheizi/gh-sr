@@ -170,6 +170,18 @@ func TestAgenticRunnerDockerWrapperEmbedsMcpgSupervisorLogic(t *testing.T) {
 	}
 }
 
+func TestAgenticRunnerDockerWrapperHeaderDocumentsConcurrencyVsShim(t *testing.T) {
+	t.Parallel()
+	for _, needle := range []string{
+		"runner_mode: container",
+		"/opt/gh-sr/docker-shim/docker",
+	} {
+		if !strings.Contains(agenticRunnerDockerWrapper, needle) {
+			t.Fatalf("embedded docker-wrapper header should mention %q", needle)
+		}
+	}
+}
+
 func TestAgenticRunnerEntrypointUsesBridgeDNSForInnerContainers(t *testing.T) {
 	t.Parallel()
 
@@ -387,6 +399,32 @@ func TestAgenticRunnerDockerfileInstallsAWF(t *testing.T) {
 		if !strings.Contains(agenticRunnerDockerfile, want) {
 			t.Fatalf("Dockerfile should install and verify awf with %q, got:\n%s", want, agenticRunnerDockerfile)
 		}
+	}
+}
+
+func TestAgenticRunnerDockerfileDockerShimLayout(t *testing.T) {
+	t.Parallel()
+	for _, want := range []string{
+		"/opt/gh-sr/docker-shim/docker",
+		"COPY docker-wrapper.sh /opt/gh-sr/docker-shim/docker",
+		"/etc/profile.d/gh-sr-docker-shim.sh",
+		"Defaults:runner secure_path=",
+		"/opt/gh-sr/docker-shim:",
+		"visudo -cf /etc/sudoers.d/runner-secure-path",
+	} {
+		if !strings.Contains(agenticRunnerDockerfile, want) {
+			t.Fatalf("Dockerfile should contain %q, got:\n%s", want, agenticRunnerDockerfile)
+		}
+	}
+	if strings.Contains(agenticRunnerDockerfile, "COPY docker-wrapper.sh /usr/local/bin/docker") {
+		t.Fatal("Dockerfile should not install docker-wrapper at /usr/local/bin/docker")
+	}
+}
+
+func TestAgenticRunnerEntrypointPrependsDockerShimPATH(t *testing.T) {
+	t.Parallel()
+	if !strings.Contains(agenticRunnerEntrypoint, "PATH=/opt/gh-sr/docker-shim:\\$PATH") {
+		t.Fatalf("entrypoint RUNNER_ENV should prepend docker shim PATH, got:\n%s", agenticRunnerEntrypoint)
 	}
 }
 

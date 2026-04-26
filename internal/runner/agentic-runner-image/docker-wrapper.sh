@@ -1,5 +1,11 @@
 #!/bin/bash
-# gh-sr docker wrapper
+# gh-sr docker CLI shim (installed as /opt/gh-sr/docker-shim/docker in the container runner image).
+#
+# This is NOT the mechanism that isolates multiple agentic runners on one host — use
+# runner_mode: container for that (each outer runner container gets its own inner dockerd,
+# network namespace, MCP port 80, and /tmp/gh-aw). This script is a gh-aw compatibility
+# layer for jobs running inside those containers: MCP gateway self-inspect bypass, gateway
+# container cleanup, and AWF agent host.docker.internal routing (see below).
 #
 # Makes gh-aw-mcpg's self-inspect validation block a no-op by forcing a
 # non-hex container hostname.

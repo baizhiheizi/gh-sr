@@ -101,14 +101,25 @@ RUN apt-get update \
 # Runner state directory (bind-mounted from host at runtime)
 RUN mkdir -p /runner-state && chown runner:runner /runner-state
 
-# Docker wrapper: injects `--hostname gh-aw-mcpg` into `docker run|create`
-# invocations that target ghcr.io/github/gh-aw-mcpg images, so the gateway's
-# self-inspect validation block is skipped via its own "unknown container ID"
-# escape hatch. See docker-wrapper.sh header for details.
-# /usr/local/bin comes before /usr/bin in the default PATH, so this wrapper
-# shadows the real docker CLI (at /usr/bin/docker) for all users.
-COPY docker-wrapper.sh /usr/local/bin/docker
-RUN chmod +x /usr/local/bin/docker
+# gh-sr Docker CLI shim for gh-aw inside container-mode runners (see docker-wrapper.sh).
+# It is NOT what isolates concurrent runners on the host — that is runner_mode: container
+# (separate inner dockerd, network namespace, port 80, /tmp/gh-aw per outer container).
+# The shim: (1) skips flaky gh-aw-mcpg self-inspect under inner --network host/DinD,
+# (2) supervises MCP gateway docker run + cleanup, (3) injects host-gateway for AWF agents.
+# Install as /opt/gh-sr/docker-shim/docker only — entrypoint and root keep /usr/bin/docker
+# for dockerd checks. Runner jobs get this dir first via /etc/profile.d, sudo secure_path,
+# and PATH=… in entrypoint.sh RUNNER_ENV.
+RUN mkdir -p /opt/gh-sr/docker-shim
+COPY docker-wrapper.sh /opt/gh-sr/docker-shim/docker
+RUN chmod +x /opt/gh-sr/docker-shim/docker \
+    && printf '%s\n' 'export PATH="/opt/gh-sr/docker-shim:$PATH"' \
+        > /etc/profile.d/gh-sr-docker-shim.sh \
+    && chmod 644 /etc/profile.d/gh-sr-docker-shim.sh \
+    && printf '%s\n' \
+        'Defaults:runner secure_path="/opt/gh-sr/docker-shim:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"' \
+        > /etc/sudoers.d/runner-secure-path \
+    && chmod 0440 /etc/sudoers.d/runner-secure-path \
+    && visudo -cf /etc/sudoers.d/runner-secure-path
 
 # Entrypoint
 COPY entrypoint.sh /entrypoint.sh

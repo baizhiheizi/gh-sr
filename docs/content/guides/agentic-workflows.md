@@ -381,6 +381,12 @@ In `gh sr status` (and the dashboard), the **IMAGE** column shows the Docker ima
 - **`runner_mode: native`** — default; suitable when you run only one agentic job at a time per host, or already manage port assignments via [§8a](#8a-concurrent-jobs-mcp-gateway-ports-and-gh-sr). Zero extra disk space beyond the runner binaries.
 - **`runner_mode: container`** — use for concurrent **agentic** jobs on one host without MCP port labels, **or** for ordinary CI when you want each runner instance in its own DinD sandbox (no `profile: agentic` required). The image includes Docker CE, dnsmasq, and the actions runner; gh-aw is pre-installed inside the image but is only needed for agentic jobs.
 
+#### Inner Docker CLI shim (container mode only)
+
+Same-host **concurrency** comes from `runner_mode: container` itself (each outer `gh-sr-<instance>` container has its own inner `dockerd`, network namespace, MCP gateway on port 80, and `/tmp/gh-aw`). That isolation is **not** implemented by the Docker shim.
+
+The container image installs `internal/runner/agentic-runner-image/docker-wrapper.sh` as **`/opt/gh-sr/docker-shim/docker`** and puts that directory first on the **runner** user's `PATH` (`/etc/profile.d/gh-sr-docker-shim.sh`, `entrypoint.sh` `RUNNER_ENV`, and `Defaults:runner secure_path=…` so `sudo -E awf` still sees the shim). Root and the entrypoint continue to use the real **`/usr/bin/docker`** for `docker info` / `dockerd` startup. The shim only adjusts selected `docker run`/`create` invocations for `gh-aw-mcpg` and `gh-aw-firewall/agent` images — see the script header in-repo for the full rationale.
+
 ## 9. What `profile: agentic` automates
 
 gh-sr handles the following during `gh sr setup` for runners with `profile: agentic` on Linux:
@@ -586,7 +592,13 @@ Upstream, Claude Code’s JSON init line can list both servers as `"status":"fai
 
 **Observed correlation (example):** In one failing **agent** job, **Start MCP Gateway** set `MCP_GATEWAY_DOMAIN=host.docker.internal` (with `gh-aw-mcpg` on `--network host`) while **Execute Claude Code CLI** logged `[entrypoint][WARN] Failed to transfer …/gh-aw/safeoutputs ownership to chroot user` immediately before Claude’s init JSON listed `"github"` and `"safeoutputs"` MCP servers with `"status":"failed"`, leading to `ERR_API: MCP server(s) failed to launch: github, safeoutputs` in **Parse agent logs**. That sequence points to **in-sandbox MCP startup** (DNS + mounts), not to a missing Actions checkout.
 
-**Container-mode note:** `runner_mode: container` isolates cross-runner `/tmp/gh-aw`, inner Docker, iptables, and MCP port 80 state. Random MCP init failures in container mode are therefore more likely to be **per runner instance** issues: stale inner Docker containers/rules from a previous crash, broken `host.docker.internal` reachability from **nested** agent containers (not only from the runner rootfs), or persistent mount permissions under `/runner-state`. Current gh-sr images install a `/usr/local/bin/docker` wrapper that injects `--add-host=host.docker.internal:host-gateway` for `ghcr.io/github/gh-aw-firewall/agent:*` `docker run`/`create` so the agent uses Docker’s host-gateway mapping for that URL instead of relying solely on inner DNS. The same wrapper supervises `ghcr.io/github/gh-aw-mcpg` **`docker run` only** (stable `--name gh-aw-mcpg-ghsr-*`, `--cidfile`, and signal/exit cleanup) so stale inner host-network listeners are removed when upstream escalates from `POST /close` to signalling the recorded gateway PID.
+**Container-mode note:** `runner_mode: container` isolates cross-runner `/tmp/gh-aw`, inner Docker, iptables, and MCP port 80 state. Random MCP init failures in container mode are therefore more likely to be **per runner instance** issues: stale inner Docker containers/rules from a previous crash, broken `host.docker.internal` reachability from **nested** agent containers (not only from the runner rootfs), or persistent mount permissions under `/runner-state`.
+
+Current gh-sr images install a **path-scoped** Docker CLI shim at **`/opt/gh-sr/docker-shim/docker`** (not a global `/usr/local/bin/docker` replacement) so only the actions runner / `sudo awf` job path uses it:
+
+- **AWF agent images** (`ghcr.io/github/gh-aw-firewall/agent:*`): inject `--add-host=host.docker.internal:host-gateway` on `docker run`/`create` when missing, so nested agents reach the MCP gateway without relying solely on inner Docker DNS.
+- **MCP gateway** (`ghcr.io/github/gh-aw-mcpg:*`): inject `--hostname gh-aw-mcpg` when missing so upstream skips flaky self-inspect under inner `--network host` / DinD.
+- **`docker run` for mcpg only**: stable `--name gh-aw-mcpg-ghsr-*`, `--cidfile`, and signal/exit cleanup so stale inner host-network listeners on port **80** are removed when upstream escalates from `POST /close` to signalling the recorded gateway PID.
 
 ## Files created on the host
 
@@ -656,7 +668,7 @@ For **container** runners on Linux it additionally checks:
 - **Inner DinD**: `docker exec gh-sr-<instance> docker info` succeeds.
 - **Registration**: `.runner` exists at `/home/runner/actions-runner/.runner` inside the outer container.
 
-For **native** `profile: agentic`, it runs host-level AWF orphan / `DOCKER-USER` hygiene (same as before). For **container** `profile: agentic`, it runs the same style of checks against the **inner** Docker daemon (`docker exec gh-sr-<instance> docker ps …`), because AWF containers live under inner dockerd, not on the host. It also verifies that inner containers can resolve `host.docker.internal`, reach a temporary HTTP listener in the runner namespace from a default-bridge inner container, **and** reach the same listener using `--add-host=host.docker.internal:host-gateway` (the path enforced for AWF agent images by gh-sr’s inner `docker` wrapper). Orphan checks still flag any `gh-aw-mcpg-*` inner containers (including `gh-aw-mcpg-ghsr-*` names from the MCP gateway wrapper) left over from crashed jobs.
+For **native** `profile: agentic`, it runs host-level AWF orphan / `DOCKER-USER` hygiene (same as before). For **container** `profile: agentic`, it runs the same style of checks against the **inner** Docker daemon (`docker exec gh-sr-<instance> docker ps …`), because AWF containers live under inner dockerd, not on the host. It also verifies that inner containers can resolve `host.docker.internal`, reach a temporary HTTP listener in the runner namespace from a default-bridge inner container, **and** reach the same listener using `--add-host=host.docker.internal:host-gateway` (the path enforced for AWF agent images by gh-sr’s **`/opt/gh-sr/docker-shim/docker`** shim when jobs invoke `docker`). Orphan checks still flag any `gh-aw-mcpg-*` inner containers (including `gh-aw-mcpg-ghsr-*` names from the MCP gateway wrapper) left over from crashed jobs.
 
 ### Attach to a running runner container
 

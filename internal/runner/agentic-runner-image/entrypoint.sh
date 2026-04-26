@@ -164,7 +164,9 @@ export RUNNER_TOOL_CACHE="/opt/hostedtoolcache"
 # su - resets the environment to a login shell's defaults, so RUNNER_TEMP
 # and RUNNER_TOOL_CACHE are re-exported on the runner-user side of every
 # invocation below.
-RUNNER_ENV="RUNNER_TEMP='${RUNNER_TEMP_DIR}' RUNNER_TOOL_CACHE='${RUNNER_TOOL_CACHE}'"
+# Prepend gh-sr docker shim so gh-aw / job steps use /opt/gh-sr/docker-shim/docker; root
+# entrypoint above still uses /usr/bin/docker (shim is not on root's default PATH).
+RUNNER_ENV="PATH=/opt/gh-sr/docker-shim:\$PATH RUNNER_TEMP='${RUNNER_TEMP_DIR}' RUNNER_TOOL_CACHE='${RUNNER_TOOL_CACHE}'"
 
 # Only configure if not already done. GitHub registration tokens are one-time-use;
 # running config.sh on every restart would consume the token and fail on the second start.
