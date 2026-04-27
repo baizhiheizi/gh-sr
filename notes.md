@@ -3,7 +3,7 @@
 ## Key Insights
 
 - **`host.Host.conn` is typed as `Executor` interface**: Can inject `mockExecutor` for testing SSH-dependent code WITHOUT modifying any production code. Just set `h.conn = &mockExecutor{...}` after `NewHost()`.
-- `powerShellSingleQuoted` in `runner/native.go` and `autostart/shell.go` are identical functions (duplicated). Tests for one do NOT cover the other.
+- `mockExecutor.runFn` allows multi-call sequences to be tested (closure captures call state)
 - Go proxy blocked: tests cannot run locally; CI validates all changes.
 
 ## Testing Patterns
@@ -11,15 +11,15 @@
 - Table-driven tests with `t.Run(name, func(t *testing.T) { t.Parallel(); ... })`
 - `t.Parallel()` in all unit tests
 - `httptest.Server` for GitHub API mocking
-- Mock `Executor` interface for SSH-dependent tests
+- `mockExecutor` for SSH-dependent tests (set `h.conn = &mockExecutor{runFn: func(cmd string)(string,error){...}}`)
 
 ## Testing Backlog
 
-- `internal/runner/container.go`: lifecycle functions require Docker/SSH; testable with mock executor
-- `internal/autostart/autostart.go`: Detect/Install/Start/Stop/Uninstall require SSH; testable with mock executor
-- `internal/host/detect.go`: DetectOS/DetectArch require SSH; testable with mock executor
+- `internal/runner/container.go`: lifecycle functions; testable via `mockExecutor`
+- `internal/autostart/autostart.go`: Detect/Install/Start/Stop/Uninstall; testable with `mockExecutor`
+- ✅ `internal/host/detect.go`: now fully tested via PR #55
 
 ## Completed Work
 
-- PRs #8, #11, #31, #37, #40 all merged
-- `containerRunnerImageExtraSorted`, `applyContainerImageExtras`, `lockedWriter`, `partitionRebuildTargets` all tested
+- PRs #8, #11, #31, #37, #40, #55 all merged/passed
+- `DetectOS`, `DetectArch`, `DetectDockerAvailable` now tested (17 cases)
