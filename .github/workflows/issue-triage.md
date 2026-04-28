@@ -12,6 +12,7 @@ on:
 runs-on: [self-hosted, linux, agentic]
 runs-on-slim: "self-hosted"
 imports:
+  - shared/setup-go.md
   - shared/self-hosted-runner.md
 permissions: read-all
 network: defaults

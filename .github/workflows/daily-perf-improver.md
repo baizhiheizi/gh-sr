@@ -18,6 +18,7 @@ on:
 runs-on: [self-hosted, linux, agentic]
 runs-on-slim: "self-hosted"
 imports:
+  - shared/setup-go.md
   - shared/self-hosted-runner.md
 timeout-minutes: 60
 permissions: read-all
