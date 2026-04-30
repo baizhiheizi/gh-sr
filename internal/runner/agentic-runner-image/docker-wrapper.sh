@@ -131,6 +131,25 @@ has_hostname_arg() {
     return 1
 }
 
+has_detach_arg() {
+    local arg
+    for arg in "$@"; do
+        case "$arg" in
+            ghcr.io/github/gh-aw-mcpg:*)
+                return 1
+                ;;
+            --detach | --detach=true | -d)
+                return 0
+                ;;
+            --detach=false)
+                ;;
+            --*)
+                ;;
+        esac
+    done
+    return 1
+}
+
 rewrite_claude_mcp_gateway_urls() {
     local config_path="${1:-/tmp/gh-aw/mcp-config/mcp-servers.json}"
     local previous_sig=""
@@ -238,6 +257,9 @@ if is_mcpg_invocation "$@"; then
         extra=()
         if ! has_hostname_arg "$@"; then
             extra+=(--hostname gh-aw-mcpg)
+        fi
+        if has_detach_arg "$@"; then
+            exec "$real" "$sub" "${extra[@]}" "$@"
         fi
         if [[ -z "$mcpg_name" || -z "$mcpg_cidfile" ]]; then
             mcpg_tmpdir=$(mktemp -d /tmp/gh-sr-mcpg.XXXXXX) || exit 1

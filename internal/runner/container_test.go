@@ -428,6 +428,111 @@ func TestDockerWrapperInjection(t *testing.T) {
 	})
 }
 
+func TestDockerWrapperMcpgDetachedRunDoesNotSupervise(t *testing.T) {
+	t.Parallel()
+	wrapper := filepath.Join("agentic-runner-image", "docker-wrapper.sh")
+	if _, err := os.Stat(wrapper); err != nil {
+		t.Fatalf("docker-wrapper.sh: %v", err)
+	}
+
+	cmd := exec.Command(
+		"bash",
+		wrapper,
+		"run",
+		"--detach",
+		"--name",
+		"awmg-proxy",
+		"ghcr.io/github/gh-aw-mcpg:v0.3.0",
+	)
+	cmd.Env = append(os.Environ(), "GH_SR_DOCKER_WRAPPER_REAL=/bin/echo")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("detached mcpg wrapper run: %v\n%s", err, out)
+	}
+
+	got := strings.TrimSpace(string(out))
+	if !strings.Contains(got, "run --hostname gh-aw-mcpg --detach --name awmg-proxy ghcr.io/github/gh-aw-mcpg:v0.3.0") {
+		t.Fatalf("detached mcpg run should pass through with hostname only, got %q", got)
+	}
+	for _, forbidden := range []string{
+		"--cidfile",
+		"rm -f",
+		"[gh-sr:mcp-claude-urls]",
+	} {
+		if strings.Contains(got, forbidden) {
+			t.Fatalf("detached mcpg run must not use supervisor cleanup path; found %q in %q", forbidden, got)
+		}
+	}
+}
+
+func TestDockerWrapperMcpgCommandDetachArgStillSupervises(t *testing.T) {
+	t.Parallel()
+	wrapper := filepath.Join("agentic-runner-image", "docker-wrapper.sh")
+	if _, err := os.Stat(wrapper); err != nil {
+		t.Fatalf("docker-wrapper.sh: %v", err)
+	}
+
+	cmd := exec.Command(
+		"bash",
+		wrapper,
+		"run",
+		"-i",
+		"--rm",
+		"ghcr.io/github/gh-aw-mcpg:v0.3.0",
+		"helper",
+		"-d",
+	)
+	cmd.Env = append(os.Environ(), "GH_SR_DOCKER_WRAPPER_REAL=/bin/echo")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("foreground mcpg wrapper run: %v\n%s", err, out)
+	}
+
+	got := strings.TrimSpace(string(out))
+	for _, want := range []string{
+		"[gh-sr:mcp-claude-urls] watcher_start",
+		"--cidfile",
+		"rm -f",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("foreground mcpg run should still use supervisor path; missing %q in %q", want, got)
+		}
+	}
+}
+
+func TestDockerWrapperMcpgOptionValueWithDStillSupervises(t *testing.T) {
+	t.Parallel()
+	wrapper := filepath.Join("agentic-runner-image", "docker-wrapper.sh")
+	if _, err := os.Stat(wrapper); err != nil {
+		t.Fatalf("docker-wrapper.sh: %v", err)
+	}
+
+	cmd := exec.Command(
+		"bash",
+		wrapper,
+		"run",
+		"--entrypoint",
+		"-debug",
+		"ghcr.io/github/gh-aw-mcpg:v0.3.0",
+	)
+	cmd.Env = append(os.Environ(), "GH_SR_DOCKER_WRAPPER_REAL=/bin/echo")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("foreground mcpg wrapper run: %v\n%s", err, out)
+	}
+
+	got := strings.TrimSpace(string(out))
+	for _, want := range []string{
+		"[gh-sr:mcp-claude-urls] watcher_start",
+		"--cidfile",
+		"rm -f",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("foreground mcpg run should not treat option values as detach flags; missing %q in %q", want, got)
+		}
+	}
+}
+
 // TestDockerWrapperMcpgSupervisedRunForwardsStdin verifies gh-aw's piped MCP JSON
 // reaches the real docker child when the wrapper supervises docker run in the background.
 func TestDockerWrapperMcpgSupervisedRunForwardsStdin(t *testing.T) {
