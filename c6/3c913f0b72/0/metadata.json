@@ -1,0 +1,40 @@
+{
+  "cli_version": "dev",
+  "checkpoint_id": "c63c913f0b72",
+  "session_id": "c656b58b-f384-4f67-a67b-ab5b461751cf",
+  "strategy": "manual-commit",
+  "created_at": "2026-05-05T03:41:16.360576429Z",
+  "branch": "main",
+  "checkpoints_count": 4,
+  "files_touched": [
+    "internal/agentic/agentic.go",
+    "internal/runner/agentic-runner-image/docker-wrapper.sh"
+  ],
+  "agent": "Claude Code",
+  "model": "gpt-5.3-codex",
+  "turn_id": "65be5a8819c4",
+  "token_usage": {
+    "input_tokens": 0,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 0,
+    "output_tokens": 0,
+    "api_call_count": 0
+  },
+  "session_metrics": {
+    "turn_count": 20,
+    "context_tokens": 182015,
+    "context_window_size": 200000
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-05-05T03:41:16.29768002Z",
+    "agent_lines": 5,
+    "agent_removed": 4,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 5,
+    "total_lines_changed": 9,
+    "agent_percentage": 100,
+    "metric_version": 2
+  }
+}
