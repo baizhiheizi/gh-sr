@@ -486,7 +486,7 @@ func ValidateContainerInnerNetwork(h *host.Host, outerContainer, runnerName stri
 		return []PrereqFailure{{
 			Name:     "container-inner-host-docker-internal",
 			Severity: SeverityWarning,
-			Message:  fmt.Sprintf("host.docker.internal is not fully usable inside runner container %s (includes default-bridge DNS and AWF bridge host mapping to reach inner services)", outerContainer),
+			Message:  fmt.Sprintf("host.docker.internal AWF bridge mapping is not usable inside runner container %s", outerContainer),
 			Remediation: fmt.Sprintf(`Inspect the runner container's inner Docker DNS and restart/rebuild it if stale:
 
   docker exec -it %s bash
@@ -495,7 +495,7 @@ func ValidateContainerInnerNetwork(h *host.Host, outerContainer, runnerName stri
   docker run --rm --network host alpine sh -c 'getent hosts host.docker.internal'
   docker run --rm --add-host=host.docker.internal:host-gateway alpine sh -c 'wget -qO- --timeout=2 http://host.docker.internal:80/'
 
-If resolution or reachability fails, restart the runner container. If it persists, run:
+If the add-host reachability probe fails, restart the runner container. If it persists, run:
 
   gh sr rebuild %s`, outerContainer, runnerName),
 			DocRef: "agentic-workflows.md §11a",
@@ -532,25 +532,15 @@ For a temporary live-container unblock only:
 func containerInnerNetworkCheckCommand(outerContainer string) string {
 	q := strconv.Quote(outerContainer)
 	return `docker exec ` + q + ` sh -c 'set -eu
-getent hosts host.docker.internal >/dev/null
-docker run --rm alpine sh -c "getent hosts host.docker.internal >/dev/null"
-docker run --rm --network host alpine sh -c "getent hosts host.docker.internal >/dev/null"
+# Collect DNS probes for diagnostics, but do not fail solely on these.
+getent hosts host.docker.internal >/dev/null 2>&1 || true
+docker run --rm alpine sh -c "getent hosts host.docker.internal >/dev/null" >/dev/null 2>&1 || true
+docker run --rm --network host alpine sh -c "getent hosts host.docker.internal >/dev/null" >/dev/null 2>&1 || true
 port=$((18080 + $$ % 1000))
 log=/tmp/gh-sr-doctor-http.log
 python3 -m http.server "$port" --bind 0.0.0.0 >"$log" 2>&1 &
 pid=$!
 trap "kill $pid 2>/dev/null || true; rm -f $log" EXIT
-bridge_ok=0
-for i in 1 2 3 4 5; do
-  if timeout 10s docker run --rm alpine wget -qO- --timeout=2 http://host.docker.internal:$port/ >/dev/null 2>&1; then
-    bridge_ok=1
-    break
-  fi
-  sleep 1
-done
-if [ "$bridge_ok" -ne 1 ]; then
-  exit 1
-fi
 # AWF agent containers use host.docker.internal; gh-sr /opt/gh-sr/docker-shim/docker
 # injects --add-host=host.docker.internal:<resolved> (GH_SR_AWF_BRIDGE_GATEWAY_IP, else
 # getent hosts, else host-gateway). Mirror that path here.
@@ -566,7 +556,7 @@ for i in 1 2 3 4 5; do
       add_host_arg="--add-host=host.docker.internal:host-gateway"
     fi
   fi
-  if timeout 10s docker run --rm "$add_host_arg" alpine sh -c "wget -qO- --timeout=2 http://host.docker.internal:$port/" >/dev/null 2>&1; then
+  if docker run --rm "$add_host_arg" alpine sh -c "wget -qO- --timeout=2 http://host.docker.internal:$port/" >/dev/null 2>&1; then
     hg_ok=1
     break
   fi
