@@ -1,0 +1,163 @@
+{
+  "version": "pages-v1",
+  "pages": [
+    {
+      "title": "Home",
+      "slug": "Home",
+      "level": 1,
+      "sections": [
+        { "title": "Installation", "slug": "Installation", "level": 2, "sidebar": true },
+        { "title": "Quick Start", "slug": "Quick-Start", "level": 2, "sidebar": true },
+        { "title": "Features", "slug": "Features", "level": 2, "sidebar": true },
+        { "title": "Authentication", "slug": "Authentication", "level": 2, "sidebar": true },
+        { "title": "Dashboard", "slug": "Dashboard", "level": 2, "sidebar": true },
+        { "title": "Documentation", "slug": "Documentation", "level": 2, "sidebar": true }
+      ]
+    },
+    {
+      "title": "Architecture",
+      "slug": "Architecture",
+      "level": 1,
+      "sections": [
+        { "title": "Directory Layout", "slug": "Directory-Layout", "level": 2, "sidebar": true },
+        { "title": "Configuration", "slug": "Configuration", "level": 2, "sidebar": true },
+        { "title": "Runner Management", "slug": "Runner-Management", "level": 2, "sidebar": true }
+      ]
+    },
+    {
+      "title": "Directory Layout",
+      "slug": "Directory-Layout",
+      "level": 2,
+      "parent": "Architecture"
+    },
+    {
+      "title": "Configuration",
+      "slug": "Configuration",
+      "level": 2,
+      "parent": "Architecture"
+    },
+    {
+      "title": "Runner Management",
+      "slug": "Runner-Management",
+      "level": 2,
+      "parent": "Architecture"
+    },
+    {
+      "title": "Commands",
+      "slug": "Commands",
+      "level": 1,
+      "sections": [
+        { "title": "init", "slug": "init", "level": 2, "sidebar": true },
+        { "title": "add host", "slug": "add-host", "level": 2, "sidebar": true },
+        { "title": "add runner", "slug": "add-runner", "level": 2, "sidebar": true },
+        { "title": "doctor", "slug": "doctor", "level": 2, "sidebar": true },
+        { "title": "service", "slug": "service", "level": 2, "sidebar": true }
+      ]
+    },
+    {
+      "title": "init",
+      "slug": "init",
+      "level": 2,
+      "parent": "Commands"
+    },
+    {
+      "title": "add host",
+      "slug": "add-host",
+      "level": 2,
+      "parent": "Commands"
+    },
+    {
+      "title": "add runner",
+      "slug": "add-runner",
+      "level": 2,
+      "parent": "Commands"
+    },
+    {
+      "title": "doctor",
+      "slug": "doctor",
+      "level": 2,
+      "parent": "Commands"
+    },
+    {
+      "title": "service",
+      "slug": "service",
+      "level": 2,
+      "parent": "Commands"
+    },
+    {
+      "title": "Configuration Reference",
+      "slug": "Configuration-Reference",
+      "level": 1,
+      "sections": [
+        { "title": "runners.yml", "slug": "runners-yml", "level": 2, "sidebar": true },
+        { "title": "Environment File", "slug": "Environment-File", "level": 2, "sidebar": true },
+        { "title": "Profiles", "slug": "Profiles", "level": 2, "sidebar": true },
+        { "title": "Runner Modes", "slug": "Runner-Modes", "level": 2, "sidebar": true }
+      ]
+    },
+    {
+      "title": "runners.yml",
+      "slug": "runners-yml",
+      "level": 2,
+      "parent": "Configuration-Reference"
+    },
+    {
+      "title": "Environment File",
+      "slug": "Environment-File",
+      "level": 2,
+      "parent": "Configuration-Reference"
+    },
+    {
+      "title": "Profiles",
+      "slug": "Profiles",
+      "level": 2,
+      "parent": "Configuration-Reference"
+    },
+    {
+      "title": "Runner Modes",
+      "slug": "Runner-Modes",
+      "level": 2,
+      "parent": "Configuration-Reference"
+    },
+    {
+      "title": "Host Setup",
+      "slug": "Host-Setup",
+      "level": 1,
+      "sections": [
+        { "title": "Prerequisites", "slug": "Prerequisites", "level": 2, "sidebar": true },
+        { "title": "Linux Docker DNS", "slug": "Linux-Docker-DNS", "level": 2, "sidebar": true },
+        { "title": "Autostart", "slug": "Autostart", "level": 2, "sidebar": true }
+      ]
+    },
+    {
+      "title": "Prerequisites",
+      "slug": "Prerequisites",
+      "level": 2,
+      "parent": "Host-Setup"
+    },
+    {
+      "title": "Linux Docker DNS",
+      "slug": "Linux-Docker-DNS",
+      "level": 2,
+      "parent": "Host-Setup"
+    },
+    {
+      "title": "Autostart",
+      "slug": "Autostart",
+      "level": 2,
+      "parent": "Host-Setup"
+    },
+    {
+      "title": "Development",
+      "slug": "Development",
+      "level": 1,
+      "sections": []
+    },
+    {
+      "title": "For Agents",
+      "slug": "For-Agents",
+      "level": 1,
+      "sections": []
+    }
+  ]
+}
