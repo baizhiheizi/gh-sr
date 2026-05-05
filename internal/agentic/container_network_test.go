@@ -17,7 +17,7 @@ func TestContainerInnerNetworkCheckCommand(t *testing.T) {
 		"docker run --rm alpine",
 		"docker run --rm --network host alpine",
 		"wget -qO- --timeout=2 http://host.docker.internal:",
-		"--add-host=host.docker.internal:172.30.0.1",
+		"--add-host=host.docker.internal:host-gateway",
 		"hg_ok",
 	} {
 		if !strings.Contains(cmd, want) {

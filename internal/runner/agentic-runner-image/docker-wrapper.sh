@@ -48,34 +48,47 @@
 # was already supplied).
 #
 # For `docker run ... ghcr.io/github/gh-aw-mcpg:* ...`, it leaves gh-aw's
-# piped gateway JSON schema-valid, then rewrites the generated Claude MCP
-# config URLs from host.docker.internal to the AWF bridge gateway IP. Claude's
-# HTTP MCP client can intermittently route host.docker.internal through the
-# proxy despite NO_PROXY, while 172.30.0.1 is already exempted by AWF as a
-# host-access gateway. When a rewrite runs, it prints grep-safe diagnostics to
-# stderr prefixed with `[gh-sr:mcp-claude-urls]` (visible in Actions job logs).
+# piped gateway JSON schema-valid, then may rewrite generated Claude MCP config
+# URLs from `http://host.docker.internal:<port>/mcp/` to the same port on a
+# concrete IPv4 target when one can be determined (see `resolve_awf_host_route_target`).
+# That avoids intermittent HTTP client/proxy routing to `host.docker.internal` in
+# nested-Docker AWF setups. When a rewrite runs, diagnostics go to stderr prefixed
+# with `[gh-sr:mcp-claude-urls]` (visible in Actions job logs). If only Docker
+# `host-gateway` is available, URL rewrite is skipped (URLs stay schema-valid).
 #
 # It also intercepts `docker run|create ... ghcr.io/github/gh-aw-firewall/agent:* ...`
-# and injects `--add-host=host.docker.internal:<AWF bridge gateway>` when the caller did
-# not already add an explicit `host.docker.internal` host entry. AWF agent containers
-# sit on custom Docker networks; inner DNS for `host.docker.internal` can flake.
-# Docker's `host-gateway` often maps to an inner-bridge IP (e.g. 172.18.0.1) that is
-# not where AWF exposes host-published service ports — the AWF bridge gateway
-# (default 172.30.0.1, same as MCP URL rewrite above) is the stable route for port 80,
-# 5432, 6379, etc. Override with GH_SR_AWF_BRIDGE_GATEWAY_IP if your AWF layout differs.
+# and injects `--add-host=host.docker.internal:<target>` when the caller did not
+# already add an explicit `host.docker.internal` host entry. Target resolution:
+# `GH_SR_AWF_BRIDGE_GATEWAY_IP` (explicit) → first non-loopback IPv4 from
+# `host.docker.internal` resolution in this namespace → Docker `host-gateway`.
 #
 # All other `docker` invocations are passed through untouched.
 #
 # Tests may set GH_SR_DOCKER_WRAPPER_REAL to a program that records argv (e.g.
 # /bin/echo) instead of invoking the real docker daemon.
 #
-# See: https://github.com/github/gh-aw/issues/25511
+# Optional: set GH_SR_MCP_REWRITE_TARGET_IP before starting the gateway to pin Claude MCP
+# URL rewrites without re-resolving (tests and advanced setups).
 
-real="${GH_SR_DOCKER_WRAPPER_REAL:-/usr/bin/docker}"
+# gh-aw / start_mcp_gateway: expect `docker run -i --rm --network host ...`; stdin is the
+# gateway JSON. stop_mcp_gateway.sh POSTs /close then signals the docker client PID.
 
-# AWF host-access / bridge gateway inside the inner Docker network (see gh-aw firewall
-# allow-host-service-ports and MCP rewrite to 172.30.0.1 in this shim).
-AWF_HOST_DOCKER_INTERNAL_IP="${GH_SR_AWF_BRIDGE_GATEWAY_IP:-172.30.0.1}"
+# Resolve a concrete IPv4 for AWF host-access and Claude MCP URL rewrites, or emit
+# literal `HOST_GATEWAY` when only Docker host-gateway mapping is appropriate.
+# Order: explicit GH_SR_AWF_BRIDGE_GATEWAY_IP → non-loopback host.docker.internal → host-gateway.
+resolve_awf_host_route_target() {
+    if [[ -n "${GH_SR_AWF_BRIDGE_GATEWAY_IP:-}" ]]; then
+        printf '%s\n' "$GH_SR_AWF_BRIDGE_GATEWAY_IP"
+        return 0
+    fi
+    local ip=""
+    ip=$(getent hosts host.docker.internal 2>/dev/null | awk '{print $1; exit}')
+    if [[ -n "$ip" && "$ip" != "127.0.0.1" && "$ip" != "::1" ]]; then
+        printf '%s\n' "$ip"
+        return 0
+    fi
+    printf 'HOST_GATEWAY\n'
+}
 
 docker_option_value() {
     local option="$1"
@@ -158,10 +171,20 @@ has_detach_arg() {
 
 rewrite_claude_mcp_gateway_urls() {
     local config_path="${1:-/tmp/gh-aw/mcp-config/mcp-servers.json}"
+    local target="${GH_SR_MCP_REWRITE_TARGET_IP:-}"
+    local port="${GH_SR_MCP_REWRITE_PORT:-80}"
     local previous_sig=""
     local current_sig=""
     local i
     local saw_file=false
+
+    if [[ -z "$target" || "$target" == "HOST_GATEWAY" ]]; then
+        echo "[gh-sr:mcp-claude-urls] watcher_skip_no_concrete_target path=${config_path} target=${target:-empty}" >&2
+        return 0
+    fi
+
+    local ip_esc
+    ip_esc=$(printf '%s' "$target" | sed 's/\./\\./g')
 
     on_rewrite_watcher_signal() {
         echo "[gh-sr:mcp-claude-urls] watcher_stop signal path=${config_path}" >&2
@@ -170,7 +193,7 @@ rewrite_claude_mcp_gateway_urls() {
     }
     trap 'on_rewrite_watcher_signal' TERM INT
 
-    echo "[gh-sr:mcp-claude-urls] watcher_start path=${config_path} max_iterations=120" >&2
+    echo "[gh-sr:mcp-claude-urls] watcher_start path=${config_path} max_iterations=120 port=${port} target=${target}" >&2
 
     for i in $(seq 1 120); do
         if [[ -f "$config_path" ]]; then
@@ -180,15 +203,15 @@ rewrite_claude_mcp_gateway_urls() {
             fi
             current_sig=$(stat -c '%s:%Y' "$config_path" 2>/dev/null || true)
             if [[ -n "$current_sig" && "$current_sig" == "$previous_sig" ]]; then
-                if grep -qE 'http://host\.docker\.internal:80/mcp/' "$config_path" 2>/dev/null; then
+                if grep -qE "http://host\\.docker\\.internal:${port}/mcp/" "$config_path" 2>/dev/null; then
                     local hb ha br
-                    hb=$(grep -cE 'http://host\.docker\.internal:80/mcp/' "$config_path" 2>/dev/null || true)
+                    hb=$(grep -cE "http://host\\.docker\\.internal:${port}/mcp/" "$config_path" 2>/dev/null || true)
                     hb=${hb:-0}
                     echo "[gh-sr:mcp-claude-urls] stable_file iteration=${i} sig=${current_sig} host_mcp_url_hits=${hb} applying_rewrite" >&2
-                    sed -i 's#http://host\.docker\.internal:80/mcp/#http://172.30.0.1:80/mcp/#g' "$config_path" 2>/dev/null || true
-                    ha=$(grep -cE 'http://host\.docker\.internal:80/mcp/' "$config_path" 2>/dev/null || true)
+                    sed -i "s#http://host\\.docker\\.internal:${port}/mcp/#http://${ip_esc}:${port}/mcp/#g" "$config_path" 2>/dev/null || true
+                    ha=$(grep -cE "http://host\\.docker\\.internal:${port}/mcp/" "$config_path" 2>/dev/null || true)
                     ha=${ha:-0}
-                    br=$(grep -cE 'http://172\.30\.0\.1:80/mcp/' "$config_path" 2>/dev/null || true)
+                    br=$(grep -cE "http://${ip_esc}:${port}/mcp/" "$config_path" 2>/dev/null || true)
                     br=${br:-0}
                     echo "[gh-sr:mcp-claude-urls] rewrite_applied iteration=${i} host_mcp_url_hits_after=${ha} bridge_mcp_url_hits=${br}" >&2
                 fi
@@ -202,11 +225,11 @@ rewrite_claude_mcp_gateway_urls() {
 
     trap - TERM INT
 
-    if [[ -f "$config_path" ]] && grep -qE 'http://host\.docker\.internal:80/mcp/' "$config_path" 2>/dev/null; then
+    if [[ -f "$config_path" ]] && grep -qE "http://host\\.docker\\.internal:${port}/mcp/" "$config_path" 2>/dev/null; then
         local fh fb
-        fh=$(grep -cE 'http://host\.docker\.internal:80/mcp/' "$config_path" 2>/dev/null || true)
+        fh=$(grep -cE "http://host\\.docker\\.internal:${port}/mcp/" "$config_path" 2>/dev/null || true)
         fh=${fh:-0}
-        fb=$(grep -cE 'http://172\.30\.0\.1:80/mcp/' "$config_path" 2>/dev/null || true)
+        fb=$(grep -cE "http://${ip_esc}:${port}/mcp/" "$config_path" 2>/dev/null || true)
         fb=${fb:-0}
         echo "[gh-sr:mcp-claude-urls] watcher_exit WARNING still_host_mcp_urls path=${config_path} host_mcp_url_hits=${fh} bridge_mcp_url_hits=${fb}" >&2
     else
@@ -318,6 +341,10 @@ if is_mcpg_invocation "$@"; then
         trap on_mcpg_signal INT TERM HUP
 
         set +e
+        if [[ -z "${GH_SR_MCP_REWRITE_TARGET_IP:-}" ]]; then
+            GH_SR_MCP_REWRITE_TARGET_IP="$(resolve_awf_host_route_target)"
+        fi
+        export GH_SR_MCP_REWRITE_TARGET_IP
         rewrite_claude_mcp_gateway_urls "${GH_SR_MCP_CONFIG_REWRITE_PATH:-/tmp/gh-aw/mcp-config/mcp-servers.json}" &
         mcpg_rewriter_pid=$!
         # Background jobs in non-interactive bash get /dev/null stdin unless
@@ -343,7 +370,11 @@ fi
 if needs_awf_agent_bridge_host "$@"; then
     sub="$1"
     shift
-    exec "$real" "$sub" --add-host=host.docker.internal:"$AWF_HOST_DOCKER_INTERNAL_IP" "$@"
+    awf_host_target="$(resolve_awf_host_route_target)"
+    if [[ "$awf_host_target" == "HOST_GATEWAY" ]]; then
+        exec "$real" "$sub" --add-host=host.docker.internal:host-gateway "$@"
+    fi
+    exec "$real" "$sub" --add-host=host.docker.internal:"$awf_host_target" "$@"
 fi
 
 exec "$real" "$@"

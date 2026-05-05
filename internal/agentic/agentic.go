@@ -493,7 +493,7 @@ func ValidateContainerInnerNetwork(h *host.Host, outerContainer, runnerName stri
   getent hosts host.docker.internal
   docker run --rm alpine sh -c 'getent hosts host.docker.internal'
   docker run --rm --network host alpine sh -c 'getent hosts host.docker.internal'
-  docker run --rm --add-host=host.docker.internal:172.30.0.1 alpine sh -c 'wget -qO- --timeout=2 http://host.docker.internal:80/'
+  docker run --rm --add-host=host.docker.internal:host-gateway alpine sh -c 'wget -qO- --timeout=2 http://host.docker.internal:80/'
 
 If resolution or reachability fails, restart the runner container. If it persists, run:
 
@@ -552,11 +552,21 @@ if [[ "$bridge_ok" -ne 1 ]]; then
   exit 1
 fi
 # AWF agent containers use host.docker.internal; gh-sr /opt/gh-sr/docker-shim/docker
-# injects --add-host=host.docker.internal:<AWF bridge gateway> (default 172.30.0.1) for
-# gh-aw-firewall/agent images. Mirror that path here.
+# injects --add-host=host.docker.internal:<resolved> (GH_SR_AWF_BRIDGE_GATEWAY_IP, else
+# getent hosts, else host-gateway). Mirror that path here.
 hg_ok=0
 for i in 1 2 3 4 5; do
-  if timeout 10s docker run --rm --add-host=host.docker.internal:172.30.0.1 alpine sh -c "wget -qO- --timeout=2 http://host.docker.internal:$port/" >/dev/null 2>&1; then
+  if [[ -n "${GH_SR_AWF_BRIDGE_GATEWAY_IP:-}" ]]; then
+    add_host_arg="--add-host=host.docker.internal:${GH_SR_AWF_BRIDGE_GATEWAY_IP}"
+  else
+    awf_route="$(getent hosts host.docker.internal 2>/dev/null | awk '{print $1; exit}')"
+    if [[ -n "$awf_route" && "$awf_route" != "127.0.0.1" ]]; then
+      add_host_arg="--add-host=host.docker.internal:${awf_route}"
+    else
+      add_host_arg="--add-host=host.docker.internal:host-gateway"
+    fi
+  fi
+  if timeout 10s docker run --rm "$add_host_arg" alpine sh -c "wget -qO- --timeout=2 http://host.docker.internal:$port/" >/dev/null 2>&1; then
     hg_ok=1
     break
   fi
