@@ -1,0 +1,63 @@
+Review the logs of this workflow: `➜  gh run view 25342374315 --repo=an-lee/enjoy_web`
+
+```
+ActiveRecord::ConnectionNotEstablished
+connection to server at "172.18.0.1", port 5432 failed: Connection refused
+```
+
+The DATABASE_URL is set to host.docker.internal → 172.18.0.1 which is not available in sandbox.  the firewall allows 172.30.0.1:5432 and 172.30.0.1:6379 (awf-net gateway to host-published ports), as in your sandbox audit (iptables-audit.txt / docker-compose.redacted.yml).
+
+The docs of https://github.com/github/gh-aw says, for services: from the agent, connect via host.docker.internal, not localhost.
+
+Help me to identify the root cause. Fix `host.docker.internal` issue in runner requirement.
+
+---
+
+Review the logs of this workflow: `➜  gh run view 25342374315 --repo=an-lee/enjoy_web`
+
+```
+ActiveRecord::ConnectionNotEstablished
+connection to server at "172.18.0.1", port 5432 failed: Connection refused
+```
+
+The DATABASE_URL is set to host.docker.internal → 172.18.0.1 which is not available in sandbox.  the firewall allows 172.30.0.1:5432 and 172.30.0.1:6379 (awf-net gateway to host-published ports), as in your sandbox audit (iptables-audit.txt / docker-compose.redacted.yml).
+
+The docs of https://github.com/github/gh-aw says, for services: from the agent, connect via host.docker.internal, not localhost.
+
+Help me to identify the root cause. Fix `host.docker.internal` issue in runner requirement.
+
+---
+
+Implement the plan as specified, it is attached for your reference. Do NOT edit the plan file itself.
+
+To-do's from the plan have already been created. Do not create them again. Mark them as in_progress as you work, starting with the first one. Don't stop until you have completed all the to-dos.
+
+---
+
+Implement the plan as specified, it is attached for your reference. Do NOT edit the plan file itself.
+
+To-do's from the plan have already been created. Do not create them again. Mark them as in_progress as you work, starting with the first one. Don't stop until you have completed all the to-dos.
+
+---
+
+internal/runner/agentic-runner-image/docker-wrapper.sh now looks like too much work around and hacky. What exactly it does. Does it change the default of `gh-aw`? Is it a workaround for the `docker-in-docker` env for gh-aw?
+
+---
+
+internal/runner/agentic-runner-image/docker-wrapper.sh now looks like too much work around and hacky. What exactly it does. Does it change the default of `gh-aw`? Is it a workaround for the `docker-in-docker` env for gh-aw?
+
+---
+
+Could you dig into gh-aw(https://github.com/github/gh-aw) deeper and refactor internal/runner/agentic-runner-image/docker-wrapper.sh , make it adaptive, no hardcoding, match to the gh-aw design.
+
+---
+
+Could you dig into gh-aw(https://github.com/github/gh-aw) deeper and refactor internal/runner/agentic-runner-image/docker-wrapper.sh , make it adaptive, no hardcoding, match to the gh-aw design.
+
+---
+
+Could you dig into gh-aw(https://github.com/github/gh-aw) deeper and refactor internal/runner/agentic-runner-image/docker-wrapper.sh , make it adaptive, no hardcoding, match to the gh-aw design.
+
+---
+
+Could you dig into gh-aw(https://github.com/github/gh-aw) deeper and refactor internal/runner/agentic-runner-image/docker-wrapper.sh , make it adaptive, no hardcoding, match to the gh-aw design.
