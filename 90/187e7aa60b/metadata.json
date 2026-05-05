@@ -1,0 +1,29 @@
+{
+  "cli_version": "dev",
+  "checkpoint_id": "90187e7aa60b",
+  "strategy": "manual-commit",
+  "branch": "main",
+  "checkpoints_count": 4,
+  "files_touched": [
+    "docs/content/guides/agentic-workflows.md",
+    "internal/agentic/agentic.go",
+    "internal/agentic/container_network_test.go",
+    "internal/doctor/doctor.go",
+    "internal/runner/agentic-runner-image/entrypoint.sh"
+  ],
+  "sessions": [
+    {
+      "metadata": "/90/187e7aa60b/0/metadata.json",
+      "transcript": "/90/187e7aa60b/0/full.jsonl",
+      "content_hash": "/90/187e7aa60b/0/content_hash.txt",
+      "prompt": "/90/187e7aa60b/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 0,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 0,
+    "output_tokens": 0,
+    "api_call_count": 0
+  }
+}
