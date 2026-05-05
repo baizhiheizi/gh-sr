@@ -36,3 +36,12 @@ All major performance optimizations from the backlog have been implemented. Repo
 ## Infrastructure Status (2026-04-27)
 - Issue #44 (Daily Perf Improver failures) was closed on 2026-04-27 by github-actions[bot]
 - Safe-outputs MCP server runs at host.docker.internal:80/mcp/safeoutputs
+- ⚠️ Safe-outputs tools (noop, create_issue, update_issue) NOT accessible via tool calls in this environment — HTTP proxy blocks direct access
+
+## Run History
+
+### 2026-05-05 12:56 UTC - [Run](https://github.com/an-lee/gh-sr/actions/runs/25376977360)
+- ✅ Task 7: Identified April Monthly Activity issue #6 needs closing; May 2026 issue needs creation — but safe-outputs tools not callable from this environment
+- 🔍 Task 2: Confirmed repository still in maintenance mode — no new performance opportunities
+- 🔍 Task 1: Build validated OK (`go build ./...`)
+- ⚠️ No open Perf Improver PRs, no open performance-labeled issues
