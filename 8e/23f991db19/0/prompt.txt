@@ -542,3 +542,151 @@ Execute the selected diff-tab commit action.
 ---
 
 Execute the selected diff-tab commit action.
+
+---
+
+Warnings are still there. Verify it and ensure that you fix it.
+
+➜  gh sr doctor --repo=an-lee/rune
+=== Local environment ===
+OK    [local       ] config file exists: /home/an-lee/.gh-sr/runners.yml
+OK    [local       ] env file present: /home/an-lee/.gh-sr/env
+OK    [local       ] SSH client auth available (agent or default ~/.ssh keys)
+
+=== Configuration ===
+OK    [config      ] YAML valid and constraints satisfied
+
+=== GitHub API ===
+OK    [github      ] an-lee/rune: list runners OK (3 registered)
+
+=== Hosts ===
+OK    [x1          ] connected (ssh an-lee@192.168.31.66)
+OK    [x1          ] native: curl and tar present
+OK    [x1          ] linux: non-root user has passwordless sudo
+OK    [x1          ] container: host Docker available and --privileged supported
+OK    [x1          ] container: instance rune-agentic-1 — inner dockerd healthy (gh-sr-rune-agentic-1)
+OK    [x1          ] container: instance rune-agentic-1 — registered (.runner present in gh-sr-rune-agentic-1)
+OK    [x1          ] container: instance rune-agentic-2 — inner dockerd healthy (gh-sr-rune-agentic-2)
+OK    [x1          ] container: instance rune-agentic-2 — registered (.runner present in gh-sr-rune-agentic-2)
+OK    [x1          ] container: instance rune-agentic-3 — inner dockerd healthy (gh-sr-rune-agentic-3)
+OK    [x1          ] container: instance rune-agentic-3 — registered (.runner present in gh-sr-rune-agentic-3)
+WARN  [x1          ] container(agent): host.docker.internal AWF bridge mapping is not usable inside runner container gh-sr-rune-agentic-1
+       Inspect the runner container's inner Docker DNS and restart/rebuild it if stale:
+       
+         docker exec -it gh-sr-rune-agentic-1 bash
+         getent hosts host.docker.internal
+         docker run --rm alpine sh -c 'getent hosts host.docker.internal'
+         docker run --rm --network host alpine sh -c 'getent hosts host.docker.internal'
+         docker run --rm --add-host=host.docker.internal:host-gateway alpine sh -c 'wget -qO- --timeout=2 http://host.docker.internal:80/'
+       
+       If the add-host reachability probe fails, restart the runner container. If it persists, run:
+       
+         gh sr rebuild rune-agentic
+       See: agentic-workflows.md §11a
+WARN  [x1          ] container(agent): host.docker.internal AWF bridge mapping is not usable inside runner container gh-sr-rune-agentic-2
+       Inspect the runner container's inner Docker DNS and restart/rebuild it if stale:
+       
+         docker exec -it gh-sr-rune-agentic-2 bash
+         getent hosts host.docker.internal
+         docker run --rm alpine sh -c 'getent hosts host.docker.internal'
+         docker run --rm --network host alpine sh -c 'getent hosts host.docker.internal'
+         docker run --rm --add-host=host.docker.internal:host-gateway alpine sh -c 'wget -qO- --timeout=2 http://host.docker.internal:80/'
+       
+       If the add-host reachability probe fails, restart the runner container. If it persists, run:
+       
+         gh sr rebuild rune-agentic
+       See: agentic-workflows.md §11a
+WARN  [x1          ] container(agent): host.docker.internal AWF bridge mapping is not usable inside runner container gh-sr-rune-agentic-3
+       Inspect the runner container's inner Docker DNS and restart/rebuild it if stale:
+       
+         docker exec -it gh-sr-rune-agentic-3 bash
+         getent hosts host.docker.internal
+         docker run --rm alpine sh -c 'getent hosts host.docker.internal'
+         docker run --rm --network host alpine sh -c 'getent hosts host.docker.internal'
+         docker run --rm --add-host=host.docker.internal:host-gateway alpine sh -c 'wget -qO- --timeout=2 http://host.docker.internal:80/'
+       
+       If the add-host reachability probe fails, restart the runner container. If it persists, run:
+       
+         gh sr rebuild rune-agentic
+       See: agentic-workflows.md §11a
+
+--- Summary ---
+0 failed, 3 warnings
+
+---
+
+Warnings are still there. Verify it and ensure that you fix it.
+
+➜  gh sr doctor --repo=an-lee/rune
+=== Local environment ===
+OK    [local       ] config file exists: /home/an-lee/.gh-sr/runners.yml
+OK    [local       ] env file present: /home/an-lee/.gh-sr/env
+OK    [local       ] SSH client auth available (agent or default ~/.ssh keys)
+
+=== Configuration ===
+OK    [config      ] YAML valid and constraints satisfied
+
+=== GitHub API ===
+OK    [github      ] an-lee/rune: list runners OK (3 registered)
+
+=== Hosts ===
+OK    [x1          ] connected (ssh an-lee@192.168.31.66)
+OK    [x1          ] native: curl and tar present
+OK    [x1          ] linux: non-root user has passwordless sudo
+OK    [x1          ] container: host Docker available and --privileged supported
+OK    [x1          ] container: instance rune-agentic-1 — inner dockerd healthy (gh-sr-rune-agentic-1)
+OK    [x1          ] container: instance rune-agentic-1 — registered (.runner present in gh-sr-rune-agentic-1)
+OK    [x1          ] container: instance rune-agentic-2 — inner dockerd healthy (gh-sr-rune-agentic-2)
+OK    [x1          ] container: instance rune-agentic-2 — registered (.runner present in gh-sr-rune-agentic-2)
+OK    [x1          ] container: instance rune-agentic-3 — inner dockerd healthy (gh-sr-rune-agentic-3)
+OK    [x1          ] container: instance rune-agentic-3 — registered (.runner present in gh-sr-rune-agentic-3)
+WARN  [x1          ] container(agent): host.docker.internal AWF bridge mapping is not usable inside runner container gh-sr-rune-agentic-1
+       Inspect the runner container's inner Docker DNS and restart/rebuild it if stale:
+       
+         docker exec -it gh-sr-rune-agentic-1 bash
+         getent hosts host.docker.internal
+         docker run --rm alpine sh -c 'getent hosts host.docker.internal'
+         docker run --rm --network host alpine sh -c 'getent hosts host.docker.internal'
+         docker run --rm --add-host=host.docker.internal:host-gateway alpine sh -c 'wget -qO- --timeout=2 http://host.docker.internal:80/'
+       
+       If the add-host reachability probe fails, restart the runner container. If it persists, run:
+       
+         gh sr rebuild rune-agentic
+       See: agentic-workflows.md §11a
+WARN  [x1          ] container(agent): host.docker.internal AWF bridge mapping is not usable inside runner container gh-sr-rune-agentic-2
+       Inspect the runner container's inner Docker DNS and restart/rebuild it if stale:
+       
+         docker exec -it gh-sr-rune-agentic-2 bash
+         getent hosts host.docker.internal
+         docker run --rm alpine sh -c 'getent hosts host.docker.internal'
+         docker run --rm --network host alpine sh -c 'getent hosts host.docker.internal'
+         docker run --rm --add-host=host.docker.internal:host-gateway alpine sh -c 'wget -qO- --timeout=2 http://host.docker.internal:80/'
+       
+       If the add-host reachability probe fails, restart the runner container. If it persists, run:
+       
+         gh sr rebuild rune-agentic
+       See: agentic-workflows.md §11a
+WARN  [x1          ] container(agent): host.docker.internal AWF bridge mapping is not usable inside runner container gh-sr-rune-agentic-3
+       Inspect the runner container's inner Docker DNS and restart/rebuild it if stale:
+       
+         docker exec -it gh-sr-rune-agentic-3 bash
+         getent hosts host.docker.internal
+         docker run --rm alpine sh -c 'getent hosts host.docker.internal'
+         docker run --rm --network host alpine sh -c 'getent hosts host.docker.internal'
+         docker run --rm --add-host=host.docker.internal:host-gateway alpine sh -c 'wget -qO- --timeout=2 http://host.docker.internal:80/'
+       
+       If the add-host reachability probe fails, restart the runner container. If it persists, run:
+       
+         gh sr rebuild rune-agentic
+       See: agentic-workflows.md §11a
+
+--- Summary ---
+0 failed, 3 warnings
+
+---
+
+Execute the selected diff-tab commit action.
+
+---
+
+Execute the selected diff-tab commit action.
