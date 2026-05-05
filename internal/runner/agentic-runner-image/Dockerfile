@@ -105,7 +105,7 @@ RUN mkdir -p /runner-state && chown runner:runner /runner-state
 # It is NOT what isolates concurrent runners on the host — that is runner_mode: container
 # (separate inner dockerd, network namespace, port 80, /tmp/gh-aw per outer container).
 # The shim: (1) skips flaky gh-aw-mcpg self-inspect under inner --network host/DinD,
-# (2) supervises MCP gateway docker run + cleanup, (3) injects host-gateway for AWF agents.
+# (2) supervises MCP gateway docker run + cleanup, (3) injects AWF bridge gateway mapping for AWF agents.
 # Install as /opt/gh-sr/docker-shim/docker only — entrypoint and root keep /usr/bin/docker
 # for dockerd checks. Runner jobs get this dir first via /etc/profile.d, sudo secure_path,
 # and PATH=… in entrypoint.sh RUNNER_ENV.

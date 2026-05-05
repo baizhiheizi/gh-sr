@@ -553,7 +553,7 @@ Checks performed:
 - Passwordless `sudo` is available for `iptables` rules
 - `host.docker.internal` resolves to a non-loopback IP inside default-bridge containers
 - The same name resolves from a `--network host` container (MCP gateway style); **warns** if not
-- Inner `docker run` with `--add-host=host.docker.internal:host-gateway` can reach an HTTP probe on the runner (same route gh-sr enforces for `ghcr.io/github/gh-aw-firewall/agent` containers to the MCP gateway)
+- Inner `docker run` with `--add-host=host.docker.internal:172.30.0.1` can reach an HTTP probe on the runner (same route gh-sr enforces for `ghcr.io/github/gh-aw-firewall/agent` containers to host-published ports and the MCP gateway)
 - External DNS (`github.com`) resolves inside containers
 
 ## 11. Quick Reference Troubleshooting
@@ -603,7 +603,7 @@ Upstream, Claude Code’s JSON init line can list both servers as `"status":"fai
 
 Current gh-sr images install a **path-scoped** Docker CLI shim at `**/opt/gh-sr/docker-shim/docker`** (not a global `/usr/local/bin/docker` replacement) so only the actions runner / `sudo awf` job path uses it:
 
-- **AWF agent images** (`ghcr.io/github/gh-aw-firewall/agent:`*): inject `--add-host=host.docker.internal:host-gateway` on `docker run`/`create` when missing, so nested agents reach the MCP gateway without relying solely on inner Docker DNS.
+- **AWF agent images** (`ghcr.io/github/gh-aw-firewall/agent:`*): inject `--add-host=host.docker.internal:<AWF bridge gateway>` on `docker run`/`create` when missing (default **172.30.0.1**, same as AWF host-service / MCP bridge routing). Override with **`GH_SR_AWF_BRIDGE_GATEWAY_IP`** if your inner AWF layout differs. This avoids Docker `host-gateway` mapping to an inner-bridge IP that does not carry host-published service ports (e.g. PostgreSQL/Redis) in the sandbox.
 - **MCP gateway** (`ghcr.io/github/gh-aw-mcpg:`*): inject `--hostname gh-aw-mcpg` when missing so upstream skips flaky self-inspect under inner `--network host` / DinD.
 - `**docker run` for mcpg only**: stable `--name gh-aw-mcpg-ghsr-`*, `--cidfile`, and signal/exit cleanup so stale inner host-network listeners on port **80** are removed when upstream escalates from `POST /close` to signalling the recorded gateway PID.
 
@@ -677,7 +677,7 @@ For **container** runners on Linux it additionally checks:
 - **Inner DinD**: `docker exec gh-sr-<instance> docker info` succeeds.
 - **Registration**: `.runner` exists at `/home/runner/actions-runner/.runner` inside the outer container.
 
-For **native** `profile: agentic`, it runs host-level AWF orphan / `DOCKER-USER` hygiene (same as before). For **container** `profile: agentic`, it runs the same style of checks against the **inner** Docker daemon (`docker exec gh-sr-<instance> docker ps …`), because AWF containers live under inner dockerd, not on the host. It also verifies that inner containers can resolve `host.docker.internal`, reach a temporary HTTP listener in the runner namespace from a default-bridge inner container, **and** reach the same listener using `--add-host=host.docker.internal:host-gateway` (the path enforced for AWF agent images by gh-sr’s `**/opt/gh-sr/docker-shim/docker`** shim when jobs invoke `docker`). Orphan checks still flag any `gh-aw-mcpg-*` inner containers (including `gh-aw-mcpg-ghsr-*` names from the MCP gateway wrapper) left over from crashed jobs.
+For **native** `profile: agentic`, it runs host-level AWF orphan / `DOCKER-USER` hygiene (same as before). For **container** `profile: agentic`, it runs the same style of checks against the **inner** Docker daemon (`docker exec gh-sr-<instance> docker ps …`), because AWF containers live under inner dockerd, not on the host. It also verifies that inner containers can resolve `host.docker.internal`, reach a temporary HTTP listener in the runner namespace from a default-bridge inner container, **and** reach the same listener using `--add-host=host.docker.internal:172.30.0.1` (the path enforced for AWF agent images by gh-sr’s `**/opt/gh-sr/docker-shim/docker`** shim when jobs invoke `docker`). Orphan checks still flag any `gh-aw-mcpg-*` inner containers (including `gh-aw-mcpg-ghsr-*` names from the MCP gateway wrapper) left over from crashed jobs.
 
 ### Attach to a running runner container
 

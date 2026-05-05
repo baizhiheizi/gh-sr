@@ -56,11 +56,13 @@
 # stderr prefixed with `[gh-sr:mcp-claude-urls]` (visible in Actions job logs).
 #
 # It also intercepts `docker run|create ... ghcr.io/github/gh-aw-firewall/agent:* ...`
-# and injects `--add-host=host.docker.internal:host-gateway` when the caller did
-# not already add an explicit `host.docker.internal` host entry. AWF agent
-# containers often sit on a custom Docker network where inner DNS resolution of
-# `host.docker.internal` can flake; Docker's host-gateway mapping is the stable
-# route to the MCP gateway on the inner host network (port 80).
+# and injects `--add-host=host.docker.internal:<AWF bridge gateway>` when the caller did
+# not already add an explicit `host.docker.internal` host entry. AWF agent containers
+# sit on custom Docker networks; inner DNS for `host.docker.internal` can flake.
+# Docker's `host-gateway` often maps to an inner-bridge IP (e.g. 172.18.0.1) that is
+# not where AWF exposes host-published service ports — the AWF bridge gateway
+# (default 172.30.0.1, same as MCP URL rewrite above) is the stable route for port 80,
+# 5432, 6379, etc. Override with GH_SR_AWF_BRIDGE_GATEWAY_IP if your AWF layout differs.
 #
 # All other `docker` invocations are passed through untouched.
 #
@@ -70,6 +72,10 @@
 # See: https://github.com/github/gh-aw/issues/25511
 
 real="${GH_SR_DOCKER_WRAPPER_REAL:-/usr/bin/docker}"
+
+# AWF host-access / bridge gateway inside the inner Docker network (see gh-aw firewall
+# allow-host-service-ports and MCP rewrite to 172.30.0.1 in this shim).
+AWF_HOST_DOCKER_INTERNAL_IP="${GH_SR_AWF_BRIDGE_GATEWAY_IP:-172.30.0.1}"
 
 docker_option_value() {
     local option="$1"
@@ -209,7 +215,7 @@ rewrite_claude_mcp_gateway_urls() {
     return 0
 }
 
-needs_awf_agent_host_gateway() {
+needs_awf_agent_bridge_host() {
     local sub="${1:-}"
     case "$sub" in
         run | create) ;;
@@ -334,10 +340,10 @@ if is_mcpg_invocation "$@"; then
     fi
 fi
 
-if needs_awf_agent_host_gateway "$@"; then
+if needs_awf_agent_bridge_host "$@"; then
     sub="$1"
     shift
-    exec "$real" "$sub" --add-host=host.docker.internal:host-gateway "$@"
+    exec "$real" "$sub" --add-host=host.docker.internal:"$AWF_HOST_DOCKER_INTERNAL_IP" "$@"
 fi
 
 exec "$real" "$@"

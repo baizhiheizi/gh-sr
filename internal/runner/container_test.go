@@ -140,11 +140,12 @@ func TestContainerRunnerImageTag(t *testing.T) {
 	}
 }
 
-func TestAgenticRunnerDockerWrapperEmbedsHostGatewayLogic(t *testing.T) {
+func TestAgenticRunnerDockerWrapperEmbedsAwfBridgeHostMapping(t *testing.T) {
 	t.Parallel()
 	for _, needle := range []string{
-		"needs_awf_agent_host_gateway",
-		"--add-host=host.docker.internal:host-gateway",
+		"needs_awf_agent_bridge_host",
+		"AWF_HOST_DOCKER_INTERNAL_IP",
+		`--add-host=host.docker.internal:"$AWF_HOST_DOCKER_INTERNAL_IP"`,
 		"gh-aw-firewall/agent:",
 		"GH_SR_DOCKER_WRAPPER_REAL",
 	} {
@@ -369,7 +370,7 @@ func TestDockerWrapperInjection(t *testing.T) {
 	t.Run("awf_agent_host_gateway", func(t *testing.T) {
 		t.Parallel()
 		got := echoWrap(t, "run", "--rm", "ghcr.io/github/gh-aw-firewall/agent:2.3.4")
-		want := "run --add-host=host.docker.internal:host-gateway --rm ghcr.io/github/gh-aw-firewall/agent:2.3.4"
+		want := "run --add-host=host.docker.internal:172.30.0.1 --rm ghcr.io/github/gh-aw-firewall/agent:2.3.4"
 		if got != want {
 			t.Fatalf("got %q want %q", got, want)
 		}
@@ -378,7 +379,29 @@ func TestDockerWrapperInjection(t *testing.T) {
 	t.Run("awf_agent_create", func(t *testing.T) {
 		t.Parallel()
 		got := echoWrap(t, "create", "ghcr.io/github/gh-aw-firewall/agent:edge")
-		want := "create --add-host=host.docker.internal:host-gateway ghcr.io/github/gh-aw-firewall/agent:edge"
+		want := "create --add-host=host.docker.internal:172.30.0.1 ghcr.io/github/gh-aw-firewall/agent:edge"
+		if got != want {
+			t.Fatalf("got %q want %q", got, want)
+		}
+	})
+
+	t.Run("awf_agent_respects_gateway_env_override", func(t *testing.T) {
+		t.Parallel()
+		wrapper := filepath.Join("agentic-runner-image", "docker-wrapper.sh")
+		if _, err := os.Stat(wrapper); err != nil {
+			t.Fatalf("docker-wrapper.sh: %v", err)
+		}
+		cmd := exec.Command("bash", wrapper, "run", "--rm", "ghcr.io/github/gh-aw-firewall/agent:9")
+		cmd.Env = append(os.Environ(),
+			"GH_SR_DOCKER_WRAPPER_REAL=/bin/echo",
+			"GH_SR_AWF_BRIDGE_GATEWAY_IP=10.20.30.40",
+		)
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("bash wrapper: %v\n%s", err, out)
+		}
+		got := strings.TrimSpace(string(out))
+		want := "run --add-host=host.docker.internal:10.20.30.40 --rm ghcr.io/github/gh-aw-firewall/agent:9"
 		if got != want {
 			t.Fatalf("got %q want %q", got, want)
 		}
@@ -422,8 +445,8 @@ func TestDockerWrapperInjection(t *testing.T) {
 		if !strings.Contains(got, "--hostname gh-aw-mcpg") {
 			t.Fatalf("expected mcpg hostname injection, got %q", got)
 		}
-		if strings.Contains(got, "host.docker.internal:host-gateway") {
-			t.Fatalf("did not expect host-gateway for mcpg image, got %q", got)
+		if strings.Contains(got, "host.docker.internal:172.30.0.1") {
+			t.Fatalf("did not expect AWF bridge host mapping for mcpg image, got %q", got)
 		}
 	})
 }
