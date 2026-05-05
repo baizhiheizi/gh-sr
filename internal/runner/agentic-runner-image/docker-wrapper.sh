@@ -72,6 +72,7 @@
 
 # gh-aw / start_mcp_gateway: expect `docker run -i --rm --network host ...`; stdin is the
 # gateway JSON. stop_mcp_gateway.sh POSTs /close then signals the docker client PID.
+real="${GH_SR_DOCKER_WRAPPER_REAL:-/usr/bin/docker}"
 
 # Resolve a concrete IPv4 for AWF host-access and Claude MCP URL rewrites, or emit
 # literal `HOST_GATEWAY` when only Docker host-gateway mapping is appropriate.

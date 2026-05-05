@@ -548,7 +548,7 @@ for i in 1 2 3 4 5; do
   fi
   sleep 1
 done
-if [[ "$bridge_ok" -ne 1 ]]; then
+if [ "$bridge_ok" -ne 1 ]; then
   exit 1
 fi
 # AWF agent containers use host.docker.internal; gh-sr /opt/gh-sr/docker-shim/docker
@@ -556,11 +556,11 @@ fi
 # getent hosts, else host-gateway). Mirror that path here.
 hg_ok=0
 for i in 1 2 3 4 5; do
-  if [[ -n "${GH_SR_AWF_BRIDGE_GATEWAY_IP:-}" ]]; then
+  if [ -n "${GH_SR_AWF_BRIDGE_GATEWAY_IP:-}" ]; then
     add_host_arg="--add-host=host.docker.internal:${GH_SR_AWF_BRIDGE_GATEWAY_IP}"
   else
     awf_route="$(getent hosts host.docker.internal 2>/dev/null | awk '{print $1; exit}')"
-    if [[ -n "$awf_route" && "$awf_route" != "127.0.0.1" ]]; then
+    if [ -n "$awf_route" ] && [ "$awf_route" != "127.0.0.1" ] && [ "$awf_route" != "::1" ]; then
       add_host_arg="--add-host=host.docker.internal:${awf_route}"
     else
       add_host_arg="--add-host=host.docker.internal:host-gateway"
@@ -572,7 +572,7 @@ for i in 1 2 3 4 5; do
   fi
   sleep 1
 done
-if [[ "$hg_ok" -ne 1 ]]; then
+if [ "$hg_ok" -ne 1 ]; then
   exit 1
 fi
 exit 0'`
