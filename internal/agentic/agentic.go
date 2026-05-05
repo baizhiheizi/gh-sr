@@ -537,10 +537,12 @@ getent hosts host.docker.internal >/dev/null 2>&1 || true
 docker run --rm alpine sh -c "getent hosts host.docker.internal >/dev/null" >/dev/null 2>&1 || true
 docker run --rm --network host alpine sh -c "getent hosts host.docker.internal >/dev/null" >/dev/null 2>&1 || true
 port=$((18080 + $$ % 1000))
-log=/tmp/gh-sr-doctor-http.log
-python3 -m http.server "$port" --bind 0.0.0.0 >"$log" 2>&1 &
-pid=$!
-trap "kill $pid 2>/dev/null || true; rm -f $log" EXIT
+# Start a probe server in inner Docker host-network mode so child containers
+# can reach it via host.docker.internal just like gh-aw does.
+probe_name="gh-sr-doctor-http-$$"
+docker rm -f "$probe_name" >/dev/null 2>&1 || true
+docker run -d --rm --name "$probe_name" --network host alpine sh -c "mkdir -p /www && echo ok >/www/index.html && busybox httpd -f -p $port -h /www" >/dev/null
+trap "docker rm -f $probe_name >/dev/null 2>&1 || true" EXIT
 # AWF agent containers use host.docker.internal; gh-sr /opt/gh-sr/docker-shim/docker
 # injects --add-host=host.docker.internal:<resolved> (GH_SR_AWF_BRIDGE_GATEWAY_IP, else
 # getent hosts, else host-gateway). Mirror that path here.
@@ -556,7 +558,7 @@ for i in 1 2 3 4 5; do
       add_host_arg="--add-host=host.docker.internal:host-gateway"
     fi
   fi
-  if docker run --rm "$add_host_arg" alpine sh -c "wget -qO- --timeout=2 http://host.docker.internal:$port/" >/dev/null 2>&1; then
+  if timeout 10s docker run --rm "$add_host_arg" alpine sh -c "wget -qO- --timeout=2 http://host.docker.internal:$port/" >/dev/null 2>&1; then
     hg_ok=1
     break
   fi
