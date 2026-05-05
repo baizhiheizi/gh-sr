@@ -574,6 +574,60 @@ Checks performed:
 | **Stop MCP Gateway** exits `1` after `Gateway shutdown initiated` / `serversTerminated` | `gh-aw`’s `stop_mcp_gateway.sh` waits only ~10s for the **same PID** as **Start MCP Gateway** to disappear; the MCP gateway can still be tearing down child MCP containers for longer. On `runner_mode: container`, that PID is gh-sr’s inner `docker` wrapper, not only the gateway process. | Usually **harmless** if the step has `continue-on-error: true` (compiled workflows do). A **stale** gateway on inner `--network host` port **80** can still break the **next** job on the same runner instance. **Rebuild** the agentic runner image (`gh sr rebuild <runner>`) so the wrapper assigns `gh-aw-mcpg-ghsr-`* + `--cidfile` and can run `docker rm -f` when upstream falls back to signalling the recorded PID. |
 
 
+### 11b. AWF agent → workflow `services:` (postgres / redis) returns `Connection refused`
+
+When an agentic workflow declares `services:` (postgres, redis, …) and the agent connects via `DATABASE_HOST: host.docker.internal` / `REDIS_URL: redis://host.docker.internal:6379/0`, container-mode runners can fail with:
+
+```text
+connection to server at "172.18.0.1", port 5432 failed: Connection refused
+```
+
+even though the AWF startup log shows that the host gateway is allowlisted:
+
+```text
+[INFO] Host access enabled: allowing traffic to gateway IPs 172.30.0.1, 172.18.0.1 on ports 80, 443, 8080, 5432, 6379
+```
+
+**Root cause.** The GitHub Actions runner creates each `services:` container under the runner container's inner dockerd in a per-job user-defined bridge (e.g. `github_network_<id>`) and publishes ports with `-p 5432:5432`. Inner dockerd installs a NAT `DOCKER` chain DNAT rule:
+
+```text
+-A DOCKER ! -i br-<service-bridge> -p tcp --dport 5432 -j DNAT --to-destination 172.19.0.2:5432
+```
+
+A packet from the AWF agent on `awf-net` (172.30.0.0/24) destined to `host.docker.internal:5432` (= 172.18.0.1:5432, the inner default-bridge gateway) hits PREROUTING **before** routing, so its destination is rewritten to the service container IP. AWF then installs a `FW_WRAPPER` chain in `FORWARD` that whitelists the **host gateway** IPs (172.18.0.1, 172.30.0.1) on the service ports. Because DNAT already changed the destination, those ACCEPT rules never match and `FW_WRAPPER`'s catch-all `REJECT --reject-with icmp-port-unreachable` fires; libpq, hiredis, etc. surface that as `Connection refused`.
+
+**Fix.** gh-sr's container runner image now installs a one-line bypass at the head of the runner container's NAT `PREROUTING` chain (in `entrypoint.sh`):
+
+```bash
+iptables -t nat -I PREROUTING -s 172.30.0.0/24 -m addrtype --dst-type LOCAL -j RETURN
+```
+
+Traffic from `awf-net` to any IP local to the runner container then skips inner-dockerd DNAT and is delivered to the userland `docker-proxy` (which `-p 5432:5432` started on `0.0.0.0:5432` of the runner container), which forwards into the service container. AWF's `FW_WRAPPER` is bypassed for these connections — consistent with the operator's intent when `--allow-host-service-ports` is set.
+
+`gh sr doctor` now flags missing bypass with **`container-awf-service-routing`**. To verify by hand:
+
+```bash
+docker exec gh-sr-<instance>-agentic-1 \
+  iptables -t nat -S PREROUTING | head -3
+# Expected (first non-policy rule):
+#   -A PREROUTING -s 172.30.0.0/24 -m addrtype --dst-type LOCAL -j RETURN
+```
+
+To rebuild a runner so the bypass is reapplied at startup:
+
+```bash
+gh sr rebuild <runner>
+```
+
+To apply the rule without restarting the runner (lasts until the inner dockerd restarts):
+
+```bash
+docker exec gh-sr-<instance>-agentic-1 \
+  iptables -t nat -I PREROUTING -s 172.30.0.0/24 -m addrtype --dst-type LOCAL -j RETURN
+```
+
+> Override the AWF subnet via `GH_SR_AWF_SUBNET=<cidr>` if a future AWF release uses a different bridge subnet.
+
 ### 11a. Diagnosing **Parse agent logs** / `mcp_servers` failed inside AWF
 
 GitHub may show the **agent** job as failed on **Parse agent logs for step summary** even when **Execute Claude Code CLI** is green. That step scans `agent-stdio.log` for fatal markers such as:

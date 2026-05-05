@@ -504,6 +504,51 @@ If add-host resolution is empty or loopback, restart the runner container. If it
 	return nil
 }
 
+// ValidateContainerAWFServiceRouting checks that the runner container has the
+// AWF service-routing bypass installed in NAT PREROUTING.
+//
+// Without this rule, AWF agents on awf-net cannot reach workflow `services:`
+// containers (postgres/redis/etc.) via host.docker.internal:<port>. Inner dockerd
+// DNATs port-published traffic from the host gateway IP to the service container
+// IP *before* AWF's FW_WRAPPER chain in FORWARD inspects it. AWF's
+// `--allow-host-service-ports` rules match on the host gateway IP, so the post-
+// DNAT packet falls through to FW_WRAPPER's catch-all REJECT (ICMP port-
+// unreachable), surfacing as `Connection refused` for libpq/redis/etc.
+//
+// The bypass (installed by entrypoint.sh) is a single rule at the head of the
+// runner container's NAT PREROUTING chain:
+//
+//	iptables -t nat -I PREROUTING -s 172.30.0.0/24 -m addrtype --dst-type LOCAL -j RETURN
+//
+// Traffic from awf-net to any local IP of the runner container then skips DNAT
+// and is delivered to the userland docker-proxy, which forwards to the service.
+func ValidateContainerAWFServiceRouting(h *host.Host, outerContainer, runnerName string) []PrereqFailure {
+	if h.OS != "linux" {
+		return nil
+	}
+
+	if _, err := h.Run(containerAWFServiceRoutingCheckCommand(outerContainer)); err != nil {
+		return []PrereqFailure{{
+			Name:     "container-awf-service-routing",
+			Severity: SeverityWarning,
+			Message:  fmt.Sprintf("AWF service-routing bypass not installed in runner container %s; agentic workflows that use `services:` (postgres, redis, etc.) will see `Connection refused` on host.docker.internal", outerContainer),
+			Remediation: fmt.Sprintf(`Rebuild the runner image (entrypoint.sh installs the bypass at startup):
+
+  gh sr rebuild %s
+
+Or apply the rule live without restart (lasts until docker daemon restart):
+
+  docker exec %s iptables -t nat -I PREROUTING -s 172.30.0.0/24 -m addrtype --dst-type LOCAL -j RETURN
+
+Verify:
+
+  docker exec %s iptables -t nat -S PREROUTING | head -3`, runnerName, outerContainer, outerContainer),
+			DocRef: "agentic-workflows.md §11b",
+		}}
+	}
+	return nil
+}
+
 // ValidateContainerAWF checks that the gh-aw firewall CLI is available exactly
 // the way compiled workflows invoke it.
 func ValidateContainerAWF(h *host.Host, outerContainer, runnerName string) []PrereqFailure {
@@ -569,6 +614,15 @@ func containerAWFCheckCommand(outerContainer string) string {
 	return `docker exec ` + q + ` sh -lc 'set -eu
 command -v awf >/dev/null
 sudo -n -E awf --version >/dev/null'`
+}
+
+// containerAWFServiceRoutingCheckCommand verifies the runner container has the
+// PREROUTING bypass rule that exempts AWF subnet traffic targeting local IPs
+// from inner dockerd's DOCKER chain DNAT. iptables -S normalises rule output,
+// so an exact-line match is reliable.
+func containerAWFServiceRoutingCheckCommand(outerContainer string) string {
+	q := strconv.Quote(outerContainer)
+	return `docker exec ` + q + ` sh -c 'iptables -t nat -S PREROUTING 2>/dev/null | grep -Fq -e "-A PREROUTING -s 172.30.0.0/24 -m addrtype --dst-type LOCAL -j RETURN"'`
 }
 
 // HasBlockingFailures returns true if any failure has severity "error".

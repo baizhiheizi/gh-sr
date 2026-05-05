@@ -116,6 +116,36 @@ else
     echo "[entrypoint] WARNING: docker0 interface not found; host.docker.internal may not resolve"
 fi
 
+# ── 2b. AWF service-routing bypass ────────────────────────────────────────────
+# In container-mode runners, services declared via `services:` in a workflow run
+# under the inner dockerd in their own user-defined bridge (e.g. github_network_*)
+# and publish host ports via `-p 5432:5432`. Inner dockerd installs a NAT DOCKER
+# chain DNAT rule that rewrites the destination of port-published traffic from the
+# host gateway IP (e.g. 172.18.0.1) to the service container IP BEFORE the packet
+# reaches the FORWARD chain.
+#
+# AWF (gh-aw-firewall) installs a FW_WRAPPER chain in FORWARD that matches on the
+# (post-DNAT) destination IP. Its `--allow-host-service-ports` and `--enable-host-access`
+# rules whitelist the *host gateway* IP (e.g. 172.18.0.1, 172.30.0.1). Because DNAT
+# already rewrote the destination, those ACCEPT rules never match and FW_WRAPPER's
+# catch-all REJECT fires, returning ICMP port-unreachable (libpq surfaces this as
+# `Connection refused`). Net effect: AWF agents on awf-net (172.30.0.0/24) cannot
+# reach `host.docker.internal:<service-port>` even with `--allow-host-service-ports`.
+#
+# Fix: bypass inner dockerd's PREROUTING DNAT for traffic from awf-net to any IP
+# local to this runner container. Such packets stay routed to the local INPUT chain
+# where the userland docker-proxy (bound on 0.0.0.0:<service-port>) accepts them and
+# forwards to the actual service container. AWF FW_WRAPPER (in FORWARD) is bypassed
+# for these connections — consistent with the operator's intent when `--allow-host-
+# service-ports` is set.
+AWF_SUBNET="${GH_SR_AWF_SUBNET:-172.30.0.0/24}"
+echo "[entrypoint] installing AWF service-routing bypass for ${AWF_SUBNET}..."
+# Idempotent: drop any prior copy, then insert at the head of PREROUTING so it
+# evaluates before inner dockerd's DOCKER chain DNAT rule.
+while iptables -t nat -D PREROUTING -s "${AWF_SUBNET}" -m addrtype --dst-type LOCAL -j RETURN 2>/dev/null; do :; done
+iptables -t nat -I PREROUTING -s "${AWF_SUBNET}" -m addrtype --dst-type LOCAL -j RETURN \
+    || echo "[entrypoint] WARNING: failed to install AWF service-routing bypass (iptables NAT PREROUTING)"
+
 # ── 3. Register the actions runner ────────────────────────────────────────────
 cd "${RUNNER_DIR}"
 
