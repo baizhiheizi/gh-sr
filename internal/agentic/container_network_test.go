@@ -16,7 +16,7 @@ func TestContainerInnerNetworkCheckCommand(t *testing.T) {
 		"getent hosts host.docker.internal",
 		"docker run --rm alpine",
 		"docker run --rm --network host alpine",
-		"wget -qO- --timeout=2 http://host.docker.internal:",
+		"set -- \\$(getent hosts host.docker.internal 2>/dev/null || true); ip=\\${1:-}",
 		"--add-host=host.docker.internal:host-gateway",
 		"hg_ok",
 	} {
