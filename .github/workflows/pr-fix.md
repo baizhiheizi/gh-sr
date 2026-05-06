@@ -11,6 +11,9 @@ on:
   reaction: "eyes"
 runs-on: [self-hosted, linux, agentic]
 runs-on-slim: "self-hosted"
+checkout:
+  fetch: ["*"]
+  fetch-depth: 0
 imports:
   - shared/self-hosted-runner.md
 permissions: read-all

@@ -68,12 +68,12 @@ safe-outputs:
         contents: write
       inputs:
         files:
-          description: "JSON object mapping filenames to markdown content, e.g. {\"Home.md\": \"...\", \"_Sidebar.md\": \"...\"}"
+          description: 'JSON object mapping filenames to markdown content, e.g. {"Home.md": "...", "_Sidebar.md": "..."}'
           required: true
           type: string
       steps:
         - name: Checkout wiki
-          uses: actions/checkout@v4
+          uses: actions/checkout@v6
           with:
             repository: ${{ github.repository }}.wiki
             token: ${{ secrets.GITHUB_TOKEN }}
@@ -161,11 +161,11 @@ You have persistent storage that survives across runs. To find the path, run `ls
 
 ### Memory files
 
-| File | Purpose |
-|------|---------|
-| `source-map.json` | Maps each wiki page to its source files and their content hashes. Used to detect which pages need regeneration. |
-| `page-structure.json` | The parsed PAGES.md structure (pages, sections, slugs, hierarchy). Avoids re-parsing on unchanged templates. |
-| `summary--{path}.md` | Condensed summaries of source files (exports, key types, structure). Replace `/` with `--` in the path, e.g., `summary--src--cli.ts.md`. Reuse when the source file hash hasn't changed. |
+| File                  | Purpose                                                                                                                                                                                  |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `source-map.json`     | Maps each wiki page to its source files and their content hashes. Used to detect which pages need regeneration.                                                                          |
+| `page-structure.json` | The parsed PAGES.md structure (pages, sections, slugs, hierarchy). Avoids re-parsing on unchanged templates.                                                                             |
+| `summary--{path}.md`  | Condensed summaries of source files (exports, key types, structure). Replace `/` with `--` in the path, e.g., `summary--src--cli.ts.md`. Reuse when the source file hash hasn't changed. |
 
 ### On every run
 
@@ -241,6 +241,7 @@ If `.github/agentic-wiki/PAGES.md` does not exist, you must create it.
 Generate a `PAGES.md` file using the format described in the **PAGES.md Format Reference** section below.
 
 Guidelines for the template:
+
 - Include a **Home** page with a project overview.
 - Add **Architecture** or design pages if the project has meaningful structure.
 - Add **API** or usage documentation if there are public interfaces.
@@ -256,6 +257,7 @@ Guidelines for the template:
 ### 2c. Create a PR
 
 Create a pull request that adds `.github/agentic-wiki/PAGES.md` to the repository. The PR should:
+
 - Have a title like `Add wiki documentation template`
 - Explain that maintainers can edit the template before running the wiki generator again
 - Include the template content
@@ -269,6 +271,7 @@ If `.github/agentic-wiki/PAGES.md` exists, read it and generate wiki pages.
 ### 3a. Parse the template
 
 Read `.github/agentic-wiki/PAGES.md` and parse it using the format rules in the **PAGES.md Format Reference** below. Identify:
+
 - Each page (defined by H1, H2, H3 headings) and its nesting
 - Static content (preserved as-is)
 - AI instruction blocks (`*{ ... }*` — content you must generate)
@@ -286,6 +289,7 @@ Check for `.github/agentic-wiki/GUIDANCE.md`. If it exists, read it. This file c
 Read `source-map.json` from MEMORY_DIR if it exists. This file maps each wiki page to the source files used to generate it and their content hashes (use `wc -c` or similar to get file sizes as a quick change proxy, or compare file contents).
 
 For each page in the template:
+
 1. Identify which source files are relevant to its instruction blocks.
 2. Check if those files have changed since the last run (compare against hashes in `source-map.json`).
 3. If **no source files changed** and the page's template section hasn't changed → **skip regeneration** for this page, reuse the previously generated content.
@@ -331,6 +335,7 @@ Construct wiki page content as strings and pass them to the `push-wiki` safe-out
 6. **If a `push-wiki` call fails with an API or timeout error**, halve the current batch size (minimum 1 page per call) and retry up to 2 times. API errors during generation are most often caused by large response payloads, not transient network issues. If a single-page call still fails, the error is unrecoverable — report it and stop.
 
 A single-batch JSON object looks like:
+
 ```json
 {
   "Home.md": "Welcome to the project...\n\n## Overview\n...",
@@ -339,6 +344,7 @@ A single-batch JSON object looks like:
 ```
 
 The final batch must add the sidebar:
+
 ```json
 {
   "Getting-Started.md": "## Prerequisites\n...",
@@ -384,13 +390,13 @@ If you made any changes to PAGES.md (e.g., fixing formatting issues), create a p
 
 The PAGES.md file uses markdown heading hierarchy to define wiki structure:
 
-| Level | Purpose | Output |
-|-------|---------|--------|
-| H1 (`#`) | Top-level page | Separate `.md` file, top-level sidebar entry |
-| H2 (`##`) | Nested page | Separate `.md` file, indented under parent in sidebar |
-| H3 (`###`) | Deeply nested page | Separate `.md` file, further indented in sidebar |
-| H4+ (`####`) | Section within page | H2+ header in rendered page, not in sidebar nav |
-| H4+ with `+` (`####+`) | Sidebar section | H2+ header in page, included in sidebar nav |
+| Level                  | Purpose             | Output                                                |
+| ---------------------- | ------------------- | ----------------------------------------------------- |
+| H1 (`#`)               | Top-level page      | Separate `.md` file, top-level sidebar entry          |
+| H2 (`##`)              | Nested page         | Separate `.md` file, indented under parent in sidebar |
+| H3 (`###`)             | Deeply nested page  | Separate `.md` file, further indented in sidebar      |
+| H4+ (`####`)           | Section within page | H2+ header in rendered page, not in sidebar nav       |
+| H4+ with `+` (`####+`) | Sidebar section     | H2+ header in page, included in sidebar nav           |
 
 ### Instruction blocks
 
@@ -441,25 +447,26 @@ By default, H4+ headers become sections within a page but don't appear in the si
 
 When rendering sections into individual wiki pages, heading levels are normalized:
 
-| In PAGES.md | In rendered page |
-|-------------|-----------------|
-| `####` / `####+` | `##` |
-| `#####` | `###` |
-| `######` | `####` |
+| In PAGES.md      | In rendered page |
+| ---------------- | ---------------- |
+| `####` / `####+` | `##`             |
+| `#####`          | `###`            |
+| `######`         | `####`           |
 
 Every page starts with an implicit H1 (the page title, rendered by GitHub from the filename). Sections start at H2.
 
 ### Slug generation
 
 Page and section slugs are generated from titles:
+
 - Spaces → hyphens
 - Special characters removed (apostrophes, parentheses, question marks, etc.)
 - Multiple hyphens collapsed
 
-| Title | Slug |
-|-------|------|
-| `Getting Started` | `Getting-Started` |
-| `What's New?` | `Whats-New` |
+| Title                | Slug               |
+| -------------------- | ------------------ |
+| `Getting Started`    | `Getting-Started`  |
+| `What's New?`        | `Whats-New`        |
 | `API Reference (v2)` | `API-Reference-v2` |
 
 ### Complete example
@@ -511,15 +518,15 @@ Welcome to the project documentation.
 
 Output files:
 
-| File | Content |
-|------|---------|
-| `Home.md` | Overview content |
-| `Architecture.md` | Architecture content |
-| `Frontend.md` | Frontend content + State Management (H2) + Routing (H2) |
-| `Backend.md` | Backend content |
-| `API.md` | API content + Endpoints (H2) |
-| `Getting-Started.md` | Guide + Prerequisites (H2) + Installation (H2) |
-| `_Sidebar.md` | Auto-generated navigation |
+| File                 | Content                                                 |
+| -------------------- | ------------------------------------------------------- |
+| `Home.md`            | Overview content                                        |
+| `Architecture.md`    | Architecture content                                    |
+| `Frontend.md`        | Frontend content + State Management (H2) + Routing (H2) |
+| `Backend.md`         | Backend content                                         |
+| `API.md`             | API content + Endpoints (H2)                            |
+| `Getting-Started.md` | Guide + Prerequisites (H2) + Installation (H2)          |
+| `_Sidebar.md`        | Auto-generated navigation                               |
 
 ---
 
@@ -534,6 +541,7 @@ You are writing documentation for **this repository**. All content must be based
 ### Output format
 
 Your generated content is inserted directly into wiki pages. Output ONLY markdown documentation content. NEVER include:
+
 - Meta-commentary about the task ("Here is the documentation...", "Based on the source code...", "Let me write...")
 - Explanations of what you are doing or why
 - Notes about broken links, missing files, or corrections
@@ -556,6 +564,7 @@ GitHub wiki supports rich markdown features. Use them when they genuinely clarif
 **Mermaid diagrams** — Include a diagram on any page where it helps the reader understand relationships, flows, or architecture. Most pages that describe how components interact, how data flows, or how processes work benefit from a diagram.
 
 Include a diagram when:
+
 - The page describes architecture, pipelines, or system components
 - 2+ components interact and a visual clarifies the relationships
 - There is a data flow, request/response exchange, or state lifecycle
@@ -563,6 +572,7 @@ Include a diagram when:
 - The page would otherwise be a wall of text describing interconnected parts
 
 Skip a diagram only when:
+
 - The page is a simple reference list (config options, API parameters)
 - A diagram would have fewer than 3 nodes
 - The content is purely procedural (step 1, step 2, step 3) with no branching
@@ -573,7 +583,7 @@ Syntax rules: Always specify direction (`LR` or `TD`). Wrap labels containing sp
 
 **Critical mermaid restrictions** — GitHub's renderer is strict. Violating these causes "Unable to render rich display" errors:
 
-- **No backtick strings** — Do NOT use the backtick/markdown-string syntax inside node labels: `` A["`label`"] `` is invalid. Use plain text or double-quoted strings only: `A["label"]`.
+- **No backtick strings** — Do NOT use the backtick/markdown-string syntax inside node labels: ``A["`label`"]`` is invalid. Use plain text or double-quoted strings only: `A["label"]`.
 - **No `\n` in labels** — Do NOT use `\n` escape sequences inside node labels. They are not rendered as newlines and cause lexer errors. Keep labels to a single line. If a label is too long, shorten it or split the node into two nodes.
 - **No special characters unquoted** — Any label containing `@`, `(`, `)`, `:`, `/`, `<`, `>`, or other non-alphanumeric characters must be wrapped in double quotes.
 - **Test mentally before writing** — Before including a diagram, verify each node label is either plain alphanumeric text or a properly double-quoted string with no escape sequences.
@@ -591,10 +601,9 @@ flowchart LR
 
 ```html
 <details>
-<summary>Full configuration example</summary>
+  <summary>Full configuration example</summary>
 
-(content here)
-
+  (content here)
 </details>
 ```
 
@@ -664,7 +673,7 @@ Before finalizing each page, check for these issues and fix them:
 5. **Accuracy** — Content matches what the source code actually does. No fabricated features or APIs.
 
 6. **Mermaid diagram syntax** — For every mermaid diagram, verify:
-   - No backtick/markdown-string notation inside labels (`` A["`text`"] `` → invalid)
+   - No backtick/markdown-string notation inside labels (``A["`text`"]`` → invalid)
    - No `\n` escape sequences inside labels (`A["line1\nline2"]` → invalid; shorten the label instead)
    - All labels with special characters (`@`, `(`, `)`, `:`, `/`) are wrapped in double quotes
    - Fix any violation by simplifying the label to plain text or a valid double-quoted string
@@ -790,7 +799,7 @@ Precede the code block with a short intro: "You can serve this at `yoursite.com/
 
 The "For Agents" section in PAGES.md should look like this (with actual content, not instruction blocks):
 
-```markdown
+````markdown
 # For Agents
 
 These pages provide compact documentation indexes for AI coding agents.
@@ -800,22 +809,28 @@ These pages provide compact documentation indexes for AI coding agents.
 You can add this to your repository root as `AGENTS.md` to give AI coding agents quick access to project documentation.
 
 \```
+
 # My Project
+
 > A tool that does X, Y, and Z.
-Wiki: https://github.com/owner/repo/wiki
-...full index here...
-\```
+> Wiki: https://github.com/owner/repo/wiki
+> ...full index here...
+> \```
 
 ## llms.txt
 
 You can serve this at `yoursite.com/llms.txt` or include it in your repository to help LLMs discover your documentation.
 
 \```
+
 # My Project
+
 > A tool that does X, Y, and Z.
+
 ## Wiki Pages
+
 ...full page list here...
 \```
-```
+````
 
 **Key rule:** Generate the actual content — the full index and full page list — using the TOC you already built. Do NOT use `*{ }*` instruction blocks. The content is deterministic from the page structure.

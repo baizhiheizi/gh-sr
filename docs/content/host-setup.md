@@ -11,7 +11,7 @@ weight: 40
 
 `gh sr setup` and `gh sr update` run remote commands as the SSH user in `hosts.*.addr`. On **Linux**, when a step needs **root** (package installs, GitHub’s `installdependencies.sh` for native runners, or Docker’s install script when Docker is missing), **gh sr** uses **`sudo -n`** only — non-interactive `sudo` that never prompts for a password.
 
-**Why `sudo -n`:** Remote automation uses SSH sessions **without a PTY** (no interactive terminal), the same way `ssh` runs a remote command by default. Interactive `sudo` would try to read a password from a TTY and fails with errors such as *“a terminal is required to read the password”*. So **gh sr** requires **SSH as root** or **passwordless sudo** (`sudo -n true` must succeed on the host) for those install steps.
+**Why `sudo -n`:** Remote automation uses SSH sessions **without a PTY** (no interactive terminal), the same way `ssh` runs a remote command by default. Interactive `sudo` would try to read a password from a TTY and fails with errors such as _“a terminal is required to read the password”_. So **gh sr** requires **SSH as root** or **passwordless sudo** (`sudo -n true` must succeed on the host) for those install steps.
 
 **If privilege checks fail**, remote stderr may include:
 
@@ -131,13 +131,13 @@ runners:
 
 gh-aw starts an MCP gateway in Docker with host networking. Health checks use `http://localhost:80` from the job environment, which only matches that gateway when the job runs on the **same network namespace** as the Docker engine.
 
-| Host | Runner mode | Typical approach for gh-aw |
-|------|-------------|----------------------------|
-| **Linux** | **Docker** with `profile: agentic` | Recommended. Profile sets host network + NET_ADMIN automatically. |
-| **Linux** | **Native** | Works; job runs on the host. |
-| **Linux** | **Docker** (default bridge) | Health check often **fails**. Use `profile: agentic` or set `docker_network_mode: host` manually. |
-| **macOS** | **Docker** (Desktop, OrbStack, Colima) | Use `profile: agentic`. Port **80** must be free inside the VM. |
-| **Windows** | **Docker** (Linux containers) | Use `profile: agentic`. Port **80** must be free inside the VM. |
+| Host        | Runner mode                            | Typical approach for gh-aw                                                                        |
+| ----------- | -------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| **Linux**   | **Docker** with `profile: agentic`     | Recommended. Profile sets host network + NET_ADMIN automatically.                                 |
+| **Linux**   | **Native**                             | Works; job runs on the host.                                                                      |
+| **Linux**   | **Docker** (default bridge)            | Health check often **fails**. Use `profile: agentic` or set `docker_network_mode: host` manually. |
+| **macOS**   | **Docker** (Desktop, OrbStack, Colima) | Use `profile: agentic`. Port **80** must be free inside the VM.                                   |
+| **Windows** | **Docker** (Linux containers)          | Use `profile: agentic`. Port **80** must be free inside the VM.                                   |
 
 > **Note:** On macOS and Windows, `--network host` means the Docker Desktop Linux VM's network namespace, not the macOS/Windows host itself. This is sufficient for gh-aw because all containers (runner, MCP gateway, MCP servers) share that same VM namespace.
 
@@ -164,7 +164,7 @@ Run **`gh sr doctor`** to verify that `host.docker.internal` resolves to a non-l
 **Ensure this for the same OS account that runs the runner process** (the user that owns `~/.gh-sr/runners/<instance>` and executes `run.sh` — typically the SSH user from `hosts.*.addr`, or the **`User=`** in a systemd unit from **`gh sr service install --system`**):
 
 1. **Passwordless sudo** — On the host, configure **`sudo -n`** to succeed for that user, for example a drop-in under `/etc/sudoers.d/` with **`NOPASSWD`** (a dedicated CI user with `runner ALL=(ALL) NOPASSWD: ALL` is common; tighten with command-scoped rules only if you can maintain them for whatever `sudo` lines gh-aw runs).
-2. **Verify as that user** — `sudo -n true` must exit **0** (see also [Linux SSH user and privileges](#linux-ssh-user-and-privileges)). Over SSH:  
+2. **Verify as that user** — `sudo -n true` must exit **0** (see also [Linux SSH user and privileges](#linux-ssh-user-and-privileges)). Over SSH:
    `ssh -o BatchMode=yes user@host 'sudo -n true'`
 3. **`gh sr doctor`** — With **`profile: agentic`** or **`labels`** including **`agentic`** (or legacy **`gh-aw`**), doctor reports whether passwordless sudo is available for AWF firewall setup on Linux.
 
@@ -217,6 +217,7 @@ echo "/home/your-user/.npm-global /opt/hostedtoolcache none defaults,bind 0 0" |
 Agentic workflows that use `gh` CLI commands (e.g., `gh pr list`, `gh issue list`, `gh api`) require GitHub authentication on the runner host. **GitHub Hosted Runners** have this built-in, but **self-hosted runners need manual setup**.
 
 **Symptoms:** Workflow steps using `gh` fail with errors like:
+
 - `gh: You are not logged into any GitHub hosts`
 - `gh: To use GitHub CLI in a GitHub Actions workflow, set the GH_TOKEN environment variable`
 - `Bad credentials` from the GitHub API
@@ -232,7 +233,7 @@ jobs:
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: List PRs
         run: gh pr list
 ```
@@ -245,6 +246,7 @@ gh auth login --hostname github.com --token <your-PAT>
 ```
 
 > **Note:** `gh auth login` is interactive by default. For non-interactive setup, use:
+>
 > ```bash
 > printf '<your-token>' | gh auth login --hostname github.com --insecure-stdin-token
 > ```
