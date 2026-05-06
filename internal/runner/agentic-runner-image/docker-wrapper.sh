@@ -68,7 +68,11 @@
 # /bin/echo) instead of invoking the real docker daemon.
 #
 # Optional: set GH_SR_MCP_REWRITE_TARGET_IP before starting the gateway to pin Claude MCP
-# URL rewrites without re-resolving (tests and advanced setups).
+# URL rewrites without re-resolving (tests and advanced setups). Optional:
+# GH_SR_MCP_REWRITE_PORT pins the rewrite to a single port; when unset the
+# watcher rewrites `host.docker.internal:<any-port>/mcp/` URLs and preserves
+# the matched port (gh-aw uses 80 by default but 8080 in many compiled
+# workflows via `MCP_GATEWAY_PORT`).
 
 # gh-aw / start_mcp_gateway: expect `docker run -i --rm --network host ...`; stdin is the
 # gateway JSON. stop_mcp_gateway.sh POSTs /close then signals the docker client PID.
@@ -173,7 +177,15 @@ has_detach_arg() {
 rewrite_claude_mcp_gateway_urls() {
     local config_path="${1:-/tmp/gh-aw/mcp-config/mcp-servers.json}"
     local target="${GH_SR_MCP_REWRITE_TARGET_IP:-}"
-    local port="${GH_SR_MCP_REWRITE_PORT:-80}"
+    # Port pattern for matching `host.docker.internal:<port>/mcp/` URLs in the
+    # Claude MCP config. When GH_SR_MCP_REWRITE_PORT is set, only that exact
+    # port is rewritten (backward-compat). Otherwise we match any numeric port:
+    # gh-aw's converter writes whatever port the gateway listens on (configured
+    # via `sandbox.mcp.port` / `MCP_GATEWAY_PORT`, default 80 but commonly
+    # 8080), so a hardcoded port leaves URLs un-rewritten in those workflows
+    # and the agent falls back to `host.docker.internal:<port>` which the AWF
+    # Squid sidecar proxies (and rejects) instead of bypassing.
+    local port_pattern="${GH_SR_MCP_REWRITE_PORT:-[0-9]+}"
     local previous_sig=""
     local current_sig=""
     local i
@@ -194,7 +206,7 @@ rewrite_claude_mcp_gateway_urls() {
     }
     trap 'on_rewrite_watcher_signal' TERM INT
 
-    echo "[gh-sr:mcp-claude-urls] watcher_start path=${config_path} max_iterations=120 port=${port} target=${target}" >&2
+    echo "[gh-sr:mcp-claude-urls] watcher_start path=${config_path} max_iterations=120 port_pattern=${port_pattern} target=${target}" >&2
 
     for i in $(seq 1 120); do
         if [[ -f "$config_path" ]]; then
@@ -204,15 +216,17 @@ rewrite_claude_mcp_gateway_urls() {
             fi
             current_sig=$(stat -c '%s:%Y' "$config_path" 2>/dev/null || true)
             if [[ -n "$current_sig" && "$current_sig" == "$previous_sig" ]]; then
-                if grep -qE "http://host\\.docker\\.internal:${port}/mcp/" "$config_path" 2>/dev/null; then
+                if grep -qE "http://host\\.docker\\.internal:${port_pattern}/mcp/" "$config_path" 2>/dev/null; then
                     local hb ha br
-                    hb=$(grep -cE "http://host\\.docker\\.internal:${port}/mcp/" "$config_path" 2>/dev/null || true)
+                    hb=$(grep -cE "http://host\\.docker\\.internal:${port_pattern}/mcp/" "$config_path" 2>/dev/null || true)
                     hb=${hb:-0}
                     echo "[gh-sr:mcp-claude-urls] stable_file iteration=${i} sig=${current_sig} host_mcp_url_hits=${hb} applying_rewrite" >&2
-                    sed -i "s#http://host\\.docker\\.internal:${port}/mcp/#http://${ip_esc}:${port}/mcp/#g" "$config_path" 2>/dev/null || true
-                    ha=$(grep -cE "http://host\\.docker\\.internal:${port}/mcp/" "$config_path" 2>/dev/null || true)
+                    # Capture the matched port and reuse it on the right-hand
+                    # side so a single watcher rewrites all configured ports.
+                    sed -i -E "s#http://host\\.docker\\.internal:(${port_pattern})/mcp/#http://${ip_esc}:\\1/mcp/#g" "$config_path" 2>/dev/null || true
+                    ha=$(grep -cE "http://host\\.docker\\.internal:${port_pattern}/mcp/" "$config_path" 2>/dev/null || true)
                     ha=${ha:-0}
-                    br=$(grep -cE "http://${ip_esc}:${port}/mcp/" "$config_path" 2>/dev/null || true)
+                    br=$(grep -cE "http://${ip_esc}:${port_pattern}/mcp/" "$config_path" 2>/dev/null || true)
                     br=${br:-0}
                     echo "[gh-sr:mcp-claude-urls] rewrite_applied iteration=${i} host_mcp_url_hits_after=${ha} bridge_mcp_url_hits=${br}" >&2
                 fi
@@ -226,11 +240,11 @@ rewrite_claude_mcp_gateway_urls() {
 
     trap - TERM INT
 
-    if [[ -f "$config_path" ]] && grep -qE "http://host\\.docker\\.internal:${port}/mcp/" "$config_path" 2>/dev/null; then
+    if [[ -f "$config_path" ]] && grep -qE "http://host\\.docker\\.internal:${port_pattern}/mcp/" "$config_path" 2>/dev/null; then
         local fh fb
-        fh=$(grep -cE "http://host\\.docker\\.internal:${port}/mcp/" "$config_path" 2>/dev/null || true)
+        fh=$(grep -cE "http://host\\.docker\\.internal:${port_pattern}/mcp/" "$config_path" 2>/dev/null || true)
         fh=${fh:-0}
-        fb=$(grep -cE "http://${ip_esc}:${port}/mcp/" "$config_path" 2>/dev/null || true)
+        fb=$(grep -cE "http://${ip_esc}:${port_pattern}/mcp/" "$config_path" 2>/dev/null || true)
         fb=${fb:-0}
         echo "[gh-sr:mcp-claude-urls] watcher_exit WARNING still_host_mcp_urls path=${config_path} host_mcp_url_hits=${fh} bridge_mcp_url_hits=${fb}" >&2
     else

@@ -294,6 +294,110 @@ esac
 	}
 }
 
+// TestAgenticRunnerDockerWrapperRewritesNonDefaultMCPPort guards against the
+// regression that broke runs where gh-aw's compiled workflows export
+// MCP_GATEWAY_PORT=8080 (so the converter writes
+// `http://host.docker.internal:8080/mcp/...`). Previously the watcher
+// hardcoded port 80, the rewrite never matched, and the agent tried to reach
+// `host.docker.internal:8080` through the AWF Squid sidecar, which returned a
+// proxy error page and killed every MCP handshake. The watcher must rewrite
+// any numeric port and preserve it on the right-hand side.
+func TestAgenticRunnerDockerWrapperRewritesNonDefaultMCPPort(t *testing.T) {
+	t.Parallel()
+	tmp := t.TempDir()
+	configPath := filepath.Join(tmp, "mcp-servers.json")
+
+	stdinLog := filepath.Join(tmp, "stdin-captured.txt")
+	fakeDocker := filepath.Join(tmp, "docker")
+	script := `#!/bin/bash
+set -euo pipefail
+cmd=${1:-}
+shift || true
+case "$cmd" in
+rm)
+	exit 0
+	;;
+run)
+	prev=""
+	for a in "$@"; do
+		if [[ "$prev" == "--cidfile" ]]; then
+			printf 'deadbeefcafe\n' >"$a"
+			prev=""
+			continue
+		fi
+		prev=""
+		case "$a" in
+		--cidfile) prev="--cidfile" ;;
+		--cidfile=*) f="${a#*=}"; printf 'deadbeefcafe\n' >"$f" ;;
+		esac
+	done
+	cat >"${FAKE_DOCKER_STDIN_LOG:?}"
+	sleep 0.2
+	printf '%s' '{"mcpServers":{"github":{"url":"http://host.docker.internal:8080/mcp/github"},"safeoutputs":{"url":"http://host.docker.internal:8080/mcp/safeoutputs"}}}' >"${FAKE_MCP_CONFIG_PATH:?}"
+	sleep 2.2
+	exit 0
+	;;
+*)
+	exit 0
+	;;
+esac
+`
+	if err := os.WriteFile(fakeDocker, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	wrapper := filepath.Join("agentic-runner-image", "docker-wrapper.sh")
+	payload := `{"gateway":{"port":8080,"domain":"host.docker.internal"}}`
+	cmd := exec.Command("bash", "-c", `printf '%s' "$GHSR_PAYLOAD" | bash "$GHSR_WRAPPER" run -i --rm --network host ghcr.io/github/gh-aw-mcpg:1.0.0`)
+	cmd.Env = append(os.Environ(),
+		"GHSR_PAYLOAD="+payload,
+		"GHSR_WRAPPER="+wrapper,
+		"GH_SR_DOCKER_WRAPPER_REAL="+fakeDocker,
+		"GH_SR_MCP_REWRITE_TARGET_IP=203.0.113.7",
+		"GH_SR_MCP_CONFIG_REWRITE_PATH="+configPath,
+		"FAKE_MCP_CONFIG_PATH="+configPath,
+		"FAKE_DOCKER_STDIN_LOG="+stdinLog,
+	)
+	// Make sure GH_SR_MCP_REWRITE_PORT is unset so the watcher uses its
+	// any-port default; if a developer's environment has this pinned to 80
+	// the test would silently regress.
+	cmd.Env = append(cmd.Env, "GH_SR_MCP_REWRITE_PORT=")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("wrapper non-default-port rewrite: %v\n%s", err, out)
+	}
+	combined := string(out)
+	for _, needle := range []string{
+		"[gh-sr:mcp-claude-urls] watcher_start",
+		"[gh-sr:mcp-claude-urls] config_appeared",
+		"[gh-sr:mcp-claude-urls] stable_file",
+		"[gh-sr:mcp-claude-urls] rewrite_applied",
+	} {
+		if !strings.Contains(combined, needle) {
+			t.Fatalf("expected docker-wrapper diagnostics missing %q; combined:\n%s", needle, out)
+		}
+	}
+	if strings.Contains(combined, "[gh-sr:mcp-claude-urls] watcher_exit WARNING still_host_mcp_urls") {
+		t.Fatalf("unexpected rewrite-failure log; combined:\n%s", out)
+	}
+
+	gotConfig, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(gotConfig), "host.docker.internal:8080/mcp") {
+		t.Fatalf("non-default-port Claude MCP config was not rewritten:\n%s", gotConfig)
+	}
+	for _, want := range []string{
+		"http://203.0.113.7:8080/mcp/github",
+		"http://203.0.113.7:8080/mcp/safeoutputs",
+	} {
+		if !strings.Contains(string(gotConfig), want) {
+			t.Fatalf("non-default-port Claude MCP config missing %q:\n%s", want, gotConfig)
+		}
+	}
+}
+
 func TestAgenticRunnerDockerWrapperHeaderDocumentsConcurrencyVsShim(t *testing.T) {
 	t.Parallel()
 	for _, needle := range []string{
