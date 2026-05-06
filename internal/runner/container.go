@@ -195,11 +195,13 @@ func (m *Manager) setupContainer(h *host.Host, rc config.RunnerConfig) error {
 		// Build the `docker create` command. We use `--restart unless-stopped`
 		// so the runner auto-starts on host reboot and auto-restarts after a job.
 		// `--privileged` is required for DinD (inner dockerd needs full capabilities).
+		// Large `/dev/shm` avoids Chromium/Selenium flakiness (default 64 MiB is too small).
 		cmd := fmt.Sprintf(`
 mkdir -p %s
 docker create \
   --name %s \
   --privileged \
+  --shm-size=2g \
   --restart unless-stopped \
   -v %s:/runner-state \
   -e GH_SR_RUNNER_NAME=%s \

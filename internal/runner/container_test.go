@@ -41,7 +41,7 @@ func TestContainerStateDir(t *testing.T) {
 }
 
 // TestDockerRunArgShape verifies the docker create command includes the expected
-// --privileged flag, the container name, the bind-mount, and required env vars.
+// --privileged flag, --shm-size for Chromium/Selenium, the bind-mount, and env vars.
 func TestDockerRunArgShape(t *testing.T) {
 	t.Parallel()
 	h := host.NewHost("h", config.HostConfig{Addr: "local", OS: "linux", Arch: "amd64"})
@@ -65,6 +65,7 @@ func TestDockerRunArgShape(t *testing.T) {
 		"docker create",
 		"  --name " + posixSingleQuote(cName),
 		"  --privileged",
+		"  --shm-size=2g",
 		"  --restart unless-stopped",
 		"  -v " + posixSingleQuote(stateDir) + ":/runner-state",
 		"  -e GH_SR_RUNNER_NAME=" + posixSingleQuote(instanceName),
@@ -78,6 +79,9 @@ func TestDockerRunArgShape(t *testing.T) {
 
 	if !strings.Contains(cmd, "--privileged") {
 		t.Error("docker create command must include --privileged for DinD")
+	}
+	if !strings.Contains(cmd, "--shm-size=2g") {
+		t.Error("docker create command must include --shm-size=2g for browser/system tests")
 	}
 	if !strings.Contains(cmd, "--restart unless-stopped") {
 		t.Error("docker create command must include --restart unless-stopped")

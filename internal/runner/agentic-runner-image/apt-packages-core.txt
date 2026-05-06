@@ -3,6 +3,8 @@
 automake
 build-essential
 ca-certificates
+chromium
+chromium-chromedriver
 curl
 dnsmasq
 dnsutils
