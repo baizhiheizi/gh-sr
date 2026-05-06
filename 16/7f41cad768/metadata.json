@@ -1,0 +1,28 @@
+{
+  "cli_version": "dev",
+  "checkpoint_id": "167f41cad768",
+  "strategy": "manual-commit",
+  "branch": "main",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "docs/content/guides/agentic-workflows.md",
+    "internal/runner/agentic-runner-image/apt-packages-core.txt",
+    "internal/runner/container.go",
+    "internal/runner/container_test.go"
+  ],
+  "sessions": [
+    {
+      "metadata": "/16/7f41cad768/0/metadata.json",
+      "transcript": "/16/7f41cad768/0/full.jsonl",
+      "content_hash": "/16/7f41cad768/0/content_hash.txt",
+      "prompt": "/16/7f41cad768/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 0,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 0,
+    "output_tokens": 0,
+    "api_call_count": 0
+  }
+}
