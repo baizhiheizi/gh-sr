@@ -146,6 +146,15 @@ while iptables -t nat -D PREROUTING -s "${AWF_SUBNET}" -m addrtype --dst-type LO
 iptables -t nat -I PREROUTING -s "${AWF_SUBNET}" -m addrtype --dst-type LOCAL -j RETURN \
     || echo "[entrypoint] WARNING: failed to install AWF service-routing bypass (iptables NAT PREROUTING)"
 
+# ── 2c. Clean up leftover containers from previously crashed/killed jobs ────────
+# If a workflow job is killed or crashes, its service containers (postgres, redis,
+# etc.) may be left behind in the inner dockerd. These hold ports via docker-proxy,
+# causing "port already allocated" on subsequent jobs. Remove all stopped containers
+# and prune unused networks to free ports and NAT rules.
+echo "[entrypoint] cleaning up leftover inner-docker containers from previous jobs..."
+su - runner -c "docker ps -a --filter 'status=exited' --format '{{.ID}}' | xargs -r docker rm -f 2>/dev/null || true"
+su - runner -c "docker network prune -f 2>/dev/null || true"
+
 # ── 3. Register the actions runner ────────────────────────────────────────────
 cd "${RUNNER_DIR}"
 
