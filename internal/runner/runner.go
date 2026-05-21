@@ -238,10 +238,10 @@ func (m *Manager) Status(h *host.Host, rc config.RunnerConfig) ([]RunnerStatus, 
 			s.Local, s.ContainerImage, s.ContainerImageRevision = m.containerLocalStatusImageAndRevision(h, name)
 			expected := ContainerImageLayoutRevision(m.GhSrVersion, m.containerImageExtraApt())
 			s.ContainerImageBuild = formatContainerImageBuild(s.Local, expected, s.ContainerImageRevision)
-		} else {
-			s.Local = m.statusNative(h, name)
-			s.ContainerImageBuild = "-"
-		}
+	} else {
+		s.Local = m.statusNative(h, name)
+		s.ContainerImageBuild = nativeRunnerVersion(h, name)
+	}
 		statuses = append(statuses, s)
 	}
 

@@ -266,6 +266,8 @@ func (m *Manager) setupNative(h *host.Host, rc config.RunnerConfig) error {
 			}
 		}
 
+		writeRemoteBytes(h, dir+"/.runner-version", []byte(version))
+
 		if h.OS == "linux" {
 			fmt.Fprintf(m.out(), "  %s: installing runner dependencies...\n", name)
 			depsCmd := fmt.Sprintf(
@@ -697,13 +699,12 @@ func (m *Manager) statusNative(h *host.Host, instanceName string) string {
 
 	if kind, err := autostart.Detect(h, instanceName); err == nil && kind != autostart.KindNone {
 		active, err := autostart.IsServiceActive(h, instanceName, kind)
-		if err != nil {
-			return "unknown"
+		if err == nil {
+			if active {
+				return "running"
+			}
+			return "stopped"
 		}
-		if active {
-			return "running"
-		}
-		return "stopped"
 	}
 
 	if h.OS == "windows" {
@@ -731,6 +732,27 @@ func (m *Manager) statusNative(h *host.Host, instanceName string) string {
 	out, err := h.Run(cmd)
 	if err != nil {
 		return "unknown"
+	}
+	return strings.TrimSpace(out)
+}
+
+func nativeRunnerVersion(h *host.Host, instanceName string) string {
+	dir := h.RunnerDir(instanceName)
+	if h.OS == "windows" {
+		ps := fmt.Sprintf(`if (Test-Path (Join-Path %s '.runner-version')) { Get-Content (Join-Path %s '.runner-version') -EA Stop }`, h.RunnerDirPS(instanceName), h.RunnerDirPS(instanceName))
+		out, err := h.RunShell(ps)
+		if err != nil {
+			return "-"
+		}
+		v := strings.TrimSpace(out)
+		if v == "" {
+			return "-"
+		}
+		return v
+	}
+	out, err := h.Run(fmt.Sprintf("cat %s/.runner-version 2>/dev/null", dir))
+	if err != nil || strings.TrimSpace(out) == "" {
+		return "-"
 	}
 	return strings.TrimSpace(out)
 }
