@@ -32,7 +32,9 @@ func ApplyEnvFile(path string) error {
 		val := strings.TrimSpace(line[idx+1:])
 		val = unquoteEnvValue(val)
 		if key != "" {
-			_ = os.Setenv(key, val)
+			if err := os.Setenv(key, val); err != nil {
+				return fmt.Errorf("setting env %s: %w", key, err)
+			}
 		}
 	}
 	return nil

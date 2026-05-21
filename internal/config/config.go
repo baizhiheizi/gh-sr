@@ -149,11 +149,6 @@ func (rc *RunnerConfig) ScopeTarget() string {
 	return rc.Repo
 }
 
-// EffectiveMode always returns "native" (docker mode has been removed).
-func (rc *RunnerConfig) EffectiveMode(_ string) string {
-	return "native"
-}
-
 // DefaultLabels generates standard GitHub Actions labels based on host OS and arch.
 func DefaultLabels(hostOS, arch string) []string {
 	labels := []string{"self-hosted"}
@@ -309,15 +304,6 @@ func resolveEnv(val string) string {
 	return val
 }
 
-func normalizeArch(goarch string) string {
-	switch goarch {
-	case "amd64", "arm64":
-		return goarch
-	default:
-		return goarch
-	}
-}
-
 func (c *Config) applyDefaults() {
 	for name, h := range c.Hosts {
 		if IsLocalAddr(h.Addr) {
@@ -325,7 +311,7 @@ func (c *Config) applyDefaults() {
 				h.OS = runtime.GOOS
 			}
 			if h.Arch == "" {
-				h.Arch = normalizeArch(runtime.GOARCH)
+				h.Arch = runtime.GOARCH
 			}
 			c.Hosts[name] = h
 		}

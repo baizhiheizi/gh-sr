@@ -113,31 +113,34 @@ func Setup(w io.Writer, cfg *config.Config, mgr *runner.Manager, filterHost, fil
 	runners := config.FilterRunners(cfg, filterHost, filterRepo, nameArgs)
 	hostsDone := map[string]bool{}
 	for _, rc := range runners {
-		hcfg := cfg.Hosts[rc.Host]
 		if hostsDone[rc.Host] {
 			continue
 		}
+		hostsDone[rc.Host] = true
+		hcfg := cfg.Hosts[rc.Host]
 
 		if config.IsLocalAddr(hcfg.Addr) {
 			fmt.Fprintf(w, "Setting up on %s (local)...\n", rc.Host)
 		} else {
 			fmt.Fprintf(w, "Setting up on %s (%s)...\n", rc.Host, hcfg.Addr)
 		}
-		h, err := ConnectHost(rc.Host, hcfg)
-		if err != nil {
+		if err := setupHost(w, cfg, mgr, rc); err != nil {
 			return err
 		}
-		if err := mgr.Setup(h, rc); err != nil {
-			h.Close()
-			return err
-		}
-		h.Close()
-		hostsDone[rc.Host] = true
 	}
 
 	fmt.Fprintln(w, "\nSetup complete.")
 	fmt.Fprintln(w, "Start runners with: gh sr up [runner-names...] (setup registers the runner; up launches the listener.)")
 	return nil
+}
+
+func setupHost(w io.Writer, cfg *config.Config, mgr *runner.Manager, rc config.RunnerConfig) error {
+	h, err := ConnectHost(rc.Host, cfg.Hosts[rc.Host])
+	if err != nil {
+		return err
+	}
+	defer h.Close()
+	return mgr.Setup(h, rc)
 }
 
 // Up starts runners, automatically running setup first if needed.
@@ -278,28 +281,31 @@ func Remove(w io.Writer, cfg *config.Config, mgr *runner.Manager, filterHost, fi
 		} else {
 			fmt.Fprintf(w, "Removing %s from %s (%s)...\n", rc.Name, rc.Host, hcfg.Addr)
 		}
-		h, err := ConnectHost(rc.Host, hcfg)
-		if err != nil {
+		if err := removeHost(w, cfg, mgr, cfgPath, rc); err != nil {
 			return err
 		}
-
-		// Deregister from GitHub and remove from host
-		if err := mgr.Remove(h, rc); err != nil {
-			h.Close()
-			return err
-		}
-
-		// Remove from local config
-		if err := config.RemoveRunner(cfgPath, rc.Name); err != nil {
-			h.Close()
-			return fmt.Errorf("removing %s from config: %w", rc.Name, err)
-		}
-
-		h.Close()
-		fmt.Fprintf(w, "  %s: removed from host and config\n", rc.Name)
 	}
 
 	fmt.Fprintln(w, "\nRemove complete.")
+	return nil
+}
+
+func removeHost(w io.Writer, cfg *config.Config, mgr *runner.Manager, cfgPath string, rc config.RunnerConfig) error {
+	h, err := ConnectHost(rc.Host, cfg.Hosts[rc.Host])
+	if err != nil {
+		return err
+	}
+	defer h.Close()
+
+	if err := mgr.Remove(h, rc); err != nil {
+		return err
+	}
+
+	if err := config.RemoveRunner(cfgPath, rc.Name); err != nil {
+		return fmt.Errorf("removing %s from config: %w", rc.Name, err)
+	}
+
+	fmt.Fprintf(w, "  %s: removed from host and config\n", rc.Name)
 	return nil
 }
 

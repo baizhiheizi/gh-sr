@@ -176,7 +176,7 @@ func (g *GitHubClient) DeleteRunnerScoped(scope, target string, runnerID int64) 
 
 	if resp.StatusCode != http.StatusNoContent {
 		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("delete runner %d: HTTP %d: %s", runnerID, resp.StatusCode, body)
+		return fmt.Errorf("delete runner %d: HTTP %d: %s", runnerID, resp.StatusCode, string(body))
 	}
 	return nil
 }
@@ -231,7 +231,7 @@ func (g *GitHubClient) get(url string) ([]byte, error) {
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode, body)
+		return nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(body))
 	}
 	return body, nil
 }
@@ -255,7 +255,7 @@ func (g *GitHubClient) post(url string, payload io.Reader) ([]byte, error) {
 	}
 
 	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode, body)
+		return nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(body))
 	}
 	return body, nil
 }

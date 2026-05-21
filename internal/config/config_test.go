@@ -8,21 +8,6 @@ import (
 	"testing"
 )
 
-func TestRunnerConfig_EffectiveMode(t *testing.T) {
-	t.Parallel()
-	rc := RunnerConfig{}
-	// EffectiveMode always returns "native" (docker mode removed).
-	if got := rc.EffectiveMode("linux"); got != "native" {
-		t.Errorf("linux: got %q want native", got)
-	}
-	if got := rc.EffectiveMode("darwin"); got != "native" {
-		t.Errorf("darwin: got %q want native", got)
-	}
-	if got := rc.EffectiveMode("windows"); got != "native" {
-		t.Errorf("windows: got %q want native", got)
-	}
-}
-
 func TestRunnerConfig_InstanceNames(t *testing.T) {
 	t.Parallel()
 	rc := RunnerConfig{Name: "ci", Count: 0}

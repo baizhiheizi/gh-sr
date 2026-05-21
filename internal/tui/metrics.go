@@ -134,6 +134,8 @@ func extractTrailingPercent(s string) float64 {
 	s = strings.TrimSpace(s)
 	s = strings.TrimSuffix(s, "%")
 	var v float64
-	fmt.Sscanf(s, "%f", &v)
+	if _, err := fmt.Sscanf(s, "%f", &v); err != nil {
+		return 0
+	}
 	return v
 }
