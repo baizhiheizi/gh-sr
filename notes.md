@@ -17,7 +17,7 @@ Note: Sandbox cannot download Go modules (proxy.golang.org blocked). CI runs on 
 - `sortedHostNames` in ops/metrics.go already optimized (pre-alloc, no filter fast-path)
 - Monthly Activity issue #67 documents pending optimizations
 
-## Optimization Backlog (as of 2026-05-19)
+## Optimization Backlog (as of 2026-05-22)
 1. (Done) `ListRunnersScoped` pagination — PR #9
 2. (Done) Benchmark infrastructure — PR #13
 3. (Done) `CollectStatus` parallelization — PR #15
@@ -34,15 +34,15 @@ Note: Sandbox cannot download Go modules (proxy.golang.org blocked). CI runs on 
 ## Key Insight
 All major performance optimizations from the backlog have been implemented. Repo is in maintenance mode — monitor for new opportunities via issue comments and real-world usage patterns.
 
-## Infrastructure Status (2026-05-19)
+## Infrastructure Status (2026-05-22)
 - May 2026 Monthly Activity issue #67 exists and is updated
-- Safe-outputs MCP server runs at host.docker.internal:80/mcp/safeoutputs
-- ⚠️ Safe-outputs tools (noop, create_issue, update_issue) NOT accessible via tool calls in this environment — HTTP proxy blocks direct access
+- Safe-outputs MCP server runs at host.docker.internal:8080/mcp/safeoutputs
+- Test Improver has open PR #68 (test coverage, not performance)
 
 ## Run History
 
-### 2026-05-19 12:00 UTC - [Run](https://github.com/an-lee/gh-sr/actions/runs/26114797456)
-- ✅ Task 7: Updated Monthly Activity issue #67 with run entry (no suggested actions, all items previously cleared)
-- ✅ Task 2: Confirmed repository still in maintenance mode — no new performance opportunities
-- ✅ Task 1: Build validated OK (`go build ./...`), vet OK (`go vet ./...`)
-- ⚠️ No open Perf Improver PRs, no open performance-labeled issues
+### 2026-05-22 12:00 UTC - [Run](https://github.com/an-lee/gh-sr/actions/runs/26302373710)
+- ✅ Task 7: Updated Monthly Activity issue #67 with run entry (build/test/vet pass)
+- ✅ Task 1: Build validated OK, vet OK, tests pass
+- ✅ Task 2: Repository in maintenance mode — no new opportunities
+- Note: Test Improver PR #68 open (test coverage, not perf)
