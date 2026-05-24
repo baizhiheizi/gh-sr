@@ -5,19 +5,19 @@
       { "path": ".github/agentic-wiki/PAGES.md", "size": 9260 }
     ],
     "templateHash": "pages-v1",
-    "generatedAt": "2026-05-05T04:43:00Z"
+    "generatedAt": "2026-05-24T12:00:00Z"
   },
   "Architecture": {
     "sourceFiles": [
       { "path": "cmd/gh-sr/main.go", "size": 26079 },
-      { "path": "internal/config/config.go", "size": 18697 },
-      { "path": "internal/runner/runner.go", "size": 10460 },
-      { "path": "internal/ops/ops.go", "size": 13508 },
+      { "path": "internal/config/config.go", "size": 18400 },
+      { "path": "internal/runner/runner.go", "size": 10481 },
+      { "path": "internal/ops/ops.go", "size": 13766 },
       { "path": "internal/autostart/autostart.go", "size": 15121 },
       { "path": ".github/agentic-wiki/PAGES.md", "size": 9260 }
     ],
     "templateHash": "pages-v1",
-    "generatedAt": "2026-05-05T04:43:00Z"
+    "generatedAt": "2026-05-24T12:00:00Z"
   },
   "Directory-Layout": {
     "sourceFiles": [
@@ -25,27 +25,26 @@
       { "path": ".github/agentic-wiki/PAGES.md", "size": 9260 }
     ],
     "templateHash": "pages-v1",
-    "generatedAt": "2026-05-05T04:43:00Z"
+    "generatedAt": "2026-05-24T12:00:00Z"
   },
   "Configuration": {
     "sourceFiles": [
-      { "path": "internal/config/config.go", "size": 18697 },
-      { "path": "internal/config/load.go", "size": 500 },
+      { "path": "internal/config/config.go", "size": 18400 },
       { "path": "internal/config/envfile.go", "size": 1200 },
       { "path": "internal/config/ghauth.go", "size": 500 },
       { "path": ".github/agentic-wiki/PAGES.md", "size": 9260 }
     ],
     "templateHash": "pages-v1",
-    "generatedAt": "2026-05-05T04:43:00Z"
+    "generatedAt": "2026-05-24T12:00:00Z"
   },
   "Runner-Management": {
     "sourceFiles": [
-      { "path": "internal/runner/runner.go", "size": 10460 },
-      { "path": "internal/ops/ops.go", "size": 13508 },
-      { "path": ".github/agentic-wiki/PAGES.md", "size": 9260 }
+      { "path": "internal/runner/runner.go", "size": 10481 },
+      { "path": "internal/ops/ops.go", "size": 13766 },
+      { ".github/agentic-wiki/PAGES.md", "size": 9260 }
     ],
     "templateHash": "pages-v1",
-    "generatedAt": "2026-05-05T04:43:00Z"
+    "generatedAt": "2026-05-24T12:00:00Z"
   },
   "Commands": {
     "sourceFiles": [
@@ -53,7 +52,7 @@
       { "path": ".github/agentic-wiki/PAGES.md", "size": 9260 }
     ],
     "templateHash": "pages-v1",
-    "generatedAt": "2026-05-05T04:43:00Z"
+    "generatedAt": "2026-05-24T12:00:00Z"
   },
   "init": {
     "sourceFiles": [
@@ -61,121 +60,108 @@
       { "path": ".github/agentic-wiki/PAGES.md", "size": 9260 }
     ],
     "templateHash": "pages-v1",
-    "generatedAt": "2026-05-05T04:43:00Z"
+    "generatedAt": "2026-05-24T12:00:00Z"
   },
   "add-host": {
     "sourceFiles": [
       { "path": "cmd/gh-sr/main.go", "size": 26079 },
-      { "path": "internal/config/mutate.go", "size": 8000 },
       { "path": ".github/agentic-wiki/PAGES.md", "size": 9260 }
     ],
     "templateHash": "pages-v1",
-    "generatedAt": "2026-05-05T04:43:00Z"
+    "generatedAt": "2026-05-24T12:00:00Z"
   },
   "add-runner": {
     "sourceFiles": [
       { "path": "cmd/gh-sr/main.go", "size": 26079 },
-      { "path": "internal/config/mutate.go", "size": 8000 },
       { "path": ".github/agentic-wiki/PAGES.md", "size": 9260 }
     ],
     "templateHash": "pages-v1",
-    "generatedAt": "2026-05-05T04:43:00Z"
+    "generatedAt": "2026-05-24T12:00:00Z"
   },
   "doctor": {
     "sourceFiles": [
-      { "path": "internal/doctor/doctor.go", "size": 21075 },
+      { "path": "internal/doctor/doctor.go", "size": 21150 },
       { "path": ".github/agentic-wiki/PAGES.md", "size": 9260 }
     ],
     "templateHash": "pages-v1",
-    "generatedAt": "2026-05-05T04:43:00Z"
+    "generatedAt": "2026-05-24T12:00:00Z"
   },
   "service": {
     "sourceFiles": [
-      { "path": "internal/ops/service.go", "size": 4500 },
       { "path": "internal/autostart/autostart.go", "size": 15121 },
       { "path": ".github/agentic-wiki/PAGES.md", "size": 9260 }
     ],
     "templateHash": "pages-v1",
-    "generatedAt": "2026-05-05T04:43:00Z"
+    "generatedAt": "2026-05-24T12:00:00Z"
   },
   "Configuration-Reference": {
     "sourceFiles": [
-      { "path": "internal/config/config.go", "size": 18697 },
+      { "path": "internal/config/config.go", "size": 18400 },
       { "path": ".github/agentic-wiki/PAGES.md", "size": 9260 }
     ],
     "templateHash": "pages-v1",
-    "generatedAt": "2026-05-05T04:43:00Z"
+    "generatedAt": "2026-05-24T12:00:00Z"
   },
   "runners-yml": {
     "sourceFiles": [
-      { "path": "internal/config/config.go", "size": 18697 },
-      { "path": "config/runners.yml.template", "size": 3000 },
+      { "path": "internal/config/config.go", "size": 18400 },
       { "path": ".github/agentic-wiki/PAGES.md", "size": 9260 }
     ],
     "templateHash": "pages-v1",
-    "generatedAt": "2026-05-05T04:43:00Z"
+    "generatedAt": "2026-05-24T12:00:00Z"
   },
   "Environment-File": {
     "sourceFiles": [
       { "path": "internal/config/envfile.go", "size": 1200 },
-      { "path": "internal/config/template.go", "size": 500 },
       { "path": ".github/agentic-wiki/PAGES.md", "size": 9260 }
     ],
     "templateHash": "pages-v1",
-    "generatedAt": "2026-05-05T04:43:00Z"
+    "generatedAt": "2026-05-24T12:00:00Z"
   },
   "Profiles": {
     "sourceFiles": [
-      { "path": "internal/config/config.go", "size": 18697 },
-      { "path": "internal/runner/agentic.go", "size": 8000 },
+      { "path": "internal/config/config.go", "size": 18400 },
       { "path": ".github/agentic-wiki/PAGES.md", "size": 9260 }
     ],
     "templateHash": "pages-v1",
-    "generatedAt": "2026-05-05T04:43:00Z"
+    "generatedAt": "2026-05-24T12:00:00Z"
   },
   "Runner-Modes": {
     "sourceFiles": [
-      { "path": "internal/config/config.go", "size": 18697 },
-      { "path": "internal/runner/native.go", "size": 7000 },
-      { "path": "internal/runner/container.go", "size": 9000 },
+      { "path": "internal/config/config.go", "size": 18400 },
       { "path": ".github/agentic-wiki/PAGES.md", "size": 9260 }
     ],
     "templateHash": "pages-v1",
-    "generatedAt": "2026-05-05T04:43:00Z"
+    "generatedAt": "2026-05-24T12:00:00Z"
   },
   "Host-Setup": {
     "sourceFiles": [
-      { "path": "internal/doctor/doctor.go", "size": 21075 },
-      { "path": "internal/autostart/autostart.go", "size": 15121 },
       { "path": ".github/agentic-wiki/PAGES.md", "size": 9260 }
     ],
     "templateHash": "pages-v1",
-    "generatedAt": "2026-05-05T04:43:00Z"
+    "generatedAt": "2026-05-24T12:00:00Z"
   },
   "Prerequisites": {
     "sourceFiles": [
-      { "path": "internal/doctor/doctor.go", "size": 21075 },
       { "path": ".github/agentic-wiki/PAGES.md", "size": 9260 }
     ],
     "templateHash": "pages-v1",
-    "generatedAt": "2026-05-05T04:43:00Z"
+    "generatedAt": "2026-05-24T12:00:00Z"
   },
   "Linux-Docker-DNS": {
     "sourceFiles": [
-      { "path": "internal/agentic/agentic.go", "size": 10000 },
       { "path": ".github/agentic-wiki/PAGES.md", "size": 9260 }
     ],
     "templateHash": "pages-v1",
-    "generatedAt": "2026-05-05T04:43:00Z"
+    "generatedAt": "2026-05-24T12:00:00Z"
   },
   "Autostart": {
     "sourceFiles": [
       { "path": "internal/autostart/autostart.go", "size": 15121 },
-      { "path": "internal/ops/service.go", "size": 4500 },
       { "path": ".github/agentic-wiki/PAGES.md", "size": 9260 }
     ],
     "templateHash": "pages-v1",
-    "generatedAt": "2026-05-05T04:43:00Z"
+    "generatedAt": "2026-05-24T12:00:00Z"
   },
   "Development": {
     "sourceFiles": [
@@ -183,11 +169,11 @@
       { "path": ".github/agentic-wiki/PAGES.md", "size": 9260 }
     ],
     "templateHash": "pages-v1",
-    "generatedAt": "2026-05-05T04:43:00Z"
+    "generatedAt": "2026-05-24T12:00:00Z"
   },
   "For-Agents": {
     "sourceFiles": [],
     "templateHash": "pages-v1",
-    "generatedAt": "2026-05-05T04:43:00Z"
+    "generatedAt": "2026-05-24T12:00:00Z"
   }
 }
