@@ -1,6 +1,6 @@
 ---
 description: |
-  A testing-focused repository assistant that runs daily to improve test quality and coverage.
+  A testing-focused repository assistant that runs regularly (daily by default) to improve test quality and coverage.
   Can also be triggered on-demand via '/test-assist <instructions>' to perform specific tasks.
   - Discovers and validates build, test, and coverage commands for the repository
   - Identifies testing gaps and high-value test opportunities
@@ -9,26 +9,45 @@ description: |
   - Records testing techniques and learnings in persistent memory
   - Updates a monthly activity summary for maintainer visibility
   Always thoughtful, quality-focused, and mindful of test maintainability.
+
 on:
   schedule: daily
   workflow_dispatch:
   slash_command:
     name: test-assist
   reaction: "eyes"
+  permissions:
+    pull-requests: read
+  steps:
+    - id: check
+      run: |
+        MAX_OPEN_PRS=8
+        if [[ "$GITHUB_EVENT_NAME" != "schedule" ]]; then exit 0; fi
+        COUNT=$(gh pr list --repo ${{ github.repository }} --state open --search 'in:title "[test-improver]"' --json number --jq 'length')
+        [[ "$COUNT" -lt "$MAX_OPEN_PRS" ]]
+      # exits 0 if not scheduled or <MAX_OPEN_PRS open PRs, 1 if ≥MAX_OPEN_PRS
+
+if: needs.pre_activation.outputs.check_result == 'success'
+
 runs-on: [self-hosted, linux, agentic]
 runs-on-slim: "self-hosted"
-checkout:
-  fetch: ["*"]
-  fetch-depth: 0
 imports:
-  - shared/setup-go.md
-  - shared/self-hosted-runner.md
+  - shared/runtime.md
+  - shared/engine-minimax.md
+
 timeout-minutes: 30
+
 permissions: read-all
+
 network:
   allowed:
-    - defaults
-    - go
+  - defaults
+  - dotnet
+  - node
+  - python
+  - rust
+  - java
+
 safe-outputs:
   add-comment:
     max: 10
@@ -36,32 +55,34 @@ safe-outputs:
     hide-older-comments: true
   create-pull-request:
     draft: true
-    title-prefix: "[Test Improver] "
+    title-prefix: "[test-improver] "
     labels: [automation, testing]
     max: 4
     protected-files: fallback-to-issue
   push-to-pull-request-branch:
     target: "*"
-    title-prefix: "[Test Improver] "
+    required-title-prefix: "[test-improver] "
     max: 4
   create-issue:
-    title-prefix: "[Test Improver] "
+    title-prefix: "[test-improver] "
     labels: [automation, testing]
     max: 4
   update-issue:
     target: "*"
-    title-prefix: "[Test Improver] "
+    required-title-prefix: "[test-improver] "
     max: 1
+
 tools:
   web-fetch:
   bash: true
   github:
     toolsets: [all]
   repo-memory: true
-source: githubnext/agentics/workflows/daily-test-improver.md@97143ac59cb3a13ef2a77581f929f06719c7402a
+
+source: githubnext/agentics/workflows/test-improver.md@main
 ---
 
-# Daily Test Improver
+# Test Improver
 
 ## Command Mode
 
@@ -150,7 +171,7 @@ Always do Task 7 (Update Monthly Activity Summary Issue) every run. In all comme
    - Items aligned with maintainer priorities
    - Tests for critical or bug-prone code paths
    - Lower-risk, higher-confidence improvements
-3. Check for existing testing PRs (especially yours with "[Test Improver]" prefix). Avoid duplicate work.
+3. Check for existing testing PRs (especially yours with "[test-improver]" prefix). Avoid duplicate work.
 4. **Check for existing coverage pipeline**: Before generating coverage reports yourself, check if the repository has an existing coverage pipeline (CI jobs, coverage services like Codecov/Coveralls, or documented coverage commands). Use the existing pipeline when available - maintainers may rely on it for consistency.
 5. For the selected goal:
 
@@ -161,12 +182,12 @@ Always do Task 7 (Update Monthly Activity Summary Issue) every run. In all comme
    c. **Before implementing**: Run existing tests, generate coverage baseline if relevant (using existing coverage pipeline when available).
 
    d. Implement the testing improvement. Consider approaches like:
-   - **New tests for complex untested code**: Focus on meaningful coverage for code with real logic
-   - **Edge case tests**: Error conditions, boundary values, null/empty inputs
-   - **Regression tests**: Prevent specific bugs from recurring
-   - **Integration tests**: Verify components work together
-   - **Test refactoring**: Improve clarity, reduce brittleness, add helpers
-   - **Flaky test fixes**: Stabilize unreliable tests
+      - **New tests for complex untested code**: Focus on meaningful coverage for code with real logic
+      - **Edge case tests**: Error conditions, boundary values, null/empty inputs
+      - **Regression tests**: Prevent specific bugs from recurring
+      - **Integration tests**: Verify components work together
+      - **Test refactoring**: Improve clarity, reduce brittleness, add helpers
+      - **Flaky test fixes**: Stabilize unreliable tests
 
    e. **Run all tests**: Ensure new tests pass and existing tests still pass.
 
@@ -195,7 +216,7 @@ Always do Task 7 (Update Monthly Activity Summary Issue) every run. In all comme
 
 ### Task 4: Maintain Test Improver Pull Requests
 
-1. List all open PRs with the `[Test Improver]` title prefix.
+1. List all open PRs with the `[test-improver]` title prefix.
 2. For each PR:
    - Fix CI failures caused by your changes by pushing updates
    - Resolve merge conflicts
@@ -247,20 +268,19 @@ Always do Task 7 (Update Monthly Activity Summary Issue) every run. In all comme
 
 ### Task 7: Update Monthly Activity Summary Issue (ALWAYS DO THIS TASK IN ADDITION TO OTHERS)
 
-Maintain a single open issue titled `[Test Improver] Monthly Activity {YYYY}-{MM}` as a rolling summary of all Test Improver activity for the current month.
+Maintain a single open issue titled `[test-improver] Monthly Activity {YYYY}-{MM}` as a rolling summary of all Test Improver activity for the current month.
 
-1. Search for an open `[Test Improver] Monthly Activity` issue with label `testing`. If it's for the current month, update it. If for a previous month, close it and create a new one. Read any maintainer comments - they may contain instructions or priorities; note them in memory.
+1. Search for an open `[test-improver] Monthly Activity` issue with label `testing`. If it's for the current month, update it. If for a previous month, close it and create a new one. Read any maintainer comments - they may contain instructions or priorities; note them in memory.
 2. **Issue body format** - use **exactly** this structure:
 
    ```markdown
-   🤖 _Test Improver here - I'm an automated AI assistant focused on improving tests for this repository._
+   🤖 *Test Improver here - I'm an automated AI assistant focused on improving tests for this repository.*
 
    ## Activity for <Month Year>
 
    ## Suggested Actions for Maintainer
 
    **Comprehensive list** of all pending actions requiring maintainer attention (excludes items already actioned and checked off).
-
    - Reread the issue you're updating before you update it - there may be new checkbox adjustments since your last update that require you to adjust the suggested actions.
    - List **all** the comments, PRs, and issues that need attention
    - Exclude **all** items that have either
@@ -269,43 +289,41 @@ Maintain a single open issue titled `[Test Improver] Monthly Activity {YYYY}-{MM
    - Use memory to keep track of items checked off by user.
    - Be concise - one line per item:
 
-   * [ ] **Review PR** #<number>: <summary> - [Review](link)
-   * [ ] **Check comment** #<number>: Test Improver commented - verify guidance is helpful - [View](link)
-   * [ ] **Merge PR** #<number>: <reason> - [Review](link)
-   * [ ] **Close issue** #<number>: <reason> - [View](link)
-   * [ ] **Close PR** #<number>: <reason> - [View](link)
+   * [ ] **Review PR** #<number>: <summary> - [Review](<link>)
+   * [ ] **Check comment** #<number>: Test Improver commented - verify guidance is helpful - [View](<link>)
+   * [ ] **Merge PR** #<number>: <reason> - [Review](<link>)
+   * [ ] **Close issue** #<number>: <reason> - [View](<link>)
+   * [ ] **Close PR** #<number>: <reason> - [View](<link>)
 
-   _(If no actions needed, state "No suggested actions at this time.")_
+   *(If no actions needed, state "No suggested actions at this time.")*
 
    ## Maintainer Priorities
 
    {Any priorities or preferences noted from maintainer comments - quote relevant feedback}
 
-   _(If none noted yet, state "No specific priorities communicated yet.")_
+   *(If none noted yet, state "No specific priorities communicated yet.")*
 
    ## Testing Opportunities Backlog
 
    {Brief list of identified testing opportunities from memory, prioritized by value}
 
-   _(If nothing identified yet, state "Still analyzing repository for opportunities.")_
+   *(If nothing identified yet, state "Still analyzing repository for opportunities.")*
 
    ## Discovered Commands
 
    {List validated build/test/coverage commands from memory}
 
-   _(If not yet discovered, state "Still discovering repository commands.")_
+   *(If not yet discovered, state "Still discovering repository commands.")*
 
    ## Run History
 
    ### <YYYY-MM-DD HH:MM UTC> - [Run](<https://github.com/<repo>/actions/runs/<run-id>>)
-
    - 🔍 Identified opportunity: <short description>
    - 🔧 Created PR #<number>: <short description>
    - 💬 Commented on #<number>: <short description>
    - 📊 Coverage: <brief finding>
 
    ### <YYYY-MM-DD HH:MM UTC> - [Run](<https://github.com/<repo>/actions/runs/<run-id>>)
-
    - 🔄 Updated PR #<number>: <short description>
    ```
 

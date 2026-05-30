@@ -1,28 +1,50 @@
 ---
-name: Daily Documentation Updater
+name: Documentation Updater
 description: Automatically reviews and updates documentation based on recent code changes
 on:
   schedule: daily
   workflow_dispatch:
+  permissions:
+    pull-requests: read
+  steps:
+    - id: check
+      run: |
+        MAX_OPEN_PRS=8
+        if [[ "$GITHUB_EVENT_NAME" != "schedule" ]]; then exit 0; fi
+        COUNT=$(gh pr list --repo "$GITHUB_REPOSITORY" --state open --search 'in:title "[docs]"' --json number --jq 'length')
+        [[ "$COUNT" -lt "$MAX_OPEN_PRS" ]]
+      # exits 0 if not scheduled or <MAX_OPEN_PRS open PRs, 1 if ≥MAX_OPEN_PRS
+
+if: needs.pre_activation.outputs.check_result == 'success'
+
 runs-on: [self-hosted, linux, agentic]
 runs-on-slim: "self-hosted"
 imports:
-  - shared/setup-go.md
-  - shared/self-hosted-runner.md
+  - shared/runtime.md
+  - shared/engine-minimax.md
+
 network:
   allowed:
-    - defaults
-    - go
+  - defaults
+  - dotnet
+  - node
+  - python
+  - rust
+  - java
+
 permissions:
   contents: read
   issues: read
   pull-requests: read
+
 tools:
   github:
     toolsets: [default]
   edit:
   bash: true
+
 timeout-minutes: 30
+
 safe-outputs:
   create-pull-request:
     expires: 2d
@@ -30,10 +52,11 @@ safe-outputs:
     labels: [documentation, automation]
     draft: false
     protected-files: fallback-to-issue
-source: githubnext/agentics/workflows/daily-doc-updater.md@97143ac59cb3a13ef2a77581f929f06719c7402a
+
+source: githubnext/agentics/workflows/doc-updater.md@main
 ---
 
-# Daily Documentation Updater
+# Documentation Updater
 
 You are an AI documentation agent that automatically updates project documentation based on recent code changes and merged pull requests.
 
@@ -48,7 +71,6 @@ Scan the repository for merged pull requests and code changes from the last 24 h
 First, search for merged pull requests from the last 24 hours.
 
 Use the GitHub tools to:
-
 - Calculate yesterday's date: `date -u -d "1 day ago" +%Y-%m-%d`
 - Search for pull requests merged in the last 24 hours using `search_pull_requests` with a query like: `repo:${{ github.repository }} is:pr is:merged merged:>=YYYY-MM-DD` (replace YYYY-MM-DD with yesterday's date)
 - Get details of each merged PR using `pull_request_read`
@@ -69,7 +91,6 @@ Create a summary of changes that should be documented.
 ### 3. Identify Documentation Location
 
 Determine where documentation is located in this repository:
-
 - Check for `docs/` directory
 - Check for `README.md` files
 - Check for `*.md` files in root or subdirectories
@@ -129,7 +150,6 @@ If you made any documentation changes:
 **PR Title Format**: `[docs] Update documentation for features from [date]`
 
 **PR Description Template**:
-
 ```markdown
 ## Documentation Updates - [Date]
 

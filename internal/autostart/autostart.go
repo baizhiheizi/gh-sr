@@ -240,22 +240,8 @@ func installLaunchd(h *host.Host, instance, san, absRunnerDir, home string) erro
 
 	qplist := posixSingleQuote(plistPath)
 	qlabel := posixSingleQuote(label)
-	cmd := fmt.Sprintf(`set -e
-mkdir -p "$HOME/Library/LaunchAgents"
-UID=$(id -u)
-DOMAIN="user/$UID"
-LABEL=%s
-PLIST=%s
-if launchctl print "$DOMAIN/$LABEL" >/dev/null 2>&1; then
-  launchctl bootout "$DOMAIN/$LABEL" 2>/dev/null || true
-fi
-if launchctl bootstrap "$DOMAIN" "$PLIST" 2>/dev/null; then
-  launchctl enable "$DOMAIN/$LABEL" 2>/dev/null || true
-  launchctl kickstart -k "$DOMAIN/$LABEL" 2>/dev/null || true
-else
-  launchctl load -w "$PLIST"
-fi
-`, qlabel, qplist)
+	cmd := "mkdir -p \"$HOME/Library/LaunchAgents\"\n" +
+		launchdActivateScript(qlabel, qplist, plistName, true)
 
 	if _, err := h.Run(cmd); err != nil {
 		return fmt.Errorf("loading LaunchAgent: %w", err)
@@ -327,15 +313,7 @@ $SUDO systemctl daemon-reload
 
 	case KindLaunchd:
 		label := LaunchdLabel(san)
-		cmd := fmt.Sprintf(`set -e
-UID=$(id -u)
-DOMAIN="user/$UID"
-LABEL=%s
-PLIST="$HOME/Library/LaunchAgents/%s"
-launchctl bootout "$DOMAIN/$LABEL" 2>/dev/null || true
-launchctl unload -w "$PLIST" 2>/dev/null || true
-rm -f "$PLIST"
-`, posixSingleQuote(label), label+".plist")
+		cmd := launchdBootoutScript(posixSingleQuote(label), label+".plist")
 		_, err := h.Run(cmd)
 		return err
 
@@ -380,22 +358,12 @@ $SUDO systemctl start %s.service
 		return err
 	case KindLaunchd:
 		label := LaunchdLabel(san)
-		cmd := fmt.Sprintf(`set -e
-UID=$(id -u)
-DOMAIN="user/$UID"
-LABEL=%s
-PLIST="$HOME/Library/LaunchAgents/%s"
-if launchctl print "$DOMAIN/$LABEL" >/dev/null 2>&1; then
-  launchctl kickstart -k "$DOMAIN/$LABEL"
-else
-  if launchctl bootstrap "$DOMAIN" "$PLIST" 2>/dev/null; then
-    launchctl enable "$DOMAIN/$LABEL" 2>/dev/null || true
-    launchctl kickstart -k "$DOMAIN/$LABEL" 2>/dev/null || true
-  else
-    launchctl load -w "$PLIST"
-  fi
-fi
-`, posixSingleQuote(label), label+".plist")
+		home, herr := remoteHome(h)
+		if herr != nil {
+			return herr
+		}
+		plistPath := home + "/Library/LaunchAgents/" + label + ".plist"
+		cmd := launchdActivateScript(posixSingleQuote(label), posixSingleQuote(plistPath), label+".plist", false)
 		_, err := h.Run(cmd)
 		return err
 	case KindWindowsTask:
@@ -435,7 +403,8 @@ $SUDO systemctl stop %s.service
 		return err
 	case KindLaunchd:
 		label := LaunchdLabel(san)
-		cmd := fmt.Sprintf(`UID=$(id -u); launchctl bootout "user/$UID/%s" 2>/dev/null || true`, label)
+		cmd := fmt.Sprintf(`UID=$(id -u); LABEL=%s; for _DOMAIN in "gui/$UID" "user/$UID"; do launchctl bootout "$_DOMAIN/$LABEL" 2>/dev/null || true; done`,
+			posixSingleQuote(label))
 		_, err := h.Run(cmd)
 		return err
 	case KindWindowsTask:
@@ -508,7 +477,7 @@ $SUDO systemctl is-active %s.service 2>/dev/null || echo inactive
 
 	case KindLaunchd:
 		label := LaunchdLabel(san)
-		cmd := fmt.Sprintf(`UID=$(id -u); launchctl print "user/$UID/%s" 2>/dev/null | head -n 5 || echo unknown`, label)
+		cmd := launchdPrintScript(posixSingleQuote(label)) + " | head -n 5"
 		out, err := h.Run(cmd)
 		if err != nil {
 			row.Detail = "installed (launchd): error " + err.Error()

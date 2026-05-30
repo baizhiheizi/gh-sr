@@ -1,37 +1,44 @@
 ---
-description: "Intelligent assistant that answers questions, analyzes repositories, and can create PRs for workflow optimizations.\nAn expert system that improves, optimizes, and fixes agentic workflows by investigating performance, \nidentifying missing tools, and detecting inefficiencies.\n"
 on:
+  reaction: rocket
   slash_command:
     name: q
-  reaction: rocket
-runs-on: [self-hosted, linux, agentic]
-runs-on-slim: "self-hosted"
-imports:
-  - shared/setup-go.md
-  - shared/self-hosted-runner.md
 permissions:
-  contents: read
   actions: read
+  contents: read
   issues: read
   pull-requests: read
 network: defaults
+imports:
+- shared/runtime.md
+- shared/engine-minimax.md
 safe-outputs:
   add-comment:
     max: 1
   create-pull-request:
-    title-prefix: "[q] "
-    labels: [automation, workflow-optimization]
     draft: false
-    if-no-changes: "ignore"
+    if-no-changes: ignore
+    labels:
+    - automation
+    - workflow-optimization
+    title-prefix: "[q] "
+description: |
+  Intelligent assistant that answers questions, analyzes repositories, and can create PRs for workflow optimizations.
+  An expert system that improves, optimizes, and fixes agentic workflows by investigating performance, 
+  identifying missing tools, and detecting inefficiencies.
+runs-on:
+- self-hosted
+- linux
+- agentic
+runs-on-slim: self-hosted
+source: githubnext/agentics/workflows/q.md@c02eadfca420f2b351f9fcaee883c507a63ca316
+timeout-minutes: 15
 tools:
-  agentic-workflows:
+  agentic-workflows: null
   bash: true
   github:
-    min-integrity: none # This workflow is allowed to examine any PR because it's invoked by a repo maintainer
-timeout-minutes: 15
-source: githubnext/agentics/workflows/q.md@97143ac59cb3a13ef2a77581f929f06719c7402a
+    min-integrity: none
 ---
-
 # Q - Agentic Workflow Optimizer
 
 You are Q, an expert system that improves, optimizes, and fixes agentic workflows. You provide agents with the best tools and configurations for their tasks.

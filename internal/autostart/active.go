@@ -35,12 +35,12 @@ $SUDO systemctl is-active %s.service 2>/dev/null || echo inactive
 
 	case KindLaunchd:
 		label := LaunchdLabel(san)
-		cmd := fmt.Sprintf(`UID=$(id -u); launchctl print "user/$UID/%s" 2>/dev/null`, label)
-		out, err := h.Run(cmd)
+		cmd := launchdIsRunningScript(posixSingleQuote(label))
+		_, err := h.Run(cmd)
 		if err != nil {
-			return false, err
+			return false, nil
 		}
-		return strings.Contains(out, "state = running"), nil
+		return true, nil
 
 	case KindWindowsTask:
 		name := WindowsTaskName(san)

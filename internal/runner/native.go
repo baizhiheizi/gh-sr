@@ -540,12 +540,11 @@ func (m *Manager) statusNative(h *host.Host, instanceName string) string {
 
 	if kind, err := autostart.Detect(h, instanceName); err == nil && kind != autostart.KindNone {
 		active, err := autostart.IsServiceActive(h, instanceName, kind)
-		if err == nil {
-			if active {
-				return "running"
-			}
-			return "stopped"
+		if err == nil && active {
+			return "running"
 		}
+		// Autostart may be installed but the runner was started directly (e.g. macOS
+		// with no GUI session for launchd). Fall through to the PID file check.
 	}
 
 	if h.OS == "windows" {

@@ -17,8 +17,8 @@ runs-on: [self-hosted, linux, agentic]
 runs-on-slim: "self-hosted"
 
 imports:
-  - shared/setup-go.md
-  - shared/self-hosted-runner.md
+  - shared/runtime.md
+  - shared/engine-minimax.md
 
 permissions:
   contents: read
@@ -56,7 +56,9 @@ safe-outputs:
   create-pull-request:
     title-prefix: "[agentic-wiki]"
     labels: [documentation, automated]
-    protected-files: fallback-to-issue
+    allowed-files:
+      - ".github/agentic-wiki/**"
+    protected-files: allowed
   jobs:
     push-wiki:
       description: >
@@ -137,9 +139,8 @@ safe-outputs:
             git commit -m "Update wiki pages [agentic-wiki]"
             git push
 timeout-minutes: 30
-source: githubnext/agentics/workflows/agentic-wiki-writer.md@052bdf37ff14aec70ea2dc2f0b8eb0722acb3096
+source: githubnext/agentics/workflows/agentic-wiki-writer.md@c02eadfca420f2b351f9fcaee883c507a63ca316
 ---
-
 # Wiki Generator
 
 You are a wiki generator for this repository. Your job is to produce high-quality GitHub wiki pages from the source code, either by generating a documentation template (PAGES.md) or by reading an existing template and writing the wiki content.
