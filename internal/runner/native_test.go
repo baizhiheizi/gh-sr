@@ -108,6 +108,12 @@ func Test_windowsStartNative_usesCimProcessCreateForMergedLogs(t *testing.T) {
 		if !strings.Contains(script, "ReturnValue") {
 			t.Fatalf("addr=%s: should check Win32_Process.Create ReturnValue: %q", addr, script)
 		}
+		if !strings.Contains(script, "Win32_ProcessStartup") || !strings.Contains(script, "ShowWindow=0") {
+			t.Fatalf("addr=%s: should use Win32_ProcessStartup with ShowWindow=0 to hide the console window: %q", addr, script)
+		}
+		if !strings.Contains(script, "ProcessStartupInformation") {
+			t.Fatalf("addr=%s: should pass ProcessStartupInformation to Win32_Process.Create: %q", addr, script)
+		}
 	}
 }
 
