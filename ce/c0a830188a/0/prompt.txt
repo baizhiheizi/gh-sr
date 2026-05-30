@@ -1,0 +1,1 @@
+If I use agentic workflow in a Rails project, it need some services to work in workflow, like progresql and redis. We'll set it in `services:`. The quetion is, in `gh-sr` runner, what's the DATABASE_URL host would be? It's `localhost`? Or `host.docker.internal`?
