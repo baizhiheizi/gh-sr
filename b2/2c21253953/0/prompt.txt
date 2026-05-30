@@ -1,0 +1,1 @@
+@\home\an-lee\.cursor\projects\home-an-lee-projects-gh-sr\terminals\1.txt:255-264 The mac runner failed to up. Help me to identify the root cause and fix it.
