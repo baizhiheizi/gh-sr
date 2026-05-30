@@ -1,0 +1,19 @@
+{
+  "cli_version": "dev",
+  "checkpoint_id": "cfda8639a4bd",
+  "strategy": "manual-commit",
+  "branch": "main",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "internal/runner/native.go",
+    "internal/runner/runner.go"
+  ],
+  "sessions": [
+    {
+      "metadata": "/cf/da8639a4bd/0/metadata.json",
+      "transcript": "/cf/da8639a4bd/0/full.jsonl",
+      "content_hash": "/cf/da8639a4bd/0/content_hash.txt",
+      "prompt": "/cf/da8639a4bd/0/prompt.txt"
+    }
+  ]
+}

@@ -1,0 +1,33 @@
+{
+  "cli_version": "dev",
+  "checkpoint_id": "cfda8639a4bd",
+  "session_id": "4a03ea8c-352e-4a98-bfde-d0a46ecf6454",
+  "strategy": "manual-commit",
+  "created_at": "2026-05-30T12:03:47.03218334Z",
+  "branch": "main",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "internal/runner/native.go",
+    "internal/runner/runner.go"
+  ],
+  "agent": "Cursor",
+  "model": "composer-2.5-fast",
+  "turn_id": "33c9856c9c9b",
+  "checkpoint_transcript_start": 25,
+  "transcript_lines_at_start": 25,
+  "session_metrics": {
+    "turn_count": 2
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-05-30T12:03:46.991843586Z",
+    "agent_lines": 11,
+    "agent_removed": 5,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 11,
+    "total_lines_changed": 16,
+    "agent_percentage": 100,
+    "metric_version": 2
+  }
+}
