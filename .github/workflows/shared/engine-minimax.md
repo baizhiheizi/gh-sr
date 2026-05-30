@@ -1,15 +1,11 @@
 ---
 engine:
-  id: claude
+  id: colipot
   env:
-    ANTHROPIC_BASE_URL: "https://api.minimaxi.com/anthropic"
-    API_TIMEOUT_MS: "3000000"
-    CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1"
-    ANTHROPIC_MODEL: "MiniMax-M2.7"
-    ANTHROPIC_SMALL_FAST_MODEL: "MiniMax-M2.7"
-    ANTHROPIC_DEFAULT_SONNET_MODEL: "MiniMax-M2.7"
-    ANTHROPIC_DEFAULT_OPUS_MODEL: "MiniMax-M2.7"
-    ANTHROPIC_DEFAULT_HAIKU_MODEL: "MiniMax-M2.7"
+    COPILOT_PROVIDER_BASE_URL: "https://api.minimaxi.com/anthropic"
+    COPILOT_MODEL: "MiniMax-M2.7"
+    COPILOT_PROVIDER_API_KEY: ${{ secrets.MINIMAX_API_KEY }}
+    COPILOT_PROVIDER_TYPE: anthropic
 network:
   allowed:
     - defaults
