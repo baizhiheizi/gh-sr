@@ -266,15 +266,17 @@ fi
 
 func installWindowsTask(h *host.Host, instance, san, absRunnerDir string) error {
 	taskName := WindowsTaskName(san)
-	// run.cmd in runner dir; WorkingDirectory set on the action.
+	// Use cmd.exe directly (no PowerShell profile) and S4U logon type so the
+	// process runs in Session 0 (non-interactive, no visible console window).
 	ps := fmt.Sprintf(`
 $tn = %s
 $rd = %s
 Unregister-ScheduledTask -TaskName $tn -Confirm:$false -ErrorAction SilentlyContinue
-$act = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument '-WindowStyle Hidden -Command ".\run.cmd"' -WorkingDirectory $rd
+$act = New-ScheduledTaskAction -Execute 'cmd.exe' -Argument '/c run.cmd' -WorkingDirectory $rd
 $tr = New-ScheduledTaskTrigger -AtLogOn
 $st = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable
-Register-ScheduledTask -TaskName $tn -Action $act -Trigger $tr -Settings $st -RunLevel Limited -Force | Out-Null
+$principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType S4U -RunLevel Limited
+Register-ScheduledTask -TaskName $tn -Action $act -Trigger $tr -Settings $st -Principal $principal -Force | Out-Null
 Start-ScheduledTask -TaskName $tn
 `,
 		powerShellSingleQuoted(taskName),
