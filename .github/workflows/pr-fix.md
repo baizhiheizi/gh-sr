@@ -15,7 +15,8 @@ checkout:
   fetch: ["*"]
   fetch-depth: 0
 imports:
-  - shared/self-hosted-runner.md
+  - shared/runtime.md
+  - shared/engine-minimax.md
 permissions: read-all
 network: defaults
 tools:
@@ -30,7 +31,7 @@ safe-outputs:
     labels: [automation, pr-fix]
   add-comment:
 timeout-minutes: 20
-source: githubnext/agentics/workflows/pr-fix.md@97143ac59cb3a13ef2a77581f929f06719c7402a
+source: githubnext/agentics/workflows/pr-fix.md@c02eadfca420f2b351f9fcaee883c507a63ca316
 ---
 
 # PR Fix

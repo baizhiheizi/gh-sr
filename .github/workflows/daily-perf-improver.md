@@ -1,6 +1,6 @@
 ---
 description: |
-  A performance-focused repository assistant that runs daily to identify and implement performance improvements.
+  A performance-focused repository assistant that runs regularly (daily by default) to identify and implement performance improvements.
   Can also be triggered on-demand via '/perf-assist <instructions>' to perform specific tasks.
   - Discovers and validates build, test, and benchmark commands for the repository
   - Identifies performance bottlenecks and optimization opportunities
@@ -9,23 +9,45 @@ description: |
   - Records performance techniques and learnings in persistent memory
   - Updates a monthly activity summary for maintainer visibility
   Always methodical, measurement-driven, and mindful of trade-offs.
+
 on:
   schedule: daily
   workflow_dispatch:
   slash_command:
     name: perf-assist
   reaction: "eyes"
+  permissions:
+    pull-requests: read
+  steps:
+    - id: check
+      run: |
+        MAX_OPEN_PRS=8
+        if [[ "$GITHUB_EVENT_NAME" != "schedule" ]]; then exit 0; fi
+        COUNT=$(gh pr list --repo ${{ github.repository }} --state open --search 'in:title "[perf-improver]"' --json number --jq 'length')
+        [[ "$COUNT" -lt "$MAX_OPEN_PRS" ]]
+      # exits 0 if not scheduled or <MAX_OPEN_PRS open PRs, 1 if ≥MAX_OPEN_PRS
+
+if: needs.pre_activation.outputs.check_result == 'success'
+
 runs-on: [self-hosted, linux, agentic]
 runs-on-slim: "self-hosted"
 imports:
-  - shared/setup-go.md
-  - shared/self-hosted-runner.md
+  - shared/runtime.md
+  - shared/engine-minimax.md
+
 timeout-minutes: 60
+
 permissions: read-all
+
 network:
   allowed:
-    - defaults
-    - go
+  - defaults
+  - dotnet
+  - node
+  - python
+  - rust
+  - java
+
 safe-outputs:
   add-comment:
     max: 10
@@ -33,32 +55,34 @@ safe-outputs:
     hide-older-comments: true
   create-pull-request:
     draft: true
-    title-prefix: "[Perf Improver] "
+    title-prefix: "[perf-improver] "
     labels: [automation, performance]
     max: 4
     protected-files: fallback-to-issue
   push-to-pull-request-branch:
     target: "*"
-    title-prefix: "[Perf Improver] "
+    required-title-prefix: "[perf-improver] "
     max: 4
   create-issue:
-    title-prefix: "[Perf Improver] "
+    title-prefix: "[perf-improver] "
     labels: [automation, performance]
     max: 4
   update-issue:
     target: "*"
-    title-prefix: "[Perf Improver] "
+    required-title-prefix: "[perf-improver] "
     max: 1
+
 tools:
   web-fetch:
   github:
     toolsets: [all]
   bash: true
   repo-memory: true
-source: githubnext/agentics/workflows/daily-perf-improver.md@97143ac59cb3a13ef2a77581f929f06719c7402a
+
+source: githubnext/agentics/workflows/perf-improver.md@main
 ---
 
-# Daily Perf Improver
+# Perf Improver
 
 ## Command Mode
 
@@ -145,27 +169,27 @@ Always do Task 7 (Update Monthly Activity Summary Issue) every run. In all comme
    - Goals with clear measurement strategies
    - Lower-risk changes first
    - Items with maintainer interest (comments, labels)
-3. Check for existing performance PRs (especially yours with "[Perf Improver]" prefix). Avoid duplicate work.
+3. Check for existing performance PRs (especially yours with "[perf-improver]" prefix). Avoid duplicate work.
 4. For the selected goal:
 
    a. Create a fresh branch off the default branch: `perf-assist/<desc>`.
-
+   
    b. **Before implementing**: Establish baseline measurements using appropriate methods:
-   - Synthetic benchmarks for algorithm changes
-   - User journey tests for UX improvements
-   - Load tests for scalability work
-   - Build time comparisons for developer experience
-
+      - Synthetic benchmarks for algorithm changes
+      - User journey tests for UX improvements
+      - Load tests for scalability work
+      - Build time comparisons for developer experience
+   
    c. Implement the optimization. Consider approaches like:
-   - **Code optimization**: Algorithm improvements, data structure changes, caching
-   - **User experience**: Reducing load times, improving responsiveness, optimizing assets
-   - **System efficiency**: Resource utilization, concurrency, I/O optimization
-   - **Build/test performance**: Faster builds, parallelized tests, reduced CI duration
-
+      - **Code optimization**: Algorithm improvements, data structure changes, caching
+      - **User experience**: Reducing load times, improving responsiveness, optimizing assets
+      - **System efficiency**: Resource utilization, concurrency, I/O optimization
+      - **Build/test performance**: Faster builds, parallelized tests, reduced CI duration
+   
    d. **After implementing**: Measure again with the same methodology. Document both baseline and new measurements.
-
+   
    e. Ensure the code still works - run tests. Add new tests if appropriate.
-
+   
    f. If no improvement: iterate, try a different approach, or revert. Record the attempt in memory as a learning.
 
 5. **Finalize changes**:
@@ -189,7 +213,7 @@ Always do Task 7 (Update Monthly Activity Summary Issue) every run. In all comme
 
 ### Task 4: Maintain Perf Improver Pull Requests
 
-1. List all open PRs with the `[Perf Improver]` title prefix.
+1. List all open PRs with the `[perf-improver]` title prefix.
 2. For each PR:
    - Fix CI failures caused by your changes by pushing updates
    - Resolve merge conflicts
@@ -241,20 +265,19 @@ Always do Task 7 (Update Monthly Activity Summary Issue) every run. In all comme
 
 ### Task 7: Update Monthly Activity Summary Issue (ALWAYS DO THIS TASK IN ADDITION TO OTHERS)
 
-Maintain a single open issue titled `[Perf Improver] Monthly Activity {YYYY}-{MM}` as a rolling summary of all Perf Improver activity for the current month.
+Maintain a single open issue titled `[perf-improver] Monthly Activity {YYYY}-{MM}` as a rolling summary of all Perf Improver activity for the current month.
 
-1. Search for an open `[Perf Improver] Monthly Activity` issue with label `performance`. If it's for the current month, update it. If for a previous month, close it and create a new one. Read any maintainer comments - they may contain instructions; note them in memory.
+1. Search for an open `[perf-improver] Monthly Activity` issue with label `performance`. If it's for the current month, update it. If for a previous month, close it and create a new one. Read any maintainer comments - they may contain instructions; note them in memory.
 2. **Issue body format** - use **exactly** this structure:
 
    ```markdown
-   🤖 _Perf Improver here - I'm an automated AI assistant focused on performance improvements for this repository._
+   🤖 *Perf Improver here - I'm an automated AI assistant focused on performance improvements for this repository.*
 
    ## Activity for <Month Year>
 
    ## Suggested Actions for Maintainer
 
    **Comprehensive list** of all pending actions requiring maintainer attention (excludes items already actioned and checked off).
-
    - Reread the issue you're updating before you update it - there may be new checkbox adjustments since your last update that require you to adjust the suggested actions.
    - List **all** the comments, PRs, and issues that need attention
    - Exclude **all** items that have either
@@ -263,37 +286,35 @@ Maintain a single open issue titled `[Perf Improver] Monthly Activity {YYYY}-{MM
    - Use memory to keep track of items checked off by user.
    - Be concise - one line per item:
 
-   * [ ] **Review PR** #<number>: <summary> - [Review](link)
-   * [ ] **Check comment** #<number>: Perf Improver commented - verify guidance is helpful - [View](link)
-   * [ ] **Merge PR** #<number>: <reason> - [Review](link)
-   * [ ] **Close issue** #<number>: <reason> - [View](link)
-   * [ ] **Close PR** #<number>: <reason> - [View](link)
+   * [ ] **Review PR** #<number>: <summary> - [Review](<link>)
+   * [ ] **Check comment** #<number>: Perf Improver commented - verify guidance is helpful - [View](<link>)
+   * [ ] **Merge PR** #<number>: <reason> - [Review](<link>)
+   * [ ] **Close issue** #<number>: <reason> - [View](<link>)
+   * [ ] **Close PR** #<number>: <reason> - [View](<link>)
 
-   _(If no actions needed, state "No suggested actions at this time.")_
+   *(If no actions needed, state "No suggested actions at this time.")*
 
    ## Performance Opportunities Backlog
 
    {Brief list of identified optimization opportunities from memory, prioritized}
 
-   _(If nothing identified yet, state "Still analyzing repository for opportunities.")_
+   *(If nothing identified yet, state "Still analyzing repository for opportunities.")*
 
    ## Discovered Commands
 
    {List validated build/test/benchmark commands from memory}
 
-   _(If not yet discovered, state "Still discovering repository commands.")_
+   *(If not yet discovered, state "Still discovering repository commands.")*
 
    ## Run History
 
    ### <YYYY-MM-DD HH:MM UTC> - [Run](<https://github.com/<repo>/actions/runs/<run-id>>)
-
    - 🔍 Identified opportunity: <short description>
    - 🔧 Created PR #<number>: <short description>
    - 💬 Commented on #<number>: <short description>
    - 📊 Measured: <brief finding>
 
    ### <YYYY-MM-DD HH:MM UTC> - [Run](<https://github.com/<repo>/actions/runs/<run-id>>)
-
    - 🔄 Updated PR #<number>: <short description>
    ```
 
