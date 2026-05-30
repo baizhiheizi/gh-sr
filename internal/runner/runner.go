@@ -210,6 +210,13 @@ func (m *Manager) Stop(h *host.Host, rc config.RunnerConfig) error {
 		var err error
 		if kind != autostart.KindNone {
 			err = autostart.Stop(h, name)
+			// LaunchAgent may be installed but the runner was started directly
+			// (e.g. macOS SSH with no GUI login). Stop that process too.
+			if h.OS == "darwin" {
+				if nerr := m.stopNative(h, name); nerr != nil && err == nil {
+					err = nerr
+				}
+			}
 		} else {
 			err = m.stopNative(h, name)
 		}
