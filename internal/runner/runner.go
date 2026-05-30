@@ -104,6 +104,15 @@ func (m *Manager) RebuildImage(h *host.Host, rc config.RunnerConfig) error {
 	return m.rebuildContainerImage(h, rc)
 }
 
+func (m *Manager) startAutostartWithDarwinFallback(h *host.Host, rc config.RunnerConfig, name string) error {
+	err := autostart.Start(h, name)
+	if err != nil && h.OS == "darwin" {
+		fmt.Fprintf(m.out(), "  %s: warning: launchd start failed (%v); falling back to direct start (log in at the Mac GUI for launchd autostart on boot)\n", name, err)
+		return m.startNative(h, rc, name)
+	}
+	return err
+}
+
 func (m *Manager) Start(h *host.Host, rc config.RunnerConfig) error {
 	if rc.IsContainerMode() {
 		for i, name := range rc.InstanceNames() {
@@ -144,7 +153,7 @@ func (m *Manager) Start(h *host.Host, rc config.RunnerConfig) error {
 		}
 		var err error
 		if kind != autostart.KindNone {
-			err = autostart.Start(h, name)
+			err = m.startAutostartWithDarwinFallback(h, rc, name)
 		} else {
 			// Auto-install autostart for non-ephemeral runners so the runner
 			// auto-restarts on crash and starts on boot.
@@ -158,7 +167,7 @@ func (m *Manager) Start(h *host.Host, rc config.RunnerConfig) error {
 				kind, _ = autostart.Detect(h, name)
 			}
 			if kind != autostart.KindNone {
-				err = autostart.Start(h, name)
+				err = m.startAutostartWithDarwinFallback(h, rc, name)
 			} else {
 				err = m.startNative(h, rc, name)
 			}
