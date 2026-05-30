@@ -1,0 +1,45 @@
+{
+  "cli_version": "dev",
+  "checkpoint_id": "e68284b6e010",
+  "strategy": "manual-commit",
+  "branch": "main",
+  "checkpoints_count": 4,
+  "files_touched": [
+    "README.md",
+    "cmd/gh-sr/main.go",
+    "config/runners.yml",
+    "docs/content/configuration.md",
+    "docs/content/guides/_index.md",
+    "docs/content/guides/agentic-workflows.md",
+    "docs/content/guides/workflows.md",
+    "docs/content/host-setup.md",
+    "internal/agentic/agentic.go",
+    "internal/agentic/container_network_test.go",
+    "internal/config/config.go",
+    "internal/config/config_test.go",
+    "internal/config/runners.yml.template",
+    "internal/runner/agentic-runner-image/Dockerfile",
+    "internal/runner/agentic-runner-image/daemon.json",
+    "internal/runner/agentic-runner-image/dnsmasq-gh-sr.conf",
+    "internal/runner/agentic-runner-image/docker-wrapper.sh",
+    "internal/runner/agentic-runner-image/entrypoint.sh",
+    "internal/runner/agentic-runner-image/hooks/job-completed.sh",
+    "internal/runner/agentic-runner-image/hooks/job-started.sh",
+    "internal/runner/agentic.go",
+    "internal/runner/assets.go",
+    "internal/runner/container.go",
+    "internal/runner/container_test.go",
+    "internal/runner/environment.go",
+    "internal/runner/environment_test.go",
+    "internal/runner/native.go",
+    "internal/runner/runner.go"
+  ],
+  "sessions": [
+    {
+      "metadata": "/e6/8284b6e010/0/metadata.json",
+      "transcript": "/e6/8284b6e010/0/full.jsonl",
+      "content_hash": "/e6/8284b6e010/0/content_hash.txt",
+      "prompt": "/e6/8284b6e010/0/prompt.txt"
+    }
+  ]
+}

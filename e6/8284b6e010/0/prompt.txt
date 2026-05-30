@@ -1,0 +1,21 @@
+I want to use `gh-sr` to manage local GitHub action runners to run agentic workflows. I run several runners for each repo, and I have multiple repos to run. all the runners are in the same machine. That makes the agentic workflow running buggy. In order to fix that, gh-sr has implemented many work around to make it work. But it's still buggy, not stable, expecially when multiple agentic runners running at the same time.
+
+Please review the source of @\home\an-lee\projects\gh-aw\ , deeply understand how the agentic workflow works, then redesign a clean, stable appoach for @\home\an-lee\projects\gh-sr\ to manage agentic runners.
+
+---
+
+Implement the plan as specified, it is attached for your reference. Do NOT edit the plan file itself.
+
+To-do's from the plan have already been created. Do not create them again. Mark them as in_progress as you work, starting with the first one. Don't stop until you have completed all the to-dos.
+
+---
+
+/code-review
+
+---
+
+Resolve the reviews above.
+
+---
+
+yes. Fix in
