@@ -1,4 +1,59 @@
 ---
+on:
+  permissions:
+    pull-requests: read
+  reaction: eyes
+  schedule: daily
+  slash_command:
+    name: test-assist
+  steps:
+  - id: check
+    run: |
+      MAX_OPEN_PRS=8
+      if [[ "$GITHUB_EVENT_NAME" != "schedule" ]]; then exit 0; fi
+      COUNT=$(gh pr list --repo ${{ github.repository }} --state open --search 'in:title "[test-improver]"' --json number --jq 'length')
+      [[ "$COUNT" -lt "$MAX_OPEN_PRS" ]]
+  workflow_dispatch: null
+permissions: read-all
+if: needs.pre_activation.outputs.check_result == 'success'
+network:
+  allowed:
+  - defaults
+  - dotnet
+  - node
+  - python
+  - rust
+  - java
+imports:
+- shared/runtime.md
+- shared/engine-minimax.md
+safe-outputs:
+  add-comment:
+    hide-older-comments: true
+    max: 10
+    target: "*"
+  create-issue:
+    labels:
+    - automation
+    - testing
+    max: 4
+    title-prefix: "[test-improver] "
+  create-pull-request:
+    draft: true
+    labels:
+    - automation
+    - testing
+    max: 4
+    protected-files: fallback-to-issue
+    title-prefix: "[test-improver] "
+  push-to-pull-request-branch:
+    max: 4
+    required-title-prefix: "[test-improver] "
+    target: "*"
+  update-issue:
+    max: 1
+    required-title-prefix: "[test-improver] "
+    target: "*"
 description: |
   A testing-focused repository assistant that runs regularly (daily by default) to improve test quality and coverage.
   Can also be triggered on-demand via '/test-assist <instructions>' to perform specific tasks.
@@ -9,79 +64,21 @@ description: |
   - Records testing techniques and learnings in persistent memory
   - Updates a monthly activity summary for maintainer visibility
   Always thoughtful, quality-focused, and mindful of test maintainability.
-
-on:
-  schedule: daily
-  workflow_dispatch:
-  slash_command:
-    name: test-assist
-  reaction: "eyes"
-  permissions:
-    pull-requests: read
-  steps:
-    - id: check
-      run: |
-        MAX_OPEN_PRS=8
-        if [[ "$GITHUB_EVENT_NAME" != "schedule" ]]; then exit 0; fi
-        COUNT=$(gh pr list --repo ${{ github.repository }} --state open --search 'in:title "[test-improver]"' --json number --jq 'length')
-        [[ "$COUNT" -lt "$MAX_OPEN_PRS" ]]
-      # exits 0 if not scheduled or <MAX_OPEN_PRS open PRs, 1 if ≥MAX_OPEN_PRS
-
-if: needs.pre_activation.outputs.check_result == 'success'
-
-runs-on: [self-hosted, linux, agentic]
-runs-on-slim: "self-hosted"
-imports:
-  - shared/runtime.md
-  - shared/engine-minimax.md
-
+runs-on:
+- self-hosted
+- linux
+- agentic
+runs-on-slim: self-hosted
+source: githubnext/agentics/workflows/test-improver.md@main
 timeout-minutes: 30
-
-permissions: read-all
-
-network:
-  allowed:
-  - defaults
-  - dotnet
-  - node
-  - python
-  - rust
-  - java
-
-safe-outputs:
-  add-comment:
-    max: 10
-    target: "*"
-    hide-older-comments: true
-  create-pull-request:
-    draft: true
-    title-prefix: "[test-improver] "
-    labels: [automation, testing]
-    max: 4
-    protected-files: fallback-to-issue
-  push-to-pull-request-branch:
-    target: "*"
-    required-title-prefix: "[test-improver] "
-    max: 4
-  create-issue:
-    title-prefix: "[test-improver] "
-    labels: [automation, testing]
-    max: 4
-  update-issue:
-    target: "*"
-    required-title-prefix: "[test-improver] "
-    max: 1
-
 tools:
-  web-fetch:
   bash: true
   github:
-    toolsets: [all]
+    toolsets:
+    - all
   repo-memory: true
-
-source: githubnext/agentics/workflows/test-improver.md@main
+  web-fetch: null
 ---
-
 # Test Improver
 
 ## Command Mode
