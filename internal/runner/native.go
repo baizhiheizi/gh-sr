@@ -169,7 +169,7 @@ func windowsNativeStartScript(h *host.Host, instanceName string) string {
 		`if (Test-Path $pidFile) { $existingPid = Get-Content $pidFile; try { Get-Process -Id $existingPid -EA Stop | Out-Null; Write-Host 'already running'; exit 0 } catch {} }; `,
 		`$cmdArg = 'cd /d "' + $runnerDir + '" && run.cmd > "' + $logFile + '" 2>&1'; `,
 		`$fullLine = 'cmd.exe /c ' + $cmdArg; `,
-		`$si = New-CimInstance -ClassName Win32_ProcessStartup -Property @{ShowWindow=0} -ClientOnly; `,
+		`$si = New-CimInstance -CimClass (Get-CimClass -ClassName Win32_ProcessStartup) -Property @{ShowWindow=0} -ClientOnly; `,
 		`$cim = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = $fullLine; CurrentDirectory = $runnerDir; ProcessStartupInformation = $si }; `,
 		`if ($cim.ReturnValue -ne 0) { Write-Host ('Win32_Process.Create failed: ' + $cim.ReturnValue); exit 1 }; `,
 		`$cim.ProcessId | Out-File -FilePath $pidFile -NoNewline; `,

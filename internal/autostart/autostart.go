@@ -271,7 +271,7 @@ func installWindowsTask(h *host.Host, instance, san, absRunnerDir string) error 
 $tn = %s
 $rd = %s
 Unregister-ScheduledTask -TaskName $tn -Confirm:$false -ErrorAction SilentlyContinue
-	$act = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument '-WindowStyle Hidden -Command ".\run.cmd"' -WorkingDirectory $rd
+$act = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument '-WindowStyle Hidden -Command ".\run.cmd"' -WorkingDirectory $rd
 $tr = New-ScheduledTaskTrigger -AtLogOn
 $st = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable
 Register-ScheduledTask -TaskName $tn -Action $act -Trigger $tr -Settings $st -RunLevel Limited -Force | Out-Null
