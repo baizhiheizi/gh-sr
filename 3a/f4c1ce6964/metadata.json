@@ -1,0 +1,44 @@
+{
+  "cli_version": "dev",
+  "checkpoint_id": "3af4c1ce6964",
+  "strategy": "manual-commit",
+  "branch": "main",
+  "checkpoints_count": 3,
+  "files_touched": [
+    ".github/agents/agentic-workflows.agent.md",
+    ".github/aw/actions-lock.json",
+    ".github/mcp.json",
+    ".github/workflows/agentic-wiki-writer.lock.yml",
+    ".github/workflows/agentic-wiki-writer.md",
+    ".github/workflows/agentics-maintenance.yml",
+    ".github/workflows/copilot-setup-steps.yml",
+    ".github/workflows/daily-doc-updater.lock.yml",
+    ".github/workflows/daily-doc-updater.md",
+    ".github/workflows/daily-perf-improver.lock.yml",
+    ".github/workflows/daily-perf-improver.md",
+    ".github/workflows/daily-test-improver.lock.yml",
+    ".github/workflows/daily-test-improver.md",
+    ".github/workflows/grumpy-reviewer.lock.yml",
+    ".github/workflows/grumpy-reviewer.md",
+    ".github/workflows/issue-triage.lock.yml",
+    ".github/workflows/issue-triage.md",
+    ".github/workflows/plan.lock.yml",
+    ".github/workflows/plan.md",
+    ".github/workflows/pr-fix.lock.yml",
+    ".github/workflows/pr-fix.md",
+    ".github/workflows/q.lock.yml",
+    ".github/workflows/q.md",
+    ".github/workflows/shared/engine-minimax.md",
+    ".github/workflows/shared/runtime.md",
+    ".github/workflows/shared/self-hosted-runner.md",
+    ".github/workflows/shared/setup-go.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/3a/f4c1ce6964/0/metadata.json",
+      "transcript": "/3a/f4c1ce6964/0/full.jsonl",
+      "content_hash": "/3a/f4c1ce6964/0/content_hash.txt",
+      "prompt": "/3a/f4c1ce6964/0/prompt.txt"
+    }
+  ]
+}

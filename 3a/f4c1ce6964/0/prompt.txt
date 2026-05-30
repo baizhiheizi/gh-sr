@@ -1,0 +1,72 @@
+Help me review and resolve the conflict after the gh aw update.
+
+no changes added to commit (use "git add" and/or "git commit -a")
+g
+gh-sr on  main [✘!?] via 🐹 v1.26.1
+➜  gh aw update
+ℹ Found 9 workflow(s) to update
+ℹ Source has no branch ref, tracking default branch "main"
+ℹ Local modifications detected in agentic-wiki-writer, merging to preserve your changes
+⚠ Updated agentic-wiki-writer from 052bdf3 to c02eadf with CONFLICTS - please review and resolve manually
+ℹ Source has no branch ref, tracking default branch "main"
+⚠ Workflow daily-doc-updater redirect: githubnext/agentics/workflows/daily-doc-updater.md@c02eadfca420f2b351f9fcaee883c507a63ca316 → githubnext/agentics/wo
+⚠ Workflow daily-doc-updater source location changed; updating source to githubnext/agentics/workflows/doc-updater.md@main
+✓ Updated daily-doc-updater from main to c02eadf
+✓ .github/workflows/daily-doc-updater.md (93.6 KB)
+ℹ Source has no branch ref, tracking default branch "main"
+⚠ Workflow daily-perf-improver redirect: githubnext/agentics/workflows/daily-perf-improver.md@c02eadfca420f2b351f9fcaee883c507a63ca316 → githubnext/agentic
+⚠ Workflow daily-perf-improver source location changed; updating source to githubnext/agentics/workflows/perf-improver.md@main
+✓ Updated daily-perf-improver from main to c02eadf
+✓ .github/workflows/daily-perf-improver.md (118.2 KB)
+ℹ Source has no branch ref, tracking default branch "main"
+⚠ Workflow daily-test-improver redirect: githubnext/agentics/workflows/daily-test-improver.md@c02eadfca420f2b351f9fcaee883c507a63ca316 → githubnext/agentic
+⚠ Workflow daily-test-improver source location changed; updating source to githubnext/agentics/workflows/test-improver.md@main
+✓ Updated daily-test-improver from main to c02eadf
+✓ .github/workflows/daily-test-improver.md (118.1 KB)
+ℹ Source has no branch ref, tracking default branch "main"
+ℹ Local modifications detected in grumpy-reviewer, merging to preserve your changes
+✓ Updated grumpy-reviewer from 97143ac to c02eadf
+✓ .github/workflows/grumpy-reviewer.md (104.5 KB)
+ℹ Source has no branch ref, tracking default branch "main"
+ℹ Local modifications detected in issue-triage, merging to preserve your changes
+⚠ Updated issue-triage from 97143ac to c02eadf with CONFLICTS - please review and resolve manually
+ℹ Source has no branch ref, tracking default branch "main"
+ℹ Local modifications detected in plan, merging to preserve your changes
+⚠ Updated plan from 97143ac to c02eadf with CONFLICTS - please review and resolve manually
+ℹ Source has no branch ref, tracking default branch "main"
+ℹ Local modifications detected in pr-fix, merging to preserve your changes
+⚠ Updated pr-fix from 97143ac to c02eadf with CONFLICTS - please review and resolve manually
+ℹ Source has no branch ref, tracking default branch "main"
+ℹ Local modifications detected in q, merging to preserve your changes
+✓ Updated q from 97143ac to c02eadf
+✓ .github/workflows/q.md (110.4 KB)
+
+✓ Successfully updated and compiled 9 workflow(s):
+  • agentic-wiki-writer
+  • daily-doc-updater
+  • daily-perf-improver
+  • daily-test-improver
+  • grumpy-reviewer
+  • issue-triage
+  • plan
+  • pr-fix
+  • q
+
+
+
+✓ Pinned 4 container image(s):
+  • ghcr.io/github/gh-aw-firewall/agent:0.25.55@sha256:138c363411decc9a61a5af9b95e8d64c76648b00add0ba06fc7ba786f0e72731
+  • ghcr.io/github/gh-aw-firewall/api-proxy:0.25.55@sha256:4142b873b678cd3279b98dcbe464857d56ea2f2348719b00379cdf35dd843ff3
+  • ghcr.io/github/gh-aw-firewall/squid:0.25.55@sha256:74084b704d8d3664a363655986664d70bd9cdb4830532d0b35cd784d867aabca
+  • ghcr.io/github/gh-aw-mcpg:v0.3.19@sha256:a6c890d7c24d7190c9ef97b9c954cc4cffaae6b01c371ced1f959f1370b1f68f
+
+ℹ Updated container pins in actions-lock.json
+✓ Updated action references in agentic-wiki-writer.md
+
+---
+
+Ensure that all agentic workflows should import @gh-sr/.github/workflows/shared/self-hosted-runner.md and @gh-sr/.github/workflows/shared/setup-go.md
+
+---
+
+let's rename @gh-sr/.github/workflows/shared/self-hosted-runner.md to `engine-minimax.md`; @gh-sr/.github/workflows/shared/setup-go.md renamed to `runtime.md`. And update each agentic workflow for imports too.
