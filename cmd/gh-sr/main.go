@@ -354,7 +354,8 @@ func addRunnerCmd() *cobra.Command {
 
 Use --org instead of --repo for organization-level runners, and --group
 to assign the runner to a runner group. Use --profile agentic for GitHub
-Agentic Workflows (gh-aw) runners.`,
+Agentic Workflows (gh-aw) runners; agentic runners always use container
+(Docker-in-Docker) isolation, so no runner_mode or MCP port config is needed.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfgPath, err := config.ResolveConfigPath(cfgFile)
@@ -403,7 +404,7 @@ Agentic Workflows (gh-aw) runners.`,
 	cmd.Flags().IntVar(&count, "count", 1, "number of parallel instances")
 	cmd.Flags().StringSliceVar(&labels, "labels", nil, "runner labels (auto-generated if empty)")
 	cmd.Flags().BoolVar(&ephemeral, "ephemeral", false, "register as ephemeral (one job then deregister)")
-	cmd.Flags().StringVar(&profile, "profile", "", `runner profile: "agentic" for GitHub Agentic Workflows (gh-aw)`)
+	cmd.Flags().StringVar(&profile, "profile", "", `runner profile: "agentic" for GitHub Agentic Workflows (gh-aw); runs in container (DinD) mode automatically`)
 	return cmd
 }
 
@@ -428,7 +429,7 @@ func doctorCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "doctor",
 		Short: "Check config, GitHub API access, and host prerequisites",
-		Long:  "Validates local paths, configuration, GitHub API access, and SSH targets. For runner_mode: native, checks host runner dirs and (when profile: agentic) Docker, dnsmasq, and AWF hygiene on the host. For runner_mode: container, checks outer Docker and --privileged, each gh-sr-<instance> container, inner dockerd, .runner inside the container, and (when profile: agentic) AWF hygiene on the inner Docker. See README \"Host setup\" for steps gh sr cannot automate.",
+		Long:  "Validates local paths, configuration, GitHub API access, and SSH targets. For runner_mode: native, checks host runner dirs. profile: agentic always uses container mode: checks outer Docker and --privileged, each gh-sr-<instance> container, inner dockerd, .runner inside the container, and AWF hygiene/networking on the inner Docker. See README \"Host setup\" for steps gh sr cannot automate.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := config.BootstrapEnv(); err != nil {
 				return err

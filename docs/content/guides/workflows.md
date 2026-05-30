@@ -34,20 +34,9 @@ runners:
     count: 2
 ```
 
-This automatically sets docker mode, host networking, `NET_ADMIN` capability, installs `iptables` in the container for the Agent Workflow Firewall, and adds an `agentic` label. See the [host setup docs](../host-setup.md#github-agentic-workflows-gh-aw) for details.
+`profile: agentic` always runs in **container mode** (privileged Docker-in-Docker): each instance is isolated and every job runs from a pristine inner state, so multiple concurrent agentic jobs are safe on one machine. The host only needs Docker (with privileged-container support); gh-aw, AWF, DNS, and tooling are baked into the image `gh sr` builds. Use `count: N` for N concurrent jobs — no MCP port or label juggling. See the [Agentic Workflows guide]({{< ref "agentic-workflows" >}}) and [host setup docs](../host-setup.md#github-agentic-workflows-gh-aw) for details.
 
-### Native Linux (`mode: native`)
-
-Alternatively, use a **native** Linux runner and add **`agentic`** to `labels` yourself (no `profile: agentic`). The machine still needs **Docker** for gh-aw’s containers; the runner user needs **non-interactive `sudo`** for the Agent Workflow Firewall. See [Native Linux runners and sudo](../host-setup.md#native-linux-runners-and-sudo-gh-aw).
-
-```yaml
-runners:
-  - name: aw-native
-    repo: owner/repo
-    host: vps-1
-    mode: native
-    labels: [self-hosted, Linux, X64, agentic]
-```
+> Native-mode agentic runners are no longer supported (`profile: agentic` + `runner_mode: native` is rejected), and the `agentic_mcp_ports` / `gh-sr-mcp-<port>` scheme has been removed — container mode isolates the MCP gateway port per runner automatically.
 
 Reference the runner in your agentic workflow Markdown frontmatter:
 

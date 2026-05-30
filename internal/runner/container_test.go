@@ -1,14 +1,11 @@
 package runner
 
 import (
-	"bytes"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"syscall"
 	"testing"
-	"time"
 
 	"github.com/an-lee/gh-sr/internal/config"
 	"github.com/an-lee/gh-sr/internal/host"
@@ -144,281 +141,157 @@ func TestContainerRunnerImageTag(t *testing.T) {
 	}
 }
 
-func TestAgenticRunnerDockerWrapperEmbedsAwfBridgeHostMapping(t *testing.T) {
+// TestAgenticRunnerDockerWrapperIsMinimalShim verifies the redesigned docker shim
+// only injects the MCP gateway --hostname and has dropped the old racy supervisor /
+// MCP-URL rewriter / AWF add-host injection (now handled by baked DNS + job hooks).
+func TestAgenticRunnerDockerWrapperIsMinimalShim(t *testing.T) {
 	t.Parallel()
-	for _, needle := range []string{
-		"needs_awf_agent_bridge_host",
-		"resolve_awf_host_route_target",
-		"GH_SR_MCP_REWRITE_TARGET_IP",
-		"HOST_GATEWAY",
-		"host.docker.internal:host-gateway",
-		"gh-aw-firewall/agent:",
+	for _, want := range []string{
+		"is_mcpg_invocation",
+		"has_hostname_arg",
+		"has_name_arg",
+		"--hostname gh-aw-mcpg",
+		"--name \"gh-aw-mcpg-ghsr-",
 		"GH_SR_DOCKER_WRAPPER_REAL",
+		"ghcr.io/github/gh-aw-mcpg:",
 	} {
-		if !strings.Contains(agenticRunnerDockerWrapper, needle) {
-			t.Fatalf("embedded docker-wrapper must contain %q", needle)
+		if !strings.Contains(agenticRunnerDockerWrapper, want) {
+			t.Fatalf("docker-wrapper must contain %q", want)
 		}
 	}
-}
-
-func TestAgenticRunnerDockerWrapperEmbedsMcpgSupervisorLogic(t *testing.T) {
-	t.Parallel()
-	for _, needle := range []string{
+	// The heavy supervisor / URL-rewriter must stay gone (naming is just a flag, not a supervisor).
+	for _, forbidden := range []string{
+		"rewrite_claude_mcp_gateway_urls",
 		"cleanup_mcpg_container",
 		"mcpg_docker_child_pid",
-		"gh-aw-mcpg-ghsr-",
-		"docker_option_value",
-		"is_mcpg_invocation",
-		"mktemp -d",
-		"<&0",
-	} {
-		if !strings.Contains(agenticRunnerDockerWrapper, needle) {
-			t.Fatalf("embedded docker-wrapper must contain %q", needle)
-		}
-	}
-}
-
-func TestAgenticRunnerDockerWrapperStreamsMcpgConfig(t *testing.T) {
-	t.Parallel()
-	for _, forbidden := range []string{
-		"stdin.json",
-		">\"$mcpg_stdin\"",
+		"GH_SR_MCP_REWRITE_TARGET_IP",
+		"needs_awf_agent_bridge_host",
+		"resolve_awf_host_route_target",
+		"--cidfile",
+		"mktemp",
+		"watcher_start",
 	} {
 		if strings.Contains(agenticRunnerDockerWrapper, forbidden) {
-			t.Fatalf("embedded docker-wrapper must stream MCP config without temp-file stdin, found %q", forbidden)
+			t.Fatalf("docker-wrapper must no longer contain removed shim logic %q", forbidden)
 		}
 	}
 }
 
-func TestAgenticRunnerDockerWrapperRewritesGeneratedClaudeMCPConfig(t *testing.T) {
+func TestAgenticRunnerDockerWrapperHeaderDocumentsHooks(t *testing.T) {
 	t.Parallel()
-	tmp := t.TempDir()
-	configPath := filepath.Join(tmp, "mcp-servers.json")
-
-	stdinLog := filepath.Join(tmp, "stdin-captured.txt")
-	fakeDocker := filepath.Join(tmp, "docker")
-	script := `#!/bin/bash
-set -euo pipefail
-cmd=${1:-}
-shift || true
-case "$cmd" in
-rm)
-	exit 0
-	;;
-run)
-	prev=""
-	for a in "$@"; do
-		if [[ "$prev" == "--cidfile" ]]; then
-			printf 'deadbeefcafe\n' >"$a"
-			prev=""
-			continue
-		fi
-		prev=""
-		case "$a" in
-		--cidfile) prev="--cidfile" ;;
-		--cidfile=*) f="${a#*=}"; printf 'deadbeefcafe\n' >"$f" ;;
-		esac
-	done
-	cat >"${FAKE_DOCKER_STDIN_LOG:?}"
-	sleep 0.2
-	printf '%s' '{"mcpServers":{"github":{"url":"http://host.docker.internal:80/mcp/github"},"safeoutputs":{"url":"http://host.docker.internal:80/mcp/safeoutputs"}}}' >"${FAKE_MCP_CONFIG_PATH:?}"
-	sleep 2.2
-	exit 0
-	;;
-*)
-	exit 0
-	;;
-esac
-`
-	if err := os.WriteFile(fakeDocker, []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
-
-	wrapper := filepath.Join("agentic-runner-image", "docker-wrapper.sh")
-	payload := `{"gateway":{"port":80,"domain":"host.docker.internal"}}`
-	cmd := exec.Command("bash", "-c", `printf '%s' "$GHSR_PAYLOAD" | bash "$GHSR_WRAPPER" run -i --rm --network host ghcr.io/github/gh-aw-mcpg:1.0.0`)
-	cmd.Env = append(os.Environ(),
-		"GHSR_PAYLOAD="+payload,
-		"GHSR_WRAPPER="+wrapper,
-		"GH_SR_DOCKER_WRAPPER_REAL="+fakeDocker,
-		"GH_SR_MCP_REWRITE_TARGET_IP=203.0.113.7",
-		"GH_SR_MCP_CONFIG_REWRITE_PATH="+configPath,
-		"FAKE_MCP_CONFIG_PATH="+configPath,
-		"FAKE_DOCKER_STDIN_LOG="+stdinLog,
-	)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("wrapper generated config rewrite: %v\n%s", err, out)
-	}
-	combined := string(out)
-	for _, needle := range []string{
-		"[gh-sr:mcp-claude-urls] watcher_start",
-		"[gh-sr:mcp-claude-urls] config_appeared",
-		"[gh-sr:mcp-claude-urls] stable_file",
-		"[gh-sr:mcp-claude-urls] rewrite_applied",
-	} {
-		if !strings.Contains(combined, needle) {
-			t.Fatalf("expected docker-wrapper diagnostics missing %q; combined:\n%s", needle, out)
-		}
-	}
-	if !strings.Contains(combined, "[gh-sr:mcp-claude-urls] watcher_exit") &&
-		!strings.Contains(combined, "[gh-sr:mcp-claude-urls] watcher_stop") {
-		t.Fatalf("expected watcher_exit or watcher_stop log; combined:\n%s", out)
-	}
-	if strings.Contains(combined, "[gh-sr:mcp-claude-urls] watcher_exit WARNING still_host_mcp_urls") {
-		t.Fatalf("unexpected rewrite-failure log; combined:\n%s", out)
-	}
-
-	gotStdin, err := os.ReadFile(stdinLog)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(gotStdin) != payload {
-		t.Fatalf("gateway stdin must remain schema-valid: got %q want %q", gotStdin, payload)
-	}
-
-	gotConfig, err := os.ReadFile(configPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(string(gotConfig), "host.docker.internal:80/mcp") {
-		t.Fatalf("generated Claude MCP config was not rewritten:\n%s", gotConfig)
-	}
 	for _, want := range []string{
-		"http://203.0.113.7:80/mcp/github",
-		"http://203.0.113.7:80/mcp/safeoutputs",
-	} {
-		if !strings.Contains(string(gotConfig), want) {
-			t.Fatalf("generated Claude MCP config missing %q:\n%s", want, gotConfig)
-		}
-	}
-}
-
-// TestAgenticRunnerDockerWrapperRewritesNonDefaultMCPPort guards against the
-// regression that broke runs where gh-aw's compiled workflows export
-// MCP_GATEWAY_PORT=8080 (so the converter writes
-// `http://host.docker.internal:8080/mcp/...`). Previously the watcher
-// hardcoded port 80, the rewrite never matched, and the agent tried to reach
-// `host.docker.internal:8080` through the AWF Squid sidecar, which returned a
-// proxy error page and killed every MCP handshake. The watcher must rewrite
-// any numeric port and preserve it on the right-hand side.
-func TestAgenticRunnerDockerWrapperRewritesNonDefaultMCPPort(t *testing.T) {
-	t.Parallel()
-	tmp := t.TempDir()
-	configPath := filepath.Join(tmp, "mcp-servers.json")
-
-	stdinLog := filepath.Join(tmp, "stdin-captured.txt")
-	fakeDocker := filepath.Join(tmp, "docker")
-	script := `#!/bin/bash
-set -euo pipefail
-cmd=${1:-}
-shift || true
-case "$cmd" in
-rm)
-	exit 0
-	;;
-run)
-	prev=""
-	for a in "$@"; do
-		if [[ "$prev" == "--cidfile" ]]; then
-			printf 'deadbeefcafe\n' >"$a"
-			prev=""
-			continue
-		fi
-		prev=""
-		case "$a" in
-		--cidfile) prev="--cidfile" ;;
-		--cidfile=*) f="${a#*=}"; printf 'deadbeefcafe\n' >"$f" ;;
-		esac
-	done
-	cat >"${FAKE_DOCKER_STDIN_LOG:?}"
-	sleep 0.2
-	printf '%s' '{"mcpServers":{"github":{"url":"http://host.docker.internal:8080/mcp/github"},"safeoutputs":{"url":"http://host.docker.internal:8080/mcp/safeoutputs"}}}' >"${FAKE_MCP_CONFIG_PATH:?}"
-	sleep 2.2
-	exit 0
-	;;
-*)
-	exit 0
-	;;
-esac
-`
-	if err := os.WriteFile(fakeDocker, []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
-
-	wrapper := filepath.Join("agentic-runner-image", "docker-wrapper.sh")
-	payload := `{"gateway":{"port":8080,"domain":"host.docker.internal"}}`
-	cmd := exec.Command("bash", "-c", `printf '%s' "$GHSR_PAYLOAD" | bash "$GHSR_WRAPPER" run -i --rm --network host ghcr.io/github/gh-aw-mcpg:1.0.0`)
-	cmd.Env = append(os.Environ(),
-		"GHSR_PAYLOAD="+payload,
-		"GHSR_WRAPPER="+wrapper,
-		"GH_SR_DOCKER_WRAPPER_REAL="+fakeDocker,
-		"GH_SR_MCP_REWRITE_TARGET_IP=203.0.113.7",
-		"GH_SR_MCP_CONFIG_REWRITE_PATH="+configPath,
-		"FAKE_MCP_CONFIG_PATH="+configPath,
-		"FAKE_DOCKER_STDIN_LOG="+stdinLog,
-	)
-	// Make sure GH_SR_MCP_REWRITE_PORT is unset so the watcher uses its
-	// any-port default; if a developer's environment has this pinned to 80
-	// the test would silently regress.
-	cmd.Env = append(cmd.Env, "GH_SR_MCP_REWRITE_PORT=")
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("wrapper non-default-port rewrite: %v\n%s", err, out)
-	}
-	combined := string(out)
-	for _, needle := range []string{
-		"[gh-sr:mcp-claude-urls] watcher_start",
-		"[gh-sr:mcp-claude-urls] config_appeared",
-		"[gh-sr:mcp-claude-urls] stable_file",
-		"[gh-sr:mcp-claude-urls] rewrite_applied",
-	} {
-		if !strings.Contains(combined, needle) {
-			t.Fatalf("expected docker-wrapper diagnostics missing %q; combined:\n%s", needle, out)
-		}
-	}
-	if strings.Contains(combined, "[gh-sr:mcp-claude-urls] watcher_exit WARNING still_host_mcp_urls") {
-		t.Fatalf("unexpected rewrite-failure log; combined:\n%s", out)
-	}
-
-	gotConfig, err := os.ReadFile(configPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(string(gotConfig), "host.docker.internal:8080/mcp") {
-		t.Fatalf("non-default-port Claude MCP config was not rewritten:\n%s", gotConfig)
-	}
-	for _, want := range []string{
-		"http://203.0.113.7:8080/mcp/github",
-		"http://203.0.113.7:8080/mcp/safeoutputs",
-	} {
-		if !strings.Contains(string(gotConfig), want) {
-			t.Fatalf("non-default-port Claude MCP config missing %q:\n%s", want, gotConfig)
-		}
-	}
-}
-
-func TestAgenticRunnerDockerWrapperHeaderDocumentsConcurrencyVsShim(t *testing.T) {
-	t.Parallel()
-	for _, needle := range []string{
 		"runner_mode: container",
 		"/opt/gh-sr/docker-shim/docker",
-		"[gh-sr:mcp-claude-urls]",
+		"job-started.sh",
+		"job-completed.sh",
 	} {
-		if !strings.Contains(agenticRunnerDockerWrapper, needle) {
-			t.Fatalf("embedded docker-wrapper header should mention %q", needle)
+		if !strings.Contains(agenticRunnerDockerWrapper, want) {
+			t.Fatalf("docker-wrapper header should mention %q", want)
 		}
 	}
 }
 
-func TestAgenticRunnerEntrypointUsesBridgeDNSForInnerContainers(t *testing.T) {
+// TestAgenticRunnerInnerDockerDNSBaked verifies host.docker.internal DNS is baked
+// into the image (daemon.json + dnsmasq config), not rewritten at runtime, and that
+// inner containers never use loopback DNS (which would point at the child container).
+func TestAgenticRunnerInnerDockerDNSBaked(t *testing.T) {
 	t.Parallel()
-
-	if strings.Contains(agenticRunnerEntrypoint, `"dns": ["${DNSMASQ_LISTEN}", "8.8.8.8"]`) {
-		t.Fatal("inner Docker containers must not use 127.0.0.1 as DNS; that loopback points at the child container")
+	if !strings.Contains(agenticRunnerDaemonJSON, `"bip": "172.17.0.1/24"`) {
+		t.Fatalf("daemon.json should pin the default-bridge gateway, got:\n%s", agenticRunnerDaemonJSON)
 	}
-	if !strings.Contains(agenticRunnerEntrypoint, `"dns": ["${DOCKER0_IP}", "8.8.8.8"]`) {
-		t.Fatalf("entrypoint should configure inner Docker DNS to the bridge IP, got:\n%s", agenticRunnerEntrypoint)
+	if !strings.Contains(agenticRunnerDaemonJSON, `"172.17.0.1"`) {
+		t.Fatalf("daemon.json should point inner DNS at the bridge gateway, got:\n%s", agenticRunnerDaemonJSON)
+	}
+	if strings.Contains(agenticRunnerDaemonJSON, "127.0.0.1") {
+		t.Fatal("inner Docker DNS must not be loopback (points at the child container itself)")
+	}
+	if !strings.Contains(agenticRunnerDnsmasqConf, "address=/host.docker.internal/172.17.0.1") {
+		t.Fatalf("dnsmasq config should answer host.docker.internal with the bridge gateway, got:\n%s", agenticRunnerDnsmasqConf)
+	}
+}
+
+// TestAgenticRunnerEntrypointStartsDockerdOnce guards against re-introducing the
+// runtime daemon.json rewrite + dockerd restart dance (a key instability source).
+func TestAgenticRunnerEntrypointStartsDockerdOnce(t *testing.T) {
+	t.Parallel()
+	if strings.Contains(agenticRunnerEntrypoint, "> /etc/docker/daemon.json") ||
+		strings.Contains(agenticRunnerEntrypoint, "tee /etc/docker/daemon.json") {
+		t.Fatal("entrypoint must not write daemon.json at runtime; it is baked into the image")
+	}
+	if c := strings.Count(agenticRunnerEntrypoint, "dockerd \\"); c != 1 {
+		t.Fatalf("entrypoint should start dockerd exactly once, found %d invocations", c)
+	}
+	if strings.Contains(agenticRunnerEntrypoint, "Restart dockerd") {
+		t.Fatal("entrypoint must not restart dockerd to pick up DNS changes (baked at build time)")
+	}
+}
+
+// TestAgenticRunnerEntrypointWiresJobHooks verifies the per-job reset hooks are wired
+// into the runner .env so the Actions runner invokes them before/after every job.
+func TestAgenticRunnerEntrypointWiresJobHooks(t *testing.T) {
+	t.Parallel()
+	for _, want := range []string{
+		"ACTIONS_RUNNER_HOOK_JOB_STARTED=/opt/gh-sr/hooks/job-started.sh",
+		"ACTIONS_RUNNER_HOOK_JOB_COMPLETED=/opt/gh-sr/hooks/job-completed.sh",
+	} {
+		if !strings.Contains(agenticRunnerEntrypoint, want) {
+			t.Fatalf("entrypoint should wire %q into .env", want)
+		}
+	}
+}
+
+// TestAgenticRunnerJobHooksReset verifies the per-job reset hooks perform the
+// deterministic teardown (containers, networks, AWF iptables, /tmp/gh-aw) and that
+// the completed hook always exits 0.
+func TestAgenticRunnerJobHooksReset(t *testing.T) {
+	t.Parallel()
+	for _, want := range []string{
+		"docker network prune -f",
+		"iptables -F DOCKER-USER",
+		"rm -rf /tmp/gh-aw",
+		"name=gh-aw-mcpg",
+		"name=awf-",
+		"ancestor=$img",
+		"ghcr.io/github/gh-aw-firewall/agent",
+		"exit 0",
+	} {
+		if !strings.Contains(agenticRunnerJobCompletedHook, want) {
+			t.Fatalf("job-completed hook must contain %q", want)
+		}
+	}
+	for _, want := range []string{
+		"docker ps -aq",
+		"docker network prune -f",
+		"PREROUTING",
+		"172.30.0.0/24",
+		"docker info",
+	} {
+		if !strings.Contains(agenticRunnerJobStartedHook, want) {
+			t.Fatalf("job-started hook must contain %q", want)
+		}
+	}
+}
+
+// TestAgenticRunnerJobHooksPreserveImageCache ensures per-job resets never invalidate
+// the inner Docker image-layer cache (the whole point of cache/state separation).
+func TestAgenticRunnerJobHooksPreserveImageCache(t *testing.T) {
+	t.Parallel()
+	hooks := map[string]string{
+		"job-started.sh":   agenticRunnerJobStartedHook,
+		"job-completed.sh": agenticRunnerJobCompletedHook,
+	}
+	for name, hook := range hooks {
+		for _, forbidden := range []string{
+			"docker image prune",
+			"docker system prune",
+			"docker volume prune",
+			"docker builder prune",
+			"docker rmi",
+		} {
+			if strings.Contains(hook, forbidden) {
+				t.Fatalf("%s must not invalidate the image cache with %q", name, forbidden)
+			}
+		}
 	}
 }
 
@@ -442,108 +315,61 @@ func TestDockerWrapperInjection(t *testing.T) {
 		return strings.TrimSpace(string(out))
 	}
 
-	echoWrapWithEnv := func(t *testing.T, extraEnv []string, args ...string) string {
-		t.Helper()
-		cmd := exec.Command("bash", append([]string{wrapper}, args...)...)
-		cmd.Env = append(os.Environ(), append([]string{"GH_SR_DOCKER_WRAPPER_REAL=/bin/echo"}, extraEnv...)...)
-		out, err := cmd.CombinedOutput()
-		if err != nil {
-			t.Fatalf("bash %v: %v\n%s", args, err, out)
-		}
-		return strings.TrimSpace(string(out))
-	}
-
-	t.Run("mcpg_hostname", func(t *testing.T) {
+	t.Run("mcpg_run_injects_hostname_and_name", func(t *testing.T) {
 		t.Parallel()
+		// run gets both --hostname and a deterministic gh-aw-mcpg-ghsr-* name (random
+		// suffix), and the caller's original args are preserved after the injected flags.
 		got := echoWrap(t, "run", "-i", "--rm", "--network", "host", "ghcr.io/github/gh-aw-mcpg:1.0.0")
-		// /bin/echo exits immediately; wrapper then runs cleanup (more echo lines).
-		if !strings.Contains(got, "run --hostname gh-aw-mcpg") {
-			t.Fatalf("got %q, missing hostname injection", got)
+		if !strings.HasPrefix(got, "run --hostname gh-aw-mcpg --name gh-aw-mcpg-ghsr-") {
+			t.Fatalf("got %q, want prefix 'run --hostname gh-aw-mcpg --name gh-aw-mcpg-ghsr-'", got)
 		}
-		if !strings.Contains(got, "--cidfile") {
-			t.Fatalf("got %q, missing --cidfile", got)
-		}
-		if !strings.Contains(got, "--name gh-aw-mcpg-ghsr-") {
-			t.Fatalf("got %q, missing gh-sr MCP gateway name prefix", got)
-		}
-		if !strings.Contains(got, "ghcr.io/github/gh-aw-mcpg:1.0.0") {
-			t.Fatalf("got %q, missing image", got)
+		if !strings.HasSuffix(got, " -i --rm --network host ghcr.io/github/gh-aw-mcpg:1.0.0") {
+			t.Fatalf("got %q, original args must be preserved after injected flags", got)
 		}
 	})
 
-	t.Run("mcpg_supervises_when_hostname_present", func(t *testing.T) {
+	t.Run("mcpg_create_injects_hostname_only", func(t *testing.T) {
 		t.Parallel()
-		args := []string{"run", "--hostname", "custom", "ghcr.io/github/gh-aw-mcpg:1"}
-		got := echoWrap(t, args...)
+		// create is not named (gh-aw launches the gateway via run, and a create+start
+		// flow would break if we renamed the created container).
+		got := echoWrap(t, "create", "--network", "host", "ghcr.io/github/gh-aw-mcpg:1.0.0")
+		want := "create --hostname gh-aw-mcpg --network host ghcr.io/github/gh-aw-mcpg:1.0.0"
+		if got != want {
+			t.Fatalf("got %q want %q", got, want)
+		}
+	})
+
+	t.Run("mcpg_run_respects_caller_name", func(t *testing.T) {
+		t.Parallel()
+		got := echoWrap(t, "run", "--name", "custom-gw", "ghcr.io/github/gh-aw-mcpg:1")
+		want := "run --hostname gh-aw-mcpg --name custom-gw ghcr.io/github/gh-aw-mcpg:1"
+		if got != want {
+			t.Fatalf("got %q want %q (must not override caller --name)", got, want)
+		}
+		if strings.Contains(got, "gh-aw-mcpg-ghsr-") {
+			t.Fatalf("got %q, must not inject our name when caller set --name", got)
+		}
+	})
+
+	t.Run("mcpg_hostname_present_passthrough", func(t *testing.T) {
+		t.Parallel()
+		got := echoWrap(t, "run", "--hostname", "custom", "ghcr.io/github/gh-aw-mcpg:1")
 		if strings.Contains(got, "--hostname gh-aw-mcpg") {
-			t.Fatalf("got %q, should not duplicate hostname", got)
-		}
-		if !strings.Contains(got, "run --name gh-aw-mcpg-ghsr-") {
-			t.Fatalf("got %q, missing supervised MCP gateway name", got)
-		}
-		if !strings.Contains(got, "--cidfile") {
-			t.Fatalf("got %q, missing supervised MCP gateway cidfile", got)
+			t.Fatalf("got %q, must not duplicate hostname", got)
 		}
 		if !strings.Contains(got, "--hostname custom") {
-			t.Fatalf("got %q, missing caller hostname", got)
+			t.Fatalf("got %q, caller hostname must be preserved", got)
+		}
+		if !strings.Contains(got, "--name gh-aw-mcpg-ghsr-") {
+			t.Fatalf("got %q, run should still get a gh-sr gateway name", got)
 		}
 	})
 
-	t.Run("awf_agent_host_gateway", func(t *testing.T) {
+	t.Run("awf_agent_passthrough_unmodified", func(t *testing.T) {
 		t.Parallel()
-		got := echoWrapWithEnv(t, []string{"GH_SR_AWF_BRIDGE_GATEWAY_IP=198.51.100.11"}, "run", "--rm", "ghcr.io/github/gh-aw-firewall/agent:2.3.4")
-		want := "run --add-host=host.docker.internal:198.51.100.11 --rm ghcr.io/github/gh-aw-firewall/agent:2.3.4"
-		if got != want {
-			t.Fatalf("got %q want %q", got, want)
-		}
-	})
-
-	t.Run("awf_agent_create", func(t *testing.T) {
-		t.Parallel()
-		got := echoWrapWithEnv(t, []string{"GH_SR_AWF_BRIDGE_GATEWAY_IP=198.51.100.11"}, "create", "ghcr.io/github/gh-aw-firewall/agent:edge")
-		want := "create --add-host=host.docker.internal:198.51.100.11 ghcr.io/github/gh-aw-firewall/agent:edge"
-		if got != want {
-			t.Fatalf("got %q want %q", got, want)
-		}
-	})
-
-	t.Run("awf_agent_respects_gateway_env_override", func(t *testing.T) {
-		t.Parallel()
-		wrapper := filepath.Join("agentic-runner-image", "docker-wrapper.sh")
-		if _, err := os.Stat(wrapper); err != nil {
-			t.Fatalf("docker-wrapper.sh: %v", err)
-		}
-		cmd := exec.Command("bash", wrapper, "run", "--rm", "ghcr.io/github/gh-aw-firewall/agent:9")
-		cmd.Env = append(os.Environ(),
-			"GH_SR_DOCKER_WRAPPER_REAL=/bin/echo",
-			"GH_SR_AWF_BRIDGE_GATEWAY_IP=10.20.30.40",
-		)
-		out, err := cmd.CombinedOutput()
-		if err != nil {
-			t.Fatalf("bash wrapper: %v\n%s", err, out)
-		}
-		got := strings.TrimSpace(string(out))
-		want := "run --add-host=host.docker.internal:10.20.30.40 --rm ghcr.io/github/gh-aw-firewall/agent:9"
-		if got != want {
-			t.Fatalf("got %q want %q", got, want)
-		}
-	})
-
-	t.Run("awf_agent_skips_duplicate_add_host_equals", func(t *testing.T) {
-		t.Parallel()
-		args := []string{"run", "--add-host=host.docker.internal:172.17.0.1", "ghcr.io/github/gh-aw-firewall/agent:1"}
-		got := echoWrap(t, args...)
-		want := strings.Join(args, " ")
-		if got != want {
-			t.Fatalf("got %q want %q", got, want)
-		}
-	})
-
-	t.Run("awf_agent_skips_duplicate_add_host_two_arg", func(t *testing.T) {
-		t.Parallel()
-		args := []string{"run", "--add-host", "host.docker.internal:172.18.0.1", "ghcr.io/github/gh-aw-firewall/agent:1"}
-		got := echoWrap(t, args...)
-		want := strings.Join(args, " ")
+		// Networking is handled by baked DNS now; the shim no longer injects --add-host.
+		got := echoWrap(t, "run", "--rm", "ghcr.io/github/gh-aw-firewall/agent:2.3.4")
+		want := "run --rm ghcr.io/github/gh-aw-firewall/agent:2.3.4"
 		if got != want {
 			t.Fatalf("got %q want %q", got, want)
 		}
@@ -559,188 +385,50 @@ func TestDockerWrapperInjection(t *testing.T) {
 		}
 	})
 
-	t.Run("mcpg_takes_precedence_over_agent_image_name_collision", func(t *testing.T) {
+	t.Run("mcpg_no_add_host_injected", func(t *testing.T) {
 		t.Parallel()
-		// Hypothetical tag containing substring "agent" must not confuse parser;
-		// only gh-aw-mcpg image constant is matched for hostname injection.
 		got := echoWrap(t, "run", "ghcr.io/github/gh-aw-mcpg:agent-test")
 		if !strings.Contains(got, "--hostname gh-aw-mcpg") {
 			t.Fatalf("expected mcpg hostname injection, got %q", got)
 		}
-		if strings.Contains(got, "--add-host=host.docker.internal") {
-			t.Fatalf("did not expect AWF add-host mapping for mcpg image, got %q", got)
+		if strings.Contains(got, "--add-host") {
+			t.Fatalf("shim must not inject --add-host anymore, got %q", got)
 		}
 	})
 }
 
-func TestDockerWrapperMcpgDetachedRunDoesNotSupervise(t *testing.T) {
-	t.Parallel()
-	wrapper := filepath.Join("agentic-runner-image", "docker-wrapper.sh")
-	if _, err := os.Stat(wrapper); err != nil {
-		t.Fatalf("docker-wrapper.sh: %v", err)
-	}
-
-	cmd := exec.Command(
-		"bash",
-		wrapper,
-		"run",
-		"--detach",
-		"--name",
-		"awmg-proxy",
-		"ghcr.io/github/gh-aw-mcpg:v0.3.0",
-	)
-	cmd.Env = append(os.Environ(), "GH_SR_DOCKER_WRAPPER_REAL=/bin/echo")
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("detached mcpg wrapper run: %v\n%s", err, out)
-	}
-
-	got := strings.TrimSpace(string(out))
-	if !strings.Contains(got, "run --hostname gh-aw-mcpg --detach --name awmg-proxy ghcr.io/github/gh-aw-mcpg:v0.3.0") {
-		t.Fatalf("detached mcpg run should pass through with hostname only, got %q", got)
-	}
-	for _, forbidden := range []string{
-		"--cidfile",
-		"rm -f",
-		"[gh-sr:mcp-claude-urls]",
-	} {
-		if strings.Contains(got, forbidden) {
-			t.Fatalf("detached mcpg run must not use supervisor cleanup path; found %q in %q", forbidden, got)
-		}
-	}
-}
-
-func TestDockerWrapperMcpgCommandDetachArgStillSupervises(t *testing.T) {
-	t.Parallel()
-	wrapper := filepath.Join("agentic-runner-image", "docker-wrapper.sh")
-	if _, err := os.Stat(wrapper); err != nil {
-		t.Fatalf("docker-wrapper.sh: %v", err)
-	}
-
-	cmd := exec.Command(
-		"bash",
-		wrapper,
-		"run",
-		"-i",
-		"--rm",
-		"ghcr.io/github/gh-aw-mcpg:v0.3.0",
-		"helper",
-		"-d",
-	)
-	cmd.Env = append(os.Environ(), "GH_SR_DOCKER_WRAPPER_REAL=/bin/echo")
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("foreground mcpg wrapper run: %v\n%s", err, out)
-	}
-
-	got := strings.TrimSpace(string(out))
-	for _, want := range []string{
-		"[gh-sr:mcp-claude-urls] watcher_start",
-		"--cidfile",
-		"rm -f",
-	} {
-		if !strings.Contains(got, want) {
-			t.Fatalf("foreground mcpg run should still use supervisor path; missing %q in %q", want, got)
-		}
-	}
-}
-
-func TestDockerWrapperMcpgOptionValueWithDStillSupervises(t *testing.T) {
-	t.Parallel()
-	wrapper := filepath.Join("agentic-runner-image", "docker-wrapper.sh")
-	if _, err := os.Stat(wrapper); err != nil {
-		t.Fatalf("docker-wrapper.sh: %v", err)
-	}
-
-	cmd := exec.Command(
-		"bash",
-		wrapper,
-		"run",
-		"--entrypoint",
-		"-debug",
-		"ghcr.io/github/gh-aw-mcpg:v0.3.0",
-	)
-	cmd.Env = append(os.Environ(), "GH_SR_DOCKER_WRAPPER_REAL=/bin/echo")
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("foreground mcpg wrapper run: %v\n%s", err, out)
-	}
-
-	got := strings.TrimSpace(string(out))
-	for _, want := range []string{
-		"[gh-sr:mcp-claude-urls] watcher_start",
-		"--cidfile",
-		"rm -f",
-	} {
-		if !strings.Contains(got, want) {
-			t.Fatalf("foreground mcpg run should not treat option values as detach flags; missing %q in %q", want, got)
-		}
-	}
-}
-
-// TestDockerWrapperMcpgSupervisedRunForwardsStdin verifies gh-aw's piped MCP JSON
-// reaches the real docker child when the wrapper supervises docker run in the background.
-func TestDockerWrapperMcpgSupervisedRunForwardsStdin(t *testing.T) {
+// TestDockerWrapperMcpgForwardsStdin verifies gh-aw's piped MCP gateway JSON reaches
+// the real docker child. Because the shim `exec`s docker, stdin passes through with no
+// supervisor.
+func TestDockerWrapperMcpgForwardsStdin(t *testing.T) {
 	t.Parallel()
 	tmp := t.TempDir()
 	stdinLog := filepath.Join(tmp, "stdin-captured.txt")
-	logPath := filepath.Join(tmp, "fake-docker.log")
 	fakeDocker := filepath.Join(tmp, "docker")
 	script := `#!/bin/bash
 set -euo pipefail
-LOG="${FAKE_DOCKER_LOG:?}"
-STDIN_LOG="${FAKE_DOCKER_STDIN_LOG:?}"
-echo "FULL:$*" >>"$LOG"
 cmd=${1:-}
 shift || true
-case "$cmd" in
-rm)
-	echo "rm-line:$*" >>"$LOG"
-	exit 0
-	;;
-run)
-	prev=""
-	for a in "$@"; do
-		if [[ "$prev" == "--cidfile" ]]; then
-			printf 'deadbeefcafe\n' >"$a"
-			prev=""
-			continue
-		fi
-		prev=""
-		case "$a" in
-		--cidfile) prev="--cidfile" ;;
-		--cidfile=*) f="${a#*=}"; printf 'deadbeefcafe\n' >"$f" ;;
-		esac
-	done
-	cat >"$STDIN_LOG"
-	exit 0
-	;;
-*)
-	exit 0
-	;;
-esac
+if [[ "$cmd" == "run" ]]; then
+	cat >"${FAKE_DOCKER_STDIN_LOG:?}"
+fi
+exit 0
 `
 	if err := os.WriteFile(fakeDocker, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
 
-	payloadPath := filepath.Join(tmp, "mcp-config.json")
-	jsonPayload := `{"gateway":{"port":80,"domain":"host.docker.internal"}}`
-	if err := os.WriteFile(payloadPath, []byte(jsonPayload), 0o644); err != nil {
-		t.Fatal(err)
-	}
-
 	wrapper := filepath.Join("agentic-runner-image", "docker-wrapper.sh")
 	if _, err := os.Stat(wrapper); err != nil {
 		t.Fatalf("docker-wrapper.sh: %v", err)
 	}
 
-	cmd := exec.Command("bash", "-c", `cat "$GHSR_PAYLOAD" | bash "$GHSR_WRAPPER" run -i --rm --network host ghcr.io/github/gh-aw-mcpg:1.0.0`)
+	payload := `{"gateway":{"port":80,"domain":"host.docker.internal"}}`
+	cmd := exec.Command("bash", "-c", `printf '%s' "$GHSR_PAYLOAD" | bash "$GHSR_WRAPPER" run -i --rm --network host ghcr.io/github/gh-aw-mcpg:1.0.0`)
 	cmd.Env = append(os.Environ(),
-		"GHSR_PAYLOAD="+payloadPath,
+		"GHSR_PAYLOAD="+payload,
 		"GHSR_WRAPPER="+wrapper,
 		"GH_SR_DOCKER_WRAPPER_REAL="+fakeDocker,
-		"FAKE_DOCKER_LOG="+logPath,
 		"FAKE_DOCKER_STDIN_LOG="+stdinLog,
 	)
 	out, err := cmd.CombinedOutput()
@@ -748,100 +436,12 @@ esac
 		t.Fatalf("wrapper stdin pipe: %v\n%s", err, out)
 	}
 
-	gotStdin, err := os.ReadFile(stdinLog)
+	got, err := os.ReadFile(stdinLog)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(gotStdin) != jsonPayload {
-		t.Fatalf("fake docker stdin: got %q want %q", gotStdin, jsonPayload)
-	}
-
-	logData, err := os.ReadFile(logPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !bytes.Contains(logData, []byte("run --hostname gh-aw-mcpg")) {
-		t.Fatalf("expected supervised mcpg argv in fake docker log, got:\n%s", logData)
-	}
-	if !bytes.Contains(logData, []byte("gh-aw-mcpg-ghsr-")) {
-		t.Fatalf("expected injected gateway name in fake docker log, got:\n%s", logData)
-	}
-}
-
-// TestDockerWrapperMcpgSigtermRunsDockerRm verifies SIGTERM triggers docker rm -f cleanup
-// against the recorded gateway name/cidfile (gh-aw stop_mcp_gateway.sh tracks wrapper PID).
-func TestDockerWrapperMcpgSigtermRunsDockerRm(t *testing.T) {
-	t.Parallel()
-	tmp := t.TempDir()
-	logPath := filepath.Join(tmp, "fake-docker.log")
-	fakeDocker := filepath.Join(tmp, "docker")
-	script := `#!/bin/bash
-set -euo pipefail
-LOG="${FAKE_DOCKER_LOG:?}"
-echo "FULL:$*" >>"$LOG"
-cmd=${1:-}
-shift || true
-case "$cmd" in
-rm)
-	echo "rm-line:$*" >>"$LOG"
-	exit 0
-	;;
-run)
-	prev=""
-	for a in "$@"; do
-		if [[ "$prev" == "--cidfile" ]]; then
-			printf 'deadbeefcafe\n' >"$a"
-			prev=""
-			continue
-		fi
-		prev=""
-		case "$a" in
-		--cidfile) prev="--cidfile" ;;
-		--cidfile=*) f="${a#*=}"; printf 'deadbeefcafe\n' >"$f" ;;
-		esac
-	done
-	sleep 120
-	exit 0
-	;;
-*)
-	exit 0
-	;;
-esac
-`
-	if err := os.WriteFile(fakeDocker, []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
-
-	wrapper := filepath.Join("agentic-runner-image", "docker-wrapper.sh")
-	cmd := exec.Command("bash", wrapper, "run", "-i", "--rm", "--network", "host", "ghcr.io/github/gh-aw-mcpg:1.0.0")
-	cmd.Env = append(os.Environ(),
-		"GH_SR_DOCKER_WRAPPER_REAL="+fakeDocker,
-		"FAKE_DOCKER_LOG="+logPath,
-	)
-	if err := cmd.Start(); err != nil {
-		t.Fatal(err)
-	}
-	time.Sleep(200 * time.Millisecond)
-	if err := cmd.Process.Signal(syscall.SIGTERM); err != nil {
-		t.Fatal(err)
-	}
-	waitErr := cmd.Wait()
-	if waitErr != nil {
-		if exitErr, ok := waitErr.(*exec.ExitError); ok && exitErr.ExitCode() == 143 {
-			// bash trap exit 143 is expected
-		} else {
-			t.Fatalf("wait: %v", waitErr)
-		}
-	}
-	data, err := os.ReadFile(logPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !bytes.Contains(data, []byte("rm-line:")) {
-		t.Fatalf("expected fake docker to receive rm cleanup, log:\n%s", data)
-	}
-	if !bytes.Contains(data, []byte("deadbeefcafe")) && !bytes.Contains(data, []byte("gh-aw-mcpg-ghsr-")) {
-		t.Fatalf("expected rm to target container id or gh-aw-mcpg-ghsr name, log:\n%s", data)
+	if string(got) != payload {
+		t.Fatalf("gateway stdin: got %q want %q", got, payload)
 	}
 }
 
@@ -855,6 +455,22 @@ func TestAgenticRunnerDockerfileInstallsAWF(t *testing.T) {
 	} {
 		if !strings.Contains(agenticRunnerDockerfile, want) {
 			t.Fatalf("Dockerfile should install and verify awf with %q, got:\n%s", want, agenticRunnerDockerfile)
+		}
+	}
+}
+
+// TestAgenticRunnerDockerfileBakesNetworkAndHooks verifies the Dockerfile bakes the
+// deterministic network config and installs the per-job reset hooks.
+func TestAgenticRunnerDockerfileBakesNetworkAndHooks(t *testing.T) {
+	t.Parallel()
+	for _, want := range []string{
+		"COPY daemon.json /etc/docker/daemon.json",
+		"COPY dnsmasq-gh-sr.conf /etc/dnsmasq.d/gh-sr.conf",
+		"COPY hooks/job-started.sh /opt/gh-sr/hooks/job-started.sh",
+		"COPY hooks/job-completed.sh /opt/gh-sr/hooks/job-completed.sh",
+	} {
+		if !strings.Contains(agenticRunnerDockerfile, want) {
+			t.Fatalf("Dockerfile should bake %q, got:\n%s", want, agenticRunnerDockerfile)
 		}
 	}
 }

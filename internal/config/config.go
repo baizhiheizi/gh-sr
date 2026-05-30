@@ -84,16 +84,14 @@ type HostConfig struct {
 	WindowsPS string `yaml:"windows_ps"` // powershell (default) or pwsh — which exe runs encoded remote scripts on Windows
 }
 
-// AgenticMCPLabelPrefix is prepended to the TCP port in runner labels (e.g. gh-sr-mcp-9080).
-const AgenticMCPLabelPrefix = "gh-sr-mcp-"
-
 // RunnerModeNative runs the actions runner process directly on the host OS.
 const RunnerModeNative = "native"
 
 // RunnerModeContainer runs each runner instance inside its own privileged Docker
 // container (DinD), providing full filesystem and network isolation between
-// concurrent jobs on the same host. Used for agentic workflows (isolated /tmp/gh-aw,
-// MCP on port 80) and for any self-hosted runner that wants container isolation.
+// concurrent jobs on the same host. It is required for agentic workflows (isolated
+// /tmp/gh-aw, MCP gateway port, and AWF iptables per runner) and is also useful for
+// any self-hosted runner that wants container isolation.
 const RunnerModeContainer = "container"
 
 type RunnerConfig struct {
@@ -107,11 +105,12 @@ type RunnerConfig struct {
 	Ephemeral  bool     `yaml:"ephemeral"`
 	Profile    string   `yaml:"profile"`     // "agentic" for GitHub Agentic Workflows
 	RunnerMode string   `yaml:"runner_mode"` // "native" (default) or "container"
-	// AgenticMCPPorts assigns one MCP gateway port per runner instance (length must equal count).
-	// Mutually exclusive with AgenticMCPPortBase.
-	AgenticMCPPorts []int `yaml:"agentic_mcp_ports,omitempty"`
-	// AgenticMCPPortBase assigns ports base, base+1, … for instances 0..count-1 (mutually exclusive with AgenticMCPPorts).
-	AgenticMCPPortBase *int `yaml:"agentic_mcp_port_base,omitempty"`
+	// Deprecated: the per-instance MCP port-label scheme was removed. agentic runners
+	// now use runner_mode: container, which isolates the MCP gateway port per runner.
+	// These fields are retained only so old configs still parse; Validate rejects them
+	// with a migration message.
+	AgenticMCPPorts    []int `yaml:"agentic_mcp_ports,omitempty"`
+	AgenticMCPPortBase *int  `yaml:"agentic_mcp_port_base,omitempty"`
 }
 
 // IsAgentic returns true if the runner uses the agentic profile.
@@ -119,15 +118,24 @@ func (rc *RunnerConfig) IsAgentic() bool {
 	return rc.Profile == "agentic"
 }
 
-// IsContainerMode returns true if the runner uses container-isolated DinD mode
-// (same image for agentic and non-agentic runners).
+// IsContainerMode returns true if the runner uses container-isolated DinD mode.
+// This includes any profile: agentic runner (agentic implies container; see
+// EffectiveRunnerMode) as well as runners that set runner_mode: container explicitly.
 func (rc *RunnerConfig) IsContainerMode() bool {
-	return rc.RunnerMode == RunnerModeContainer
+	return rc.EffectiveRunnerMode() == RunnerModeContainer
 }
 
-// EffectiveRunnerMode returns the resolved runner mode (defaults to "native").
+// EffectiveRunnerMode returns the resolved runner mode.
+//
+// profile: agentic always resolves to container mode: native mode cannot isolate
+// gh-aw's machine-global resources (/tmp/gh-aw, the MCP gateway port, AWF iptables)
+// between concurrent jobs on one host, so agentic runners use per-instance DinD
+// isolation. Validate rejects an explicit runner_mode: native + profile: agentic.
 func (rc *RunnerConfig) EffectiveRunnerMode() string {
 	if rc.RunnerMode == RunnerModeContainer {
+		return RunnerModeContainer
+	}
+	if rc.IsAgentic() {
 		return RunnerModeContainer
 	}
 	return RunnerModeNative
@@ -189,29 +197,6 @@ func (rc *RunnerConfig) InstanceCount() int {
 	return c
 }
 
-// AgenticMCPPortsResolved returns one TCP port per instance when agentic MCP port strategy is configured.
-func (rc *RunnerConfig) AgenticMCPPortsResolved() ([]int, bool) {
-	if !rc.IsAgentic() {
-		return nil, false
-	}
-	n := rc.InstanceCount()
-	if len(rc.AgenticMCPPorts) > 0 {
-		return rc.AgenticMCPPorts, true
-	}
-	if rc.AgenticMCPPortBase != nil {
-		base := *rc.AgenticMCPPortBase
-		if base < 1 {
-			return nil, false
-		}
-		ports := make([]int, n)
-		for i := range n {
-			ports[i] = base + i
-		}
-		return ports, true
-	}
-	return nil, false
-}
-
 func (rc *RunnerConfig) effectiveLabelsCore(hostOS, arch string) []string {
 	var labels []string
 	if len(rc.Labels) > 0 {
@@ -225,29 +210,16 @@ func (rc *RunnerConfig) effectiveLabelsCore(hostOS, arch string) []string {
 	return labels
 }
 
-// EffectiveLabels returns labels for the first instance (index 0). For identical labels across
-// instances, this matches every instance; when agentic_mcp_ports / agentic_mcp_port_base is set,
-// use EffectiveLabelsForInstance for each registration.
+// EffectiveLabels returns labels for the first instance (index 0).
 func (rc *RunnerConfig) EffectiveLabels(hostOS, arch string) []string {
 	return rc.EffectiveLabelsForInstance(hostOS, arch, 0)
 }
 
 // EffectiveLabelsForInstance returns the runner's labels for instance instanceIndex (0-based).
-// When agentic MCP ports are configured, appends gh-sr-mcp-<port> for that instance.
-func (rc *RunnerConfig) EffectiveLabelsForInstance(hostOS, arch string, instanceIndex int) []string {
-	labels := rc.effectiveLabelsCore(hostOS, arch)
-	ports, ok := rc.AgenticMCPPortsResolved()
-	if !ok || len(ports) == 0 {
-		return labels
-	}
-	if instanceIndex < 0 || instanceIndex >= len(ports) {
-		return labels
-	}
-	tag := fmt.Sprintf("%s%d", AgenticMCPLabelPrefix, ports[instanceIndex])
-	if !hasLabel(labels, tag) {
-		labels = append(labels, tag)
-	}
-	return labels
+// All instances currently share the same labels; the index is retained for API stability
+// (the removed per-instance gh-sr-mcp-<port> scheme used it).
+func (rc *RunnerConfig) EffectiveLabelsForInstance(hostOS, arch string, _ int) []string {
+	return rc.effectiveLabelsCore(hostOS, arch)
 }
 
 func hasLabel(labels []string, target string) bool {
@@ -404,11 +376,16 @@ func (c *Config) Validate() error {
 		if r.RunnerMode != "" && r.RunnerMode != RunnerModeNative && r.RunnerMode != RunnerModeContainer {
 			return fmt.Errorf("runner %q: runner_mode must be %q or %q (got %q)", r.Name, RunnerModeNative, RunnerModeContainer, r.RunnerMode)
 		}
-		if r.IsContainerMode() && (len(r.AgenticMCPPorts) > 0 || r.AgenticMCPPortBase != nil) {
-			return fmt.Errorf("runner %q: agentic_mcp_ports / agentic_mcp_port_base are not needed with runner_mode: container (each container has its own isolated port 80)", r.Name)
+		// profile: agentic now requires container isolation. Native mode cannot keep
+		// concurrent agentic jobs from colliding on /tmp/gh-aw, the MCP gateway port,
+		// or AWF iptables; agentic therefore always runs in container mode.
+		if r.IsAgentic() && r.RunnerMode == RunnerModeNative {
+			return fmt.Errorf("runner %q: profile: agentic is no longer supported with runner_mode: native (native mode cannot isolate /tmp/gh-aw, the MCP gateway port, or AWF iptables between concurrent jobs on one host); remove runner_mode (agentic uses container isolation automatically) or set runner_mode: container", r.Name)
 		}
-		if err := validateAgenticMCPPorts(&r); err != nil {
-			return err
+		// The per-instance MCP port-label scheme has been removed: container mode gives
+		// each agentic runner its own isolated MCP gateway port, so ports/labels are unnecessary.
+		if len(r.AgenticMCPPorts) > 0 || r.AgenticMCPPortBase != nil {
+			return fmt.Errorf("runner %q: agentic_mcp_ports / agentic_mcp_port_base have been removed; agentic runners use runner_mode: container, which isolates the MCP gateway port per runner — delete these fields", r.Name)
 		}
 		for _, instance := range r.InstanceNames() {
 			key := r.Host + "\x00" + instance
@@ -423,45 +400,6 @@ func (c *Config) Validate() error {
 		return err
 	}
 
-	return nil
-}
-
-func validateAgenticMCPPorts(r *RunnerConfig) error {
-	hasPorts := len(r.AgenticMCPPorts) > 0
-	hasBase := r.AgenticMCPPortBase != nil
-	if !hasPorts && !hasBase {
-		return nil
-	}
-	if !r.IsAgentic() {
-		return fmt.Errorf("runner %q: agentic_mcp_ports / agentic_mcp_port_base require profile: agentic", r.Name)
-	}
-	if hasPorts && hasBase {
-		return fmt.Errorf("runner %q: set only one of agentic_mcp_ports or agentic_mcp_port_base", r.Name)
-	}
-	n := r.InstanceCount()
-	if hasPorts {
-		if len(r.AgenticMCPPorts) != n {
-			return fmt.Errorf("runner %q: agentic_mcp_ports must have length %d (count), got %d", r.Name, n, len(r.AgenticMCPPorts))
-		}
-		seen := make(map[int]bool, n)
-		for _, p := range r.AgenticMCPPorts {
-			if p < 1 || p > 65535 {
-				return fmt.Errorf("runner %q: agentic_mcp_ports values must be between 1 and 65535 (got %d)", r.Name, p)
-			}
-			if seen[p] {
-				return fmt.Errorf("runner %q: agentic_mcp_ports must be unique (duplicate %d)", r.Name, p)
-			}
-			seen[p] = true
-		}
-		return nil
-	}
-	base := *r.AgenticMCPPortBase
-	if base < 1 || base > 65535 {
-		return fmt.Errorf("runner %q: agentic_mcp_port_base must be between 1 and 65535 (got %d)", r.Name, base)
-	}
-	if base+n-1 > 65535 {
-		return fmt.Errorf("runner %q: agentic_mcp_port_base %d with count %d exceeds port 65535", r.Name, base, n)
-	}
 	return nil
 }
 

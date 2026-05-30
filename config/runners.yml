@@ -56,10 +56,13 @@ runners:
   #   labels: [self-hosted, Linux, X64]
   #
   # Agentic Workflow runner (GitHub Agentic Workflows with gh-aw):
-  # Docker must be pre-installed on the host. gh-aw CLI is auto-installed on setup.
+  # profile: agentic always runs in container mode (DinD): each instance is isolated
+  # and every job runs from a pristine inner state. The host only needs Docker (with
+  # privileged-container support); gh-aw and all dependencies live inside the image
+  # gh sr builds. Use count: N for N concurrent agentic jobs.
   #
   # - name: agentic-runner
   #   repo: owner/repo
   #   host: vps-1
-  #   profile: agentic   # enables gh-aw CLI setup and agentic label
-  #   # labels are auto-generated with "agentic" appended
+  #   count: 3
+  #   profile: agentic   # implies runner_mode: container; "agentic" label auto-added
