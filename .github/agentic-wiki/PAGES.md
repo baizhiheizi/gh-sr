@@ -62,7 +62,7 @@ Welcome to the `gh sr` documentation. `gh sr` is a GitHub CLI extension for mana
 
 ## runners.yml
 
-*{ Document the runners.yml structure: top-level GitHub config, hosts map (addr, os, arch, windows_ps), runners list (name, repo/org, host, count, labels, ephemeral, profile, runner_mode, agentic_mcp_ports, agentic_mcp_port_base). }*
+*{ Document the runners.yml structure: top-level GitHub config, hosts map (addr, os, arch, windows_ps, docker_socket), runners list (name, repo/org, group, host, count, labels, ephemeral, profile, runner_mode, container_runner_image, docker_network_mode, docker_cap_add). Include that profile: agentic always implies runner_mode: container and rejects runner_mode: native. }*
 
 ## Environment File
 
