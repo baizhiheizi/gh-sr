@@ -546,7 +546,6 @@ func (m *dashboardModel) updateGlobalMenu(key string) tea.Cmd {
 			m.panel = panelConfirmCleanup
 			m.menuCursor = 0
 		case 3:
-			m.panel = panelMain
 			m.scrollTitle = "Configuration"
 			m.scrollLines = wrapLines(FormatConfig(m.cfg), max(40, m.width-4))
 			m.scrollOff = 0

@@ -460,11 +460,9 @@ func checkAgenticPrereqs(w io.Writer, hostName string, h *host.Host, r *Result) 
 		sev := sevFail
 		if f.Severity == agentic.SeverityWarning {
 			sev = sevWarn
-		}
-		r.Fail++
-		if sev == sevWarn {
-			r.Fail--
 			r.Warn++
+		} else {
+			r.Fail++
 		}
 		printLine(w, sev, hostName, "agentic: "+f.Message)
 		// Print remediation guidance inline

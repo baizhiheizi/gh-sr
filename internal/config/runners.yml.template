@@ -75,29 +75,19 @@ runners:
   #   ephemeral: true
   #
   # Agentic Workflow runner (GitHub Agentic Workflows with gh-aw):
-  # Docker must be pre-installed on the host. gh-aw CLI is auto-installed on setup.
+  # profile: agentic always runs in container mode (privileged Docker-in-Docker): each
+  # instance gets its own inner dockerd, network namespace, MCP gateway port, and
+  # /tmp/gh-aw, and every job runs from a pristine inner state. The host only needs
+  # Docker installed and privileged-container support; gh-aw, AWF, and all other
+  # dependencies live inside the image gh sr builds during setup. Use count: N for N
+  # concurrent agentic jobs — no MCP port/label juggling is needed (and the removed
+  # agentic_mcp_ports / agentic_mcp_port_base fields are rejected if present).
   #
   # - name: agentic-runner
   #   repo: owner/repo
   #   host: vps-1
-  #   profile: agentic   # enables gh-aw CLI setup and agentic label
-  #   # labels are auto-generated with "agentic" appended
-  #
-  # Agentic runner in container mode (recommended for running multiple concurrent
-  # agentic jobs on the same host). Each runner instance runs inside its own
-  # privileged Docker container with an isolated /tmp/gh-aw, dockerd, and network
-  # namespace. Eliminates /tmp collisions and MCP port conflicts automatically.
-  # The host only needs Docker installed; gh-aw and all other dependencies live
-  # inside the container image (built locally by gh sr during setup).
-  #
-  # - name: agentic-container
-  #   repo: owner/repo
-  #   host: vps-1
   #   count: 3             # run 3 concurrent agentic jobs safely
-  #   profile: agentic
-  #   runner_mode: container   # "native" (default) or "container" (DinD isolation)
-  #   # Note: agentic_mcp_ports / agentic_mcp_port_base are NOT needed in container
-  #   # mode — port 80 is automatically isolated per container.
+  #   profile: agentic     # implies runner_mode: container (DinD isolation)
   #
   # Same container image (DinD + actions runner) works for ordinary CI without
   # profile: agentic — use when you want isolated dockerd and work dirs per instance:

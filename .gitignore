@@ -1,6 +1,7 @@
 .env
 bin/gh-sr
 /gh-sr
+/gh-sr.exe
 /gh-sr-test
 dist/
 site/

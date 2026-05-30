@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/an-lee/gh-sr/internal/agentic"
 	"github.com/an-lee/gh-sr/internal/autostart"
 	"github.com/an-lee/gh-sr/internal/config"
 	"github.com/an-lee/gh-sr/internal/host"
@@ -118,8 +117,9 @@ func windowsNativeInstallScript(h *host.Host, instanceName, version, url string)
 		windowsRunnerDirAssignment(h, "runnerDir", instanceName),
 		"New-Item -ItemType Directory -Force -Path $runnerDir | Out-Null",
 		fmt.Sprintf("$zip = Join-Path %s %s", h.TempDirPS(), powerShellSingleQuoted(zipName)),
+		"[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12",
 		fmt.Sprintf("if (-not (Test-Path $zip)) { Invoke-WebRequest -Uri %s -OutFile $zip }", powerShellSingleQuoted(url)),
-		"Expand-Archive -Path $zip -DestinationPath $runnerDir -Force",
+		fmt.Sprintf("try { Expand-Archive -Path $zip -DestinationPath $runnerDir -Force } catch { Remove-Item -Force $zip -EA SilentlyContinue; Invoke-WebRequest -Uri %s -OutFile $zip; Expand-Archive -Path $zip -DestinationPath $runnerDir -Force }", powerShellSingleQuoted(url)),
 	}, "; ")
 }
 
@@ -160,6 +160,7 @@ const staleRegistrationMsg = "runner registration has been deleted from the serv
 func windowsNativeStartScript(h *host.Host, instanceName string) string {
 	// Win32-OpenSSH tears down the session job on disconnect, killing Start-Process children.
 	// Win32_Process.Create starts outside that job so the listener survives after gh sr closes SSH.
+	// Win32_ProcessStartup with ShowWindow=0 (SW_HIDE) prevents a visible cmd.exe console window.
 	parts := []string{
 		windowsRunnerDirAssignment(h, "runnerDir", instanceName) + "; ",
 		`$pidFile = Join-Path $runnerDir '.runner_pid'; `,
@@ -167,7 +168,8 @@ func windowsNativeStartScript(h *host.Host, instanceName string) string {
 		`if (Test-Path $pidFile) { $existingPid = Get-Content $pidFile; try { Get-Process -Id $existingPid -EA Stop | Out-Null; Write-Host 'already running'; exit 0 } catch {} }; `,
 		`$cmdArg = 'cd /d "' + $runnerDir + '" && run.cmd > "' + $logFile + '" 2>&1'; `,
 		`$fullLine = 'cmd.exe /c ' + $cmdArg; `,
-		`$cim = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = $fullLine; CurrentDirectory = $runnerDir }; `,
+		`$si = New-CimInstance -ClassName Win32_ProcessStartup -Property @{ShowWindow=0} -ClientOnly; `,
+		`$cim = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = $fullLine; CurrentDirectory = $runnerDir; ProcessStartupInformation = $si }; `,
 		`if ($cim.ReturnValue -ne 0) { Write-Host ('Win32_Process.Create failed: ' + $cim.ReturnValue); exit 1 }; `,
 		`$cim.ProcessId | Out-File -FilePath $pidFile -NoNewline; `,
 		`Write-Host ('started PID ' + $cim.ProcessId)`,
@@ -266,6 +268,8 @@ func (m *Manager) setupNative(h *host.Host, rc config.RunnerConfig) error {
 			}
 		}
 
+		writeRemoteBytes(h, dir+"/.runner-version", []byte(version))
+
 		if h.OS == "linux" {
 			fmt.Fprintf(m.out(), "  %s: installing runner dependencies...\n", name)
 			depsCmd := fmt.Sprintf(
@@ -335,174 +339,11 @@ func (m *Manager) setupNative(h *host.Host, rc config.RunnerConfig) error {
 		}
 	}
 
-	// For agentic runners, install gh-aw CLI on the host.
-	// gh-aw (GitHub Agentic Workflows) uses Docker on the host for AWF sandbox containers.
-	if rc.IsAgentic() && h.OS == "linux" {
-		// Collect all prerequisite failures instead of failing on the first one.
-		// This lets us attempt auto-fix for some issues and report all problems at the end.
-		prereqFailures := agentic.ValidatePrereqs(h)
-
-		// Separate blocking errors from warnings
-		var blockingFailures []agentic.PrereqFailure
-		for _, f := range prereqFailures {
-			if f.Severity == agentic.SeverityError {
-				blockingFailures = append(blockingFailures, f)
-			}
-		}
-
-		// If there are blocking failures that we cannot auto-fix, fail immediately.
-		// These are things like "not Linux" or "Docker not installed at all".
-		if len(blockingFailures) > 0 {
-			fmt.Fprintf(m.out(), "  %s: agentic prerequisites have blocking failures:\n", rc.Name)
-			for _, f := range blockingFailures {
-				fmt.Fprintf(m.out(), "  %s:   - %s\n", rc.Name, f.Message)
-			}
-			fmt.Fprintf(m.out(), "\n%s\n", agentic.FormatAllRemediations(blockingFailures))
-			return fmt.Errorf("agentic prerequisite check failed: %d blocking failure(s)", len(blockingFailures))
-		}
-
-		// Attempt auto-fix for non-blocking issues (sudo for iptables, RUNNER_TEMP).
-		// Set up passwordless sudo for iptables if missing.
-		if err := m.setupAgenticSudoConfigure(h, rc.Name); err != nil {
-			fmt.Fprintf(m.out(), "  %s: warning: could not configure passwordless sudo for iptables: %v\n", rc.Name, err)
-		}
-
-		// Set RUNNER_TEMP if wrong or unset.
-		for _, instName := range rc.InstanceNames() {
-			if err := m.setupRunnerTemp(h, instName); err != nil {
-				fmt.Fprintf(m.out(), "  %s: warning: could not configure RUNNER_TEMP: %v\n", instName, err)
-			}
-		}
-
-		// Clean up zombie Docker resources from previously crashed gh-aw jobs.
-		// If a job crashes, orphaned gh-aw containers and networks block the next job.
-		fmt.Fprintf(m.out(), "  %s: cleaning up zombie gh-aw Docker resources...\n", rc.Name)
-		cleanupOut, cleanupErr := h.Run(`
-docker ps -a --filter "name=gh-aw" --format '{{.ID}}' 2>/dev/null | xargs -r docker rm -f 2>/dev/null
-docker network ls --filter "name=gh-aw" --format '{{.ID}}' 2>/dev/null | xargs -r docker network rm 2>/dev/null
-docker network prune -f 2>/dev/null
-echo "cleanup done"
-`)
-		if cleanupErr != nil {
-			fmt.Fprintf(m.out(), "  %s: warning: Docker cleanup failed: %v\n", rc.Name, cleanupErr)
-		} else if strings.TrimSpace(cleanupOut) != "" {
-			fmt.Fprintf(m.out(), "  %s: Docker cleanup: %s\n", rc.Name, strings.TrimSpace(cleanupOut))
-		}
-
-		fmt.Fprintf(m.out(), "  %s: installing gh-aw CLI for agentic profile...\n", rc.Name)
-		installGHAWCmd := `if [ -d ~/.local/share/gh/extensions/gh-aw ]; then
-			echo "gh-aw already installed"
-		else
-			curl -sL https://raw.githubusercontent.com/github/gh-aw/main/install-gh-aw.sh | bash
-		fi`
-		out, err := h.Run(installGHAWCmd)
-		if err != nil {
-			fmt.Fprintf(m.out(), "  %s: warning: failed to install gh-aw CLI: %v\n", rc.Name, err)
-		} else {
-			fmt.Fprintf(m.out(), "  %s: gh-aw CLI installed\n", rc.Name)
-			if out != "" {
-				fmt.Fprintf(m.out(), "  %s: gh-aw: %s\n", rc.Name, strings.TrimSpace(out))
-			}
-		}
-
-		// Set up /opt/hostedtoolcache for gh-aw agent containers.
-		// gh-aw searches for tools (e.g., claude) in /opt/hostedtoolcache, which exists on
-		// GitHub Hosted Runners but not on self-hosted runners. We create a bind mount so
-		// agent containers can find npm-installed tools.
-		fmt.Fprintf(m.out(), "  %s: setting up /opt/hostedtoolcache for agentic workflows...\n", rc.Name)
-		npmPrefixCmd := `npm config get prefix 2>/dev/null || echo "/usr/local"`
-		npmPrefix, err := h.Run(npmPrefixCmd)
-		if err != nil {
-			fmt.Fprintf(m.out(), "  %s: warning: failed to detect npm prefix: %v\n", rc.Name, err)
-		} else {
-			npmPrefix = strings.TrimSpace(npmPrefix)
-			hostedtoolcacheSetup := fmt.Sprintf(`%s
-			if [ -d /opt/hostedtoolcache ]; then
-				if [ -L /opt/hostedtoolcache ]; then
-					if [ "$(readlink -f /opt/hostedtoolcache)" != "%s" ]; then
-						echo "Updating /opt/hostedtoolcache symlink to %s"
-						$SUDO rm -f /opt/hostedtoolcache
-						$SUDO mkdir -p /opt/hostedtoolcache
-						$SUDO mount --bind %s /opt/hostedtoolcache
-					else
-						echo "/opt/hostedtoolcache already correctly configured"
-					fi
-				else
-					echo "/opt/hostedtoolcache already exists as a directory"
-				fi
-			else
-				echo "Creating /opt/hostedtoolcache -> %s"
-				$SUDO mkdir -p /opt/hostedtoolcache
-				$SUDO mount --bind %s /opt/hostedtoolcache
-				if ! grep -q "^%s" /etc/fstab 2>/dev/null; then
-					echo "%s /opt/hostedtoolcache none defaults,bind 0 0" | $SUDO tee -a /etc/fstab
-				fi
-			fi`, linuxElevatePrelude, npmPrefix, npmPrefix, npmPrefix, npmPrefix, npmPrefix, npmPrefix, npmPrefix)
-			out, err := h.Run(hostedtoolcacheSetup)
-			if err != nil {
-				fmt.Fprintf(m.out(), "  %s: warning: failed to set up /opt/hostedtoolcache: %v\n", rc.Name, err)
-			} else {
-				fmt.Fprintf(m.out(), "  %s: /opt/hostedtoolcache configured\n", rc.Name)
-				if out != "" {
-					fmt.Fprintf(m.out(), "  %s: hostedtoolcache: %s\n", rc.Name, strings.TrimSpace(out))
-				}
-			}
-		}
-
-		// Set up Docker DNS for agentic workflows.
-		// Agent containers (gh-aw) use host.docker.internal to reach the MCP Gateway running
-		// on the host network. Linux Docker does not resolve this by default; we configure
-		// dnsmasq as a local DNS resolver that answers host.docker.internal from the docker0
-		// bridge IP and forwards everything else upstream. This also ensures external DNS
-		// (model provider APIs, GitHub, etc.) works from inside agent containers.
-		fmt.Fprintf(m.out(), "  %s: setting up Docker DNS for agentic workflows...\n", rc.Name)
-		if err := m.setupAgenticDNSConfigure(h, rc.Name); err != nil {
-			fmt.Fprintf(m.out(), "  %s: warning: Docker DNS setup failed: %v\n", rc.Name, err)
-		}
-
-		// Pre-pull critical gh-aw images to reduce first-job startup latency.
-		// These images are required by every agentic workflow run and can be several hundred MB.
-		fmt.Fprintf(m.out(), "  %s: pre-pulling gh-aw images (this may take a few minutes)...\n", rc.Name)
-		for _, img := range []string{
-			"ghcr.io/github/gh-aw-firewall/agent:latest",
-			"ghcr.io/github/gh-aw-mcpg:latest",
-		} {
-			pullOut, pullErr := h.Run(fmt.Sprintf("docker pull %s 2>&1", img))
-			pullOut = strings.TrimSpace(pullOut)
-			if pullErr != nil {
-				fmt.Fprintf(m.out(), "  %s: warning: failed to pull %s: %v\n", rc.Name, img, pullErr)
-				if pullOut != "" {
-					fmt.Fprintf(m.out(), "  %s:   %s\n", rc.Name, pullOut)
-				}
-			} else {
-				// Show the final status line (e.g. "Status: Image is up to date for ...")
-				lines := strings.Split(pullOut, "\n")
-				statusLine := pullOut
-				for i := len(lines) - 1; i >= 0; i-- {
-					if l := strings.TrimSpace(lines[i]); l != "" {
-						statusLine = l
-						break
-					}
-				}
-				fmt.Fprintf(m.out(), "  %s: pulled %s: %s\n", rc.Name, img, statusLine)
-			}
-		}
-
-		// Report any remaining unfixed prerequisite failures (warnings only at this point).
-		// We only report failures that were NOT auto-fixed. The setupAgenticSudoConfigure
-		// and setupRunnerTemp functions already output success/failure messages, so we
-		// don't re-report them here if they succeeded.
-		var remainingWarnings []agentic.PrereqFailure
-		for _, f := range prereqFailures {
-			if f.Severity == agentic.SeverityWarning {
-				remainingWarnings = append(remainingWarnings, f)
-			}
-		}
-		if len(remainingWarnings) > 0 {
-			fmt.Fprintf(m.out(), "\n%s\n", agentic.FormatAllRemediations(remainingWarnings))
-		}
-	}
-
+	// Note: profile: agentic always runs in container mode (see EffectiveRunnerMode),
+	// so setupNative is only reached for non-agentic native runners. The former
+	// native-agentic host mutations (dnsmasq, sudoers, /opt/hostedtoolcache bind mount,
+	// gh-aw install, image pre-pull) lived inside the runner image instead and have
+	// been removed from the host path.
 	return nil
 }
 
@@ -697,13 +538,12 @@ func (m *Manager) statusNative(h *host.Host, instanceName string) string {
 
 	if kind, err := autostart.Detect(h, instanceName); err == nil && kind != autostart.KindNone {
 		active, err := autostart.IsServiceActive(h, instanceName, kind)
-		if err != nil {
-			return "unknown"
+		if err == nil {
+			if active {
+				return "running"
+			}
+			return "stopped"
 		}
-		if active {
-			return "running"
-		}
-		return "stopped"
 	}
 
 	if h.OS == "windows" {
@@ -731,6 +571,27 @@ func (m *Manager) statusNative(h *host.Host, instanceName string) string {
 	out, err := h.Run(cmd)
 	if err != nil {
 		return "unknown"
+	}
+	return strings.TrimSpace(out)
+}
+
+func nativeRunnerVersion(h *host.Host, instanceName string) string {
+	dir := h.RunnerDir(instanceName)
+	if h.OS == "windows" {
+		ps := fmt.Sprintf(`if (Test-Path (Join-Path %s '.runner-version')) { Get-Content (Join-Path %s '.runner-version') -EA Stop }`, h.RunnerDirPS(instanceName), h.RunnerDirPS(instanceName))
+		out, err := h.RunShell(ps)
+		if err != nil {
+			return "-"
+		}
+		v := strings.TrimSpace(out)
+		if v == "" {
+			return "-"
+		}
+		return v
+	}
+	out, err := h.Run(fmt.Sprintf("cat %s/.runner-version 2>/dev/null", dir))
+	if err != nil || strings.TrimSpace(out) == "" {
+		return "-"
 	}
 	return strings.TrimSpace(out)
 }

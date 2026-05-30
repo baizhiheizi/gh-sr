@@ -8,8 +8,8 @@ on:
 runs-on: [self-hosted, linux, agentic]
 runs-on-slim: "self-hosted"
 imports:
-  - shared/setup-go.md
-  - shared/self-hosted-runner.md
+  - shared/runtime.md
+  - shared/engine-minimax.md
 permissions:
   contents: read
   discussions: read
@@ -27,7 +27,7 @@ safe-outputs:
   close-discussion:
     required-category: "Ideas"
 timeout-minutes: 10
-source: githubnext/agentics/workflows/plan.md@97143ac59cb3a13ef2a77581f929f06719c7402a
+source: githubnext/agentics/workflows/plan.md@c02eadfca420f2b351f9fcaee883c507a63ca316
 ---
 
 # Planning Assistant

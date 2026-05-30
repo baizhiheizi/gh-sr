@@ -91,8 +91,12 @@ func (c *Connection) Upload(localPath, remotePath string) error {
 		return fmt.Errorf("stat local file: %w", err)
 	}
 
+	w, err := session.StdinPipe()
+	if err != nil {
+		return fmt.Errorf("getting stdin pipe: %w", err)
+	}
+
 	go func() {
-		w, _ := session.StdinPipe()
 		defer w.Close()
 		fmt.Fprintf(w, "C0644 %d %s\n", stat.Size(), filepath.Base(remotePath))
 		io.Copy(w, f)
@@ -100,7 +104,7 @@ func (c *Connection) Upload(localPath, remotePath string) error {
 	}()
 
 	dir := filepath.Dir(remotePath)
-	return session.Run(fmt.Sprintf("scp -t %s", dir))
+	return session.Run(fmt.Sprintf("scp -t '%s'", strings.ReplaceAll(dir, "'", "'\\''")))
 }
 
 func (c *Connection) Close() error {

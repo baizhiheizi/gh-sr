@@ -89,17 +89,15 @@ runners:
   - name: aw-runner
     repo: owner/repo
     host: my-vps
-    profile: agentic
+    count: 3           # 3 concurrent agentic jobs, each isolated
+    profile: agentic   # always runs in container (DinD) mode
 ```
 
-This configures `gh sr` to install `gh-aw` on the host, set up the necessary tooling cache, and perform advanced Doctor checks.
+`profile: agentic` always runs in **container mode**: each runner instance is a privileged Docker-in-Docker container with its own inner `dockerd`, network namespace, MCP gateway port, and `/tmp/gh-aw`, and every job runs from a pristine inner state (via the runner's job hooks). This is what makes multiple concurrent agentic runners stable on one machine.
 
-**Linux Docker DNS Requirement:**
-`gh-aw` agents rely on `host.docker.internal` to reach the MCP gateway running on the host. On macOS and Windows Docker Desktop, this is automatic. On Linux, you must configure a local DNS resolver (e.g., `dnsmasq`) to resolve `host.docker.internal` to the `docker0` bridge IP (usually `172.17.0.1`), and instruct Docker to use it. The dnsmasq config **must include upstream `server=` directives** (e.g., `server=127.0.0.53` and `server=8.8.8.8`), otherwise only static records are answered and all external DNS (model provider APIs, etc.) is refused from inside containers.
-**Do not** map it to `127.0.0.1` in your host's `/etc/hosts`, or the connection will be refused inside agent containers!
-Run `gh sr doctor` to automatically verify both internal and external DNS resolution from containers.
+The **host only needs Docker** (with privileged-container support). Everything `gh-aw` needs — the `gh-aw` CLI, AWF, `host.docker.internal` DNS, the tool cache, language runtimes — lives inside the image `gh sr` builds during setup. There is no host dnsmasq, `/etc/hosts`, sudoers, or `RUNNER_TEMP` setup to do; `host.docker.internal` resolution is baked into the image (pinned bridge gateway `172.17.0.1` + bundled dnsmasq). `gh sr doctor` verifies the inner Docker, registration, DNS, and AWF hygiene.
 
-For detailed configuration instructions, see the [Host Setup Documentation](https://an-lee.github.io/gh-sr/host-setup/#linux-docker-dns).
+For details, see the [Agentic Workflows guide](https://an-lee.github.io/gh-sr/guides/agentic-workflows/).
 
 ## Development
 

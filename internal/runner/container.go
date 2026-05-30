@@ -39,6 +39,10 @@ func ContainerImageLayoutRevision(ghSrVersion string, extraApt []string) string 
 	b.WriteString(agenticRunnerAptPackagesCore)
 	b.WriteString(agenticRunnerEntrypoint)
 	b.WriteString(agenticRunnerDockerWrapper)
+	b.WriteString(agenticRunnerDaemonJSON)
+	b.WriteString(agenticRunnerDnsmasqConf)
+	b.WriteString(agenticRunnerJobStartedHook)
+	b.WriteString(agenticRunnerJobCompletedHook)
 	sum := sha256.Sum256([]byte(b.String()))
 	return hex.EncodeToString(sum[:])[:12]
 }
@@ -84,9 +88,17 @@ func containerName(instanceName string) string {
 	return ContainerDockerName(instanceName)
 }
 
-// containerStateDir returns the host-side bind-mount path for runner instance state.
-// All runner-state (Docker layer cache, work dirs, logs) is persisted here so the
-// container can be destroyed and re-created without losing layer caches.
+// containerStateDir returns the host-side bind-mount path for runner instance state
+// (mounted at /runner-state inside the container).
+//
+// Cache vs. per-job scratch separation:
+//   - PERSISTENT cache: /runner-state/docker-data holds the inner Docker image-layer
+//     cache. It survives container restarts and per-job resets so jobs never re-pull
+//     gh-aw's (large) images. The per-job reset hooks never prune images/volumes.
+//   - PER-JOB scratch: the gh-aw runtime tree (/tmp/gh-aw, inside the container rootfs),
+//     leftover inner containers/networks, and AWF iptables rules are wiped before and
+//     after every job by /opt/gh-sr/hooks/job-{started,completed}.sh, so each job starts
+//     from a pristine inner environment.
 func containerStateDir(h *host.Host, instanceName string) string {
 	return h.RunnerDir(instanceName)
 }
@@ -161,42 +173,54 @@ func (m *Manager) setupContainer(h *host.Host, rc config.RunnerConfig) error {
 			fmt.Fprintf(m.out(), "  %s: container already exists, skipping\n", name)
 			continue
 		}
-
-		fmt.Fprintf(m.out(), "  %s: creating runner container...\n", name)
-
-		regToken, err := m.GitHub.GetRegistrationTokenScoped(rc.Scope(), rc.ScopeTarget())
-		if err != nil {
-			return fmt.Errorf("getting registration token for %s: %w", name, err)
+		if err := m.createContainerInstance(h, rc, i, name, imageTag); err != nil {
+			return err
 		}
+		fmt.Fprintf(m.out(), "  %s: container created (run `gh sr up` to start)\n", name)
+	}
 
-		stateDir, err := resolveAbsoluteRunnerDir(h, name)
-		if err != nil {
-			return fmt.Errorf("resolving state dir for %s: %w", name, err)
-		}
-		labels := rc.EffectiveLabelsForInstance(h.OS, h.Arch, i)
+	return nil
+}
 
-		runURL := ""
-		if rc.Repo != "" {
-			runURL = "https://github.com/" + rc.Repo
-		} else if rc.Org != "" {
-			runURL = "https://github.com/" + rc.Org
-		}
+// createContainerInstance creates (but does not start) a single runner container
+// instance. The image must already exist. It is the per-instance unit used by both
+// setupContainer and ContainerEnvironment.Provision.
+func (m *Manager) createContainerInstance(h *host.Host, rc config.RunnerConfig, instanceIndex int, instanceName, imageTag string) error {
+	fmt.Fprintf(m.out(), "  %s: creating runner container...\n", instanceName)
 
-		group := rc.Group
-		if group == "" {
-			group = "Default"
-		}
+	regToken, err := m.GitHub.GetRegistrationTokenScoped(rc.Scope(), rc.ScopeTarget())
+	if err != nil {
+		return fmt.Errorf("getting registration token for %s: %w", instanceName, err)
+	}
 
-		ephemeral := ""
-		if rc.Ephemeral {
-			ephemeral = "true"
-		}
+	stateDir, err := resolveAbsoluteRunnerDir(h, instanceName)
+	if err != nil {
+		return fmt.Errorf("resolving state dir for %s: %w", instanceName, err)
+	}
+	labels := rc.EffectiveLabelsForInstance(h.OS, h.Arch, instanceIndex)
 
-		// Build the `docker create` command. We use `--restart unless-stopped`
-		// so the runner auto-starts on host reboot and auto-restarts after a job.
-		// `--privileged` is required for DinD (inner dockerd needs full capabilities).
-		// Large `/dev/shm` avoids Chromium/Selenium flakiness (default 64 MiB is too small).
-		cmd := fmt.Sprintf(`
+	runURL := ""
+	if rc.Repo != "" {
+		runURL = "https://github.com/" + rc.Repo
+	} else if rc.Org != "" {
+		runURL = "https://github.com/" + rc.Org
+	}
+
+	group := rc.Group
+	if group == "" {
+		group = "Default"
+	}
+
+	ephemeral := ""
+	if rc.Ephemeral {
+		ephemeral = "true"
+	}
+
+	// Build the `docker create` command. We use `--restart unless-stopped`
+	// so the runner auto-starts on host reboot and auto-restarts after a job.
+	// `--privileged` is required for DinD (inner dockerd needs full capabilities).
+	// Large `/dev/shm` avoids Chromium/Selenium flakiness (default 64 MiB is too small).
+	cmd := fmt.Sprintf(`
 mkdir -p %s
 docker create \
   --name %s \
@@ -211,25 +235,21 @@ docker create \
   -e GH_SR_RUNNER_GROUP=%s \
   -e GH_SR_RUNNER_EPHEMERAL=%s \
   %s`,
-			posixSingleQuote(stateDir),
-			posixSingleQuote(containerName(name)),
-			posixSingleQuote(stateDir),
-			posixSingleQuote(name),
-			posixSingleQuote(regToken),
-			posixSingleQuote(runURL),
-			posixSingleQuote(strings.Join(labels, ",")),
-			posixSingleQuote(group),
-			posixSingleQuote(ephemeral),
-			posixSingleQuote(imageTag),
-		)
+		posixSingleQuote(stateDir),
+		posixSingleQuote(containerName(instanceName)),
+		posixSingleQuote(stateDir),
+		posixSingleQuote(instanceName),
+		posixSingleQuote(regToken),
+		posixSingleQuote(runURL),
+		posixSingleQuote(strings.Join(labels, ",")),
+		posixSingleQuote(group),
+		posixSingleQuote(ephemeral),
+		posixSingleQuote(imageTag),
+	)
 
-		if _, err := h.Run(cmd); err != nil {
-			return fmt.Errorf("creating container %s: %w", containerName(name), err)
-		}
-
-		fmt.Fprintf(m.out(), "  %s: container created (run `gh sr up` to start)\n", name)
+	if _, err := h.Run(cmd); err != nil {
+		return fmt.Errorf("creating container %s: %w", containerName(instanceName), err)
 	}
-
 	return nil
 }
 
@@ -501,6 +521,39 @@ chmod +x %s`,
 	)
 	if _, err := h.Run(writeWrapper); err != nil {
 		return fmt.Errorf("writing docker-wrapper.sh: %w", err)
+	}
+
+	// Write baked inner-Docker network configs (Pillar 2: deterministic DNS, single dockerd start).
+	for _, f := range []struct{ name, content string }{
+		{"daemon.json", agenticRunnerDaemonJSON},
+		{"dnsmasq-gh-sr.conf", agenticRunnerDnsmasqConf},
+	} {
+		path := buildDir + "/" + f.name
+		writeCmd := fmt.Sprintf(`cat > %s << 'GHSR_EOF'
+%s
+GHSR_EOF`, path, strings.ReplaceAll(f.content, "GHSR_EOF", "GHSR_E0F"))
+		if _, err := h.Run(writeCmd); err != nil {
+			return fmt.Errorf("writing %s: %w", f.name, err)
+		}
+	}
+
+	// Write per-job reset hooks into the build context (Pillar 1).
+	hooksDir := buildDir + "/hooks"
+	if _, err := h.Run(fmt.Sprintf("mkdir -p %s", hooksDir)); err != nil {
+		return fmt.Errorf("creating hooks build dir: %w", err)
+	}
+	for _, hk := range []struct{ name, content string }{
+		{"job-started.sh", agenticRunnerJobStartedHook},
+		{"job-completed.sh", agenticRunnerJobCompletedHook},
+	} {
+		path := hooksDir + "/" + hk.name
+		writeCmd := fmt.Sprintf(`cat > %s << 'GHSR_EOF'
+%s
+GHSR_EOF
+chmod +x %s`, path, strings.ReplaceAll(hk.content, "GHSR_EOF", "GHSR_E0F"), path)
+		if _, err := h.Run(writeCmd); err != nil {
+			return fmt.Errorf("writing hook %s: %w", hk.name, err)
+		}
 	}
 
 	// Build (stamp labels so gh sr status can compare layout to this binary).

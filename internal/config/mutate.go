@@ -215,7 +215,7 @@ func RemoveRunner(cfgPath, runnerName string) error {
 
 	// Find and remove the runner entry
 	found := false
-	newContent := make([]*yaml.Node, 0)
+	var newContent []*yaml.Node
 	for i := 0; i < len(runnersNode.Content); i++ {
 		entry := runnersNode.Content[i]
 		if entry.Kind != yaml.MappingNode {
