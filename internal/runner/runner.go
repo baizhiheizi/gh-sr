@@ -42,7 +42,7 @@ type RunnerStatus struct {
 	Host     string
 	Repo     string // owner/repo for repo-scoped, "org:name" for org-scoped
 	Labels   string
-	Mode string
+	Mode     string
 	// ContainerImage is the Docker image ref from the container config (runner_mode: container only).
 	// Empty for native runners or when the container does not exist.
 	ContainerImage string
@@ -50,9 +50,9 @@ type RunnerStatus struct {
 	ContainerImageRevision string
 	// ContainerImageBuild is a short match hint: "-", "?", "ok (hexprefix)", "stale (hexprefix)".
 	ContainerImageBuild string
-	Local string // "running", "stopped", "not installed"
-	Remote         string // from GitHub API: "online", "offline", ""
-	Busy           bool
+	Local               string // "running", "stopped", "not installed"
+	Remote              string // from GitHub API: "online", "offline", ""
+	Busy                bool
 }
 
 func (m *Manager) Setup(h *host.Host, rc config.RunnerConfig) error {
@@ -106,11 +106,20 @@ func (m *Manager) RebuildImage(h *host.Host, rc config.RunnerConfig) error {
 
 func (m *Manager) Start(h *host.Host, rc config.RunnerConfig) error {
 	if rc.IsContainerMode() {
-		for _, name := range rc.InstanceNames() {
-			if err := m.startContainer(h, name); err != nil {
+		for i, name := range rc.InstanceNames() {
+			env := m.NewContainerEnvironment(h, rc, i, name)
+			if err := env.Start(); err != nil {
 				return err
 			}
 			fmt.Fprintf(m.out(), "  %s: container started\n", name)
+			// Health-gate: confirm the slot is actually ready (inner dockerd up,
+			// runner registered) before treating it as available. Non-fatal so a
+			// slow first boot does not fail `gh sr up`; doctor surfaces persistent issues.
+			if err := env.AwaitHealthy(defaultContainerHealthTimeout); err != nil {
+				fmt.Fprintf(m.out(), "  %s: warning: not ready yet: %v\n", name, err)
+			} else {
+				fmt.Fprintf(m.out(), "  %s: ready (inner dockerd up, runner registered)\n", name)
+			}
 		}
 		return nil
 	}
@@ -238,10 +247,10 @@ func (m *Manager) Status(h *host.Host, rc config.RunnerConfig) ([]RunnerStatus, 
 			s.Local, s.ContainerImage, s.ContainerImageRevision = m.containerLocalStatusImageAndRevision(h, name)
 			expected := ContainerImageLayoutRevision(m.GhSrVersion, m.containerImageExtraApt())
 			s.ContainerImageBuild = formatContainerImageBuild(s.Local, expected, s.ContainerImageRevision)
-	} else {
-		s.Local = m.statusNative(h, name)
-		s.ContainerImageBuild = nativeRunnerVersion(h, name)
-	}
+		} else {
+			s.Local = m.statusNative(h, name)
+			s.ContainerImageBuild = nativeRunnerVersion(h, name)
+		}
 		statuses = append(statuses, s)
 	}
 

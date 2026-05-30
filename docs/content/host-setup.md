@@ -99,7 +99,7 @@ runners:
     count: 2
 ```
 
-This automatically configures docker mode, host networking, `NET_ADMIN` capability, an `agentic` label, and installs `iptables` in the runner container for the Agent Workflow Firewall. You can also add it from the CLI:
+`profile: agentic` always runs in **container mode** (privileged Docker-in-Docker): each instance gets its own inner `dockerd`, network namespace, MCP gateway port, and `/tmp/gh-aw`, and every job runs from a pristine inner state. The host only needs Docker (with privileged-container support); gh-aw, AWF, `host.docker.internal` DNS, the tool cache, and language runtimes are all baked into the image `gh sr` builds. You can also add it from the CLI:
 
 ```bash
 gh sr add runner aw-runner --repo owner/repo --host vps-1 --profile agentic
@@ -129,88 +129,18 @@ runners:
 
 ### How it works
 
-gh-aw starts an MCP gateway in Docker with host networking. Health checks use `http://localhost:80` from the job environment, which only matches that gateway when the job runs on the **same network namespace** as the Docker engine.
+Because agentic runners are container-isolated, the host needs only Docker with privileged-container support. Everything else is inside the image:
 
-| Host        | Runner mode                            | Typical approach for gh-aw                                                                        |
-| ----------- | -------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| **Linux**   | **Docker** with `profile: agentic`     | Recommended. Profile sets host network + NET_ADMIN automatically.                                 |
-| **Linux**   | **Native**                             | Works; job runs on the host.                                                                      |
-| **Linux**   | **Docker** (default bridge)            | Health check often **fails**. Use `profile: agentic` or set `docker_network_mode: host` manually. |
-| **macOS**   | **Docker** (Desktop, OrbStack, Colima) | Use `profile: agentic`. Port **80** must be free inside the VM.                                   |
-| **Windows** | **Docker** (Linux containers)          | Use `profile: agentic`. Port **80** must be free inside the VM.                                   |
+- **`host.docker.internal` DNS** — baked into the image (the inner default bridge gateway is pinned to `172.17.0.1` and inner container DNS points at a bundled dnsmasq). No host `/etc/hosts`, dnsmasq, or `daemon.json` changes are required. **Do NOT** map `host.docker.internal` to `127.0.0.1` anywhere.
+- **`sudo` / iptables for AWF** — the runner user inside the container already has passwordless sudo; no host sudoers setup is needed for agentic.
+- **Tool cache (`/opt/hostedtoolcache`)** — provided inside the image where gh-aw's agent containers expect it.
+- **`RUNNER_TEMP`** — set to a non-`/tmp` path inside the container so it never collides with `/tmp/gh-aw`.
 
-> **Note:** On macOS and Windows, `--network host` means the Docker Desktop Linux VM's network namespace, not the macOS/Windows host itself. This is sufficient for gh-aw because all containers (runner, MCP gateway, MCP servers) share that same VM namespace.
+`gh sr doctor` validates the host Docker daemon, `--privileged` support, and — for each instance — the container, inner `dockerd`, registration, inner `host.docker.internal` resolution, the AWF service-routing bypass, and AWF/Docker hygiene.
 
-Workflows that run the [Agent Workflow Firewall](https://github.com/github/gh-aw-firewall) (`awf`) need the **`NET_ADMIN`** capability. The `profile: agentic` shortcut handles this. If configuring manually, add **`docker_cap_add: [NET_ADMIN]`** on **`mode: docker`** runners.
+See the [Agentic Workflows guide]({{< ref "agentic-workflows" >}}) for the full architecture, the per-job reset model, and troubleshooting.
 
-**Verification (optional):** Keep Docker’s default iptables integration (do not set **`"iptables": false"`** in the engine `daemon.json`). On Docker Desktop, you can open a shell in the Linux engine (for example the **`docker-desktop`** WSL distro) and run **`sudo iptables -L DOCKER-USER -n`** — when the daemon is healthy, that chain is normally present. Then run a workflow that uses `awf` to confirm the job completes past firewall setup.
-
-**`gh sr doctor`** checks hosts used by **`profile: agentic`** runners or by runners whose **`labels`** include **`agentic`** (or the legacy **`gh-aw`**) for port 80 availability, iptables presence, and sudo access, in addition to the standard bridge-network warning.
-
-### Linux Docker DNS (`host.docker.internal`) {#linux-docker-dns}
-
-> **For the full explanation** -- the two-layer DNS failure we debugged, architecture diagrams, and a complete troubleshooting table -- see [Agentic Workflows: Linux Docker DNS]({{< ref "agentic-workflows" >}}#linux-docker-dns).
-
-Agentic workflows use `host.docker.internal` from inside agent containers to reach the MCP Gateway (which runs on the host network). On **macOS** and **Windows** Docker Desktop, this name resolves automatically to the host IP.
-
-On **Linux**, Docker does not resolve this address by default. gh-sr configures dnsmasq automatically during `gh sr setup`. **Do NOT add `127.0.0.1 host.docker.internal` to your host's `/etc/hosts`** -- this causes agent containers to resolve it to their own loopback instead of the host.
-
-Run **`gh sr doctor`** to verify that `host.docker.internal` resolves to a non-loopback IP inside containers.
-
-### Native Linux runners and `sudo` (gh-aw) {#native-linux-runners-and-sudo-gh-aw}
-
-[GitHub Agentic Workflows self-hosted guidance](https://github.github.com/gh-aw/guides/self-hosted-runners/) requires a **`sudo`-capable environment** (non-sudo-only setups are not supported). With **`mode: native`**, the [Agent Workflow Firewall](https://github.com/github/gh-aw-firewall) and related tooling may invoke **`sudo` during jobs** (for example iptables rules). That must work **without a password prompt**, because Actions job steps are not interactive.
-
-**Ensure this for the same OS account that runs the runner process** (the user that owns `~/.gh-sr/runners/<instance>` and executes `run.sh` — typically the SSH user from `hosts.*.addr`, or the **`User=`** in a systemd unit from **`gh sr service install --system`**):
-
-1. **Passwordless sudo** — On the host, configure **`sudo -n`** to succeed for that user, for example a drop-in under `/etc/sudoers.d/` with **`NOPASSWD`** (a dedicated CI user with `runner ALL=(ALL) NOPASSWD: ALL` is common; tighten with command-scoped rules only if you can maintain them for whatever `sudo` lines gh-aw runs).
-2. **Verify as that user** — `sudo -n true` must exit **0** (see also [Linux SSH user and privileges](#linux-ssh-user-and-privileges)). Over SSH:
-   `ssh -o BatchMode=yes user@host 'sudo -n true'`
-3. **`gh sr doctor`** — With **`profile: agentic`** or **`labels`** including **`agentic`** (or legacy **`gh-aw`**), doctor reports whether passwordless sudo is available for AWF firewall setup on Linux.
-
-Docker must still be installed on the machine for gh-aw’s containers (MCP gateway, AWF, etc.); native mode only means the **Actions runner** is not inside a container.
-
-### `/opt/hostedtoolcache` (npm global tools)
-
-gh-aw’s Agent Workflow Firewall (AWF) containers search for tools like `claude` in `/opt/hostedtoolcache/*/bin`. This directory structure exists on **GitHub Hosted Runners** (created by GitHub’s infrastructure) but **not on self-hosted runners** by default.
-
-When you install npm global tools (e.g., `npm install -g @anthropic-ai/claude-code`), they are installed to npm’s global prefix (e.g., `/home/user/.npm-global` or `/usr/local`), which is **not** automatically accessible to gh-aw containers.
-
-**gh-sr handles this automatically** during `gh sr setup` for agentic runners:
-
-1. Detects your npm global prefix via `npm config get prefix`
-2. Creates `/opt/hostedtoolcache` as a **bind mount** to your npm prefix
-3. Adds the mount to `/etc/fstab` for persistence across reboots
-
-This allows gh-aw containers to find `claude`, `codex`, and other npm-installed tools via the same PATH search used on GitHub Hosted Runners.
-
-**Manual verification** (on the runner host):
-
-```bash
-# Check if hostedtoolcache is configured
-mount | grep hostedtoolcache
-
-# Should show something like:
-# /dev/nvme0n1p2 on /opt/hostedtoolcache type ext4 (rw,relatime)
-
-# Or check if it’s a symlink/bind mount to your npm prefix
-ls -la /opt/hostedtoolcache
-# Should point to your npm prefix (e.g., /home/user/.npm-global)
-```
-
-**Manual setup** (if needed):
-
-```bash
-# Find your npm global prefix
-npm config get prefix
-
-# Create the bind mount (requires root/sudo)
-sudo mkdir -p /opt/hostedtoolcache
-sudo mount --bind /home/your-user/.npm-global /opt/hostedtoolcache
-
-# Add to /etc/fstab for persistence
-echo "/home/your-user/.npm-global /opt/hostedtoolcache none defaults,bind 0 0" | sudo tee -a /etc/fstab
-```
+> **Removed:** the former native-agentic host setup (host dnsmasq, `/etc/sudoers.d` for iptables, `/opt/hostedtoolcache` bind mount) and the per-instance `agentic_mcp_ports` / `gh-sr-mcp-<port>` label scheme. `profile: agentic` + `runner_mode: native` is now rejected; agentic always uses container isolation.
 
 ### GitHub CLI authentication (gh)
 

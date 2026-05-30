@@ -1,11 +1,25 @@
 #!/bin/bash
-# entrypoint.sh — runs inside each gh-sr agentic runner container
+# entrypoint.sh — runs inside each gh-sr container runner.
 #
-# Startup order:
-#   1. Start inner dockerd (DinD)
-#   2. Configure dnsmasq so host.docker.internal resolves inside agent containers
-#   3. Register the actions runner against GitHub (idempotent)
-#   4. exec run.sh (the actions runner loop)
+# Startup (deterministic, single dockerd start):
+#   1. Enable cgroup v2 nesting (DinD requirement).
+#   2. Start the inner dockerd ONCE. host.docker.internal DNS is baked into the
+#      image (/etc/docker/daemon.json pins the default-bridge gateway to 172.17.0.1
+#      and points container DNS at the bundled dnsmasq) — no runtime daemon.json
+#      rewrite or dockerd restart.
+#   3. Start dnsmasq from its baked config so host.docker.internal resolves inside
+#      inner containers and external DNS is forwarded upstream.
+#   4. Install the AWF service-routing bypass (one-shot; lets AWF agents reach
+#      workflow `services:` published ports).
+#   5. Register the actions runner against GitHub (idempotent; one-time token).
+#   6. Wire the per-job reset hooks into the runner .env.
+#   7. exec run.sh (the actions runner loop).
+#
+# Per-job environment hygiene (clean /tmp/gh-aw, remove leftover containers, prune
+# networks, flush AWF iptables) is handled by /opt/gh-sr/hooks/job-started.sh and
+# /opt/gh-sr/hooks/job-completed.sh, so every job runs from a known-clean state on
+# this long-lived runner. The inner Docker image-layer cache under
+# /runner-state/docker-data is preserved across jobs (never pruned).
 #
 # Environment variables injected by `docker run`:
 #   GH_SR_RUNNER_NAME   — unique runner name (e.g. "myrepo-agentic-1")
@@ -14,6 +28,7 @@
 #   GH_SR_RUNNER_LABELS — comma-separated extra labels (e.g. "self-hosted,Linux,X64,agentic")
 #   GH_SR_RUNNER_GROUP  — runner group (optional, default: "Default")
 #   GH_SR_RUNNER_EPHEMERAL — "true" to register as ephemeral
+#   GH_SR_AWF_SUBNET    — AWF bridge subnet for the service-routing bypass (default 172.30.0.0/24)
 
 set -euo pipefail
 
@@ -22,26 +37,17 @@ RUNNER_STATE_DIR="/runner-state"
 RUNNER_WORK_DIR="${RUNNER_STATE_DIR}/_work"
 RUNNER_TEMP_DIR="${RUNNER_STATE_DIR}/_temp"
 
-# ── 1. Inner dockerd (DinD) ────────────────────────────────────────────────────
-# Store Docker data in the bind-mounted state dir so layers survive container
-# restarts (avoids re-pulling gh-aw images on every job).
+# Persistent inner-Docker image-layer cache. This is the ONLY state preserved across
+# jobs; per-job runtime state (/tmp/gh-aw, leftover containers, networks, iptables) is
+# reset by the job hooks. Keeping the cache here avoids re-pulling gh-aw's images.
 DOCKER_DATA_ROOT="${RUNNER_STATE_DIR}/docker-data"
 mkdir -p "${DOCKER_DATA_ROOT}"
 
-# Enable cgroup v2 nesting so the inner dockerd can create child cgroups for
-# its containers (otherwise awf's compose stack fails with
+# ── 1. cgroup v2 nesting ───────────────────────────────────────────────────────
+# Enable cgroup v2 nesting so the inner dockerd can create child cgroups for its
+# containers (otherwise awf's compose stack fails with
 # `cannot enter cgroupv2 "/sys/fs/cgroup/docker" with domain controllers --
-# it is in threaded mode`).
-#
-# Mirrors upstream docker:dind — see moby/hack/dind:
-# https://github.com/moby/moby/blob/v26.0.1/hack/dind
-#
-# Steps:
-#   1. Evacuate all processes from the root cgroup into /sys/fs/cgroup/init.
-#      Writing to cgroup.subtree_control fails with EBUSY if the cgroup has
-#      member processes; the "no internal processes" rule is a v2 invariant.
-#   2. Enable every controller for descendants by mirroring
-#      cgroup.controllers into cgroup.subtree_control with "+" prefixes.
+# it is in threaded mode`). Mirrors upstream docker:dind (moby/hack/dind).
 if [ -f /sys/fs/cgroup/cgroup.controllers ]; then
     echo "[entrypoint] enabling cgroup v2 nesting..."
     mkdir -p /sys/fs/cgroup/init
@@ -51,6 +57,7 @@ if [ -f /sys/fs/cgroup/cgroup.controllers ]; then
         echo "[entrypoint] WARNING: failed to enable cgroup controllers (continuing anyway)"
 fi
 
+# ── 2. Inner dockerd (single start; DNS baked into /etc/docker/daemon.json) ─────
 echo "[entrypoint] starting dockerd..."
 dockerd \
     --data-root="${DOCKER_DATA_ROOT}" \
@@ -73,89 +80,31 @@ for i in $(seq 1 30); do
     sleep 1
 done
 
-# ── 2. host.docker.internal via dnsmasq ───────────────────────────────────────
-# gh-aw agent containers reach the MCP Gateway via http://host.docker.internal:80.
-# On Linux, Docker does not populate this entry automatically; we use dnsmasq.
-
-DOCKER0_IP=$(ip -4 addr show docker0 2>/dev/null | grep -oP '(?<=inet )\d+\.\d+\.\d+\.\d+' || true)
-if [ -n "${DOCKER0_IP}" ]; then
-    echo "[entrypoint] configuring host.docker.internal → ${DOCKER0_IP}"
-    cat > /etc/dnsmasq.d/host-docker-internal.conf <<EOF
-address=/host.docker.internal/${DOCKER0_IP}
-EOF
-    # Reload or start dnsmasq.
-    if pgrep -x dnsmasq &>/dev/null; then
-        kill -HUP "$(pgrep -x dnsmasq)" 2>/dev/null || true
-    else
-        dnsmasq --no-daemon --conf-dir=/etc/dnsmasq.d &
-    fi
-
-    # Pass our dnsmasq to inner Docker containers via daemon.json. Use the
-    # docker0 bridge address; 127.0.0.1 inside child containers is their own
-    # loopback and will bypass the runner container's dnsmasq.
-    mkdir -p /etc/docker
-    cat > /etc/docker/daemon.json <<EOF
-{
-  "dns": ["${DOCKER0_IP}", "8.8.8.8"],
-  "dns-search": []
-}
-EOF
-    # Restart dockerd to pick up daemon.json changes.
-    kill "${DOCKERD_PID}" 2>/dev/null && wait "${DOCKERD_PID}" 2>/dev/null || true
-    dockerd \
-        --data-root="${DOCKER_DATA_ROOT}" \
-        --host=unix:///var/run/docker.sock \
-        --log-level=warn \
-        &>/runner-state/dockerd.log &
-    DOCKERD_PID=$!
-    for i in $(seq 1 20); do
-        docker info &>/dev/null 2>&1 && break
-        sleep 1
-    done
+# ── 3. host.docker.internal via dnsmasq (baked config) ──────────────────────────
+# gh-aw agent containers reach the MCP gateway via http://host.docker.internal:<port>.
+# dnsmasq (config baked at build time) listens on the pinned bridge gateway 172.17.0.1
+# and answers host.docker.internal there; daemon.json already points inner containers'
+# DNS at 172.17.0.1. dockerd is NOT restarted.
+echo "[entrypoint] starting dnsmasq..."
+if pgrep -x dnsmasq &>/dev/null; then
+    kill -HUP "$(pgrep -x dnsmasq)" 2>/dev/null || true
 else
-    echo "[entrypoint] WARNING: docker0 interface not found; host.docker.internal may not resolve"
+    dnsmasq --conf-dir=/etc/dnsmasq.d 2>/dev/null || \
+        echo "[entrypoint] WARNING: dnsmasq failed to start; host.docker.internal may not resolve"
 fi
 
-# ── 2b. AWF service-routing bypass ────────────────────────────────────────────
-# In container-mode runners, services declared via `services:` in a workflow run
-# under the inner dockerd in their own user-defined bridge (e.g. github_network_*)
-# and publish host ports via `-p 5432:5432`. Inner dockerd installs a NAT DOCKER
-# chain DNAT rule that rewrites the destination of port-published traffic from the
-# host gateway IP (e.g. 172.18.0.1) to the service container IP BEFORE the packet
-# reaches the FORWARD chain.
-#
-# AWF (gh-aw-firewall) installs a FW_WRAPPER chain in FORWARD that matches on the
-# (post-DNAT) destination IP. Its `--allow-host-service-ports` and `--enable-host-access`
-# rules whitelist the *host gateway* IP (e.g. 172.18.0.1, 172.30.0.1). Because DNAT
-# already rewrote the destination, those ACCEPT rules never match and FW_WRAPPER's
-# catch-all REJECT fires, returning ICMP port-unreachable (libpq surfaces this as
-# `Connection refused`). Net effect: AWF agents on awf-net (172.30.0.0/24) cannot
-# reach `host.docker.internal:<service-port>` even with `--allow-host-service-ports`.
-#
-# Fix: bypass inner dockerd's PREROUTING DNAT for traffic from awf-net to any IP
-# local to this runner container. Such packets stay routed to the local INPUT chain
-# where the userland docker-proxy (bound on 0.0.0.0:<service-port>) accepts them and
-# forwards to the actual service container. AWF FW_WRAPPER (in FORWARD) is bypassed
-# for these connections — consistent with the operator's intent when `--allow-host-
-# service-ports` is set.
+# ── 4. AWF service-routing bypass (one-shot) ────────────────────────────────────
+# Bypass inner dockerd's PREROUTING DNAT for traffic from awf-net to a local IP so
+# AWF agents can reach workflow `services:` published ports (postgres/redis/etc.).
+# The job-started hook re-asserts this per job; installing it once here keeps an idle
+# runner consistent for `gh sr doctor`.
 AWF_SUBNET="${GH_SR_AWF_SUBNET:-172.30.0.0/24}"
 echo "[entrypoint] installing AWF service-routing bypass for ${AWF_SUBNET}..."
-# Idempotent: drop any prior copy, then insert at the head of PREROUTING so it
-# evaluates before inner dockerd's DOCKER chain DNAT rule.
 while iptables -t nat -D PREROUTING -s "${AWF_SUBNET}" -m addrtype --dst-type LOCAL -j RETURN 2>/dev/null; do :; done
 iptables -t nat -I PREROUTING -s "${AWF_SUBNET}" -m addrtype --dst-type LOCAL -j RETURN \
     || echo "[entrypoint] WARNING: failed to install AWF service-routing bypass (iptables NAT PREROUTING)"
 
-# ── 2c. Clean up leftover containers from previously crashed/killed jobs ────────
-# If a workflow job is killed or crashes, its service containers (postgres, redis,
-# etc.) may be left behind in the inner dockerd. These hold ports via docker-proxy,
-# causing "port already allocated" on subsequent jobs. Remove all stopped containers
-# and prune unused networks to free ports and NAT rules.
-echo "[entrypoint] cleaning up leftover inner-docker containers from previous jobs..."
-su - runner -c "docker ps -a --filter 'status=exited' --format '{{.ID}}' | xargs -r docker rm -f 2>/dev/null || true"
-su - runner -c "docker network prune -f 2>/dev/null || true"
-
-# ── 3. Register the actions runner ────────────────────────────────────────────
+# ── 5. Register the actions runner ──────────────────────────────────────────────
 cd "${RUNNER_DIR}"
 
 RUNNER_NAME="${GH_SR_RUNNER_NAME:-gh-sr-runner}"
@@ -189,16 +138,20 @@ export RUNNER_TEMP="${RUNNER_TEMP_DIR}"
 
 # RUNNER_TOOL_CACHE must be /opt/hostedtoolcache so tools installed by
 # actions/setup-node, actions/setup-python, etc. land where gh-aw's agent
-# container looks for them. Its "Execute" step hard-codes:
-#
-#     PATH="$(find /opt/hostedtoolcache -maxdepth 4 -type d -name bin …):$PATH"
-#
-# If we leave RUNNER_TOOL_CACHE unset the runner defaults it to
-# $RUNNER_WORK/_tool (here /runner-state/_work/_tool) and Node ends up
-# invisible to the agent, so `claude` fails with "command not found".
-# The /opt/hostedtoolcache directory is created and chowned to runner in
-# the Dockerfile, so it is writable by the runner user.
+# container looks for them ("Execute" step hard-codes /opt/hostedtoolcache).
 export RUNNER_TOOL_CACHE="/opt/hostedtoolcache"
+
+# ── 6. Wire per-job reset hooks into the runner .env ────────────────────────────
+# The Actions runner reads .env at startup. We write it deterministically (the file
+# lives in the image rootfs and persists across container restarts, so overwrite
+# rather than append to stay idempotent).
+cat > "${RUNNER_DIR}/.env" <<EOF
+RUNNER_TEMP=${RUNNER_TEMP_DIR}
+RUNNER_TOOL_CACHE=/opt/hostedtoolcache
+ACTIONS_RUNNER_HOOK_JOB_STARTED=/opt/gh-sr/hooks/job-started.sh
+ACTIONS_RUNNER_HOOK_JOB_COMPLETED=/opt/gh-sr/hooks/job-completed.sh
+EOF
+chown runner:runner "${RUNNER_DIR}/.env"
 
 # su - resets the environment to a login shell's defaults, so RUNNER_TEMP
 # and RUNNER_TOOL_CACHE are re-exported on the runner-user side of every
@@ -217,13 +170,13 @@ else
     echo "[entrypoint] runner already configured, skipping config.sh"
 fi
 
-# ── 4. Pre-pull gh-aw images (best-effort, background) ────────────────────────
+# ── 7. Pre-pull gh-aw images (best-effort, background) ──────────────────────────
 su - runner -c "
     docker pull ghcr.io/github/gh-aw-firewall/agent:latest &>/dev/null &
     docker pull ghcr.io/github/gh-aw-mcpg:latest &>/dev/null &
 " 2>/dev/null || true
 
-# ── 5. Graceful shutdown handler ──────────────────────────────────────────────
+# ── 8. Graceful shutdown handler ────────────────────────────────────────────────
 _shutdown() {
     echo "[entrypoint] received SIGTERM — stopping runner..."
     # Ask the runner to finish the current job then stop.
@@ -236,6 +189,6 @@ _shutdown() {
 }
 trap _shutdown SIGTERM SIGINT
 
-# ── 6. Run ────────────────────────────────────────────────────────────────────
+# ── 9. Run ──────────────────────────────────────────────────────────────────────
 echo "[entrypoint] starting actions runner as user 'runner'..."
 exec su - runner -c "cd '${RUNNER_DIR}' && ${RUNNER_ENV} ./run.sh"

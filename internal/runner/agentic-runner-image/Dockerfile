@@ -101,14 +101,35 @@ RUN apt-get update \
 # Runner state directory (bind-mounted from host at runtime)
 RUN mkdir -p /runner-state && chown runner:runner /runner-state
 
+# Deterministic inner-Docker networking (Pillar 2): pin the default-bridge gateway
+# and point container DNS at the bundled dnsmasq so host.docker.internal resolves
+# without a runtime daemon.json rewrite + dockerd restart. The single baked
+# daemon.json is read at the one dockerd start in entrypoint.sh.
+COPY daemon.json /etc/docker/daemon.json
+COPY dnsmasq-gh-sr.conf /etc/dnsmasq.d/gh-sr.conf
+RUN chmod 0644 /etc/docker/daemon.json /etc/dnsmasq.d/gh-sr.conf
+
+# Per-job reset hooks (Pillar 1): the Actions runner runs these before/after every
+# job (wired via ACTIONS_RUNNER_HOOK_* in entrypoint.sh's .env). They guarantee a
+# pristine inner environment per job — no leftover containers, networks, AWF iptables,
+# or /tmp/gh-aw — while preserving the image-layer cache. Stored OUTSIDE the actions
+# runner application directory, as GitHub requires.
+RUN mkdir -p /opt/gh-sr/hooks
+COPY hooks/job-started.sh /opt/gh-sr/hooks/job-started.sh
+COPY hooks/job-completed.sh /opt/gh-sr/hooks/job-completed.sh
+RUN chmod +x /opt/gh-sr/hooks/job-started.sh /opt/gh-sr/hooks/job-completed.sh
+
 # gh-sr Docker CLI shim for gh-aw inside container-mode runners (see docker-wrapper.sh).
 # It is NOT what isolates concurrent runners on the host — that is runner_mode: container
-# (separate inner dockerd, network namespace, port 80, /tmp/gh-aw per outer container).
-# The shim: (1) skips flaky gh-aw-mcpg self-inspect under inner --network host/DinD,
-# (2) supervises MCP gateway docker run + cleanup, (3) injects AWF bridge gateway mapping for AWF agents.
-# Install as /opt/gh-sr/docker-shim/docker only — entrypoint and root keep /usr/bin/docker
-# for dockerd checks. Runner jobs get this dir first via /etc/profile.d, sudo secure_path,
-# and PATH=… in entrypoint.sh RUNNER_ENV.
+# (separate inner dockerd, network namespace, MCP gateway port, /tmp/gh-aw per outer container).
+# The minimal shim only touches gh-aw-mcpg launches: (1) injects --hostname gh-aw-mcpg so the
+# gateway skips its flaky self-inspect under inner --network host/DinD, and (2) injects a
+# deterministic --name gh-aw-mcpg-ghsr-* on `docker run` so the per-job reset hooks can reap a
+# leftover gateway. host.docker.internal resolution is handled by baked DNS (daemon.json +
+# dnsmasq); per-job cleanup is handled by the job hooks — the shim has no supervisor/cidfile/
+# URL-rewriter. Install as /opt/gh-sr/docker-shim/docker only — entrypoint and root keep
+# /usr/bin/docker for dockerd checks. Runner jobs get this dir first via /etc/profile.d, sudo
+# secure_path, and PATH=… in entrypoint.sh RUNNER_ENV.
 RUN mkdir -p /opt/gh-sr/docker-shim
 COPY docker-wrapper.sh /opt/gh-sr/docker-shim/docker
 RUN chmod +x /opt/gh-sr/docker-shim/docker \

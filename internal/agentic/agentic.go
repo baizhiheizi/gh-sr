@@ -486,7 +486,7 @@ func ValidateContainerInnerNetwork(h *host.Host, outerContainer, runnerName stri
 		return []PrereqFailure{{
 			Name:     "container-inner-host-docker-internal",
 			Severity: SeverityWarning,
-			Message:  fmt.Sprintf("host.docker.internal does not resolve to a usable non-loopback address through AWF add-host mapping inside runner container %s", outerContainer),
+			Message:  fmt.Sprintf("host.docker.internal does not resolve to a usable non-loopback address inside runner container %s (baked dnsmasq/daemon.json DNS)", outerContainer),
 			Remediation: fmt.Sprintf(`Inspect the runner container's inner Docker DNS and restart/rebuild it if stale:
 
   docker exec -it %s bash
@@ -576,37 +576,23 @@ For a temporary live-container unblock only:
 
 func containerInnerNetworkCheckCommand(outerContainer string) string {
 	q := strconv.Quote(outerContainer)
+	// Require the PRODUCTION baked-DNS path: a plain default-bridge child container must
+	// resolve host.docker.internal to a non-loopback address purely via the image-baked
+	// daemon DNS (daemon.json `dns` -> bundled dnsmasq). This is exactly what AWF agent
+	// containers rely on to reach the MCP gateway. The shim no longer injects --add-host,
+	// so we must NOT accept an --add-host fallback here — doing so would mask broken baked
+	// DNS and let a runner pass health checks while real MCP traffic fails.
 	return `docker exec ` + q + ` sh -c 'set -eu
-# Collect DNS probes for diagnostics, but do not fail solely on these.
-getent hosts host.docker.internal >/dev/null 2>&1 || true
-docker run --rm alpine sh -c "getent hosts host.docker.internal >/dev/null" >/dev/null 2>&1 || true
-docker run --rm --network host alpine sh -c "getent hosts host.docker.internal >/dev/null" >/dev/null 2>&1 || true
-# AWF agent containers use host.docker.internal; gh-sr /opt/gh-sr/docker-shim/docker
-# injects --add-host=host.docker.internal:<resolved> (GH_SR_AWF_BRIDGE_GATEWAY_IP, else
-# getent hosts, else host-gateway). Mirror that path here.
-hg_ok=0
+ok=0
 for i in 1 2 3 4 5; do
-  if [ -n "${GH_SR_AWF_BRIDGE_GATEWAY_IP:-}" ]; then
-    add_host_arg="--add-host=host.docker.internal:${GH_SR_AWF_BRIDGE_GATEWAY_IP}"
-  else
-    set -- $(getent hosts host.docker.internal 2>/dev/null || true)
-    awf_route="${1:-}"
-    if [ -n "$awf_route" ] && [ "$awf_route" != "127.0.0.1" ] && [ "$awf_route" != "::1" ]; then
-      add_host_arg="--add-host=host.docker.internal:${awf_route}"
-    else
-      add_host_arg="--add-host=host.docker.internal:host-gateway"
-    fi
-  fi
-  if docker run --rm "$add_host_arg" alpine sh -c "set -- \$(getent hosts host.docker.internal 2>/dev/null || true); ip=\${1:-}; [ -n \"\$ip\" ] && [ \"\$ip\" != \"127.0.0.1\" ] && [ \"\$ip\" != \"::1\" ]" >/dev/null 2>&1; then
-    hg_ok=1
-    break
-  fi
+  ip=$(docker run --rm alpine getent hosts host.docker.internal 2>/dev/null | awk "{print \$1; exit}")
+  case "$ip" in
+    "" | 127.* | ::1) ;;
+    *) ok=1; break ;;
+  esac
   sleep 1
 done
-if [ "$hg_ok" -ne 1 ]; then
-  exit 1
-fi
-exit 0'`
+[ "$ok" -eq 1 ]'`
 }
 
 func containerAWFCheckCommand(outerContainer string) string {
