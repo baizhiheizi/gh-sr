@@ -1,6 +1,6 @@
 ---
 engine:
-  id: colipot
+  id: copilot
   env:
     COPILOT_PROVIDER_BASE_URL: "https://api.minimaxi.com/anthropic"
     COPILOT_MODEL: "MiniMax-M2.7-highspeed"
