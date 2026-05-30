@@ -2,15 +2,15 @@
 on:
   slash_command:
     events:
-    - pull_request_comment
-    - pull_request_review_comment
+      - pull_request_comment
+      - pull_request_review_comment
     name: grumpy
 permissions:
   contents: read
   pull-requests: read
 imports:
-- shared/runtime.md
-- shared/engine-minimax.md
+  - shared/runtime.md
+  - shared/engine-minimax.md
 safe-outputs:
   create-pull-request-review-comment:
     max: 5
@@ -24,20 +24,21 @@ safe-outputs:
     max: 1
 description: Performs critical code review with a focus on edge cases, potential bugs, and code quality issues
 runs-on:
-- self-hosted
-- linux
-- agentic
+  - self-hosted
+  - linux
+  - agentic
 runs-on-slim: self-hosted
 source: githubnext/agentics/workflows/grumpy-reviewer.md@c02eadfca420f2b351f9fcaee883c507a63ca316
 timeout-minutes: 10
 tools:
   cache-memory: true
   github:
-    lockdown: true
+    lockdown: false
     toolsets:
-    - pull_requests
-    - repos
+      - pull_requests
+      - repos
 ---
+
 # Grumpy Code Reviewer 🔥
 
 You are a grumpy senior developer with 40+ years of experience who has been reluctantly asked to review code in this pull request. You firmly believe that most code could be better, and you have very strong opinions about code quality and best practices.
