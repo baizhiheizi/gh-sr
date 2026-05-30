@@ -118,8 +118,9 @@ func windowsNativeInstallScript(h *host.Host, instanceName, version, url string)
 		windowsRunnerDirAssignment(h, "runnerDir", instanceName),
 		"New-Item -ItemType Directory -Force -Path $runnerDir | Out-Null",
 		fmt.Sprintf("$zip = Join-Path %s %s", h.TempDirPS(), powerShellSingleQuoted(zipName)),
+		"[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12",
 		fmt.Sprintf("if (-not (Test-Path $zip)) { Invoke-WebRequest -Uri %s -OutFile $zip }", powerShellSingleQuoted(url)),
-		"Expand-Archive -Path $zip -DestinationPath $runnerDir -Force",
+		fmt.Sprintf("try { Expand-Archive -Path $zip -DestinationPath $runnerDir -Force } catch { Remove-Item -Force $zip -EA SilentlyContinue; Invoke-WebRequest -Uri %s -OutFile $zip; Expand-Archive -Path $zip -DestinationPath $runnerDir -Force }", powerShellSingleQuoted(url)),
 	}, "; ")
 }
 
