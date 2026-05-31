@@ -1,19 +1,27 @@
-Review the `gh sr doctor` command, any improvements? After the large refactor for the agentic runner profile, does it still work? Any better advices?
+Stage the changes you worked on and create a commit for this branch.
+- Current branch: main.
+- Base branch: main.
+- Stage the changes you worked on.
+- If there are unrelated files or changes, exclude them.
+- Write a concise commit message.
+- Do not push.
+- Do not include unrelated files in the commit.
+
+Execute the selected diff-tab commit action.
 
 ---
 
-Implement the plan as specified, it is attached for your reference. Do NOT edit the plan file itself.
-
-To-do's from the plan have already been created. Do not create them again. Mark them as in_progress as you work, starting with the first one. Don't stop until you have completed all the to-dos.
+If the available MCP tools do not fully support what the user asked you to do, complete the work you can with the current tool set. In your work summary, include what you were unable to do with MCP and why. Do not use browser automation to work around missing or unavailable MCP tools unless the user explicitly asks you to use the browser.
 
 ---
 
-/code-reviewer review the implementation.
-
----
-
-Fit them.
-
----
+Stage the changes you worked on and create a commit for this branch.
+- Current branch: main.
+- Base branch: main.
+- Stage the changes you worked on.
+- If there are unrelated files or changes, exclude them.
+- Write a concise commit message.
+- Do not push.
+- Do not include unrelated files in the commit.
 
 Execute the selected diff-tab commit action.
