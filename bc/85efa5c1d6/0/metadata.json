@@ -1,0 +1,35 @@
+{
+  "cli_version": "dev",
+  "checkpoint_id": "bc85efa5c1d6",
+  "session_id": "706b9097-c847-44a7-98b9-469284d6e4da",
+  "strategy": "manual-commit",
+  "created_at": "2026-05-31T10:52:14.777477192Z",
+  "branch": "main",
+  "checkpoints_count": 2,
+  "files_touched": [
+    ".github/agentic-wiki/PAGES.md",
+    "cmd/gh-sr/main.go",
+    "docs/content/commands.md",
+    "docs/content/host-setup.md",
+    "internal/doctor/doctor.go",
+    "internal/doctor/doctor_test.go"
+  ],
+  "agent": "Cursor",
+  "model": "composer-2.5-fast",
+  "turn_id": "6a05f30ed43c",
+  "session_metrics": {
+    "turn_count": 5
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-05-31T10:52:14.679022177Z",
+    "agent_lines": 107,
+    "agent_removed": 67,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 107,
+    "total_lines_changed": 174,
+    "agent_percentage": 100,
+    "metric_version": 2
+  }
+}
