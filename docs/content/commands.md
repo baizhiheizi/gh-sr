@@ -10,7 +10,7 @@ Running **`gh sr` with no subcommand** opens the interactive dashboard on a **TT
 ```bash
 gh sr                      # Open dashboard (TTY only; see above)
 gh sr init [--force]       # Create ~/.gh-sr with template runners.yml and env file
-gh sr doctor [--strict]    # Check config, GitHub API, and host prerequisites
+gh sr doctor [--strict] [--fix]    # Check config, GitHub API, and host prerequisites
 gh sr setup [names...]     # Install runner binary and configure on hosts
 gh sr up [names...]        # Start runners
 gh sr down [names...]      # Stop runners
@@ -46,6 +46,15 @@ gh sr logs myapp-1 --host win-pc   # disambiguate when the same instance name ex
 gh sr up --repo an-lee/enjoy
 gh sr down enjoy-win-1
 ```
+
+## Doctor
+
+`gh sr doctor` validates local paths, configuration, GitHub API access, and host prerequisites. Checks are scoped to runners matching `--host` / `--repo` filters:
+
+- **Native** (`runner_mode: native`): curl/tar (or PowerShell on Windows), runner install dirs, Linux passwordless sudo when needed for setup.
+- **Container** (`runner_mode: container` or `profile: agentic` on Linux): host Docker and `--privileged` support, each `gh-sr-<instance>` container, inner `dockerd`, registration, and (for agentic) inner AWF/DNS/hygiene.
+
+By default only **FAIL** lines produce a non-zero exit. Use **`--strict`** to fail on **WARN** as well (useful in CI). Use **`--fix`** to re-run `gh sr setup` for filtered runners when doctor reports failures, then re-run doctor; the final exit code reflects the post-fix result.
 
 ## Quick start sequence
 

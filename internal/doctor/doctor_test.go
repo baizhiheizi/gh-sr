@@ -138,6 +138,68 @@ func TestContainerAgenticInstallTargetsForHost(t *testing.T) {
 	if len(got) != 1 || got[0][0] != "ag-1" || got[0][1] != "ag" {
 		t.Fatalf("want single agentic container instance, got %#v", got)
 	}
+
+	// profile: agentic alone implies container mode (no explicit runner_mode).
+	implicit := []config.RunnerConfig{
+		{Name: "aw", Host: "h1", Repo: "o/r", Count: 1, Profile: "agentic"},
+	}
+	gotImplicit := containerAgenticInstallTargetsForHost(implicit, "h1")
+	if len(gotImplicit) != 1 || gotImplicit[0][0] != "aw-1" {
+		t.Fatalf("profile: agentic should resolve to container agentic target, got %#v", gotImplicit)
+	}
+}
+
+func TestRunnersForHost(t *testing.T) {
+	t.Parallel()
+	runners := []config.RunnerConfig{
+		{Name: "a", Host: "h1", Repo: "o/one"},
+		{Name: "b", Host: "h1", Repo: "o/two"},
+		{Name: "c", Host: "h2", Repo: "o/one"},
+	}
+	got := runnersForHost(runners, "h1")
+	if len(got) != 2 {
+		t.Fatalf("len %d want 2: %#v", len(got), got)
+	}
+	if got[0].Name != "a" || got[1].Name != "b" {
+		t.Fatalf("got %#v", got)
+	}
+	if len(runnersForHost(runners, "missing")) != 0 {
+		t.Fatal("expected no runners for unknown host")
+	}
+}
+
+func TestHasNativeModeRunners(t *testing.T) {
+	t.Parallel()
+	containerOnly := []config.RunnerConfig{
+		{Name: "c", Host: "h1", Repo: "o/r", RunnerMode: config.RunnerModeContainer},
+		{Name: "a", Host: "h1", Repo: "o/r", Profile: "agentic"},
+	}
+	if hasNativeModeRunners(containerOnly) {
+		t.Fatal("container-only and profile: agentic should not require native checks")
+	}
+	mixed := []config.RunnerConfig{
+		{Name: "n", Host: "h1", Repo: "o/r"},
+		{Name: "c", Host: "h1", Repo: "o/r", RunnerMode: config.RunnerModeContainer},
+	}
+	if !hasNativeModeRunners(mixed) {
+		t.Fatal("mixed host should require native checks")
+	}
+}
+
+func TestHasContainerModeRunners(t *testing.T) {
+	t.Parallel()
+	nativeOnly := []config.RunnerConfig{
+		{Name: "n", Host: "h1", Repo: "o/r"},
+	}
+	if hasContainerModeRunners(nativeOnly) {
+		t.Fatal("native-only should not trigger container checks")
+	}
+	agenticOnly := []config.RunnerConfig{
+		{Name: "a", Host: "h1", Repo: "o/r", Profile: "agentic"},
+	}
+	if !hasContainerModeRunners(agenticOnly) {
+		t.Fatal("profile: agentic should trigger container checks")
+	}
 }
 
 func TestRun_ConfigErrorSkipsGitHub(t *testing.T) {

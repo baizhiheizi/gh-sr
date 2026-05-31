@@ -79,10 +79,10 @@ gh sr will bind-mount the custom path into the container at `/var/run/docker.soc
 **Verify from inside a running runner container:**
 
 ```bash
-docker exec gh-runner-<instance> test -S /var/run/docker.sock && echo ok || echo missing
+docker exec gh-sr-<instance> docker info
 ```
 
-`gh sr doctor` performs this check automatically for all running docker-mode containers on Linux and macOS hosts and reports a WARN if the socket is not accessible inside.
+`gh sr doctor` validates container-mode runners on **Linux** hosts: outer Docker, `--privileged` support, each `gh-sr-<instance>` container, inner `dockerd`, registration, and (for `profile: agentic`) inner AWF/DNS/hygiene checks.
 
 ## GitHub Agentic Workflows (gh-aw)
 

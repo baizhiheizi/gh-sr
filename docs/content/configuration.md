@@ -61,7 +61,7 @@ runners:
     host: my-laptop
     count: 1
     labels: [self-hosted, Linux, X64]
-    mode: native
+    runner_mode: native
 
   - name: enjoy-mac
     repo: an-lee/enjoy
@@ -75,22 +75,14 @@ runners:
     count: 1
     labels: [self-hosted, Windows, X64]
 
-  - name: enjoy-linux-on-win
-    repo: an-lee/enjoy
-    host: win-pc
-    mode: docker   # Linux container via Docker Desktop
-    count: 1
-    labels: [self-hosted, Linux, X64]
-
   - name: hangar-ci
     repo: an-lee/hangar
     host: vps-1
     count: 2
     labels: [self-hosted, Linux, X64]
-    mode: docker
+    runner_mode: container
 
-  # GitHub Agentic Workflows — profile: agentic sets docker mode,
-  # host networking, NET_ADMIN, and an agentic label automatically.
+  # GitHub Agentic Workflows — profile: agentic always uses container mode (DinD).
   - name: hangar-aw
     repo: an-lee/hangar
     host: vps-1
@@ -112,13 +104,10 @@ runners:
 | `runners[].group` | Runner group name (org-level runners only). Passed as `--runnergroup` during registration. |
 | `runners[].host` | References a key under `hosts` |
 | `runners[].count` | Number of parallel instances (default: 1) |
-| `runners[].labels` | Labels for workflow `runs-on` matching. Include **`agentic`** when the runner should serve [GitHub Agentic Workflows](https://github.github.com/gh-aw/); that label also triggers **`gh sr doctor`** agentic prerequisite checks (with **`profile: agentic`**, or alone on native setups). The legacy label **`gh-aw`** is still recognized by **`gh sr doctor`** for existing configs. |
-| `runners[].mode` | `docker` or `native` (default: `docker` for Linux hosts, `native` for macOS and Windows). Set `docker` for Linux container runners on Windows (Docker Desktop) or macOS (Docker Desktop, OrbStack, or Colima). For Agentic Workflows, use `profile: agentic` (always container mode); see [Agentic Workflows](guides/agentic-workflows.md). |
-| `runners[].profile` | Optional. `agentic` auto-configures for [GitHub Agentic Workflows](https://github.github.com/gh-aw/): sets `mode: docker`, `docker_network_mode: host`, `docker_cap_add: [NET_ADMIN]`, installs `iptables` in the container for the Agent Workflow Firewall, and adds an `agentic` label. See [Host setup — GitHub Agentic Workflows](host-setup.md#github-agentic-workflows-gh-aw). |
-| `runners[].ephemeral` | Optional boolean. When `true`, the runner handles one job and deregisters. Docker-mode uses `--restart no`; native passes `--ephemeral` to `config.sh`. |
-| `runners[].docker_network_mode` | Optional. `bridge` (default) or `host`. Only for **`mode: docker`** runners. `host` runs the actions-runner container with Docker **`--network host`** so jobs share the engine host network (needed for [GitHub Agentic Workflows](https://github.github.com/gh-aw/guides/self-hosted-runners/) MCP gateway health checks). On **Linux** hosts, the container joins the host's network namespace directly. On **macOS** and **Windows** (Docker Desktop), it joins the Linux VM's network namespace — sufficient for gh-aw since the MCP gateway runs in the same VM. Weaker isolation; port **80** must be free on the host (Linux) or inside the VM (macOS/Windows). See [Host setup — GitHub Agentic Workflows](host-setup.md#github-agentic-workflows-gh-aw). |
-| `runners[].docker_cap_add` | Optional list of Linux capability names for **`docker run --cap-add`**. Only for **`mode: docker`** runners. Use **`[NET_ADMIN]`** when workflows run the [Agent Workflow Firewall](https://github.com/github/gh-aw-firewall) (`awf`) so jobs can configure iptables (e.g. `DOCKER-USER`); combine with **`docker_network_mode: host`** for gh-aw. Defaults to none (stronger isolation). See [Host setup — GitHub Agentic Workflows](host-setup.md#github-agentic-workflows-gh-aw). |
+| `runners[].labels` | Labels for workflow `runs-on` matching. Include **`agentic`** when the runner should serve [GitHub Agentic Workflows](https://github.github.com/gh-aw/). With **`profile: agentic`**, the `agentic` label is added automatically if omitted. |
 | `runners[].runner_mode` | `native` (default) or `container`. `container` runs each runner instance in its own privileged Docker container with an inner dockerd (DinD), fully isolating `/tmp/gh-aw`, iptables, and the MCP gateway port between concurrent jobs on the same host. The image is built locally by `gh sr setup` and includes Docker CE, dnsmasq, gh-aw, AWF, and the actions runner. **`profile: agentic` always uses `container` mode** (and `runner_mode: native` + `profile: agentic` is rejected). See [Agentic Workflows](guides/agentic-workflows.md). |
+| `runners[].profile` | Optional. Set to **`agentic`** for [GitHub Agentic Workflows](https://github.github.com/gh-aw/): implies `runner_mode: container`, adds the `agentic` label, and bakes gh-aw/AWF/DNS/tooling into the locally built runner image. See [Host setup — GitHub Agentic Workflows](host-setup.md#github-agentic-workflows-gh-aw). |
+| `runners[].ephemeral` | Optional boolean. When `true`, the runner handles one job and deregisters. Container mode uses `--restart no`; native passes `--ephemeral` to `config.sh`. |
 | `runners[].agentic_mcp_ports` / `runners[].agentic_mcp_port_base` | **Removed.** The per-instance MCP port-label scheme is no longer used: container mode isolates the MCP gateway port per runner. `gh sr` rejects these fields with a migration message — delete them. |
 | `container_runner_image.extra_apt_packages` | Optional list of additional Debian package names to install in the locally built container runner image (`runner_mode: container`). At most 256 entries; each name must match `[a-z0-9][a-z0-9+.-]*` (max 200 chars). When set, the image tag gains a `-x<8-hex>` suffix so Docker does not reuse an image built without those packages. Core packages are in the repo manifest `internal/runner/agentic-runner-image/apt-packages-core.txt`. |
 

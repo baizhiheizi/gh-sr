@@ -430,6 +430,7 @@ func doctorCmd() *cobra.Command {
 		Use:   "doctor",
 		Short: "Check config, GitHub API access, and host prerequisites",
 		Long:  "Validates local paths, configuration, GitHub API access, and SSH targets. For runner_mode: native, checks host runner dirs. profile: agentic always uses container mode: checks outer Docker and --privileged, each gh-sr-<instance> container, inner dockerd, .runner inside the container, and AWF hygiene/networking on the inner Docker. See README \"Host setup\" for steps gh sr cannot automate.",
+		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := config.BootstrapEnv(); err != nil {
 				return err
@@ -452,18 +453,19 @@ func doctorCmd() *cobra.Command {
 				}
 			}
 
-			res := doctor.Run(cmd.OutOrStdout(), cfgPath, envPath, cfg, cfgErr, gh, filterHost, filterRepo, strict)
-			if fix && res.Fail > 0 {
-				fmt.Fprintln(cmd.OutOrStdout(), "\n--- Running `gh sr setup` to attempt fixes ---")
-				// Re-run setup for affected runners - this will auto-fix what it can.
-				// The setup command already handles agentic prereq auto-fix internally.
-				mgr, err := newManager(cfg, cmd.OutOrStdout())
+			w := cmd.OutOrStdout()
+			res := doctor.Run(w, cfgPath, envPath, cfg, cfgErr, gh, filterHost, filterRepo, strict)
+			if fix && res.Fail > 0 && cfg != nil && cfgErr == nil {
+				fmt.Fprintln(w, "\n--- Running `gh sr setup` to attempt fixes ---")
+				mgr, err := newManager(cfg, w)
 				if err != nil {
-					fmt.Fprintf(cmd.OutOrStdout(), "\ncannot create runner manager: %v\n", err)
-				} else if err := ops.Setup(cmd.OutOrStdout(), cfg, mgr, filterHost, filterRepo, args); err != nil {
-					fmt.Fprintf(cmd.OutOrStdout(), "\nfix attempt completed with errors: %v\n", err)
+					fmt.Fprintf(w, "\ncannot create runner manager: %v\n", err)
+				} else if err := ops.Setup(w, cfg, mgr, filterHost, filterRepo, nil); err != nil {
+					fmt.Fprintf(w, "\nfix attempt completed with errors: %v\n", err)
 				} else {
-					fmt.Fprintln(cmd.OutOrStdout(), "\nfix attempt completed successfully.")
+					fmt.Fprintln(w, "\nfix attempt completed successfully.")
+					fmt.Fprintln(w, "\n--- Re-running doctor after fix ---")
+					res = doctor.Run(w, cfgPath, envPath, cfg, cfgErr, gh, filterHost, filterRepo, strict)
 				}
 			}
 			if code := doctor.ExitCode(res, strict); code != 0 {
@@ -473,7 +475,7 @@ func doctorCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&strict, "strict", false, "non-zero exit if any check is WARN (default: only FAIL fails the run)")
-	cmd.Flags().BoolVar(&fix, "fix", false, "automatically attempt to fix failures by re-running setup")
+	cmd.Flags().BoolVar(&fix, "fix", false, "automatically attempt to fix failures by re-running setup, then re-run doctor")
 	return cmd
 }
 

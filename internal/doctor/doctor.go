@@ -191,21 +191,17 @@ func Run(w io.Writer, cfgPath, envPath string, cfg *config.Config, cfgErr error,
 
 			defer h.Close()
 			printLine(&hr.buf, sevOK, hostName, fmt.Sprintf("connected (%s)", addrSummary(hcfg.Addr)))
-			checkNative(&hr.buf, hostName, h, &hr.r)
-			checkNativeRunnerInstall(&hr.buf, hostName, h, runners, &hr.r)
-			if h.OS == "linux" {
-				checkLinuxSudo(&hr.buf, hostName, h, &hr.r)
-			}
-			hostRunners := cfg.RunnersForHost(hostName)
-			if hasNativeAgenticRunners(hostRunners) {
-				checkAgenticPrereqs(&hr.buf, hostName, h, &hr.r)
+			hostRunners := runnersForHost(runners, hostName)
+			if hasNativeModeRunners(hostRunners) {
+				checkNative(&hr.buf, hostName, h, &hr.r)
+				checkNativeRunnerInstall(&hr.buf, hostName, h, runners, &hr.r)
+				if h.OS == "linux" {
+					checkLinuxSudo(&hr.buf, hostName, h, &hr.r)
+				}
 			}
 			if h.OS == "linux" && hasContainerModeRunners(hostRunners) {
 				checkContainerHostPrereqs(&hr.buf, hostName, h, &hr.r)
 				checkContainerRunnerInstall(&hr.buf, hostName, h, runners, &hr.r)
-			}
-			if h.OS == "linux" && hasNativeAgenticRunners(hostRunners) {
-				checkAWFHygiene(&hr.buf, hostName, h, &hr.r)
 			}
 			if h.OS == "linux" && hasContainerAgenticRunners(hostRunners) {
 				checkContainerAgenticInnerHygiene(&hr.buf, hostName, h, runners, &hr.r)
@@ -347,6 +343,26 @@ func containerAgenticInstallTargetsForHost(runners []config.RunnerConfig, hostNa
 	return out
 }
 
+// runnersForHost returns filtered runners assigned to hostName.
+func runnersForHost(runners []config.RunnerConfig, hostName string) []config.RunnerConfig {
+	var out []config.RunnerConfig
+	for _, rc := range runners {
+		if rc.Host == hostName {
+			out = append(out, rc)
+		}
+	}
+	return out
+}
+
+func hasNativeModeRunners(runners []config.RunnerConfig) bool {
+	for _, rc := range runners {
+		if !rc.IsContainerMode() {
+			return true
+		}
+	}
+	return false
+}
+
 func hasContainerModeRunners(runners []config.RunnerConfig) bool {
 	for _, rc := range runners {
 		if rc.IsContainerMode() {
@@ -430,16 +446,6 @@ func checkLinuxSudo(w io.Writer, hostName string, h *host.Host, r *Result) {
 	printLine(w, sevOK, hostName, "linux: non-root user has passwordless sudo")
 }
 
-// hasNativeAgenticRunners returns true if any runner uses agentic profile in native mode.
-func hasNativeAgenticRunners(runners []config.RunnerConfig) bool {
-	for _, rc := range runners {
-		if rc.IsAgentic() && !rc.IsContainerMode() {
-			return true
-		}
-	}
-	return false
-}
-
 // hasContainerAgenticRunners returns true if any runner uses agentic profile in container mode.
 func hasContainerAgenticRunners(runners []config.RunnerConfig) bool {
 	for _, rc := range runners {
@@ -448,82 +454,6 @@ func hasContainerAgenticRunners(runners []config.RunnerConfig) bool {
 		}
 	}
 	return false
-}
-
-// checkAgenticPrereqs verifies Docker is available on the host for agentic workflow containers.
-// gh-aw (GitHub Agentic Workflows) uses Docker on the host for AWF sandbox containers.
-// It uses agentic.ValidatePrereqs for comprehensive checking and prints remediation guidance.
-func checkAgenticPrereqs(w io.Writer, hostName string, h *host.Host, r *Result) {
-	failures := agentic.ValidatePrereqs(h)
-
-	for _, f := range failures {
-		sev := sevFail
-		if f.Severity == agentic.SeverityWarning {
-			sev = sevWarn
-			r.Warn++
-		} else {
-			r.Fail++
-		}
-		printLine(w, sev, hostName, "agentic: "+f.Message)
-		// Print remediation guidance inline
-		if f.Remediation != "" {
-			lines := strings.Split(f.Remediation, "\n")
-			for _, line := range lines {
-				fmt.Fprintf(w, "       %s\n", line)
-			}
-		}
-		if f.DocRef != "" {
-			fmt.Fprintf(w, "       See: %s\n", f.DocRef)
-		}
-	}
-
-	// If no failures, print a summary OK line
-	if len(failures) == 0 {
-		// Docker CLI version
-		out, _ := h.Run(`docker --version 2>/dev/null`)
-		if strings.Contains(out, "Docker version") {
-			printLine(w, sevOK, hostName, fmt.Sprintf("agentic: docker CLI %s", strings.TrimSpace(out)))
-		}
-		// Docker daemon
-		out, _ = h.Run(`docker info 2>/dev/null`)
-		if _, err := h.Run(`docker info >/dev/null 2>&1`); err == nil {
-			printLine(w, sevOK, hostName, "agentic: docker daemon running")
-		}
-		// Docker compose
-		out, _ = h.Run(`docker compose version 2>/dev/null`)
-		if _, err := h.Run(`docker compose version >/dev/null 2>&1`); err == nil {
-			printLine(w, sevOK, hostName, fmt.Sprintf("agentic: docker compose %s", strings.TrimSpace(out)))
-		}
-		// Socket access
-		out, _ = h.Run(`docker run --rm -v /var/run/docker.sock:/var/run/docker.sock docker:cli docker ps 2>/dev/null`)
-		if _, err := h.Run(`docker run --rm -v /var/run/docker.sock:/var/run/docker.sock docker:cli docker ps >/dev/null 2>&1`); err == nil {
-			printLine(w, sevOK, hostName, "agentic: can spawn containers via Docker socket")
-		}
-		// iptables
-		if _, err := h.Run(`command -v iptables >/dev/null 2>&1`); err == nil {
-			printLine(w, sevOK, hostName, "agentic: iptables available")
-		}
-		// sudo iptables
-		uid, _ := h.Run(`id -u`)
-		if strings.TrimSpace(uid) != "0" {
-			out, _ := h.Run(`sudo -n iptables -L DOCKER-USER >/dev/null 2>&1 && echo ok || echo no`)
-			if strings.TrimSpace(out) == "ok" {
-				printLine(w, sevOK, hostName, "agentic: passwordless sudo for iptables available")
-			}
-		} else {
-			printLine(w, sevOK, hostName, "agentic: running as root (no sudo needed)")
-		}
-		// host.docker.internal
-		out, _ = h.Run(`docker run --rm alpine sh -c "getent hosts host.docker.internal" 2>/dev/null`)
-		if fields := strings.Fields(strings.TrimSpace(out)); len(fields) > 0 && fields[0] != "127.0.0.1" && fields[0] != "::1" {
-			printLine(w, sevOK, hostName, fmt.Sprintf("agentic: host.docker.internal resolves inside containers (%s)", fields[0]))
-		}
-		// external DNS
-		out, _ = h.Run(`docker run --rm alpine sh -c "nslookup github.com >/dev/null 2>&1 && echo ok || echo failed" 2>/dev/null`)
-		if strings.TrimSpace(out) == "ok" {
-			printLine(w, sevOK, hostName, "agentic: external DNS resolves inside containers")
-		}
-	}
 }
 
 // checkContainerHostPrereqs checks host requirements for runner_mode: container (DinD).
@@ -638,30 +568,3 @@ func checkContainerAgenticInnerHygiene(w io.Writer, hostName string, h *host.Hos
 	}
 }
 
-// checkAWFHygiene reports stale AWF artefacts (orphan containers, stale iptables rules).
-// These are always warnings; they don't block setup but waste resources.
-func checkAWFHygiene(w io.Writer, hostName string, h *host.Host, r *Result) {
-	failures := agentic.ValidateAWFHygiene(h)
-	if len(failures) == 0 {
-		printLine(w, sevOK, hostName, "agentic: no orphan AWF containers or stale iptables rules")
-		return
-	}
-	for _, f := range failures {
-		sev := sevWarn
-		if f.Severity == agentic.SeverityError {
-			sev = sevFail
-			r.Fail++
-		} else {
-			r.Warn++
-		}
-		printLine(w, sev, hostName, "agentic(hygiene): "+f.Message)
-		if f.Remediation != "" {
-			for _, line := range strings.Split(f.Remediation, "\n") {
-				fmt.Fprintf(w, "       %s\n", line)
-			}
-		}
-		if f.DocRef != "" {
-			fmt.Fprintf(w, "       See: %s\n", f.DocRef)
-		}
-	}
-}

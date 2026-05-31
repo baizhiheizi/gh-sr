@@ -50,7 +50,7 @@ Welcome to the `gh sr` documentation. `gh sr` is a GitHub CLI extension for mana
 
 ## doctor
 
-*{ Document the doctor command: what it checks (config validation, GitHub API access, SSH connectivity, Docker for agentic, dnsmasq for Linux Docker), --strict and --fix flags. }*
+*{ Document the doctor command: what it checks (config validation, GitHub API access, SSH connectivity, container-mode Docker/privileged on Linux, inner dockerd/AWF for profile: agentic), --strict and --fix flags. }*
 
 ## service
 

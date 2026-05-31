@@ -28,38 +28,32 @@ flowchart LR
 
 ## Where runners run
 
-**Mode** (`native` vs `docker`) is resolved per runner. If you omit `mode`, Linux hosts default to **docker**; Windows and macOS default to **native**. You can override with `runners[].mode`.
+**Runner mode** (`native` vs `container`) is resolved per runner via `runners[].runner_mode`. The default is **`native`**. Set **`runner_mode: container`** for privileged Docker-in-Docker (DinD) isolation. **`profile: agentic` always implies `container` mode** — see [Agentic Workflows](guides/agentic-workflows.md).
 
-| Host OS | Default mode | Where the workload runs |
-|--------|--------------|-------------------------|
-| Linux | `docker` | Docker on that host: container name `gh-runner-<instance>`, image `ghcr.io/actions/actions-runner:latest`. gh sr starts it with `config.sh --unattended` (once per container) then `run.sh`, using `ACTIONS_RUNNER_INPUT_*` env vars. On non-Windows hosts the container typically mounts the Docker socket for workflow `docker` steps. |
-| Linux | `native` (if set) | Files under `~/.gh-sr/runners/<instance>`; process via `run.sh` and a PID file. |
-| Windows | `native` | `%USERPROFILE%\.gh-sr\runners\<instance>`; process via `run.cmd` and a PID file. |
-| Windows | `docker` (if set) | Same Docker image on Docker Desktop over the same SSH connection as native Windows runners. |
-| macOS | `native` | `~/.gh-sr/runners/<instance>`. |
-| macOS | `docker` (if set) | Same Linux runner image as on Linux; requires Docker Desktop, OrbStack, or Colima with a working `docker` CLI. |
+| Host OS | Typical setup | Where the workload runs |
+|--------|---------------|-------------------------|
+| Linux | `runner_mode: native` (default) | Files under `~/.gh-sr/runners/<instance>`; process via `run.sh` and a PID file (or systemd when installed). |
+| Linux | `runner_mode: container` or `profile: agentic` | Privileged outer container `gh-sr-<instance>` with an inner `dockerd`; image `gh-sr/agentic-runner:<version>` built locally by `gh sr setup`. gh-aw, AWF, DNS, and tooling live inside the image. |
+| Windows | `runner_mode: native` (default) | `%USERPROFILE%\.gh-sr\runners\<instance>`; process via `run.cmd` and a PID file. |
+| macOS | `runner_mode: native` (default) | `~/.gh-sr/runners/<instance>`. |
 
-**Instances:** `count` creates separate runners named `<name>-1`, `<name>-2`, … on the same host, each with its own directory (native) or container (docker).
+**Instances:** `count` creates separate runners named `<name>-1`, `<name>-2`, … on the same host, each with its own directory (native) or container (container mode).
 
 ```mermaid
 flowchart TB
   subgraph linuxHost [Linux_host]
-    ld[Default_docker]
-    ln[Explicit_native]
-    ld --> c1[Container_gh_runner_name_1]
-    ln --> d1[Dir_HOME_gh sr_runners_name_1]
+    ln[runner_mode_native]
+    lc[runner_mode_container_or_profile_agentic]
+    ln --> d1[Dir_HOME_gh_sr_runners_name_1]
+    lc --> c1[Container_gh_sr_name_1_with_inner_dockerd]
   end
   subgraph winHost [Windows_host]
-    wn[Default_native]
-    wd[Explicit_docker]
-    wn --> wd1[Dir_USERPROFILE_gh sr_runners_name_1]
-    wd --> wc1[Docker_Desktop_container]
+    wn[runner_mode_native]
+    wn --> wd1[Dir_USERPROFILE_gh_sr_runners_name_1]
   end
   subgraph macHost [macOS_host]
-    mn[Default_native]
-    md[Explicit_docker]
-    mn --> md1[Dir_HOME_gh sr_runners_name_1]
-    md --> mc1[Docker_Linux_container]
+    mn[runner_mode_native]
+    mn --> md1[Dir_HOME_gh_sr_runners_name_1]
   end
 ```
 
@@ -86,18 +80,18 @@ sequenceDiagram
 
 | Command | Behavior |
 |---------|----------|
-| `gh sr setup` | Install/configure runner software or Docker image pull on the host. For **docker** mode on a given host, only the **first** matching runner row runs host-level Docker setup; additional docker-mode runners on that host skip duplicate setup. |
-| `gh sr up` / `gh sr down` | Start or stop each instance (native process or container). |
+| `gh sr setup` | Install/configure runner software on the host. For **container** mode, builds the local `gh-sr/agentic-runner` image (if needed) and creates outer runner containers. |
+| `gh sr up` / `gh sr down` | Start or stop each instance (native process or outer container). |
 | `gh sr restart` | `down` then `up`; stop errors are ignored before start. |
-| `gh sr update` | Remove local runner registration (native) or container (docker), then setup and start again—use when upgrading the runner stack. |
+| `gh sr update` | Remove local runner registration (native) or outer container (container mode), then setup and start again—use when upgrading the runner stack. |
 | `gh sr cleanup` | Deletes **offline** runners from the GitHub API only; it does not remove local install dirs or Docker containers. |
-| `gh sr service install` / `uninstall` / `status` | **Native** runners only: install OS autostart (systemd on Linux, LaunchAgent on macOS, scheduled task at logon on Windows). **Docker** rows are skipped; containers already use Docker’s `--restart unless-stopped`. After install, `gh sr up` and `gh sr down` start/stop the same supervisor instead of a bare `nohup` / Win32 process. All three service commands dispatch **one SSH connection per host concurrently**, so they complete in roughly the time it takes to reach the slowest single host; output order across hosts is non-deterministic. |
-| `gh sr doctor` | Read-only checks: local paths, config, GitHub API, SSH targets, Docker vs native prerequisites. Use `--strict` to treat **WARN** as failure. Host SSH checks run **concurrently** (one goroutine per host), and GitHub API checks (repos and orgs) are also issued concurrently; results in both sections are printed in sorted order. |
+| `gh sr service install` / `uninstall` / `status` | **Native** runners only: install OS autostart (systemd on Linux, LaunchAgent on macOS, scheduled task at logon on Windows). **Container** rows are skipped; outer containers use Docker’s `--restart unless-stopped`. After install, `gh sr up` and `gh sr down` start/stop the same supervisor instead of a bare `nohup` / Win32 process. All three service commands dispatch **one SSH connection per host concurrently**, so they complete in roughly the time it takes to reach the slowest single host; output order across hosts is non-deterministic. |
+| `gh sr doctor` | Read-only checks: local paths, config, GitHub API, SSH targets, native vs container prerequisites (scoped to filtered runners). Use `--strict` to treat **WARN** as failure; use `--fix` to re-run `setup` and doctor after failures. Host SSH checks run **concurrently** (one goroutine per host), and GitHub API checks (repos and orgs) are also issued concurrently; results in both sections are printed in sorted order. |
 
 ```mermaid
 flowchart TD
   setup[gh sr_setup] --> mode{Mode}
-  mode -->|docker| dock[Ensure_Docker_and_pull_image]
+  mode -->|container| dock[Ensure_Docker_build_image_create_containers]
   mode -->|native| nat[Download_configure_actions_runner]
   up[gh sr_up] --> start[Start_instances]
   down[gh sr_down] --> stop[Stop_instances]
@@ -110,13 +104,13 @@ flowchart TD
 **`gh sr status`** and **`gh sr dashboard`** both:
 
 1. Connect to each host **concurrently** (or mark instances **unreachable** if connection fails) — all SSH connections are opened in parallel so the command completes in roughly the time it takes to reach the slowest host.
-2. Ask the host whether each instance is **running** or **stopped** (native: PID file + process check; docker: `docker inspect`).
-3. Call the **GitHub API** for each repo **concurrently** to match runner **names** and the runner’s **OS** (from the API’s `os` field vs native vs docker mode) so two config rows with the same instance name on different platforms do not show each other’s GitHub state.
+2. Ask the host whether each instance is **running** or **stopped** (native: PID file + process check; container: `docker inspect` on `gh-sr-<instance>`).
+3. Call the **GitHub API** for each repo **concurrently** to match runner **names** and the runner’s **OS** (from the API’s `os` field vs native vs container mode) so two config rows with the same instance name on different platforms do not show each other’s GitHub state.
 
 **`gh sr logs <name>`** looks up the runner block by **base name** or a full **instance** name (`name-1`, `name-2`, …), connects to the host, then tails logs for that instance. Use **`--host`** when the same instance name exists on more than one machine.
 
 - **Native** — Last lines of `runner.log` under that instance’s directory (`~/.gh-sr/runners/<instance>` on Linux/macOS, or `%USERPROFILE%\.gh-sr\runners\<instance>` on Windows). On Windows, if that file is missing or empty, gh sr tails the newest `*.log` under `_diag` in the same directory.
-- **Docker** — Last lines from `docker logs` for container `gh-runner-<instance>`.
+- **Container** — Last lines from `docker logs` for outer container `gh-sr-<instance>`.
 
 If `count` is greater than 1, pass the specific instance (for example `myapp-1`) so logs match the right directory or container.
 
@@ -138,12 +132,12 @@ flowchart LR
 
 ## Autostart and reboot
 
-**Docker mode:** `docker run` uses **`--restart unless-stopped`**. If the container was **running** when the host shut down, it is typically started again when the Docker daemon comes up after reboot. **`gh sr down`** runs `docker stop`; a **stopped** container is **not** brought back on boot until you run **`gh sr up`** (or start the container another way).
+**Container mode:** outer containers use **`--restart unless-stopped`**. If the container was **running** when the host shut down, it is typically started again when the Docker daemon comes up after reboot. **`gh sr down`** runs `docker stop`; a **stopped** container is **not** brought back on boot until you run **`gh sr up`** (or start the container another way).
 
 **Native mode:** A normal **`gh sr up`** starts the listener as a background process that **does not** survive reboot. Install autostart once per instance:
 
 ```bash
-gh sr service install              # all runners (native only; docker rows are skipped)
+gh sr service install              # all runners (native only; container rows are skipped)
 gh sr service install myrunner     # one runner block
 gh sr service install --system     # Linux only: unit in /etc/systemd/system (needs passwordless sudo or root SSH)
 gh sr service status
