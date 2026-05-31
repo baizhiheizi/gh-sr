@@ -669,18 +669,194 @@ func TestContainerImageLayoutRevision_stable(t *testing.T) {
 	}
 }
 
-func TestFormatContainerImageBuild(t *testing.T) {
+// TestResolveAbsoluteRunnerDir verifies path resolution for container state dirs.
+func TestResolveAbsoluteRunnerDir(t *testing.T) {
 	t.Parallel()
-	if got := formatContainerImageBuild("not installed", "aaa", "bbb"); got != "-" {
-		t.Errorf("not installed: got %q", got)
+	cases := []struct {
+		name    string
+		os      string
+		mockFn  func(cmd string) (string, error)
+		want    string
+		wantErr bool
+	}{
+		{
+			name: "windows path returns as-is (no $HOME expansion)",
+			os:   "windows",
+			mockFn: func(cmd string) (string, error) {
+				// Windows paths use $env:USERPROFILE, not $HOME, so no Run call
+				return "", assertCalledError()
+			},
+			want: `$env:USERPROFILE\.gh-sr\runners\ci-1`,
+		},
+		{
+			name: "linux relative resolves via echo",
+			os:   "linux",
+			mockFn: func(cmd string) (string, error) {
+				if cmd == "echo $HOME" {
+					return "/home/u", nil
+				}
+				return "", nil
+			},
+			want: "/home/u/.gh-sr/runners/ci-1",
+		},
+		{
+			name: "echo fails",
+			os:   "linux",
+			mockFn: func(cmd string) (string, error) {
+				if cmd == "echo $HOME" {
+					return "", assertCalledError()
+				}
+				return "", nil
+			},
+			wantErr: true,
+		},
 	}
-	if got := formatContainerImageBuild("running", "aaa", ""); got != "?" {
-		t.Errorf("missing label: got %q", got)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			h := host.NewHost("test", config.HostConfig{OS: tc.os, Arch: "amd64", Addr: "local"})
+			mock := &containerMockExecutor{runFn: tc.mockFn}
+			h.SetConn(mock)
+
+			got, err := resolveAbsoluteRunnerDir(h, "ci-1")
+			if tc.wantErr {
+				if err == nil {
+					t.Errorf("expected error, got %q", got)
+				}
+				return
+			}
+			if err != nil {
+				t.Errorf("unexpected error: %v", err)
+				return
+			}
+			if got != tc.want {
+				t.Errorf("resolveAbsoluteRunnerDir = %q, want %q", got, tc.want)
+			}
+		})
 	}
-	if got := formatContainerImageBuild("running", "abcd12345678", "abcd12345678"); got != "ok (abcd1234)" {
-		t.Errorf("match: got %q", got)
+}
+
+func TestContainerRunnerPresent(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name  string
+		os    string
+		mock  *containerMockExecutor
+		inst  string
+		want  bool
+	}{
+		{
+			name: "present",
+			os:   "linux",
+			mock: &containerMockExecutor{output: "yes"},
+			inst: "ci-1",
+			want: true,
+		},
+		{
+			name: "absent",
+			os:   "linux",
+			mock: &containerMockExecutor{output: "no"},
+			inst: "ci-1",
+			want: false,
+		},
+		{
+			name: "command fails",
+			os:   "linux",
+			mock: &containerMockExecutor{runErr: assertCalledError()},
+			inst: "ci-1",
+			want: false,
+		},
 	}
-	if got := formatContainerImageBuild("running", "aaa", "bbbbbbbbbbbb"); got != "stale (bbbbbbbb)" {
-		t.Errorf("stale: got %q", got)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			h := host.NewHost("test", config.HostConfig{OS: tc.os, Arch: "amd64", Addr: "local"})
+			h.SetConn(tc.mock)
+			got := containerRunnerPresent(h, tc.inst)
+			if got != tc.want {
+				t.Errorf("containerRunnerPresent = %v, want %v", got, tc.want)
+			}
+		})
 	}
+}
+
+func TestContainerImageExists(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name     string
+		os       string
+		mock     *containerMockExecutor
+		imageTag string
+		want     bool
+	}{
+		{
+			name:     "exists",
+			os:       "linux",
+			mock:     &containerMockExecutor{output: "yes"},
+			imageTag: "gh-sr/agentic-runner:2.320.0",
+			want:     true,
+		},
+		{
+			name:     "not found",
+			os:       "linux",
+			mock:     &containerMockExecutor{output: "no"},
+			imageTag: "gh-sr/agentic-runner:2.320.0",
+			want:     false,
+		},
+		{
+			name:     "command fails",
+			os:       "linux",
+			mock:     &containerMockExecutor{runErr: assertCalledError()},
+			imageTag: "gh-sr/agentic-runner:2.320.0",
+			want:     false,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			h := host.NewHost("test", config.HostConfig{OS: tc.os, Arch: "amd64", Addr: "local"})
+			h.SetConn(tc.mock)
+			got, err := containerImageExists(h, tc.imageTag)
+			if err != nil {
+				t.Errorf("unexpected error: %v", err)
+				return
+			}
+			if got != tc.want {
+				t.Errorf("containerImageExists = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+// containerMockExecutor for container tests.
+type containerMockExecutor struct {
+	output string
+	runErr error
+
+	runFn func(cmd string) (string, error)
+}
+
+func (m *containerMockExecutor) Run(cmd string) (string, error) {
+	if m.runFn != nil {
+		return m.runFn(cmd)
+	}
+	return m.output, m.runErr
+}
+
+func (m *containerMockExecutor) Upload(localPath, remotePath string) error {
+	return nil
+}
+
+func (m *containerMockExecutor) Close() error {
+	return nil
+}
+
+var errCalled = calledErrorErr{}
+
+type calledErrorErr struct{}
+
+func (calledErrorErr) Error() string { return "called" }
+
+func assertCalledError() error {
+	return errCalled
 }
