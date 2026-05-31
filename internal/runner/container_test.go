@@ -227,18 +227,29 @@ func TestAgenticRunnerInnerDockerDNSBaked(t *testing.T) {
 }
 
 // TestAgenticRunnerEntrypointStartsDockerdOnce guards against re-introducing the
-// runtime daemon.json rewrite + dockerd restart dance (a key instability source).
+// dockerd RESTART dance (a key instability source): write daemon.json, then kill and
+// restart dockerd to pick it up. The entrypoint MAY adjust the baked daemon.json for
+// collision avoidance, but only ONCE and strictly BEFORE the single dockerd start, so
+// the daemon reads the final config on its one and only start.
 func TestAgenticRunnerEntrypointStartsDockerdOnce(t *testing.T) {
 	t.Parallel()
-	if strings.Contains(agenticRunnerEntrypoint, "> /etc/docker/daemon.json") ||
-		strings.Contains(agenticRunnerEntrypoint, "tee /etc/docker/daemon.json") {
-		t.Fatal("entrypoint must not write daemon.json at runtime; it is baked into the image")
-	}
+	// Exactly one dockerd invocation is the strong guard against the restart dance: a
+	// restart would require a second `dockerd \` launch. (We intentionally do NOT match
+	// the substring "restart dockerd" here — the entrypoint's own comments explain why
+	// the historical restart dance is forbidden, and matching that text would be a
+	// false positive.)
 	if c := strings.Count(agenticRunnerEntrypoint, "dockerd \\"); c != 1 {
 		t.Fatalf("entrypoint should start dockerd exactly once, found %d invocations", c)
 	}
-	if strings.Contains(agenticRunnerEntrypoint, "Restart dockerd") {
-		t.Fatal("entrypoint must not restart dockerd to pick up DNS changes (baked at build time)")
+	// Any daemon.json write must precede the single dockerd start (no post-start
+	// rewrite + restart). Compare the position of the write redirection to the dockerd
+	// invocation; the comment block mentions daemon.json too, so anchor on the actual
+	// `> /etc/docker/daemon.json` redirect rather than a bare path reference.
+	dockerdIdx := strings.Index(agenticRunnerEntrypoint, "dockerd \\")
+	if writeIdx := strings.Index(agenticRunnerEntrypoint, "> /etc/docker/daemon.json"); writeIdx >= 0 {
+		if dockerdIdx < 0 || writeIdx > dockerdIdx {
+			t.Fatal("daemon.json may only be written BEFORE the single dockerd start (no post-start rewrite/restart)")
+		}
 	}
 }
 
@@ -755,11 +766,11 @@ func TestResolveAbsoluteRunnerDir(t *testing.T) {
 func TestContainerRunnerPresent(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
-		name  string
-		os    string
-		mock  *containerMockExecutor
-		inst  string
-		want  bool
+		name string
+		os   string
+		mock *containerMockExecutor
+		inst string
+		want bool
 	}{
 		{
 			name: "present",

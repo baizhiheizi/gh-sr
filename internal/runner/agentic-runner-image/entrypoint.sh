@@ -60,7 +60,79 @@ if [ -f /sys/fs/cgroup/cgroup.controllers ]; then
         echo "[entrypoint] WARNING: failed to enable cgroup controllers (continuing anyway)"
 fi
 
-# ── 2. Inner dockerd (single start; DNS baked into /etc/docker/daemon.json) ─────
+# ── 2. Inner-bridge subnet collision avoidance (pre-start; no restart) ──────────
+# The image bakes a deterministic inner-bridge subnet into /etc/docker/daemon.json
+# (10.200.0.1/24) and the dnsmasq config. 10.200.0.0/24 is chosen because it sits
+# OUTSIDE Docker's default address pools (172.16.0.0/12 and 192.168.0.0/16), so it
+# does not normally collide with anything Docker auto-allocates — including the host
+# default bridge 172.17.0.0/16 that the outer runner container's eth0 usually sits on.
+#
+# WHY THIS CHECK EXISTS (defence in depth):
+#   The *outer* runner container's networks are decided by whoever runs the image
+#   (the host's Docker / orchestrator), NOT by us. A custom host could attach the
+#   runner container to an arbitrary subnet — conceivably even 10.200.0.0/24, or a
+#   broad 10.0.0.0/8. If the baked inner-bridge subnet overlapped one of the runner
+#   container's OWN interfaces, the inner docker0 would duplicate a directly-attached
+#   or gateway IP and capture that route. Outbound traffic would then be black-holed
+#   into the inner bridge: the host network stays fine, but every connection made
+#   inside the runner (agent → model provider, git, package installs) crawls or times
+#   out. This is exactly the failure that a hardcoded 172.17.0.1 bip caused, and the
+#   reason we no longer pin to the default-bridge subnet.
+#
+#   Docker's own IPAM auto-avoids these conflicts when `bip` is unset, but we pin
+#   `bip` for a deterministic dnsmasq listen address — which bypasses that safety
+#   net. This block re-adds it: it validates the baked gateway against the container's
+#   CURRENT interfaces and, only on conflict, rewrites daemon.json + the dnsmasq
+#   config to the first collision-free candidate.
+#
+# CRITICAL ORDERING: this runs BEFORE the single dockerd start below. We never write
+# daemon.json after dockerd is up and we never restart dockerd — the daemon reads the
+# final config on its one and only start. (The old "write daemon.json then kill +
+# restart dockerd" dance was a major instability source; do not reintroduce it.)
+DEFAULT_BRIDGE_GW="10.200.0.1"
+# Candidates are tried in order; all are /24s outside the host's default bridge.
+BRIDGE_CANDIDATES=(10.200.0.1 10.201.0.1 10.210.0.1 192.168.221.1 172.28.0.1 172.20.0.1)
+
+# subnet_is_free <gateway-ip>: true when the IP must be forwarded via a gateway
+# rather than being inside a subnet directly attached to this container. `ip route
+# get` returns an on-link route ("dev <if>", no "via") for an address inside a local
+# subnet or equal to a directly-attached gateway, and a "via <gw>" route otherwise.
+# docker0 does not exist yet (dockerd has not started), so this only tests against the
+# runner container's pre-existing interfaces (eth0, lo, ...).
+subnet_is_free() {
+    ip -4 route get "$1" 2>/dev/null | head -n1 | grep -q ' via '
+}
+
+BRIDGE_GW=""
+for _cand in "${BRIDGE_CANDIDATES[@]}"; do
+    if subnet_is_free "${_cand}"; then
+        BRIDGE_GW="${_cand}"
+        break
+    fi
+done
+# Last resort: if every candidate looked busy (or `ip route` is unavailable), keep the
+# documented default rather than failing the whole runner.
+BRIDGE_GW="${BRIDGE_GW:-$DEFAULT_BRIDGE_GW}"
+
+if [ "${BRIDGE_GW}" != "${DEFAULT_BRIDGE_GW}" ]; then
+    echo "[entrypoint] WARNING: baked inner-bridge gateway ${DEFAULT_BRIDGE_GW} overlaps an existing interface; using ${BRIDGE_GW} instead"
+    # One-shot rewrite, strictly before the dockerd start below (no restart).
+    cat > /etc/docker/daemon.json <<EOF
+{
+  "bip": "${BRIDGE_GW}/24",
+  "dns": ["${BRIDGE_GW}", "8.8.8.8"]
+}
+EOF
+    # Update only the gateway-bearing directives; the upstream `server=` lines stay.
+    sed -i \
+        -e "s#^address=/host.docker.internal/.*#address=/host.docker.internal/${BRIDGE_GW}#" \
+        -e "s#^listen-address=.*#listen-address=${BRIDGE_GW}#" \
+        /etc/dnsmasq.d/gh-sr.conf
+else
+    echo "[entrypoint] inner-bridge gateway ${BRIDGE_GW} (baked default; no interface conflict detected)"
+fi
+
+# ── 2b. Inner dockerd (single start; DNS baked into /etc/docker/daemon.json) ────
 echo "[entrypoint] starting dockerd..."
 dockerd \
     --data-root="${DOCKER_DATA_ROOT}" \
