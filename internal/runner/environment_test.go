@@ -48,7 +48,7 @@ func TestInnerHostDockerInternalReadyCommand(t *testing.T) {
 		"docker exec",
 		"gh-sr-agentic-1",
 		"host.docker.internal",
-		"172.17.0.1",
+		"10.200.0.1",
 		"127.*",
 	} {
 		if !strings.Contains(cmd, want) {

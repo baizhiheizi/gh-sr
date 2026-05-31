@@ -30,7 +30,7 @@
 # or config rewriting is involved — per-job cleanup is the job hooks' responsibility.
 #
 # host.docker.internal resolution is handled deterministically by the image-baked Docker daemon DNS
-# (pinned default-bridge gateway 172.17.0.1 + dnsmasq; see daemon.json / dnsmasq-gh-sr.conf), so the
+# (pinned default-bridge gateway 10.200.0.1 + dnsmasq; see daemon.json / dnsmasq-gh-sr.conf), so the
 # shim no longer injects --add-host or rewrites generated MCP config URLs.
 #
 # All other docker invocations pass through untouched.

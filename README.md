@@ -95,7 +95,7 @@ runners:
 
 `profile: agentic` always runs in **container mode**: each runner instance is a privileged Docker-in-Docker container with its own inner `dockerd`, network namespace, MCP gateway port, and `/tmp/gh-aw`, and every job runs from a pristine inner state (via the runner's job hooks). This is what makes multiple concurrent agentic runners stable on one machine.
 
-The **host only needs Docker** (with privileged-container support). Everything `gh-aw` needs — the `gh-aw` CLI, AWF, `host.docker.internal` DNS, the tool cache, language runtimes — lives inside the image `gh sr` builds during setup. There is no host dnsmasq, `/etc/hosts`, sudoers, or `RUNNER_TEMP` setup to do; `host.docker.internal` resolution is baked into the image (pinned bridge gateway `172.17.0.1` + bundled dnsmasq). `gh sr doctor` verifies the inner Docker, registration, DNS, and AWF hygiene.
+The **host only needs Docker** (with privileged-container support). Everything `gh-aw` needs — the `gh-aw` CLI, AWF, `host.docker.internal` DNS, the tool cache, language runtimes — lives inside the image `gh sr` builds during setup. There is no host dnsmasq, `/etc/hosts`, sudoers, or `RUNNER_TEMP` setup to do; `host.docker.internal` resolution is baked into the image (pinned bridge gateway `10.200.0.1` + bundled dnsmasq). `gh sr doctor` verifies the inner Docker, registration, DNS, and AWF hygiene.
 
 For details, see the [Agentic Workflows guide](https://an-lee.github.io/gh-sr/guides/agentic-workflows/).
 

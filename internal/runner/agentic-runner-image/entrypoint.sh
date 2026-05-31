@@ -4,9 +4,12 @@
 # Startup (deterministic, single dockerd start):
 #   1. Enable cgroup v2 nesting (DinD requirement).
 #   2. Start the inner dockerd ONCE. host.docker.internal DNS is baked into the
-#      image (/etc/docker/daemon.json pins the default-bridge gateway to 172.17.0.1
+#      image (/etc/docker/daemon.json pins the default-bridge gateway to 10.200.0.1
 #      and points container DNS at the bundled dnsmasq) — no runtime daemon.json
-#      rewrite or dockerd restart.
+#      rewrite or dockerd restart. 10.200.0.1 is used (not 172.17.0.1) because the
+#      outer runner container sits on the host's default Docker bridge
+#      (172.17.0.0/16); a 172.17.x inner bridge would collide with the container's
+#      own gateway/eth0 subnet and black-hole all outbound traffic.
 #   3. Start dnsmasq from its baked config so host.docker.internal resolves inside
 #      inner containers and external DNS is forwarded upstream.
 #   4. Install the AWF service-routing bypass (one-shot; lets AWF agents reach
@@ -82,9 +85,9 @@ done
 
 # ── 3. host.docker.internal via dnsmasq (baked config) ──────────────────────────
 # gh-aw agent containers reach the MCP gateway via http://host.docker.internal:<port>.
-# dnsmasq (config baked at build time) listens on the pinned bridge gateway 172.17.0.1
+# dnsmasq (config baked at build time) listens on the pinned bridge gateway 10.200.0.1
 # and answers host.docker.internal there; daemon.json already points inner containers'
-# DNS at 172.17.0.1. dockerd is NOT restarted.
+# DNS at 10.200.0.1. dockerd is NOT restarted.
 echo "[entrypoint] starting dnsmasq..."
 if pgrep -x dnsmasq &>/dev/null; then
     kill -HUP "$(pgrep -x dnsmasq)" 2>/dev/null || true

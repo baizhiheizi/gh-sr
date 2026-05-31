@@ -118,9 +118,13 @@ func (e *ContainerEnvironment) Destroy() error {
 // from dnsutils in the image), so it needs no child-container image pull. This is the DNS
 // dependency gh-aw's agent containers rely on; gh sr doctor performs the fuller
 // child-container check (see agentic.ValidateContainerInnerNetwork).
+//
+// The gateway is pinned to 10.200.0.1 (see daemon.json / dnsmasq-gh-sr.conf) — NOT
+// 172.17.0.1, which would collide with the host's default Docker bridge that the outer
+// runner container itself sits on.
 func innerHostDockerInternalReadyCommand(instanceName string) string {
 	q := posixSingleQuote(containerName(instanceName))
-	return "docker exec " + q + ` sh -c 'ip=$(dig +short host.docker.internal @172.17.0.1 2>/dev/null | head -n1); case "$ip" in "" | 127.* | ::1) exit 1 ;; *) exit 0 ;; esac'`
+	return "docker exec " + q + ` sh -c 'ip=$(dig +short host.docker.internal @10.200.0.1 2>/dev/null | head -n1); case "$ip" in "" | 127.* | ::1) exit 1 ;; *) exit 0 ;; esac'`
 }
 
 // containerAwaitHealthy polls until the runner container is ready to accept jobs or the

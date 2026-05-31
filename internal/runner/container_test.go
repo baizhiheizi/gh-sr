@@ -196,17 +196,33 @@ func TestAgenticRunnerDockerWrapperHeaderDocumentsHooks(t *testing.T) {
 // inner containers never use loopback DNS (which would point at the child container).
 func TestAgenticRunnerInnerDockerDNSBaked(t *testing.T) {
 	t.Parallel()
-	if !strings.Contains(agenticRunnerDaemonJSON, `"bip": "172.17.0.1/24"`) {
+	if !strings.Contains(agenticRunnerDaemonJSON, `"bip": "10.200.0.1/24"`) {
 		t.Fatalf("daemon.json should pin the default-bridge gateway, got:\n%s", agenticRunnerDaemonJSON)
 	}
-	if !strings.Contains(agenticRunnerDaemonJSON, `"172.17.0.1"`) {
+	if !strings.Contains(agenticRunnerDaemonJSON, `"10.200.0.1"`) {
 		t.Fatalf("daemon.json should point inner DNS at the bridge gateway, got:\n%s", agenticRunnerDaemonJSON)
 	}
 	if strings.Contains(agenticRunnerDaemonJSON, "127.0.0.1") {
 		t.Fatal("inner Docker DNS must not be loopback (points at the child container itself)")
 	}
-	if !strings.Contains(agenticRunnerDnsmasqConf, "address=/host.docker.internal/172.17.0.1") {
+	// The inner bridge must NOT live on 172.17.x: that is the host's default Docker
+	// bridge subnet the outer runner container sits on, and overlapping it black-holes
+	// the container's outbound traffic (see daemon.json / dnsmasq comments).
+	if strings.Contains(agenticRunnerDaemonJSON, "172.17.0.") {
+		t.Fatalf("daemon.json bip must not overlap the host default bridge (172.17.0.0/16), got:\n%s", agenticRunnerDaemonJSON)
+	}
+	if !strings.Contains(agenticRunnerDnsmasqConf, "address=/host.docker.internal/10.200.0.1") {
 		t.Fatalf("dnsmasq config should answer host.docker.internal with the bridge gateway, got:\n%s", agenticRunnerDnsmasqConf)
+	}
+	// Inspect only the active directives (ignore explanatory comments) to ensure the
+	// bridge does not overlap the host default bridge 172.17.0.0/16.
+	for _, line := range strings.Split(agenticRunnerDnsmasqConf, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "#") {
+			continue
+		}
+		if strings.Contains(line, "172.17.0.") {
+			t.Fatalf("dnsmasq directive must not overlap the host default bridge (172.17.0.0/16): %q", line)
+		}
 	}
 }
 
