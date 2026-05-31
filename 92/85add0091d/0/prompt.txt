@@ -1,19 +1,16 @@
-Stage the changes you worked on and create a commit for this branch.
+Create a commit for this branch.
 - Current branch: main.
 - Base branch: main.
-- Stage the changes you worked on.
-- If there are unrelated files or changes, exclude them.
+- Commit only the already-staged files listed below.
+- The staged file list below is authoritative; do not re-check it.
+- Do not stage additional files; commit only the staged portions.
 - Write a concise commit message.
 - Do not push.
-- Do not include unrelated files in the commit.
-<timestamp>Sunday, May 31, 2026, 8:06 PM (UTC+8)</timestamp>
 
-Execute the selected diff-tab commit action.
-
----
-
-Let's add the collision check. And carefully document it.
-
----
+Staged files to commit:
+- docs/content/guides/agentic-workflows.md (modified)
+- internal/runner/agentic-runner-image/entrypoint.sh (modified)
+- internal/runner/container_test.go (modified)
+- internal/runner/environment.go (modified)
 
 Execute the selected diff-tab commit action.
