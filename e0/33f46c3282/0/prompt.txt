@@ -13,3 +13,7 @@ To-do's from the plan have already been created. Do not create them again. Mark 
 ---
 
 Fit them.
+
+---
+
+Execute the selected diff-tab commit action.
