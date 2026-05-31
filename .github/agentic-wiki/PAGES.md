@@ -62,7 +62,7 @@ Welcome to the `gh sr` documentation. `gh sr` is a GitHub CLI extension for mana
 
 ## runners.yml
 
-*{ Document the runners.yml structure: top-level GitHub config, hosts map (addr, os, arch, windows_ps, docker_socket), runners list (name, repo/org, group, host, count, labels, ephemeral, profile, runner_mode, container_runner_image, docker_network_mode, docker_cap_add). Include that profile: agentic always implies runner_mode: container and rejects runner_mode: native. }*
+*{ Document the runners.yml structure: top-level GitHub config, hosts map (addr, os, arch, windows_ps), runners list (name, repo/org, group, host, count, labels, ephemeral, profile, runner_mode, container_runner_image.extra_apt_packages). Include that profile: agentic always implies runner_mode: container and rejects runner_mode: native. }*
 
 ## Environment File
 
@@ -82,11 +82,11 @@ Welcome to the `gh sr` documentation. `gh sr` is a GitHub CLI extension for mana
 
 ## Prerequisites
 
-*{ Document what each host needs: SSH access, runner OS dependencies, Docker for container mode (with DinD), and for agentic profile on Linux: dnsmasq for host.docker.internal DNS resolution. }*
+*{ Document what each host needs: SSH access, native runner OS dependencies (curl/tar or PowerShell), and for `runner_mode: container` / `profile: agentic` on Linux: Docker with `--privileged` support (DinD). Agentic DNS and AWF tooling are baked into the runner image — no host dnsmasq setup. }*
 
-## Linux Docker DNS
+## Container mode (Linux)
 
-*{ Document the Linux dnsmasq requirement for agentic workflows: why it's needed (host.docker.internal resolution), how to configure it (dnsmasq config with upstream server= directives), and the critical warning about not mapping host.docker.internal to 127.0.0.1 in /etc/hosts. }*
+*{ Document Linux container-mode requirements: Docker CLI/daemon for the SSH user, `--privileged` support, outer `gh-sr-<instance>` containers, and that agentic `host.docker.internal` DNS is baked into the image (pinned bridge gateway + inner dnsmasq). Container mode is Linux-only. }*
 
 ## Autostart
 
@@ -145,7 +145,7 @@ Prefer reading wiki documentation over relying on pre-trained knowledge.
 |  Runner-Modes: native vs container mode differences
 |Host-Setup: Prerequisites and per-platform setup
 |  Prerequisites: SSH access, OS deps, Docker for container mode
-|  Linux-Docker-DNS: dnsmasq setup for host.docker.internal on Linux
+|  Container-Mode-Linux: Docker and privileged DinD requirements for runner_mode container and profile agentic
 |  Autostart: systemd, LaunchAgent, and scheduled task setup
 |Development: Building, testing, and local docs preview
 \`\`\`
@@ -179,7 +179,7 @@ You can serve this at `yoursite.com/llms.txt` or include it in your repository t
   - [Runner Modes](https://github.com/an-lee/gh-sr/wiki/Configuration-Reference#Runner-Modes): native vs container mode differences
 - [Host Setup](https://github.com/an-lee/gh-sr/wiki/Host-Setup): Prerequisites and per-platform setup
   - [Prerequisites](https://github.com/an-lee/gh-sr/wiki/Host-Setup#Prerequisites): SSH access, OS deps, Docker for container mode
-  - [Linux Docker DNS](https://github.com/an-lee/gh-sr/wiki/Host-Setup#Linux-Docker-DNS): dnsmasq setup for host.docker.internal on Linux
+  - [Container mode (Linux)](https://github.com/an-lee/gh-sr/wiki/Host-Setup#Container-Mode-Linux): Docker and privileged DinD requirements
   - [Autostart](https://github.com/an-lee/gh-sr/wiki/Host-Setup#Autostart): systemd, LaunchAgent, and scheduled task setup
 - [Development](https://github.com/an-lee/gh-sr/wiki/Development): Building, testing, and local docs preview
 \`\`\`

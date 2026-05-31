@@ -464,9 +464,9 @@ func doctorCmd() *cobra.Command {
 					fmt.Fprintf(w, "\nfix attempt completed with errors: %v\n", err)
 				} else {
 					fmt.Fprintln(w, "\nfix attempt completed successfully.")
-					fmt.Fprintln(w, "\n--- Re-running doctor after fix ---")
-					res = doctor.Run(w, cfgPath, envPath, cfg, cfgErr, gh, filterHost, filterRepo, strict)
 				}
+				fmt.Fprintln(w, "\n--- Re-running doctor after fix ---")
+				res = doctor.Run(w, cfgPath, envPath, cfg, cfgErr, gh, filterHost, filterRepo, strict)
 			}
 			if code := doctor.ExitCode(res, strict); code != 0 {
 				os.Exit(code)

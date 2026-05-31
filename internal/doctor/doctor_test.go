@@ -202,6 +202,65 @@ func TestHasContainerModeRunners(t *testing.T) {
 	}
 }
 
+type failIfRunExec struct {
+	t *testing.T
+}
+
+func (f failIfRunExec) Run(cmd string) (string, error) {
+	f.t.Fatalf("unexpected remote command: %s", cmd)
+	return "", nil
+}
+
+func (f failIfRunExec) Upload(string, string) error { return nil }
+func (f failIfRunExec) Close() error               { return nil }
+
+func TestRunHostChecks_ContainerOnlySkipsNative(t *testing.T) {
+	t.Parallel()
+	h := host.NewHost("mac", config.HostConfig{OS: "darwin", Addr: "user@mac"})
+	h.SetConn(failIfRunExec{t: t})
+	runners := []config.RunnerConfig{
+		{Name: "aw", Host: "mac", Repo: "o/r", Profile: "agentic"},
+	}
+	var buf strings.Builder
+	var r Result
+	runHostChecks(&buf, "mac", h, runners, &r)
+	out := buf.String()
+	if strings.Contains(out, "native:") {
+		t.Fatalf("container-only host should skip native checks, got:\n%s", out)
+	}
+}
+
+func TestRunHostChecks_NonLinuxContainerFails(t *testing.T) {
+	t.Parallel()
+	h := host.NewHost("mac", config.HostConfig{OS: "darwin", Addr: "user@mac"})
+	var buf strings.Builder
+	var r Result
+	runners := []config.RunnerConfig{
+		{Name: "aw", Host: "mac", Repo: "o/r", Profile: "agentic"},
+	}
+	runHostChecks(&buf, "mac", h, runners, &r)
+	if r.Fail != 1 {
+		t.Fatalf("expected one FAIL for container mode on darwin, got %+v", r)
+	}
+	if !strings.Contains(buf.String(), "only supported on Linux") {
+		t.Fatalf("expected linux-only container message, got:\n%s", buf.String())
+	}
+}
+
+func TestFilteredHostRunners_ExcludeContainerWhenRepoFiltered(t *testing.T) {
+	t.Parallel()
+	filtered := []config.RunnerConfig{
+		{Name: "n", Host: "h1", Repo: "o/one"},
+	}
+	hostRunners := runnersForHost(filtered, "h1")
+	if hasContainerModeRunners(hostRunners) {
+		t.Fatal("repo-filtered native-only slice should not enable container checks")
+	}
+	if !hasNativeModeRunners(hostRunners) {
+		t.Fatal("expected native checks for filtered native runner")
+	}
+}
+
 func TestRun_ConfigErrorSkipsGitHub(t *testing.T) {
 	t.Parallel()
 	var buf strings.Builder

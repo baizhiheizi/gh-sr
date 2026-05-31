@@ -191,21 +191,7 @@ func Run(w io.Writer, cfgPath, envPath string, cfg *config.Config, cfgErr error,
 
 			defer h.Close()
 			printLine(&hr.buf, sevOK, hostName, fmt.Sprintf("connected (%s)", addrSummary(hcfg.Addr)))
-			hostRunners := runnersForHost(runners, hostName)
-			if hasNativeModeRunners(hostRunners) {
-				checkNative(&hr.buf, hostName, h, &hr.r)
-				checkNativeRunnerInstall(&hr.buf, hostName, h, runners, &hr.r)
-				if h.OS == "linux" {
-					checkLinuxSudo(&hr.buf, hostName, h, &hr.r)
-				}
-			}
-			if h.OS == "linux" && hasContainerModeRunners(hostRunners) {
-				checkContainerHostPrereqs(&hr.buf, hostName, h, &hr.r)
-				checkContainerRunnerInstall(&hr.buf, hostName, h, runners, &hr.r)
-			}
-			if h.OS == "linux" && hasContainerAgenticRunners(hostRunners) {
-				checkContainerAgenticInnerHygiene(&hr.buf, hostName, h, runners, &hr.r)
-			}
+			runHostChecks(&hr.buf, hostName, h, runners, &hr.r)
 		}(i, hostName)
 	}
 	hostWg.Wait()
@@ -370,6 +356,28 @@ func hasContainerModeRunners(runners []config.RunnerConfig) bool {
 		}
 	}
 	return false
+}
+
+// runHostChecks runs native and/or container doctor checks for hostName using the
+// already-filtered runners slice (respects --host / --repo filters).
+func runHostChecks(w io.Writer, hostName string, h *host.Host, runners []config.RunnerConfig, r *Result) {
+	hostRunners := runnersForHost(runners, hostName)
+	if hasNativeModeRunners(hostRunners) {
+		checkNative(w, hostName, h, r)
+		checkNativeRunnerInstall(w, hostName, h, runners, r)
+		if h.OS == "linux" {
+			checkLinuxSudo(w, hostName, h, r)
+		}
+	}
+	if hasContainerModeRunners(hostRunners) {
+		checkContainerHostPrereqs(w, hostName, h, r)
+		if h.OS == "linux" {
+			checkContainerRunnerInstall(w, hostName, h, runners, r)
+			if hasContainerAgenticRunners(hostRunners) {
+				checkContainerAgenticInnerHygiene(w, hostName, h, runners, r)
+			}
+		}
+	}
 }
 
 func checkNativeRunnerInstall(w io.Writer, hostName string, h *host.Host, runners []config.RunnerConfig, r *Result) {

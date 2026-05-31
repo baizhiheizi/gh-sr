@@ -22,7 +22,7 @@ gh sr cleanup              # Remove offline/ghost runners from GitHub
 gh sr update [names...]    # Update runner binary (remove + setup + start)
 gh sr service install [--system] [names...]   # Native: OS autostart (systemd / launchd / task)
 gh sr service uninstall [names...]            # Remove gh sr-installed autostart
-gh sr service status [names...]               # Autostart + unit state (docker: policy note)
+gh sr service status [names...]               # Autostart + unit state (container: policy note)
 gh sr config path          # Print resolved config and ~/.gh-sr/env paths
 gh sr config show          # Print resolved configuration (token source summarized)
 gh sr config edit          # Edit resolved runners.yml in $VISUAL / $EDITOR
@@ -52,9 +52,9 @@ gh sr down enjoy-win-1
 `gh sr doctor` validates local paths, configuration, GitHub API access, and host prerequisites. Checks are scoped to runners matching `--host` / `--repo` filters:
 
 - **Native** (`runner_mode: native`): curl/tar (or PowerShell on Windows), runner install dirs, Linux passwordless sudo when needed for setup.
-- **Container** (`runner_mode: container` or `profile: agentic` on Linux): host Docker and `--privileged` support, each `gh-sr-<instance>` container, inner `dockerd`, registration, and (for agentic) inner AWF/DNS/hygiene.
+- **Container** (`runner_mode: container` or `profile: agentic` on Linux): host Docker and `--privileged` support, each `gh-sr-<instance>` container, inner `dockerd`, registration, and (for agentic) inner AWF/DNS/hygiene. On non-Linux hosts, doctor reports a FAIL if container-mode runners are in scope.
 
-By default only **FAIL** lines produce a non-zero exit. Use **`--strict`** to fail on **WARN** as well (useful in CI). Use **`--fix`** to re-run `gh sr setup` for filtered runners when doctor reports failures, then re-run doctor; the final exit code reflects the post-fix result.
+By default only **FAIL** lines produce a non-zero exit. Use **`--strict`** to fail on **WARN** as well (useful in CI). Use **`--fix`** to re-run `gh sr setup` when doctor reports failures, then always re-run doctor; the final exit code reflects the post-fix result.
 
 ## Quick start sequence
 
