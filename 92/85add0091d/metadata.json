@@ -1,0 +1,21 @@
+{
+  "cli_version": "dev",
+  "checkpoint_id": "9285add0091d",
+  "strategy": "manual-commit",
+  "branch": "main",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "docs/content/guides/agentic-workflows.md",
+    "internal/runner/agentic-runner-image/entrypoint.sh",
+    "internal/runner/container_test.go",
+    "internal/runner/environment.go"
+  ],
+  "sessions": [
+    {
+      "metadata": "/92/85add0091d/0/metadata.json",
+      "transcript": "/92/85add0091d/0/full.jsonl",
+      "content_hash": "/92/85add0091d/0/content_hash.txt",
+      "prompt": "/92/85add0091d/0/prompt.txt"
+    }
+  ]
+}

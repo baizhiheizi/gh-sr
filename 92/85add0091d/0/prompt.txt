@@ -1,0 +1,19 @@
+Stage the changes you worked on and create a commit for this branch.
+- Current branch: main.
+- Base branch: main.
+- Stage the changes you worked on.
+- If there are unrelated files or changes, exclude them.
+- Write a concise commit message.
+- Do not push.
+- Do not include unrelated files in the commit.
+<timestamp>Sunday, May 31, 2026, 8:06 PM (UTC+8)</timestamp>
+
+Execute the selected diff-tab commit action.
+
+---
+
+Let's add the collision check. And carefully document it.
+
+---
+
+Execute the selected diff-tab commit action.

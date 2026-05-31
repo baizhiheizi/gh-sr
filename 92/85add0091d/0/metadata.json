@@ -1,0 +1,35 @@
+{
+  "cli_version": "dev",
+  "checkpoint_id": "9285add0091d",
+  "session_id": "66a6e1c1-3b83-4dff-a26a-aebdbea5925e",
+  "strategy": "manual-commit",
+  "created_at": "2026-05-31T12:20:28.218890286Z",
+  "branch": "main",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "docs/content/guides/agentic-workflows.md",
+    "internal/runner/agentic-runner-image/entrypoint.sh",
+    "internal/runner/container_test.go",
+    "internal/runner/environment.go"
+  ],
+  "agent": "Cursor",
+  "model": "composer-2.5-fast",
+  "turn_id": "7996e3171a06",
+  "checkpoint_transcript_start": 42,
+  "transcript_lines_at_start": 42,
+  "session_metrics": {
+    "turn_count": 4
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-05-31T12:20:28.156460159Z",
+    "agent_lines": 104,
+    "agent_removed": 15,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 104,
+    "total_lines_changed": 119,
+    "agent_percentage": 100,
+    "metric_version": 2
+  }
+}
