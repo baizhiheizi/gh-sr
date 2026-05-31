@@ -1,0 +1,39 @@
+{
+  "cli_version": "dev",
+  "checkpoint_id": "3132a2098f80",
+  "session_id": "66a6e1c1-3b83-4dff-a26a-aebdbea5925e",
+  "strategy": "manual-commit",
+  "created_at": "2026-05-31T12:06:43.554868453Z",
+  "branch": "main",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "README.md",
+    "docs/content/guides/agentic-workflows.md",
+    "docs/content/host-setup.md",
+    "internal/runner/agentic-runner-image/daemon.json",
+    "internal/runner/agentic-runner-image/dnsmasq-gh-sr.conf",
+    "internal/runner/agentic-runner-image/docker-wrapper.sh",
+    "internal/runner/agentic-runner-image/entrypoint.sh",
+    "internal/runner/container_test.go",
+    "internal/runner/environment.go",
+    "internal/runner/environment_test.go"
+  ],
+  "agent": "Cursor",
+  "model": "claude-opus-4-8-thinking-high",
+  "turn_id": "e256bf80c96d",
+  "session_metrics": {
+    "turn_count": 1
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-05-31T12:06:43.496898768Z",
+    "agent_lines": 50,
+    "agent_removed": 18,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 50,
+    "total_lines_changed": 68,
+    "agent_percentage": 100,
+    "metric_version": 2
+  }
+}

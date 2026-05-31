@@ -1,0 +1,27 @@
+{
+  "cli_version": "dev",
+  "checkpoint_id": "3132a2098f80",
+  "strategy": "manual-commit",
+  "branch": "main",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "README.md",
+    "docs/content/guides/agentic-workflows.md",
+    "docs/content/host-setup.md",
+    "internal/runner/agentic-runner-image/daemon.json",
+    "internal/runner/agentic-runner-image/dnsmasq-gh-sr.conf",
+    "internal/runner/agentic-runner-image/docker-wrapper.sh",
+    "internal/runner/agentic-runner-image/entrypoint.sh",
+    "internal/runner/container_test.go",
+    "internal/runner/environment.go",
+    "internal/runner/environment_test.go"
+  ],
+  "sessions": [
+    {
+      "metadata": "/31/32a2098f80/0/metadata.json",
+      "transcript": "/31/32a2098f80/0/full.jsonl",
+      "content_hash": "/31/32a2098f80/0/content_hash.txt",
+      "prompt": "/31/32a2098f80/0/prompt.txt"
+    }
+  ]
+}

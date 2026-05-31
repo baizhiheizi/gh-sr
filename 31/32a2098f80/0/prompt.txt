@@ -1,0 +1,1 @@
+I found that after the agentic profile refactor, the network of the runner become super slow. I test the network speed manually in the host, it's normal. But the all the network trafiic in the workflow is supper slow. Is that relevant to the agentic profile runner? Help me to identify it. If you find any issues, fix it.
