@@ -74,15 +74,3 @@ echo unknown
 `, qlabel)
 }
 
-// launchdIsRunningScript exits 0 when the job state contains "state = running".
-func launchdIsRunningScript(qlabel string) string {
-	return fmt.Sprintf(`UID=$(id -u)
-LABEL=%s
-for _DOMAIN in "gui/$UID" "user/$UID"; do
-  if launchctl print "$_DOMAIN/$LABEL" 2>/dev/null | grep -q "state = running"; then
-    exit 0
-  fi
-done
-exit 1
-`, qlabel)
-}
