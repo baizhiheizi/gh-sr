@@ -1,8 +1,13 @@
 package agentic
 
 import (
+	"fmt"
 	"strings"
+	"sync"
 	"testing"
+
+	"github.com/an-lee/gh-sr/internal/config"
+	"github.com/an-lee/gh-sr/internal/host"
 )
 
 func TestHasBlockingFailures(t *testing.T) {
@@ -164,4 +169,93 @@ func TestFormatAllRemediations(t *testing.T) {
 			t.Errorf("expected '2 failure' in banner, got:\n%s", got)
 		}
 	})
+}
+
+type prereqTestExecutor struct {
+	mu       sync.Mutex
+	seen     []string
+	response map[string]string
+}
+
+func (e *prereqTestExecutor) Run(cmd string) (string, error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.seen = append(e.seen, cmd)
+
+	if out, ok := e.response[cmd]; ok {
+		return out, nil
+	}
+	return "", fmt.Errorf("unexpected command: %s", cmd)
+}
+
+func (e *prereqTestExecutor) Upload(string, string) error { return nil }
+
+func (e *prereqTestExecutor) Close() error { return nil }
+
+func (e *prereqTestExecutor) saw(cmd string) bool {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	for _, seen := range e.seen {
+		if seen == cmd {
+			return true
+		}
+	}
+	return false
+}
+
+func TestValidatePrereqsSkipsHostNetworkWhenBridgeCheckFails(t *testing.T) {
+	t.Parallel()
+
+	const (
+		hostDockerInternalCmd = `docker run --rm alpine sh -c "getent hosts host.docker.internal 2>/dev/null" 2>/dev/null`
+		hostNetworkCmd        = `docker run --rm --network host alpine sh -c "getent hosts host.docker.internal 2>/dev/null" 2>/dev/null`
+	)
+
+	exec := &prereqTestExecutor{
+		response: map[string]string{
+			`docker --version 2>/dev/null`: `Docker version 28.0.0`,
+			`docker info 2>/dev/null`:      `Server Version: 28.0.0`,
+			`docker run --rm -v /var/run/docker.sock:/var/run/docker.sock docker:cli docker ps 2>/dev/null`: ``,
+			`command -v iptables >/dev/null 2>&1 && echo ok || echo missing`:                                `ok`,
+			`
+FOUND_BAD=0
+for ENV_FILE in $(find "$HOME/.gh-sr/runners" -maxdepth 2 -name ".env" 2>/dev/null); do
+  RUNNER_TEMP=$(grep "^RUNNER_TEMP=" "$ENV_FILE" 2>/dev/null | cut -d= -f2)
+  INSTANCE=$(basename "$(dirname "$ENV_FILE")")
+  if [ -z "$RUNNER_TEMP" ]; then
+    echo "unset:$INSTANCE"
+    FOUND_BAD=1
+  elif [ "$RUNNER_TEMP" = "/tmp" ]; then
+    echo "tmp:$INSTANCE"
+    FOUND_BAD=1
+  fi
+done
+[ $FOUND_BAD -eq 0 ] && echo "ok"
+`: `ok`,
+			`id -u`:               `0`,
+			hostDockerInternalCmd: ``,
+			`docker run --rm alpine sh -c "nslookup github.com >/dev/null 2>&1 && echo ok || echo failed" 2>/dev/null`: `ok`,
+		},
+	}
+
+	h := host.NewHost("linux-box", config.HostConfig{Addr: "local", OS: "linux", Arch: "amd64"})
+	h.SetConn(exec)
+
+	failures := ValidatePrereqs(h)
+	if !exec.saw(hostDockerInternalCmd) {
+		t.Fatalf("expected default-bridge host.docker.internal check to run")
+	}
+	if exec.saw(hostNetworkCmd) {
+		t.Fatalf("host-network check should not run when default-bridge check fails")
+	}
+	found := false
+	for _, failure := range failures {
+		if failure.Name == "host-docker-internal" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected host-docker-internal failure, got %#v", failures)
+	}
 }

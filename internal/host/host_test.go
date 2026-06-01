@@ -3,6 +3,7 @@ package host
 import (
 	"encoding/base64"
 	"strings"
+	"sync"
 	"testing"
 	"unicode/utf16"
 
@@ -171,6 +172,30 @@ func TestHost_ConnectLocal(t *testing.T) {
 	if out != "works" {
 		t.Errorf("got %q, want %q", out, "works")
 	}
+}
+
+func TestHost_RunConcurrentLazyConnect(t *testing.T) {
+	t.Parallel()
+
+	h := NewHost("local-box", config.HostConfig{Addr: "local", OS: "linux", Arch: "amd64"})
+	defer h.Close()
+
+	var wg sync.WaitGroup
+	for range 16 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			out, err := h.Run("printf ok")
+			if err != nil {
+				t.Errorf("Run on local: %v", err)
+				return
+			}
+			if out != "ok" {
+				t.Errorf("got %q, want %q", out, "ok")
+			}
+		}()
+	}
+	wg.Wait()
 }
 
 func TestHost_wrapCommand_localWindows(t *testing.T) {
