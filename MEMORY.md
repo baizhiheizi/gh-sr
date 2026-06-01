@@ -20,12 +20,17 @@
 7. ✅ `config.Load` + `Validate` benchmarks — PR #37
 8. ✅ `FilterRunners` single-pass — already in codebase
 9. ✅ `GetLatestRunnerVersion` sync.Once cache — PR #38
-10. **`Remove` parallelization** — Blocked by config mutation concerns; low value (rare operation)
+10. ✅ `ValidatePrereqs` parallelization — PR #83 (ValidatePrereqs 6 parallel goroutines, ValidateAWFHygiene* 3 parallel goroutines each)
+11. **`Remove` parallelization** — Blocked by config mutation concerns; low value (rare operation)
 
 ## Backlog Cursor
 
-2026-05-14: Repository in maintenance mode. No new opportunities identified.
+2026-06-01: New opportunity found in agentic.go ValidatePrereqs (10 sequential SSH calls). Implemented parallelization in PR #83. Repository still largely in maintenance mode.
 
 ## Last Run
 
-2026-05-14 12:XX UTC - run id 25874914601
+2026-06-01 12:00 UTC - run id 26729788386
+
+## Completed Work
+
+- PR #83: Parallelized ValidatePrereqs (10 sequential → 6 parallel goroutines), ValidateAWFHygiene, ValidateAWFHygieneInner (3 sequential → 3 parallel each). Build/vet/tests OK with race detector.
