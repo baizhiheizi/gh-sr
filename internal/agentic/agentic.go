@@ -504,6 +504,43 @@ If add-host resolution is empty or loopback, restart the runner container. If it
 	return nil
 }
 
+// ValidateContainerInnerResolv checks that the runner container's /etc/resolv.conf
+// points at the bundled dnsmasq (the inner docker0 gateway). entrypoint.sh repoints it
+// there at startup so gh-aw's firewall — which auto-detects the agent sandbox's DNS
+// servers from this very file — propagates an authoritative, AWF-exempt resolver for
+// host.docker.internal to the sandbox.
+//
+// If a stale (pre-fix) image or a read-only resolv.conf leaves the OUTER host resolver
+// in place, the sandbox resolves host.docker.internal there and intermittently gets a
+// non-exempt IP. AWF's sandbox iptables only exempts the inner-bridge gateway from the
+// transparent Squid redirect, so a non-exempt answer force-proxies the MCP gateway POST
+// into Squid, which rejects the origin-form request (ERR_INVALID_URL → HTTP 400) and the
+// agent reports "MCP server(s) failed to launch". This check surfaces that latent
+// misconfiguration before a job hits it.
+func ValidateContainerInnerResolv(h *host.Host, outerContainer, runnerName string) []PrereqFailure {
+	if h.OS != "linux" {
+		return nil
+	}
+
+	if _, err := h.Run(containerInnerResolvCheckCommand(outerContainer)); err != nil {
+		return []PrereqFailure{{
+			Name:     "container-inner-resolv",
+			Severity: SeverityWarning,
+			Message:  fmt.Sprintf("runner container %s /etc/resolv.conf is not pinned to the bundled dnsmasq (inner bridge gateway); the gh-aw agent sandbox can inherit the host resolver and intermittently fail MCP launch (host.docker.internal force-proxied into Squid)", outerContainer),
+			Remediation: fmt.Sprintf(`Rebuild the runner image so entrypoint.sh repoints resolv.conf at the bundled dnsmasq:
+
+  gh sr rebuild %s
+
+Verify after restart (expect a single nameserver equal to the inner docker0 gateway, e.g. 10.200.0.1):
+
+  docker exec %s cat /etc/resolv.conf
+  docker exec %s ip -4 -o addr show docker0`, runnerName, outerContainer, outerContainer),
+			DocRef: "agentic-workflows.md §11a",
+		}}
+	}
+	return nil
+}
+
 // ValidateContainerAWFServiceRouting checks that the runner container has the
 // AWF service-routing bypass installed in NAT PREROUTING.
 //
@@ -600,6 +637,18 @@ func containerAWFCheckCommand(outerContainer string) string {
 	return `docker exec ` + q + ` sh -lc 'set -eu
 command -v awf >/dev/null
 sudo -n -E awf --version >/dev/null'`
+}
+
+// containerInnerResolvCheckCommand verifies the runner container's /etc/resolv.conf
+// lists the live inner docker0 gateway as a nameserver. The gateway is normally
+// 10.200.0.1 but entrypoint.sh's collision-avoidance may pick another candidate, so we
+// resolve it live (falling back to 10.200.0.1) rather than hardcoding it.
+func containerInnerResolvCheckCommand(outerContainer string) string {
+	q := strconv.Quote(outerContainer)
+	return `docker exec ` + q + ` sh -c 'set -eu
+gw=$(ip -4 -o addr show docker0 2>/dev/null | awk "{print \$4}" | cut -d/ -f1 | head -n1)
+[ -n "$gw" ] || gw=10.200.0.1
+grep -Eq "^nameserver[[:space:]]+$gw([[:space:]]|$)" /etc/resolv.conf'`
 }
 
 // containerAWFServiceRoutingCheckCommand verifies the runner container has the

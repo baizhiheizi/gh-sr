@@ -45,6 +45,28 @@ func TestContainerAWFCheckCommand(t *testing.T) {
 	}
 }
 
+func TestContainerInnerResolvCheckCommand(t *testing.T) {
+	t.Parallel()
+
+	cmd := containerInnerResolvCheckCommand("gh-sr-rune-agentic-1")
+
+	// Must read the runner container's resolv.conf and require the live inner docker0
+	// gateway (default 10.200.0.1) as the nameserver — the pin that makes gh-aw's
+	// auto-detected sandbox DNS authoritative for host.docker.internal.
+	for _, want := range []string{
+		"docker exec",
+		"gh-sr-rune-agentic-1",
+		"/etc/resolv.conf",
+		"docker0",
+		"10.200.0.1",
+		"^nameserver",
+	} {
+		if !strings.Contains(cmd, want) {
+			t.Fatalf("expected command to contain %q, got:\n%s", want, cmd)
+		}
+	}
+}
+
 func TestContainerAWFServiceRoutingCheckCommand(t *testing.T) {
 	t.Parallel()
 
