@@ -179,8 +179,8 @@ type prereqTestExecutor struct {
 
 func (e *prereqTestExecutor) Run(cmd string) (string, error) {
 	e.mu.Lock()
+	defer e.mu.Unlock()
 	e.seen = append(e.seen, cmd)
-	e.mu.Unlock()
 
 	if out, ok := e.response[cmd]; ok {
 		return out, nil

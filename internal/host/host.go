@@ -63,8 +63,13 @@ func (h *Host) Close() error {
 // SetConn injects a connection for testing without SSH.
 func (h *Host) SetConn(conn Executor) {
 	h.connMu.Lock()
+	oldConn := h.conn
 	h.conn = conn
 	h.connMu.Unlock()
+
+	if oldConn != nil && oldConn != conn {
+		_ = oldConn.Close()
+	}
 }
 
 func (h *Host) Run(cmd string) (string, error) {
