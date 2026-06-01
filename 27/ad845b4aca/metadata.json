@@ -1,0 +1,23 @@
+{
+  "cli_version": "dev",
+  "checkpoint_id": "27ad845b4aca",
+  "strategy": "manual-commit",
+  "branch": "main",
+  "checkpoints_count": 0,
+  "files_touched": [
+    "docs/content/guides/agentic-workflows.md",
+    "internal/agentic/agentic.go",
+    "internal/agentic/container_network_test.go",
+    "internal/doctor/doctor.go",
+    "internal/runner/agentic-runner-image/dnsmasq-gh-sr.conf",
+    "internal/runner/agentic-runner-image/entrypoint.sh"
+  ],
+  "sessions": [
+    {
+      "metadata": "/27/ad845b4aca/0/metadata.json",
+      "transcript": "/27/ad845b4aca/0/full.jsonl",
+      "content_hash": "/27/ad845b4aca/0/content_hash.txt",
+      "prompt": ""
+    }
+  ]
+}

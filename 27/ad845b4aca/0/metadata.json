@@ -1,0 +1,32 @@
+{
+  "cli_version": "dev",
+  "checkpoint_id": "27ad845b4aca",
+  "session_id": "6ea36a78-999e-42bb-8a80-099e31203030",
+  "strategy": "manual-commit",
+  "created_at": "2026-06-01T03:57:37.856131451Z",
+  "branch": "main",
+  "checkpoints_count": 0,
+  "files_touched": [
+    "docs/content/guides/agentic-workflows.md",
+    "internal/agentic/agentic.go",
+    "internal/agentic/container_network_test.go",
+    "internal/doctor/doctor.go",
+    "internal/runner/agentic-runner-image/dnsmasq-gh-sr.conf",
+    "internal/runner/agentic-runner-image/entrypoint.sh"
+  ],
+  "agent": "Cursor",
+  "model": "composer-2.5-fast",
+  "turn_id": "a62fcc17c569",
+  "initial_attribution": {
+    "calculated_at": "2026-06-01T03:57:37.855578335Z",
+    "agent_lines": 164,
+    "agent_removed": 14,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 164,
+    "total_lines_changed": 178,
+    "agent_percentage": 100,
+    "metric_version": 2
+  }
+}
