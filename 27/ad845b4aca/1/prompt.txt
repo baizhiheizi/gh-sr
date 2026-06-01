@@ -1,7 +1,10 @@
-Review the logs of the failed workflow run. It happens a lot when using `gh sr` managered runners. It's buggy result. Help me to identify the root cause and try to fix it. It happens before we refactor the agentic profile, and it happens still after our refactor. It happens a lot, but not everytime, sometimes it just work well, like `gh run view 26729788386`, the agentic workflow succeed. Sometimes it just not.
-
-/home/an-lee/.cursor/projects/home-an-lee-projects-gh-sr/terminals/29.txt:L596-L1082
-
----
+Stage the changes you worked on and create a commit for this branch.
+- Current branch: main.
+- Base branch: main.
+- Stage the changes you worked on.
+- If there are unrelated files or changes, exclude them.
+- Write a concise commit message.
+- Do not push.
+- Do not include unrelated files in the commit.
 
 Execute the selected diff-tab commit action.
