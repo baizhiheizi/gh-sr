@@ -3,7 +3,7 @@
   "checkpoint_id": "27ad845b4aca",
   "strategy": "manual-commit",
   "branch": "main",
-  "checkpoints_count": 0,
+  "checkpoints_count": 2,
   "files_touched": [
     "docs/content/guides/agentic-workflows.md",
     "internal/agentic/agentic.go",
@@ -18,6 +18,12 @@
       "transcript": "/27/ad845b4aca/0/full.jsonl",
       "content_hash": "/27/ad845b4aca/0/content_hash.txt",
       "prompt": ""
+    },
+    {
+      "metadata": "/27/ad845b4aca/1/metadata.json",
+      "transcript": "/27/ad845b4aca/1/full.jsonl",
+      "content_hash": "/27/ad845b4aca/1/content_hash.txt",
+      "prompt": "/27/ad845b4aca/1/prompt.txt"
     }
   ]
 }
