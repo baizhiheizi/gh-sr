@@ -572,6 +572,15 @@ func TestBuildAgenticRunnerImageCmdShape(t *testing.T) {
 	}
 }
 
+func TestEmbedTextForRemoteWriteStripsCR(t *testing.T) {
+	t.Parallel()
+	in := "automake\r\nbuild-essential\r\nGHSR_EOF\r\n"
+	want := "automake\nbuild-essential\nGHSR_E0F\n"
+	if got := embedTextForRemoteWrite(in); got != want {
+		t.Fatalf("embedTextForRemoteWrite() = %q, want %q", got, want)
+	}
+}
+
 func TestContainerRunnerImageExtraSorted(t *testing.T) {
 	t.Parallel()
 	cases := []struct {

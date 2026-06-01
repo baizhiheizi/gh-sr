@@ -18,6 +18,7 @@ COPY apt-packages-core.txt /tmp/apt-packages-core.txt
 RUN apt-get update \
     && grep -v '^[[:space:]]*#' /tmp/apt-packages-core.txt \
         | grep -v '^[[:space:]]*$' \
+        | sed 's/\r$//' \
         | xargs -r apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
@@ -94,6 +95,7 @@ RUN apt-get update \
     && if [ -s /tmp/apt-packages-extra.txt ]; then \
          grep -v '^[[:space:]]*#' /tmp/apt-packages-extra.txt \
              | grep -v '^[[:space:]]*$' \
+             | sed 's/\r$//' \
              | xargs -r apt-get install -y --no-install-recommends; \
        fi \
     && rm -rf /var/lib/apt/lists/*

@@ -443,6 +443,15 @@ func containerImageExists(h *host.Host, imageTag string) (bool, error) {
 	return strings.TrimSpace(out) == "yes", nil
 }
 
+// embedTextForRemoteWrite normalizes CRLF to LF and escapes heredoc delimiters before
+// writing embedded files to a remote build context. CRLF in apt manifests breaks the
+// Dockerfile grep|xargs|apt-get pipeline (package names gain a trailing \r).
+func embedTextForRemoteWrite(s string) string {
+	s = strings.ReplaceAll(s, "\r\n", "\n")
+	s = strings.ReplaceAll(s, "\r", "\n")
+	return strings.ReplaceAll(s, "GHSR_EOF", "GHSR_E0F")
+}
+
 // buildAgenticRunnerImage uploads the embedded Dockerfile+entrypoint to the host
 // and builds the image via `docker build`.
 func buildAgenticRunnerImage(h *host.Host, imageTag, runnerVersion, runnerArch, ghSrVersion string, extraApt []string) error {
@@ -457,8 +466,7 @@ cat > %s << 'GHSR_EOF'
 GHSR_EOF`,
 		buildDir,
 		dfPath,
-		// Escape any occurrence of GHSR_EOF in the content to prevent heredoc injection.
-		strings.ReplaceAll(agenticRunnerDockerfile, "GHSR_EOF", "GHSR_E0F"),
+		embedTextForRemoteWrite(agenticRunnerDockerfile),
 	)
 	if _, err := h.Run(writeDockerfile); err != nil {
 		return fmt.Errorf("writing Dockerfile: %w", err)
@@ -470,7 +478,7 @@ GHSR_EOF`,
 %s
 GHSR_EOF`,
 		corePath,
-		strings.ReplaceAll(agenticRunnerAptPackagesCore, "GHSR_EOF", "GHSR_E0F"),
+		embedTextForRemoteWrite(agenticRunnerAptPackagesCore),
 	)
 	if _, err := h.Run(writeCore); err != nil {
 		return fmt.Errorf("writing apt-packages-core.txt: %w", err)
@@ -488,7 +496,7 @@ GHSR_EOF`,
 %s
 GHSR_EOF`,
 			extraPath,
-			strings.ReplaceAll(extraBody, "GHSR_EOF", "GHSR_E0F"),
+			embedTextForRemoteWrite(extraBody),
 		)
 	}
 	if _, err := h.Run(writeExtra); err != nil {
@@ -502,7 +510,7 @@ GHSR_EOF`,
 GHSR_EOF
 chmod +x %s`,
 		epPath,
-		strings.ReplaceAll(agenticRunnerEntrypoint, "GHSR_EOF", "GHSR_E0F"),
+		embedTextForRemoteWrite(agenticRunnerEntrypoint),
 		epPath,
 	)
 	if _, err := h.Run(writeEntrypoint); err != nil {
@@ -516,7 +524,7 @@ chmod +x %s`,
 GHSR_EOF
 chmod +x %s`,
 		wrapperPath,
-		strings.ReplaceAll(agenticRunnerDockerWrapper, "GHSR_EOF", "GHSR_E0F"),
+		embedTextForRemoteWrite(agenticRunnerDockerWrapper),
 		wrapperPath,
 	)
 	if _, err := h.Run(writeWrapper); err != nil {
@@ -531,7 +539,7 @@ chmod +x %s`,
 		path := buildDir + "/" + f.name
 		writeCmd := fmt.Sprintf(`cat > %s << 'GHSR_EOF'
 %s
-GHSR_EOF`, path, strings.ReplaceAll(f.content, "GHSR_EOF", "GHSR_E0F"))
+GHSR_EOF`, path, embedTextForRemoteWrite(f.content))
 		if _, err := h.Run(writeCmd); err != nil {
 			return fmt.Errorf("writing %s: %w", f.name, err)
 		}
@@ -550,7 +558,7 @@ GHSR_EOF`, path, strings.ReplaceAll(f.content, "GHSR_EOF", "GHSR_E0F"))
 		writeCmd := fmt.Sprintf(`cat > %s << 'GHSR_EOF'
 %s
 GHSR_EOF
-chmod +x %s`, path, strings.ReplaceAll(hk.content, "GHSR_EOF", "GHSR_E0F"), path)
+chmod +x %s`, path, embedTextForRemoteWrite(hk.content), path)
 		if _, err := h.Run(writeCmd); err != nil {
 			return fmt.Errorf("writing hook %s: %w", hk.name, err)
 		}
