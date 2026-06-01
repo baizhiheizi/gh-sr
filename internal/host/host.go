@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"strings"
+	"sync"
 	"unicode/utf16"
 
 	"github.com/an-lee/gh-sr/internal/config"
@@ -12,7 +13,8 @@ import (
 type Host struct {
 	Name string
 	config.HostConfig
-	conn Executor
+	conn   Executor
+	connMu sync.Mutex
 }
 
 func IsLocal(addr string) bool {
@@ -27,6 +29,12 @@ func NewHost(name string, cfg config.HostConfig) *Host {
 }
 
 func (h *Host) Connect() error {
+	h.connMu.Lock()
+	defer h.connMu.Unlock()
+
+	if h.conn != nil {
+		return nil
+	}
 	if IsLocal(h.Addr) {
 		h.conn = NewLocalConnection()
 		return nil
@@ -41,24 +49,34 @@ func (h *Host) Connect() error {
 }
 
 func (h *Host) Close() error {
-	if h.conn != nil {
-		return h.conn.Close()
+	h.connMu.Lock()
+	conn := h.conn
+	h.conn = nil
+	h.connMu.Unlock()
+
+	if conn != nil {
+		return conn.Close()
 	}
 	return nil
 }
 
 // SetConn injects a connection for testing without SSH.
 func (h *Host) SetConn(conn Executor) {
+	h.connMu.Lock()
 	h.conn = conn
+	h.connMu.Unlock()
 }
 
 func (h *Host) Run(cmd string) (string, error) {
-	if h.conn == nil {
-		if err := h.Connect(); err != nil {
-			return "", err
-		}
+	if err := h.Connect(); err != nil {
+		return "", err
 	}
-	return h.conn.Run(cmd)
+
+	h.connMu.Lock()
+	conn := h.conn
+	h.connMu.Unlock()
+
+	return conn.Run(cmd)
 }
 
 func (h *Host) RunShell(cmd string) (string, error) {
@@ -67,12 +85,15 @@ func (h *Host) RunShell(cmd string) (string, error) {
 }
 
 func (h *Host) Upload(localPath, remotePath string) error {
-	if h.conn == nil {
-		if err := h.Connect(); err != nil {
-			return err
-		}
+	if err := h.Connect(); err != nil {
+		return err
 	}
-	return h.conn.Upload(localPath, remotePath)
+
+	h.connMu.Lock()
+	conn := h.conn
+	h.connMu.Unlock()
+
+	return conn.Upload(localPath, remotePath)
 }
 
 // encodePowerShellScript returns the base64 payload required by powershell.exe / pwsh -EncodedCommand (UTF-16LE).

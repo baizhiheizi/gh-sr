@@ -54,6 +54,8 @@ func ValidatePrereqs(h *host.Host) []PrereqFailure {
 		wg       sync.WaitGroup
 	)
 
+	hostDockerInternalOK := make(chan bool, 1)
+
 	appendFailure := func(f PrereqFailure) {
 		mu.Lock()
 		failures = append(failures, f)
@@ -217,6 +219,7 @@ done
 		out, err := h.Run(`docker run --rm alpine sh -c "getent hosts host.docker.internal 2>/dev/null" 2>/dev/null`)
 		out = strings.TrimSpace(out)
 		if err != nil || out == "" || out == "failed" {
+			hostDockerInternalOK <- false
 			appendFailure(PrereqFailure{
 				Name:     "host-docker-internal",
 				Severity: SeverityError,
@@ -240,7 +243,10 @@ server=8.8.8.8" | sudo tee /etc/dnsmasq.d/gh-sr-docker.conf
   sudo systemctl restart docker`,
 				DocRef: "agentic-workflows.md §4b",
 			})
-		} else if strings.Contains(out, "127.0.0.1") || strings.Contains(out, "::1") {
+			return
+		}
+		if strings.Contains(out, "127.0.0.1") || strings.Contains(out, "::1") {
+			hostDockerInternalOK <- false
 			appendFailure(PrereqFailure{
 				Name:     "host-docker-internal-loopback",
 				Severity: SeverityError,
@@ -259,24 +265,16 @@ Fix by running on the host:
   sudo mv /etc/hosts.tmp /etc/hosts`,
 				DocRef: "agentic-workflows.md §4b",
 			})
+			return
 		}
+		hostDockerInternalOK <- true
 	}()
 
 	// host-network DNS check (depends on host-docker-internal passing)
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		// Re-check whether the default-bridge host.docker.internal errors are present
-		mu.Lock()
-		hasHostDOCKERErr := false
-		for _, f := range failures {
-			if f.Name == "host-docker-internal" || f.Name == "host-docker-internal-loopback" {
-				hasHostDOCKERErr = true
-				break
-			}
-		}
-		mu.Unlock()
-		if hasHostDOCKERErr {
+		if ok := <-hostDockerInternalOK; !ok {
 			return
 		}
 		outHN, errHN := h.Run(`docker run --rm --network host alpine sh -c "getent hosts host.docker.internal 2>/dev/null" 2>/dev/null`)
