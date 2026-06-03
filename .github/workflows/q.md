@@ -3,6 +3,7 @@ on:
   reaction: rocket
   slash_command:
     name: q
+    strategy: centralized
 permissions:
   actions: read
   contents: read

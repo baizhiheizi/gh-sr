@@ -1,6 +1,7 @@
 ---
 on:
   slash_command:
+    strategy: centralized
     events:
       - pull_request_comment
       - pull_request_review_comment

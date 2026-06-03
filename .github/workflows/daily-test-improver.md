@@ -6,6 +6,7 @@ on:
   schedule: daily
   slash_command:
     name: test-assist
+    strategy: centralized
   steps:
   - id: check
     run: |

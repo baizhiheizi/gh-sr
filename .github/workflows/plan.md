@@ -4,6 +4,7 @@ description: Generates project plans and task breakdowns when invoked with /plan
 on:
   slash_command:
     name: plan
+    strategy: centralized
     events: [issue_comment, discussion_comment]
 runs-on: [self-hosted, linux, agentic]
 runs-on-slim: "self-hosted"

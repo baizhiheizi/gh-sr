@@ -8,6 +8,7 @@ description: |
 on:
   slash_command:
     name: pr-fix
+    strategy: centralized
   reaction: "eyes"
 runs-on: [self-hosted, linux, agentic]
 runs-on-slim: "self-hosted"
