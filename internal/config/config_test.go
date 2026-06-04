@@ -934,6 +934,56 @@ func TestValidate_containerRunnerImage_extraApt_tooMany(t *testing.T) {
 	}
 }
 
+func TestValidate_containerRunnerImage_mtu(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name    string
+		mtu     int
+		wantErr bool
+	}{
+		{"zero auto-detect", 0, false},
+		{"min valid", 576, false},
+		{"typical reduced", 1460, false},
+		{"max valid", 1500, false},
+		{"below min", 575, true},
+		{"above max", 1501, true},
+		{"negative", -1, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			cfg := Config{
+				Hosts:   map[string]HostConfig{"h": {Addr: "local", OS: "linux", Arch: "amd64"}},
+				Runners: []RunnerConfig{{Name: "r", Repo: "o/r", Host: "h", RunnerMode: RunnerModeContainer}},
+				ContainerRunnerImage: ContainerRunnerImageConfig{
+					MTU: tc.mtu,
+				},
+			}
+			err := cfg.Validate()
+			if tc.wantErr && err == nil {
+				t.Fatalf("mtu=%d: expected error, got nil", tc.mtu)
+			}
+			if !tc.wantErr && err != nil {
+				t.Fatalf("mtu=%d: unexpected error: %v", tc.mtu, err)
+			}
+		})
+	}
+}
+
+func TestConfig_ContainerRunnerImageMTU(t *testing.T) {
+	t.Parallel()
+	if got := (&Config{ContainerRunnerImage: ContainerRunnerImageConfig{MTU: 1460}}).ContainerRunnerImageMTU(); got != 1460 {
+		t.Fatalf("ContainerRunnerImageMTU = %d, want 1460", got)
+	}
+	if got := (&Config{}).ContainerRunnerImageMTU(); got != 0 {
+		t.Fatalf("ContainerRunnerImageMTU (unset) = %d, want 0", got)
+	}
+	var nilCfg *Config
+	if got := nilCfg.ContainerRunnerImageMTU(); got != 0 {
+		t.Fatalf("ContainerRunnerImageMTU (nil) = %d, want 0", got)
+	}
+}
+
 func TestConfig_ContainerRunnerImageExtraAptPackages_copy(t *testing.T) {
 	t.Parallel()
 	cfg := &Config{

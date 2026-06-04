@@ -535,7 +535,14 @@ func checkContainerRunnerInstall(w io.Writer, hostName string, h *host.Host, run
 
 // checkContainerAgenticInnerHygiene runs AWF orphan and network checks against the inner Docker in each running DinD agentic runner.
 func checkContainerAgenticInnerHygiene(w io.Writer, hostName string, h *host.Host, runners []config.RunnerConfig, r *Result) {
-	for _, pair := range containerAgenticInstallTargetsForHost(runners, hostName) {
+	targets := containerAgenticInstallTargetsForHost(runners, hostName)
+	if len(targets) == 0 {
+		return
+	}
+	// Host egress MTU is host-level; detect once and reuse for every instance's MTU check.
+	hostEgressMTU := runner.DetectHostEgressMTU(h)
+
+	for _, pair := range targets {
 		inst := pair[0]
 		runnerName := pair[1]
 		cname := runner.ContainerDockerName(inst)
@@ -552,6 +559,7 @@ func checkContainerAgenticInnerHygiene(w io.Writer, hostName string, h *host.Hos
 		failures = append(failures, agentic.ValidateContainerInnerNetwork(h, cname, runnerName)...)
 		failures = append(failures, agentic.ValidateContainerInnerResolv(h, cname, runnerName)...)
 		failures = append(failures, agentic.ValidateContainerAWFServiceRouting(h, cname, runnerName)...)
+		failures = append(failures, agentic.ValidateContainerMTU(h, cname, runnerName, hostEgressMTU)...)
 		if len(failures) == 0 {
 			printLine(w, sevOK, hostName, fmt.Sprintf("container(agent): awf installed, inner Docker clean, host.docker.internal reachable, resolv.conf pinned to dnsmasq, and AWF service-routing bypass present (%s)", cname))
 			continue

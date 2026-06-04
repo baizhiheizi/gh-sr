@@ -681,6 +681,48 @@ Verify:
 	return nil
 }
 
+// ValidateContainerMTU warns when the runner container's egress interface (eth0) or the
+// inner dockerd bridge (docker0) carries an MTU larger than the host's egress MTU. A
+// container MTU above the host path MTU silently drops large packets when PMTUD is
+// black-holed, breaking TLS handshakes — workflow downloads such as actions/setup-go
+// then fail with "Client network socket disconnected before secure TLS connection was
+// established" even though the host downloads fine. hostEgressMTU is the host's primary
+// egress interface MTU (from runner.DetectHostEgressMTU); 0 or >= 1500 means there is
+// nothing to pin, so the check is skipped (standard 1500 networks never see this).
+func ValidateContainerMTU(h *host.Host, outerContainer, runnerName string, hostEgressMTU int) []PrereqFailure {
+	// hostEgressMTU 0 (unknown) or >= 1500 (standard) means there is nothing to pin; skip
+	// BEFORE dereferencing h so callers may short-circuit with a nil host.
+	if hostEgressMTU <= 0 || hostEgressMTU >= 1500 {
+		return nil
+	}
+	if h == nil || h.OS != "linux" {
+		return nil
+	}
+
+	if _, err := h.Run(containerMTUCheckCommand(outerContainer, hostEgressMTU)); err != nil {
+		return []PrereqFailure{{
+			Name:     "container-mtu",
+			Severity: SeverityWarning,
+			Message:  fmt.Sprintf("runner container %s has a Docker interface MTU larger than the host egress MTU (%d); large-packet TLS handshakes (e.g. actions/setup-go) can fail with \"Client network socket disconnected before secure TLS connection was established\"", outerContainer, hostEgressMTU),
+			Remediation: fmt.Sprintf(`Rebuild the runner so it pins the inner/outer Docker MTU to the host egress MTU:
+
+  gh sr rebuild %s
+
+Verify (both must be <= %d):
+
+  docker exec %s cat /sys/class/net/eth0/mtu
+  docker exec %s cat /sys/class/net/docker0/mtu
+
+If the host's real path MTU is below its NIC MTU (a tunnel the NIC is unaware of), set it explicitly in runners.yml and rebuild:
+
+  container_runner_image:
+    mtu: %d`, runnerName, hostEgressMTU, outerContainer, outerContainer, hostEgressMTU),
+			DocRef: "agentic-workflows.md §11c",
+		}}
+	}
+	return nil
+}
+
 // ValidateContainerAWF checks that the gh-aw firewall CLI is available exactly
 // the way compiled workflows invoke it.
 func ValidateContainerAWF(h *host.Host, outerContainer, runnerName string) []PrereqFailure {
@@ -732,6 +774,20 @@ func containerAWFCheckCommand(outerContainer string) string {
 	return `docker exec ` + q + ` sh -lc 'set -eu
 command -v awf >/dev/null
 sudo -n -E awf --version >/dev/null'`
+}
+
+// containerMTUCheckCommand exits non-zero when any of the runner container's Docker
+// interfaces (eth0, docker0) has an MTU greater than the host egress MTU — the
+// signature of a stale image built before MTU pinning. A missing interface file reads
+// as 0, so it never triggers a false positive.
+func containerMTUCheckCommand(outerContainer string, hostEgressMTU int) string {
+	q := strconv.Quote(outerContainer)
+	mtu := strconv.Itoa(hostEgressMTU)
+	return `docker exec ` + q + ` sh -c 'host=` + mtu + `
+for ifc in eth0 docker0; do
+  m=$(cat /sys/class/net/$ifc/mtu 2>/dev/null || echo 0)
+  [ "$m" -le "$host" ] || exit 1
+done'`
 }
 
 // containerInnerResolvCheckCommand verifies the runner container's /etc/resolv.conf

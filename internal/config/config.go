@@ -29,6 +29,16 @@ type ContainerRunnerImageConfig struct {
 	// ExtraAptPackages lists additional Debian package names to install in the
 	// image at build time (Ubuntu main archive only in v1).
 	ExtraAptPackages []string `yaml:"extra_apt_packages,omitempty"`
+	// MTU optionally forces the Docker network MTU for runner_mode: container — both the
+	// outer runner container's egress interface and the inner dockerd bridge. Leave unset
+	// (0) to auto-detect the host's egress MTU, which fixes the common reduced-MTU case
+	// (cloud overlay networks like GCP's 1460, VPN/WireGuard) where large-packet TLS
+	// handshakes otherwise fail ("Client network socket disconnected before secure TLS
+	// connection was established", e.g. actions/setup-go). Set this only when the host's
+	// real path MTU is below its NIC MTU (a tunnel the NIC is unaware of) so auto-detection
+	// cannot see it. Valid range 576–1500; only ever used to LOWER the MTU. Applied at
+	// container-create time, so changing it requires `gh sr rebuild <name>`.
+	MTU int `yaml:"mtu,omitempty"`
 }
 
 const (
@@ -39,7 +49,13 @@ const (
 var debianPackageNamePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9+.-]*$`)
 
 func validateContainerRunnerImage(img *ContainerRunnerImageConfig) error {
-	if img == nil || len(img.ExtraAptPackages) == 0 {
+	if img == nil {
+		return nil
+	}
+	if img.MTU != 0 && (img.MTU < 576 || img.MTU > 1500) {
+		return fmt.Errorf("container_runner_image.mtu: must be 0 (auto-detect) or between 576 and 1500 (got %d)", img.MTU)
+	}
+	if len(img.ExtraAptPackages) == 0 {
 		return nil
 	}
 	if len(img.ExtraAptPackages) > maxContainerRunnerExtraAptPackages {
@@ -71,6 +87,15 @@ func (c *Config) ContainerRunnerImageExtraAptPackages() []string {
 	out := make([]string, len(c.ContainerRunnerImage.ExtraAptPackages))
 	copy(out, c.ContainerRunnerImage.ExtraAptPackages)
 	return out
+}
+
+// ContainerRunnerImageMTU returns the configured MTU override for container runners
+// (0 = auto-detect the host egress MTU).
+func (c *Config) ContainerRunnerImageMTU() int {
+	if c == nil {
+		return 0
+	}
+	return c.ContainerRunnerImage.MTU
 }
 
 type GitHubConfig struct {

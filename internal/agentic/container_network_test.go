@@ -67,6 +67,38 @@ func TestContainerInnerResolvCheckCommand(t *testing.T) {
 	}
 }
 
+func TestContainerMTUCheckCommand(t *testing.T) {
+	t.Parallel()
+
+	cmd := containerMTUCheckCommand("gh-sr-rune-agentic-1", 1460)
+
+	// Must docker exec into the runner container and compare both Docker interfaces'
+	// MTUs (eth0, docker0) against the host egress MTU, failing (exit 1) if any exceeds it.
+	for _, want := range []string{
+		"docker exec",
+		"gh-sr-rune-agentic-1",
+		"host=1460",
+		"eth0 docker0",
+		"/sys/class/net/$ifc/mtu",
+		"exit 1",
+	} {
+		if !strings.Contains(cmd, want) {
+			t.Fatalf("expected command to contain %q, got:\n%s", want, cmd)
+		}
+	}
+}
+
+func TestValidateContainerMTU_skipsWhenNothingToPin(t *testing.T) {
+	t.Parallel()
+	// hostEgressMTU 0 (unknown) or >= 1500 (standard) means there is nothing to validate,
+	// so the check must short-circuit without running any command.
+	for _, mtu := range []int{0, 1500, 1600} {
+		if got := ValidateContainerMTU(nil, "gh-sr-x", "x", mtu); got != nil {
+			t.Fatalf("ValidateContainerMTU(hostEgressMTU=%d) = %v, want nil (skipped)", mtu, got)
+		}
+	}
+}
+
 func TestContainerAWFServiceRoutingCheckCommand(t *testing.T) {
 	t.Parallel()
 

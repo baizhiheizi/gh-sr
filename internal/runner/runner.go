@@ -22,6 +22,10 @@ type Manager struct {
 	// ContainerImageExtraApt is global extra apt packages for the gh-sr/agentic-runner
 	// image (from runners.yml container_runner_image). Set by ops before container setup.
 	ContainerImageExtraApt []string
+	// ContainerMTU, when > 0, forces the inner/outer Docker MTU for container-mode runners
+	// (overriding host egress MTU auto-detection). From runners.yml
+	// container_runner_image.mtu; set by ops before container setup. 0 = auto-detect.
+	ContainerMTU int
 }
 
 func (m *Manager) out() io.Writer {
@@ -67,6 +71,14 @@ func (m *Manager) containerImageExtraApt() []string {
 		return nil
 	}
 	return m.ContainerImageExtraApt
+}
+
+// containerMTU returns the configured MTU override for container runners (0 = auto-detect).
+func (m *Manager) containerMTU() int {
+	if m == nil {
+		return 0
+	}
+	return m.ContainerMTU
 }
 
 // NeedsSetup checks whether a runner requires setup before it can start.

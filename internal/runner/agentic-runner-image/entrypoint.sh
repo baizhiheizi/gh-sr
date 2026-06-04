@@ -38,6 +38,8 @@
 #   GH_SR_RUNNER_GROUP  — runner group (optional, default: "Default")
 #   GH_SR_RUNNER_EPHEMERAL — "true" to register as ephemeral
 #   GH_SR_AWF_SUBNET    — AWF bridge subnet for the service-routing bypass (default 172.30.0.0/24)
+#   GH_SR_HOST_MTU      — host egress MTU to pin the inner/outer Docker MTU to when it is
+#                         below 1500 (reduced-MTU host networks); unset/≥1500 ⇒ Docker default
 
 set -euo pipefail
 
@@ -120,23 +122,92 @@ done
 # documented default rather than failing the whole runner.
 BRIDGE_GW="${BRIDGE_GW:-$DEFAULT_BRIDGE_GW}"
 
+# ── 2a. Reduced-MTU pinning (optional; strictly before the single dockerd start) ─
+# GH_SR_HOST_MTU is injected by `docker create` (internal/runner/container.go) with the
+# MTU of the HOST's primary egress interface when it is below Docker's 1500 default —
+# e.g. cloud overlay networks (GCP defaults to 1460), VPN/WireGuard, or nested
+# virtualisation. It can also be forced via runners.yml (container_runner_image.mtu).
+#
+# WHY THIS EXISTS: the outer runner container sits on the host's default Docker bridge
+# (MTU 1500) and the inner dockerd bridge also defaults to 1500. When the real host path
+# MTU is smaller and PMTUD is black-holed (ICMP "fragmentation needed" filtered — very
+# common), small packets pass (DNS, TCP SYN/ACK) so connections OPEN, but large packets
+# are silently dropped. TLS handshakes (ServerHello + certificate chain span several
+# full-size segments) then stall and the socket is torn down mid-handshake. Node-based
+# downloads surface this as "Client network socket disconnected before secure TLS
+# connection was established" — exactly how actions/setup-go fails on such hosts while
+# the host itself downloads fine (its real NIC never emits oversized frames).
+#
+# Pinning the inner bridge MTU (daemon.json, below) AND the outer container's egress
+# interface MTU (further down) to the host's real MTU makes TCP advertise a matching MSS
+# in BOTH directions, so large TLS packets fit and never depend on PMTUD. We only ever
+# LOWER the MTU; an unset/≥1500 value leaves Docker's 1500 default untouched.
+BRIDGE_MTU=""
+case "${GH_SR_HOST_MTU:-}" in
+    '' | *[!0-9]*) ;;  # unset or non-numeric → keep Docker's 1500 default
+    *)
+        if [ "${GH_SR_HOST_MTU}" -ge 576 ] && [ "${GH_SR_HOST_MTU}" -lt 1500 ]; then
+            BRIDGE_MTU="${GH_SR_HOST_MTU}"
+        fi
+        ;;
+esac
+
+# write_daemon_json: emit /etc/docker/daemon.json from the resolved gateway (+ optional
+# MTU). ONLY ever called below, strictly BEFORE the single dockerd start — never after
+# (the historical "write then restart dockerd" dance is forbidden; see the test guard).
+write_daemon_json() {
+    {
+        echo "{"
+        echo "  \"bip\": \"${BRIDGE_GW}/24\","
+        if [ -n "${BRIDGE_MTU}" ]; then
+            # Single-quote the key so the literal "mtu": appears verbatim in this script
+            # (the bip/dns lines must interpolate ${BRIDGE_GW}, so they stay double-quoted).
+            echo '  "mtu": '"${BRIDGE_MTU}"','
+        fi
+        echo "  \"dns\": [\"${BRIDGE_GW}\", \"8.8.8.8\"]"
+        echo "}"
+    } > /etc/docker/daemon.json
+}
+
 if [ "${BRIDGE_GW}" != "${DEFAULT_BRIDGE_GW}" ]; then
     echo "[entrypoint] WARNING: baked inner-bridge gateway ${DEFAULT_BRIDGE_GW} overlaps an existing interface; using ${BRIDGE_GW} instead"
     # One-shot rewrite, strictly before the dockerd start below (no restart).
-    cat > /etc/docker/daemon.json <<EOF
-{
-  "bip": "${BRIDGE_GW}/24",
-  "dns": ["${BRIDGE_GW}", "8.8.8.8"]
-}
-EOF
+    write_daemon_json
     # Update only the gateway-bearing directives. Upstreams live in the runtime drop-in
     # generated below (section 3), which is keyed off the same ${BRIDGE_GW}.
     sed -i \
         -e "s#^address=/host.docker.internal/.*#address=/host.docker.internal/${BRIDGE_GW}#" \
         -e "s#^listen-address=.*#listen-address=${BRIDGE_GW}#" \
         /etc/dnsmasq.d/gh-sr.conf
+elif [ -n "${BRIDGE_MTU}" ]; then
+    # No gateway conflict, but the baked daemon.json carries no `mtu`; inject it (still
+    # before the single dockerd start) so the inner bridge and every inner container
+    # inherit the reduced MTU.
+    write_daemon_json
+    echo "[entrypoint] inner-bridge gateway ${BRIDGE_GW} (baked default); inner MTU pinned to ${BRIDGE_MTU}"
 else
     echo "[entrypoint] inner-bridge gateway ${BRIDGE_GW} (baked default; no interface conflict detected)"
+fi
+
+# Lower the runner container's OWN egress interface MTU too. Workflow setup steps such
+# as actions/setup-go run directly in THIS (outer) container — not the inner Docker — so
+# the inner-bridge MTU alone would not fix their downloads. Lowering eth0's MTU makes the
+# kernel advertise a matching TCP MSS for every connection the runner opens. Best-effort:
+# needs NET_ADMIN, which the --privileged runner container always has.
+if [ -n "${BRIDGE_MTU}" ]; then
+    _egress_if=$(ip -o route show default 2>/dev/null | awk '{for (i=1;i<=NF;i++) if ($i=="dev") {print $(i+1); exit}}' || true)
+    [ -n "${_egress_if}" ] || _egress_if=eth0
+    if ip link set dev "${_egress_if}" mtu "${BRIDGE_MTU}" 2>/dev/null; then
+        echo "[entrypoint] ${_egress_if} MTU pinned to ${BRIDGE_MTU} (host egress MTU)"
+    else
+        echo "[entrypoint] WARNING: could not set ${_egress_if} MTU to ${BRIDGE_MTU}"
+    fi
+    # Belt-and-suspenders: clamp forwarded TCP SYNs (inner-container NAT egress) to the
+    # path MTU in case a child netns keeps a stale 1500 MTU. mangle table, independent of
+    # the filter-table rules AWF installs later. Idempotent.
+    iptables -t mangle -C FORWARD -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu 2>/dev/null \
+        || iptables -t mangle -A FORWARD -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu 2>/dev/null \
+        || echo "[entrypoint] WARNING: could not install MSS clamp (mangle FORWARD)"
 fi
 
 # ── 2b. Inner dockerd (single start; DNS baked into /etc/docker/daemon.json) ────

@@ -528,6 +528,31 @@ func TestAgenticRunnerEntrypointPrependsDockerShimPATH(t *testing.T) {
 	}
 }
 
+// TestAgenticRunnerEntrypointPinsMTU verifies the entrypoint pins the inner-bridge MTU
+// (daemon.json), the outer egress interface MTU, and installs an MSS clamp when the
+// host egress MTU (GH_SR_HOST_MTU) is below 1500 — the fix for reduced-MTU host networks
+// that otherwise break large-packet TLS handshakes (e.g. actions/setup-go).
+func TestAgenticRunnerEntrypointPinsMTU(t *testing.T) {
+	t.Parallel()
+	for _, want := range []string{
+		"GH_SR_HOST_MTU",
+		`"mtu":`,                 // injected into daemon.json
+		"write_daemon_json",      // single daemon.json emitter (before the one dockerd start)
+		"ip link set dev",        // lower the outer container's egress interface MTU
+		"clamp-mss-to-pmtu",      // belt-and-suspenders MSS clamp for forwarded inner traffic
+	} {
+		if !strings.Contains(agenticRunnerEntrypoint, want) {
+			t.Fatalf("entrypoint should pin MTU: missing %q", want)
+		}
+	}
+	// The MTU write must still go through the single pre-dockerd daemon.json path: the
+	// daemon.json redirect lives inside write_daemon_json, before the one dockerd start.
+	// (TestAgenticRunnerEntrypointStartsDockerdOnce enforces the ordering invariant.)
+	if strings.Count(agenticRunnerEntrypoint, "dockerd \\") != 1 {
+		t.Fatal("MTU changes must not add a second dockerd start")
+	}
+}
+
 // TestBuildAgenticRunnerImageCmdShape verifies the docker build command shape
 // produced by buildAgenticRunnerImage (calls h.Run but we inspect the structure
 // by constructing the expected command string rather than executing it).
@@ -862,6 +887,100 @@ func TestContainerImageExists(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestMtuDockerCreateArg(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		mtu      int
+		wantArg  bool
+		wantsMTU string
+	}{
+		{0, false, ""},      // auto-detect found nothing
+		{575, false, ""},    // below sane floor
+		{576, true, "576"},  // floor
+		{1460, true, "1460"}, // typical GCP overlay
+		{1499, true, "1499"}, // just under default
+		{1500, false, ""},    // Docker default — no-op
+		{1501, false, ""},    // jumbo — not lowered via this knob
+		{9000, false, ""},
+	}
+	for _, tc := range cases {
+		got := mtuDockerCreateArg(tc.mtu)
+		if !tc.wantArg {
+			if got != "" {
+				t.Errorf("mtuDockerCreateArg(%d) = %q, want empty", tc.mtu, got)
+			}
+			continue
+		}
+		if !strings.Contains(got, "-e GH_SR_HOST_MTU=") {
+			t.Errorf("mtuDockerCreateArg(%d) = %q, want GH_SR_HOST_MTU env", tc.mtu, got)
+		}
+		if !strings.Contains(got, tc.wantsMTU) {
+			t.Errorf("mtuDockerCreateArg(%d) = %q, want value %q", tc.mtu, got, tc.wantsMTU)
+		}
+		// Must be a continuation line: leading indent + trailing ` \` + newline so it slots
+		// between the other -e flags and the image arg in the docker create command.
+		if !strings.HasPrefix(got, "  -e ") || !strings.HasSuffix(got, " \\\n") {
+			t.Errorf("mtuDockerCreateArg(%d) = %q, want indented continuation line", tc.mtu, got)
+		}
+	}
+}
+
+func TestDetectHostEgressMTU(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name   string
+		os     string
+		output string
+		runErr error
+		want   int
+	}{
+		{"reduced mtu", "linux", "1460\n", nil, 1460},
+		{"standard mtu", "linux", "1500", nil, 1500},
+		{"jumbo within range", "linux", "9000", nil, 9000},
+		{"non-numeric", "linux", "eth0\n", nil, 0},
+		{"empty (no egress iface)", "linux", "", nil, 0},
+		{"below floor", "linux", "100", nil, 0},
+		{"above ceiling", "linux", "9001", nil, 0},
+		{"run error", "linux", "", assertCalledError(), 0},
+		{"non-linux skips detection", "windows", "1460", nil, 0},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			h := host.NewHost("test", config.HostConfig{OS: tc.os, Arch: "amd64", Addr: "local"})
+			h.SetConn(&containerMockExecutor{output: tc.output, runErr: tc.runErr})
+			if got := DetectHostEgressMTU(h); got != tc.want {
+				t.Errorf("DetectHostEgressMTU = %d, want %d", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestResolveContainerMTU(t *testing.T) {
+	t.Parallel()
+
+	t.Run("override wins over detection", func(t *testing.T) {
+		t.Parallel()
+		h := host.NewHost("test", config.HostConfig{OS: "linux", Arch: "amd64", Addr: "local"})
+		// Detection would return 1460, but the explicit override must take precedence.
+		h.SetConn(&containerMockExecutor{output: "1460"})
+		m := &Manager{ContainerMTU: 1400}
+		if got := m.resolveContainerMTU(h); got != 1400 {
+			t.Errorf("resolveContainerMTU = %d, want 1400 (override)", got)
+		}
+	})
+
+	t.Run("auto-detect when no override", func(t *testing.T) {
+		t.Parallel()
+		h := host.NewHost("test", config.HostConfig{OS: "linux", Arch: "amd64", Addr: "local"})
+		h.SetConn(&containerMockExecutor{output: "1460"})
+		m := &Manager{}
+		if got := m.resolveContainerMTU(h); got != 1460 {
+			t.Errorf("resolveContainerMTU = %d, want 1460 (detected)", got)
+		}
+	})
 }
 
 // containerMockExecutor for container tests.

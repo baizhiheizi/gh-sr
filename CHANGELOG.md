@@ -23,4 +23,6 @@ history when you want more than the auto-generated GitHub summary.
 
 ### Fixed
 
+- Container-mode runners now pin their Docker MTU to the host's egress MTU, fixing workflow downloads (e.g. `actions/setup-go`, `actions/setup-node`) that failed with `Client network socket disconnected before secure TLS connection was established` on hosts whose real path MTU is below 1500 (cloud overlay networks such as GCP's 1460 default, VPN/WireGuard, nested virtualisation). The outer container's `eth0` and the inner `dockerd` bridge previously kept Docker's 1500 default; with PMTUD black-holed, large TLS-handshake packets were silently dropped while small packets (and the host itself) worked. `gh sr` auto-detects the host egress MTU at container-create time and `entrypoint.sh` applies it to both layers (plus an MSS clamp for forwarded inner traffic). Run `gh sr rebuild <name>` to adopt the fix. A `container_runner_image.mtu` override is available for hosts where a tunnel lowers the path MTU below the NIC MTU, and `gh sr doctor` flags a stale image as `container-mtu`.
+
 ### Removed

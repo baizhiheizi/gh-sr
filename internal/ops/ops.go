@@ -99,9 +99,11 @@ func applyContainerImageExtras(mgr *runner.Manager, cfg *config.Config) {
 	}
 	if cfg == nil {
 		mgr.ContainerImageExtraApt = nil
+		mgr.ContainerMTU = 0
 		return
 	}
 	mgr.ContainerImageExtraApt = cfg.ContainerRunnerImageExtraAptPackages()
+	mgr.ContainerMTU = cfg.ContainerRunnerImageMTU()
 }
 
 // Setup installs and configures runners, mirroring the gh sr setup command.

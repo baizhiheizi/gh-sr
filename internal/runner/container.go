@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/an-lee/gh-sr/internal/config"
@@ -182,6 +183,55 @@ func (m *Manager) setupContainer(h *host.Host, rc config.RunnerConfig) error {
 	return nil
 }
 
+// DetectHostEgressMTU returns the MTU of the host's primary egress interface (the one
+// routing to the public internet), or 0 if it cannot be determined. It is used to pin
+// the runner container's inner/outer Docker MTU to the host's real MTU so large-packet
+// TLS handshakes survive a reduced host path MTU (cloud overlay networks such as GCP's
+// 1460 default, VPN/WireGuard, nested virtualisation). Without this, the outer container
+// and inner dockerd bridge keep Docker's 1500 default; when the host path MTU is smaller
+// and PMTUD is black-holed, large packets are dropped and downloads like actions/setup-go
+// fail with "Client network socket disconnected before secure TLS connection was
+// established" while the host downloads fine. Linux-only (container mode is Linux-only).
+func DetectHostEgressMTU(h *host.Host) int {
+	if h == nil || h.OS != "linux" {
+		return 0
+	}
+	// Resolve the egress interface (route to a public IP, then default route), then read
+	// its MTU from sysfs. Failures yield empty output → 0 (caller keeps Docker's default).
+	out, err := h.Run(`iface=$(ip -o route get 1.1.1.1 2>/dev/null | awk '{for (i=1;i<=NF;i++) if ($i=="dev") {print $(i+1); exit}}')
+[ -n "$iface" ] || iface=$(ip -o route show default 2>/dev/null | awk '{for (i=1;i<=NF;i++) if ($i=="dev") {print $(i+1); exit}}')
+[ -n "$iface" ] || exit 0
+cat "/sys/class/net/$iface/mtu" 2>/dev/null`)
+	if err != nil {
+		return 0
+	}
+	n, convErr := strconv.Atoi(strings.TrimSpace(out))
+	if convErr != nil || n < 576 || n > 9000 {
+		return 0
+	}
+	return n
+}
+
+// mtuDockerCreateArg returns the `-e GH_SR_HOST_MTU=<n>` line (indented, with a trailing
+// line-continuation backslash) for the `docker create` command when mtu is a sub-1500
+// value worth pinning, or "" otherwise. The MTU is only ever lowered: 1500 is Docker's
+// default (no-op) and values outside [576, 1500) are ignored.
+func mtuDockerCreateArg(mtu int) string {
+	if mtu < 576 || mtu >= 1500 {
+		return ""
+	}
+	return "  -e GH_SR_HOST_MTU=" + posixSingleQuote(strconv.Itoa(mtu)) + " \\\n"
+}
+
+// resolveContainerMTU returns the MTU to pin for a new runner container: the explicit
+// config override when set, otherwise the auto-detected host egress MTU.
+func (m *Manager) resolveContainerMTU(h *host.Host) int {
+	if mtu := m.containerMTU(); mtu > 0 {
+		return mtu
+	}
+	return DetectHostEgressMTU(h)
+}
+
 // createContainerInstance creates (but does not start) a single runner container
 // instance. The image must already exist. It is the per-instance unit used by both
 // setupContainer and ContainerEnvironment.Provision.
@@ -216,6 +266,11 @@ func (m *Manager) createContainerInstance(h *host.Host, rc config.RunnerConfig, 
 		ephemeral = "true"
 	}
 
+	// Pin the inner/outer Docker MTU to the host egress MTU when it is below 1500 so
+	// large-packet TLS handshakes survive a reduced host path MTU (see DetectHostEgressMTU
+	// and entrypoint.sh §2a). Empty (no env) on standard 1500 networks — a no-op.
+	mtuEnv := mtuDockerCreateArg(m.resolveContainerMTU(h))
+
 	// Build the `docker create` command. We use `--restart unless-stopped`
 	// so the runner auto-starts on host reboot and auto-restarts after a job.
 	// `--privileged` is required for DinD (inner dockerd needs full capabilities).
@@ -234,7 +289,7 @@ docker create \
   -e GH_SR_RUNNER_LABELS=%s \
   -e GH_SR_RUNNER_GROUP=%s \
   -e GH_SR_RUNNER_EPHEMERAL=%s \
-  %s`,
+%s  %s`,
 		posixSingleQuote(stateDir),
 		posixSingleQuote(containerName(instanceName)),
 		posixSingleQuote(stateDir),
@@ -244,6 +299,7 @@ docker create \
 		posixSingleQuote(strings.Join(labels, ",")),
 		posixSingleQuote(group),
 		posixSingleQuote(ephemeral),
+		mtuEnv,
 		posixSingleQuote(imageTag),
 	)
 
