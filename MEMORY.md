@@ -20,17 +20,19 @@
 7. ✅ `config.Load` + `Validate` benchmarks — PR #37
 8. ✅ `FilterRunners` single-pass — already in codebase
 9. ✅ `GetLatestRunnerVersion` sync.Once cache — PR #38
-10. ✅ `ValidatePrereqs` parallelization — PR #83 (ValidatePrereqs 6 parallel goroutines, ValidateAWFHygiene* 3 parallel goroutines each)
+10. ✅ `ValidatePrereqs` parallelization — PR #84 (ValidatePrereqs 6 parallel goroutines, ValidateAWFHygiene* 3 parallel goroutines each)
 11. **`Remove` parallelization** — Blocked by config mutation concerns; low value (rare operation)
+12. **`ValidateContainerPrereqs` parallelization** — Low priority; sequential early-exit pattern complex to parallelize; benefit unclear
 
 ## Backlog Cursor
 
-2026-06-01: New opportunity found in agentic.go ValidatePrereqs (10 sequential SSH calls). Implemented parallelization in PR #83. Repository still largely in maintenance mode.
+2026-06-04: Repository in maintenance mode. All major optimizations merged. New low-priority opportunity noted: ValidateContainerPrereqs has sequential SSH calls but parallelization is complex due to early-exit semantics. PR reference corrected: PR #84 (not #83) was the ValidatePrereqs parallelization merged on 2026-06-01.
 
 ## Last Run
 
-2026-06-01 12:00 UTC - run id 26729788386
+2026-06-04 12:00 UTC - run id 26917405986
 
 ## Completed Work
 
-- PR #83: Parallelized ValidatePrereqs (10 sequential → 6 parallel goroutines), ValidateAWFHygiene, ValidateAWFHygieneInner (3 sequential → 3 parallel each). Build/vet/tests OK with race detector.
+- (2026-06-04) Monthly issue #85 updated: fixed PR reference (#83→#84), added ValidateContainerPrereqs as low-priority opportunity, added this run's entry. Build/vet/tests all OK.
+- (2026-06-01) PR #84: Parallelized ValidatePrereqs (10 sequential → 6 parallel goroutines), ValidateAWFHygiene, ValidateAWFHygieneInner (3 parallel each). Build/vet/tests OK with race detector.
