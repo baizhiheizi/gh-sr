@@ -6,5 +6,5 @@ network:
 
 runtimes:
   go:
-    version: 1.25
+    version: 1.25.9
 ---

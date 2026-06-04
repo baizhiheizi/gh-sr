@@ -1,6 +1,6 @@
 module github.com/an-lee/gh-sr
 
-go 1.25.0
+go 1.25.9
 
 require (
 	charm.land/bubbletea/v2 v2.0.2
