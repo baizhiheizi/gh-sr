@@ -6,6 +6,12 @@ on:
   workflow_dispatch:
   schedule: daily
 
+runs-on: [self-hosted, linux]
+runs-on-slim: self-hosted
+imports:
+   - shared/engine-minimax.md
+   - shared/runtime.md
+
 permissions:
   contents: read
   issues: read

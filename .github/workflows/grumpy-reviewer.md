@@ -7,6 +7,12 @@ on:
     name: grumpy
     events: [pull_request_comment, pull_request_review_comment]
 
+runs-on: [self-hosted, linux]
+runs-on-slim: self-hosted
+imports:
+   - shared/engine-minimax.md
+   - shared/runtime.md
+
 permissions:
   contents: read
   pull-requests: read

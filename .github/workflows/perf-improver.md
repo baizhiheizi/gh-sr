@@ -30,6 +30,12 @@ on:
 
 if: needs.pre_activation.outputs.check_result == 'success'
 
+runs-on: [self-hosted, linux]
+runs-on-slim: self-hosted
+imports:
+   - shared/engine-minimax.md
+   - shared/runtime.md
+
 timeout-minutes: 60
 
 permissions: read-all
