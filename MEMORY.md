@@ -1,0 +1,6 @@
+- [Repo](repo.md) — what `an-lee/gh-sr` is, where things live
+- [Build/test/coverage commands](commands.md) — validated commands
+- [Testing notes](testing-notes.md) — repo-specific test patterns, mocks, gotchas
+- [Testing backlog](backlog.md) — prioritized testing opportunities for next runs
+- [WIP](wip.md) — current run summary, branch, PR status
+- [Run history](run-history.md) — past runs with timestamps
