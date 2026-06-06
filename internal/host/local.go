@@ -1,14 +1,12 @@
 package host
 
 import (
-	"bytes"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
-	"strings"
 )
 
 // LocalConnection executes commands on the local machine via os/exec.
@@ -26,15 +24,11 @@ func (c *LocalConnection) Run(cmd string) (string, error) {
 		proc = exec.Command("sh", "-c", cmd)
 	}
 
-	var stdout, stderr bytes.Buffer
-	proc.Stdout = &stdout
-	proc.Stderr = &stderr
-
-	if err := proc.Run(); err != nil {
-		return stdout.String(), fmt.Errorf("running %q: %w\nstderr: %s", cmd, err, stderr.String())
-	}
-
-	return strings.TrimSpace(stdout.String()), nil
+	return runWithCapture(cmd, func(stdout, stderr io.Writer) error {
+		proc.Stdout = stdout
+		proc.Stderr = stderr
+		return proc.Run()
+	})
 }
 
 func (c *LocalConnection) Upload(localPath, remotePath string) error {

@@ -1,7 +1,6 @@
 package host
 
 import (
-	"bytes"
 	"fmt"
 	"io"
 	"net"
@@ -62,15 +61,11 @@ func (c *Connection) Run(cmd string) (string, error) {
 	}
 	defer session.Close()
 
-	var stdout, stderr bytes.Buffer
-	session.Stdout = &stdout
-	session.Stderr = &stderr
-
-	if err := session.Run(cmd); err != nil {
-		return stdout.String(), fmt.Errorf("running %q: %w\nstderr: %s", cmd, err, stderr.String())
-	}
-
-	return strings.TrimSpace(stdout.String()), nil
+	return runWithCapture(cmd, func(stdout, stderr io.Writer) error {
+		session.Stdout = stdout
+		session.Stderr = stderr
+		return session.Run(cmd)
+	})
 }
 
 func (c *Connection) Upload(localPath, remotePath string) error {
