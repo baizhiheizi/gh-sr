@@ -1,0 +1,1 @@
+- [Repo Assist state](state.md) — last run summary, in-flight PR, backlog cursor, next high-value task (#92 subcommand boilerplate)
