@@ -50,11 +50,11 @@ func TestServiceBasename(t *testing.T) {
 func TestAbsRunnerDir(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
-		name  string
-		os    string
-		home  string
-		inst  string
-		want  string
+		name string
+		os   string
+		home string
+		inst string
+		want string
 	}{
 		{"linux", "linux", "/home/u", "ci-1", "/home/u/.gh-sr/runners/ci-1"},
 		{"linux trailing slash", "linux", "/home/u/", "ci-1", "/home/u/.gh-sr/runners/ci-1"},
@@ -77,13 +77,13 @@ func TestAbsRunnerDir(t *testing.T) {
 func TestIsServiceActive(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
-		name   string
-		os     string
-		mock   *mockExecutor
-		inst   string
-		kind   Kind
-		want   bool
-		err    bool
+		name string
+		os   string
+		mock *mockExecutor
+		inst string
+		kind Kind
+		want bool
+		err  bool
 	}{
 		{
 			name: "systemd-user active",

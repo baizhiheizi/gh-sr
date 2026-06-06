@@ -1,13 +1,13 @@
 package runner
 
 import (
-	"encoding/base64"
 	"fmt"
 	"strings"
 
 	"github.com/an-lee/gh-sr/internal/autostart"
 	"github.com/an-lee/gh-sr/internal/config"
 	"github.com/an-lee/gh-sr/internal/host"
+	"github.com/an-lee/gh-sr/internal/hostshell"
 )
 
 // NativeRunnerConfigPresent reports whether the remote instance directory contains
@@ -43,30 +43,8 @@ func svcShPresent(h *host.Host, instanceName string) bool {
 	return strings.TrimSpace(out) == "yes"
 }
 
-// writeRemoteBytes writes data to a remote path using base64 encoding.
-func writeRemoteBytes(h *host.Host, remotePath string, data []byte) error {
-	if h.OS == "windows" {
-		b64 := base64.StdEncoding.EncodeToString(data)
-		ps := fmt.Sprintf(
-			"$p = %s; $d = [Convert]::FromBase64String(%s); $dir = Split-Path -Parent $p; New-Item -ItemType Directory -Force -Path $dir | Out-Null; [IO.File]::WriteAllBytes($p, $d)",
-			powerShellSingleQuoted(remotePath),
-			powerShellSingleQuoted(b64),
-		)
-		_, err := h.RunShell(ps)
-		return err
-	}
-	b64 := base64.StdEncoding.EncodeToString(data)
-	qpath := posixSingleQuote(remotePath)
-	cmd := fmt.Sprintf(`set -e; d=$(dirname %s); mkdir -p "$d"; printf '%%s' %s | base64 -d > %s`,
-		qpath, posixSingleQuote(b64), qpath)
-	_, err := h.Run(cmd)
-	return err
-}
-
-// posixSingleQuote escapes a string for safe use inside single quotes in POSIX shell.
-func posixSingleQuote(s string) string {
-	return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'"
-}
+// posixSingleQuote and writeRemoteBytes were moved to internal/hostshell.
+// Call sites use hostshell.PosixSingleQuote and hostshell.WriteRemoteBytes directly.
 
 func runnerTarballURL(version, osName, arch string) string {
 	switch osName {
@@ -103,9 +81,8 @@ func archForGitHub(arch string) string {
 	return arch
 }
 
-func powerShellSingleQuoted(s string) string {
-	return "'" + strings.ReplaceAll(s, "'", "''") + "'"
-}
+// powerShellSingleQuoted was moved to internal/hostshell.
+// Call sites use hostshell.PowerShellSingleQuote directly.
 
 func windowsRunnerDirAssignment(h *host.Host, varName, instanceName string) string {
 	return fmt.Sprintf("$%s = %s", varName, h.RunnerDirPS(instanceName))
@@ -116,10 +93,10 @@ func windowsNativeInstallScript(h *host.Host, instanceName, version, url string)
 	return strings.Join([]string{
 		windowsRunnerDirAssignment(h, "runnerDir", instanceName),
 		"New-Item -ItemType Directory -Force -Path $runnerDir | Out-Null",
-		fmt.Sprintf("$zip = Join-Path %s %s", h.TempDirPS(), powerShellSingleQuoted(zipName)),
+		fmt.Sprintf("$zip = Join-Path %s %s", h.TempDirPS(), hostshell.PowerShellSingleQuote(zipName)),
 		"[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12",
-		fmt.Sprintf("if (-not (Test-Path $zip)) { Invoke-WebRequest -Uri %s -OutFile $zip }", powerShellSingleQuoted(url)),
-		fmt.Sprintf("try { Expand-Archive -Path $zip -DestinationPath $runnerDir -Force } catch { Remove-Item -Force $zip -EA SilentlyContinue; Invoke-WebRequest -Uri %s -OutFile $zip; Expand-Archive -Path $zip -DestinationPath $runnerDir -Force }", powerShellSingleQuoted(url)),
+		fmt.Sprintf("if (-not (Test-Path $zip)) { Invoke-WebRequest -Uri %s -OutFile $zip }", hostshell.PowerShellSingleQuote(url)),
+		fmt.Sprintf("try { Expand-Archive -Path $zip -DestinationPath $runnerDir -Force } catch { Remove-Item -Force $zip -EA SilentlyContinue; Invoke-WebRequest -Uri %s -OutFile $zip; Expand-Archive -Path $zip -DestinationPath $runnerDir -Force }", hostshell.PowerShellSingleQuote(url)),
 	}, "; ")
 }
 
@@ -135,13 +112,13 @@ func windowsNativeConfigScript(h *host.Host, rc config.RunnerConfig, instanceNam
 	labels := strings.Join(rc.EffectiveLabelsForInstance(h.OS, h.Arch, instanceIndex), ",")
 	cmd := fmt.Sprintf(
 		"& .\\config.cmd --unattended --url %s --token %s --name %s --labels %s --work '_work' --replace",
-		powerShellSingleQuoted(nativeConfigURL(rc)),
-		powerShellSingleQuoted(regToken),
-		powerShellSingleQuoted(instanceName),
-		powerShellSingleQuoted(labels),
+		hostshell.PowerShellSingleQuote(nativeConfigURL(rc)),
+		hostshell.PowerShellSingleQuote(regToken),
+		hostshell.PowerShellSingleQuote(instanceName),
+		hostshell.PowerShellSingleQuote(labels),
 	)
 	if rc.Group != "" {
-		cmd += fmt.Sprintf(" --runnergroup %s", powerShellSingleQuoted(rc.Group))
+		cmd += fmt.Sprintf(" --runnergroup %s", hostshell.PowerShellSingleQuote(rc.Group))
 	}
 	if rc.Ephemeral {
 		cmd += " --ephemeral"
@@ -193,7 +170,7 @@ func windowsCheckStaleRegistration(h *host.Host, instanceName string) string {
 			"elseif ((Test-Path $logFile) -and (Select-String -Path $logFile -Pattern %s -Quiet)) { Write-Host 'stale' } "+
 			"else { Write-Host 'ok' }",
 		windowsRunnerDirAssignment(h, "runnerDir", instanceName),
-		powerShellSingleQuoted(staleRegistrationMsg),
+		hostshell.PowerShellSingleQuote(staleRegistrationMsg),
 	)
 }
 
@@ -231,7 +208,7 @@ func (m *Manager) setupNative(h *host.Host, rc config.RunnerConfig) error {
 		fmt.Fprintf(m.out(), "  %s: installing runner v%s...\n", name, version)
 
 		if h.OS == "linux" {
-			installDepsCmd := linuxElevatePrelude + `
+			installDepsCmd := sudoPrelude() + `
 				if ! command -v curl >/dev/null 2>&1 || ! command -v tar >/dev/null 2>&1; then
 					if command -v apt-get >/dev/null 2>&1; then $SUDO apt-get update && $SUDO apt-get install -y curl tar;
 					elif command -v yum >/dev/null 2>&1; then $SUDO yum install -y curl tar;
@@ -270,13 +247,13 @@ func (m *Manager) setupNative(h *host.Host, rc config.RunnerConfig) error {
 			}
 		}
 
-		writeRemoteBytes(h, dir+"/.runner-version", []byte(version))
+		hostshell.WriteRemoteBytes(h, dir+"/.runner-version", []byte(version))
 
 		if h.OS == "linux" {
 			fmt.Fprintf(m.out(), "  %s: installing runner dependencies...\n", name)
 			depsCmd := fmt.Sprintf(
 				"cd %s && %s && $SUDO ./bin/installdependencies.sh",
-				dir, strings.TrimSpace(linuxElevatePrelude),
+				dir, strings.TrimSpace(sudoPrelude()),
 			)
 			if _, err := h.Run(depsCmd); err != nil {
 				fmt.Fprintf(m.out(), "  %s: warning: failed to install runner dependencies: %v\n", name, err)
@@ -317,14 +294,14 @@ func (m *Manager) setupNative(h *host.Host, rc config.RunnerConfig) error {
 		// Deploy svc.sh and runsvc.sh for systemd-based service management on Linux.
 		if h.OS == "linux" {
 			// Deploy svc.sh to the runner directory
-			if err := writeRemoteBytes(h, dir+"/svc.sh", []byte(SVCShContent)); err != nil {
+			if err := hostshell.WriteRemoteBytes(h, dir+"/svc.sh", []byte(SVCShContent)); err != nil {
 				fmt.Fprintf(m.out(), "  %s: warning: failed to deploy svc.sh: %v\n", name, err)
 			} else {
 				h.Run(fmt.Sprintf("chmod +x %s/svc.sh", dir))
 			}
 
 			// Deploy the systemd service template
-			if err := writeRemoteBytes(h, dir+"/bin/actions.runner.service.template", []byte(ServiceTemplateContent)); err != nil {
+			if err := hostshell.WriteRemoteBytes(h, dir+"/bin/actions.runner.service.template", []byte(ServiceTemplateContent)); err != nil {
 				fmt.Fprintf(m.out(), "  %s: warning: failed to deploy service template: %v\n", name, err)
 			}
 
@@ -334,7 +311,7 @@ func (m *Manager) setupNative(h *host.Host, rc config.RunnerConfig) error {
 			}
 
 			// Install svc.sh as a systemd service (requires root)
-			installSvcCmd := fmt.Sprintf("cd %s && %s\n$SUDO ./svc.sh install", dir, strings.TrimSpace(linuxElevatePrelude))
+			installSvcCmd := fmt.Sprintf("cd %s && %s\n$SUDO ./svc.sh install", dir, strings.TrimSpace(sudoPrelude()))
 			if _, err := h.Run(installSvcCmd); err != nil {
 				fmt.Fprintf(m.out(), "  %s: warning: failed to install svc.sh service: %v\n", name, err)
 			}
@@ -479,7 +456,7 @@ func (m *Manager) removeNative(h *host.Host, rc config.RunnerConfig, instanceNam
 
 	// Uninstall svc.sh service if present (before removing files)
 	if h.OS == "linux" && svcShPresent(h, instanceName) {
-		uninstallSvcCmd := fmt.Sprintf("cd %s && %s\n$SUDO ./svc.sh uninstall 2>/dev/null || true", dir, strings.TrimSpace(linuxElevatePrelude))
+		uninstallSvcCmd := fmt.Sprintf("cd %s && %s\n$SUDO ./svc.sh uninstall 2>/dev/null || true", dir, strings.TrimSpace(sudoPrelude()))
 		h.Run(uninstallSvcCmd) // Ignore errors - we're removing anyway
 	}
 
@@ -493,7 +470,7 @@ func (m *Manager) removeNative(h *host.Host, rc config.RunnerConfig, instanceNam
 			cmd := fmt.Sprintf(
 				"%s; Set-Location -Path $runnerDir; & .\\config.cmd remove --token %s",
 				windowsRunnerDirAssignment(h, "runnerDir", instanceName),
-				powerShellSingleQuoted(removeToken),
+				hostshell.PowerShellSingleQuote(removeToken),
 			)
 			h.RunShell(cmd)
 		} else {

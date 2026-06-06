@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/an-lee/gh-sr/internal/host"
+	"github.com/an-lee/gh-sr/internal/hostshell"
 )
 
 // IsServiceActive reports whether the autostart supervisor considers the job running.
@@ -24,7 +25,7 @@ func IsServiceActive(h *host.Host, instance string, kind Kind) (bool, error) {
 		return strings.TrimSpace(out) == "active", nil
 
 	case KindSystemdSystem:
-		script := linuxElevatePrelude + fmt.Sprintf(`
+		script := sudoPrelude() + fmt.Sprintf(`
 $SUDO systemctl is-active %s.service 2>/dev/null || echo inactive
 `, base)
 		out, err := h.Run(script)
@@ -35,7 +36,7 @@ $SUDO systemctl is-active %s.service 2>/dev/null || echo inactive
 
 	case KindLaunchd:
 		label := LaunchdLabel(san)
-		out, err := h.Run(launchdPrintScript(posixSingleQuote(label)))
+		out, err := h.Run(launchdPrintScript(hostshell.PosixSingleQuote(label)))
 		if err != nil {
 			return false, err
 		}
@@ -45,7 +46,7 @@ $SUDO systemctl is-active %s.service 2>/dev/null || echo inactive
 		name := WindowsTaskName(san)
 		ps := fmt.Sprintf(
 			`(Get-ScheduledTask -TaskName %s -ErrorAction SilentlyContinue | Select-Object -ExpandProperty State)`,
-			powerShellSingleQuoted(name),
+			hostshell.PowerShellSingleQuote(name),
 		)
 		out, err := h.RunShell(ps)
 		if err != nil {

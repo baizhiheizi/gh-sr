@@ -9,6 +9,7 @@ import (
 
 	"github.com/an-lee/gh-sr/internal/config"
 	"github.com/an-lee/gh-sr/internal/host"
+	"github.com/an-lee/gh-sr/internal/hostshell"
 )
 
 func TestContainerName(t *testing.T) {
@@ -58,20 +59,20 @@ func TestDockerRunArgShape(t *testing.T) {
 	// Build the expected docker create command manually (mirrors setupContainer logic).
 	labels := rc.EffectiveLabelsForInstance(h.OS, h.Arch, 0)
 	cmd := strings.Join([]string{
-		"mkdir -p " + posixSingleQuote(stateDir),
+		"mkdir -p " + hostshell.PosixSingleQuote(stateDir),
 		"docker create",
-		"  --name " + posixSingleQuote(cName),
+		"  --name " + hostshell.PosixSingleQuote(cName),
 		"  --privileged",
 		"  --shm-size=2g",
 		"  --restart unless-stopped",
-		"  -v " + posixSingleQuote(stateDir) + ":/runner-state",
-		"  -e GH_SR_RUNNER_NAME=" + posixSingleQuote(instanceName),
-		"  -e GH_SR_RUNNER_TOKEN=" + posixSingleQuote("tok"),
-		"  -e GH_SR_RUNNER_URL=" + posixSingleQuote("https://github.com/owner/repo"),
-		"  -e GH_SR_RUNNER_LABELS=" + posixSingleQuote(strings.Join(labels, ",")),
-		"  -e GH_SR_RUNNER_GROUP=" + posixSingleQuote("Default"),
-		"  -e GH_SR_RUNNER_EPHEMERAL=" + posixSingleQuote(""),
-		"  " + posixSingleQuote(imageTag),
+		"  -v " + hostshell.PosixSingleQuote(stateDir) + ":/runner-state",
+		"  -e GH_SR_RUNNER_NAME=" + hostshell.PosixSingleQuote(instanceName),
+		"  -e GH_SR_RUNNER_TOKEN=" + hostshell.PosixSingleQuote("tok"),
+		"  -e GH_SR_RUNNER_URL=" + hostshell.PosixSingleQuote("https://github.com/owner/repo"),
+		"  -e GH_SR_RUNNER_LABELS=" + hostshell.PosixSingleQuote(strings.Join(labels, ",")),
+		"  -e GH_SR_RUNNER_GROUP=" + hostshell.PosixSingleQuote("Default"),
+		"  -e GH_SR_RUNNER_EPHEMERAL=" + hostshell.PosixSingleQuote(""),
+		"  " + hostshell.PosixSingleQuote(imageTag),
 	}, "\n")
 
 	if !strings.Contains(cmd, "--privileged") {
@@ -536,10 +537,10 @@ func TestAgenticRunnerEntrypointPinsMTU(t *testing.T) {
 	t.Parallel()
 	for _, want := range []string{
 		"GH_SR_HOST_MTU",
-		`"mtu":`,                 // injected into daemon.json
-		"write_daemon_json",      // single daemon.json emitter (before the one dockerd start)
-		"ip link set dev",        // lower the outer container's egress interface MTU
-		"clamp-mss-to-pmtu",      // belt-and-suspenders MSS clamp for forwarded inner traffic
+		`"mtu":`,            // injected into daemon.json
+		"write_daemon_json", // single daemon.json emitter (before the one dockerd start)
+		"ip link set dev",   // lower the outer container's egress interface MTU
+		"clamp-mss-to-pmtu", // belt-and-suspenders MSS clamp for forwarded inner traffic
 	} {
 		if !strings.Contains(agenticRunnerEntrypoint, want) {
 			t.Fatalf("entrypoint should pin MTU: missing %q", want)
@@ -563,16 +564,16 @@ func TestBuildAgenticRunnerImageCmdShape(t *testing.T) {
 	imageTag := AgenticRunnerImageTag + ":" + version
 	ghVer := "vtest"
 	rev := ContainerImageLayoutRevision(ghVer, nil)
-	labelRev := posixSingleQuote(dockerLabelImageRevision + "=" + rev)
-	labelCLI := posixSingleQuote(dockerLabelCLIVersion + "=" + ghVer)
+	labelRev := hostshell.PosixSingleQuote(dockerLabelImageRevision + "=" + rev)
+	labelCLI := hostshell.PosixSingleQuote(dockerLabelCLIVersion + "=" + ghVer)
 
 	// Replicate the docker build command from buildAgenticRunnerImage.
-	buildCmd := "docker build --build-arg RUNNER_VERSION=" + posixSingleQuote(version) +
-		" --build-arg RUNNER_ARCH=" + posixSingleQuote(arch) +
+	buildCmd := "docker build --build-arg RUNNER_VERSION=" + hostshell.PosixSingleQuote(version) +
+		" --build-arg RUNNER_ARCH=" + hostshell.PosixSingleQuote(arch) +
 		" --label " + labelRev +
 		" --label " + labelCLI +
-		" -t " + posixSingleQuote(imageTag) +
-		" " + posixSingleQuote("/tmp/gh-sr-agentic-runner-build")
+		" -t " + hostshell.PosixSingleQuote(imageTag) +
+		" " + hostshell.PosixSingleQuote("/tmp/gh-sr-agentic-runner-build")
 
 	if !strings.Contains(buildCmd, "RUNNER_VERSION=") {
 		t.Error("build cmd must pass RUNNER_VERSION build-arg")
@@ -896,9 +897,9 @@ func TestMtuDockerCreateArg(t *testing.T) {
 		wantArg  bool
 		wantsMTU string
 	}{
-		{0, false, ""},      // auto-detect found nothing
-		{575, false, ""},    // below sane floor
-		{576, true, "576"},  // floor
+		{0, false, ""},       // auto-detect found nothing
+		{575, false, ""},     // below sane floor
+		{576, true, "576"},   // floor
 		{1460, true, "1460"}, // typical GCP overlay
 		{1499, true, "1499"}, // just under default
 		{1500, false, ""},    // Docker default — no-op

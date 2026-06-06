@@ -1,11 +1,11 @@
 package autostart
 
 import (
-	"encoding/base64"
 	"fmt"
 	"strings"
 
 	"github.com/an-lee/gh-sr/internal/host"
+	"github.com/an-lee/gh-sr/internal/hostshell"
 )
 
 // Kind describes how autostart is installed for an instance.
@@ -47,29 +47,8 @@ func absRunnerDir(h *host.Host, home, instance string) string {
 	return home + "/.gh-sr/runners/" + instance
 }
 
-// writeRemoteBytes writes data to a remote path using base64 (POSIX) or PowerShell (Windows).
-func writeRemoteBytes(h *host.Host, remotePath string, data []byte) error {
-	if h.OS == "windows" {
-		b64 := base64.StdEncoding.EncodeToString(data)
-		ps := fmt.Sprintf(
-			"$p = %s; $d = [Convert]::FromBase64String(%s); $dir = Split-Path -Parent $p; New-Item -ItemType Directory -Force -Path $dir | Out-Null; [IO.File]::WriteAllBytes($p, $d)",
-			powerShellSingleQuoted(remotePath),
-			powerShellSingleQuoted(b64),
-		)
-		_, err := h.RunShell(ps)
-		return err
-	}
-	b64 := base64.StdEncoding.EncodeToString(data)
-	qpath := posixSingleQuote(remotePath)
-	cmd := fmt.Sprintf(`set -e; d=$(dirname %s); mkdir -p "$d"; printf '%%s' %s | base64 -d > %s`,
-		qpath, posixSingleQuote(b64), qpath)
-	_, err := h.Run(cmd)
-	return err
-}
-
-func powerShellSingleQuoted(s string) string {
-	return "'" + strings.ReplaceAll(s, "'", "''") + "'"
-}
+// writeRemoteBytes and powerShellSingleQuoted were moved to internal/hostshell.
+// Call sites use hostshell.WriteRemoteBytes and hostshell.PowerShellSingleQuote directly.
 
 // Detect reports whether an autostart unit is installed for this instance.
 func Detect(h *host.Host, instance string) (Kind, error) {
@@ -113,7 +92,7 @@ func Detect(h *host.Host, instance string) (Kind, error) {
 
 	case "windows":
 		name := WindowsTaskName(san)
-		ps := fmt.Sprintf(`if (Get-ScheduledTask -TaskName %s -ErrorAction SilentlyContinue) { 'yes' } else { 'no' }`, powerShellSingleQuoted(name))
+		ps := fmt.Sprintf(`if (Get-ScheduledTask -TaskName %s -ErrorAction SilentlyContinue) { 'yes' } else { 'no' }`, hostshell.PowerShellSingleQuote(name))
 		out, err := h.RunShell(ps)
 		if err != nil {
 			return KindNone, err
@@ -170,7 +149,7 @@ func installSystemdUser(h *host.Host, instance, san, absRunnerDir string) error 
 	}
 	fullUnitPath := home + "/.config/systemd/user/" + base + ".service"
 
-	if err := writeRemoteBytes(h, fullUnitPath, []byte(unit)); err != nil {
+	if err := hostshell.WriteRemoteBytes(h, fullUnitPath, []byte(unit)); err != nil {
 		return fmt.Errorf("writing systemd user unit: %w", err)
 	}
 
@@ -206,19 +185,19 @@ func installSystemdSystem(h *host.Host, instance, san, absRunnerDir string) erro
 		return err
 	}
 	tmpPath := home + "/.gh-sr/" + base + ".service.tmp"
-	if err := writeRemoteBytes(h, tmpPath, []byte(unit)); err != nil {
+	if err := hostshell.WriteRemoteBytes(h, tmpPath, []byte(unit)); err != nil {
 		return fmt.Errorf("staging systemd system unit: %w", err)
 	}
 
-	script := linuxElevatePrelude + fmt.Sprintf(`
+	script := sudoPrelude() + fmt.Sprintf(`
 set -e
 $SUDO mv %s %s
 $SUDO systemctl daemon-reload
 $SUDO systemctl enable %s.service
 $SUDO systemctl restart %s.service || $SUDO systemctl start %s.service
 `,
-		posixSingleQuote(tmpPath),
-		posixSingleQuote(sysPath),
+		hostshell.PosixSingleQuote(tmpPath),
+		hostshell.PosixSingleQuote(sysPath),
 		base, base, base)
 
 	if _, err := h.Run(script); err != nil {
@@ -234,12 +213,12 @@ func installLaunchd(h *host.Host, instance, san, absRunnerDir, home string) erro
 	plistName := label + ".plist"
 	plistPath := home + "/Library/LaunchAgents/" + plistName
 
-	if err := writeRemoteBytes(h, plistPath, []byte(plist)); err != nil {
+	if err := hostshell.WriteRemoteBytes(h, plistPath, []byte(plist)); err != nil {
 		return fmt.Errorf("writing LaunchAgent plist: %w", err)
 	}
 
-	qplist := posixSingleQuote(plistPath)
-	qlabel := posixSingleQuote(label)
+	qplist := hostshell.PosixSingleQuote(plistPath)
+	qlabel := hostshell.PosixSingleQuote(label)
 	cmd := "mkdir -p \"$HOME/Library/LaunchAgents\"\n" +
 		launchdActivateScript(qlabel, qplist, plistName, true)
 
@@ -265,8 +244,8 @@ $principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType S4U -Ru
 Register-ScheduledTask -TaskName $tn -Action $act -Trigger $tr -Settings $st -Principal $principal -Force | Out-Null
 Start-ScheduledTask -TaskName $tn
 `,
-		powerShellSingleQuoted(taskName),
-		powerShellSingleQuoted(absRunnerDir),
+		hostshell.PowerShellSingleQuote(taskName),
+		hostshell.PowerShellSingleQuote(absRunnerDir),
 	)
 	if _, err := h.RunShell(strings.TrimSpace(ps)); err != nil {
 		return fmt.Errorf("registering scheduled task: %w", err)
@@ -302,7 +281,7 @@ systemctl --user daemon-reload
 		return err
 
 	case KindSystemdSystem:
-		script := linuxElevatePrelude + fmt.Sprintf(`
+		script := sudoPrelude() + fmt.Sprintf(`
 set -e
 $SUDO systemctl disable --now %s.service 2>/dev/null || true
 $SUDO rm -f /etc/systemd/system/%s.service
@@ -313,7 +292,7 @@ $SUDO systemctl daemon-reload
 
 	case KindLaunchd:
 		label := LaunchdLabel(san)
-		cmd := launchdBootoutScript(posixSingleQuote(label), label+".plist")
+		cmd := launchdBootoutScript(hostshell.PosixSingleQuote(label), label+".plist")
 		_, err := h.Run(cmd)
 		return err
 
@@ -321,7 +300,7 @@ $SUDO systemctl daemon-reload
 		name := WindowsTaskName(san)
 		ps := fmt.Sprintf(
 			`Unregister-ScheduledTask -TaskName %s -Confirm:$false -ErrorAction SilentlyContinue`,
-			powerShellSingleQuoted(name),
+			hostshell.PowerShellSingleQuote(name),
 		)
 		_, err := h.RunShell(ps)
 		return err
@@ -351,7 +330,7 @@ func Start(h *host.Host, instance string) error {
 		_, err := h.Run("systemctl --user start " + base + ".service")
 		return err
 	case KindSystemdSystem:
-		script := linuxElevatePrelude + fmt.Sprintf(`
+		script := sudoPrelude() + fmt.Sprintf(`
 $SUDO systemctl start %s.service
 `, base)
 		_, err := h.Run(script)
@@ -363,12 +342,12 @@ $SUDO systemctl start %s.service
 			return herr
 		}
 		plistPath := home + "/Library/LaunchAgents/" + label + ".plist"
-		cmd := launchdActivateScript(posixSingleQuote(label), posixSingleQuote(plistPath), label+".plist", false)
+		cmd := launchdActivateScript(hostshell.PosixSingleQuote(label), hostshell.PosixSingleQuote(plistPath), label+".plist", false)
 		_, err := h.Run(cmd)
 		return err
 	case KindWindowsTask:
 		name := WindowsTaskName(san)
-		ps := fmt.Sprintf(`Start-ScheduledTask -TaskName %s`, powerShellSingleQuoted(name))
+		ps := fmt.Sprintf(`Start-ScheduledTask -TaskName %s`, hostshell.PowerShellSingleQuote(name))
 		_, err := h.RunShell(ps)
 		return err
 	default:
@@ -396,7 +375,7 @@ func Stop(h *host.Host, instance string) error {
 		_, err := h.Run("systemctl --user stop " + base + ".service")
 		return err
 	case KindSystemdSystem:
-		script := linuxElevatePrelude + fmt.Sprintf(`
+		script := sudoPrelude() + fmt.Sprintf(`
 $SUDO systemctl stop %s.service
 `, base)
 		_, err := h.Run(script)
@@ -404,12 +383,12 @@ $SUDO systemctl stop %s.service
 	case KindLaunchd:
 		label := LaunchdLabel(san)
 		cmd := fmt.Sprintf(`UID=$(id -u); LABEL=%s; for _DOMAIN in "gui/$UID" "user/$UID"; do launchctl bootout "$_DOMAIN/$LABEL" 2>/dev/null || true; done`,
-			posixSingleQuote(label))
+			hostshell.PosixSingleQuote(label))
 		_, err := h.Run(cmd)
 		return err
 	case KindWindowsTask:
 		name := WindowsTaskName(san)
-		ps := fmt.Sprintf(`Stop-ScheduledTask -TaskName %s -ErrorAction SilentlyContinue`, powerShellSingleQuoted(name))
+		ps := fmt.Sprintf(`Stop-ScheduledTask -TaskName %s -ErrorAction SilentlyContinue`, hostshell.PowerShellSingleQuote(name))
 		_, err := h.RunShell(ps)
 		return err
 	default:
@@ -463,7 +442,7 @@ func Status(h *host.Host, hostName, instance, mode string) (StatusRow, error) {
 		return row, nil
 
 	case KindSystemdSystem:
-		script := linuxElevatePrelude + fmt.Sprintf(`
+		script := sudoPrelude() + fmt.Sprintf(`
 $SUDO systemctl is-active %s.service 2>/dev/null || echo inactive
 `, base)
 		out, err := h.Run(script)
@@ -477,7 +456,7 @@ $SUDO systemctl is-active %s.service 2>/dev/null || echo inactive
 
 	case KindLaunchd:
 		label := LaunchdLabel(san)
-		cmd := launchdPrintScript(posixSingleQuote(label)) + " | head -n 5"
+		cmd := launchdPrintScript(hostshell.PosixSingleQuote(label)) + " | head -n 5"
 		out, err := h.Run(cmd)
 		if err != nil {
 			row.Detail = "installed (launchd): error " + err.Error()
@@ -488,7 +467,7 @@ $SUDO systemctl is-active %s.service 2>/dev/null || echo inactive
 
 	case KindWindowsTask:
 		name := WindowsTaskName(san)
-		ps := fmt.Sprintf(`(Get-ScheduledTask -TaskName %s -ErrorAction SilentlyContinue | Select-Object -ExpandProperty State)`, powerShellSingleQuoted(name))
+		ps := fmt.Sprintf(`(Get-ScheduledTask -TaskName %s -ErrorAction SilentlyContinue | Select-Object -ExpandProperty State)`, hostshell.PowerShellSingleQuote(name))
 		out, err := h.RunShell(ps)
 		if err != nil {
 			row.Detail = "installed (task): error " + err.Error()

@@ -10,6 +10,7 @@ import (
 
 	"github.com/an-lee/gh-sr/internal/config"
 	"github.com/an-lee/gh-sr/internal/host"
+	"github.com/an-lee/gh-sr/internal/hostshell"
 )
 
 // AgenticRunnerImageTag is the local Docker image tag built by gh sr setup.
@@ -220,7 +221,7 @@ func mtuDockerCreateArg(mtu int) string {
 	if mtu < 576 || mtu >= 1500 {
 		return ""
 	}
-	return "  -e GH_SR_HOST_MTU=" + posixSingleQuote(strconv.Itoa(mtu)) + " \\\n"
+	return "  -e GH_SR_HOST_MTU=" + hostshell.PosixSingleQuote(strconv.Itoa(mtu)) + " \\\n"
 }
 
 // resolveContainerMTU returns the MTU to pin for a new runner container: the explicit
@@ -290,17 +291,17 @@ docker create \
   -e GH_SR_RUNNER_GROUP=%s \
   -e GH_SR_RUNNER_EPHEMERAL=%s \
 %s  %s`,
-		posixSingleQuote(stateDir),
-		posixSingleQuote(containerName(instanceName)),
-		posixSingleQuote(stateDir),
-		posixSingleQuote(instanceName),
-		posixSingleQuote(regToken),
-		posixSingleQuote(runURL),
-		posixSingleQuote(strings.Join(labels, ",")),
-		posixSingleQuote(group),
-		posixSingleQuote(ephemeral),
+		hostshell.PosixSingleQuote(stateDir),
+		hostshell.PosixSingleQuote(containerName(instanceName)),
+		hostshell.PosixSingleQuote(stateDir),
+		hostshell.PosixSingleQuote(instanceName),
+		hostshell.PosixSingleQuote(regToken),
+		hostshell.PosixSingleQuote(runURL),
+		hostshell.PosixSingleQuote(strings.Join(labels, ",")),
+		hostshell.PosixSingleQuote(group),
+		hostshell.PosixSingleQuote(ephemeral),
 		mtuEnv,
-		posixSingleQuote(imageTag),
+		hostshell.PosixSingleQuote(imageTag),
 	)
 
 	if _, err := h.Run(cmd); err != nil {
@@ -337,7 +338,7 @@ func (m *Manager) removeContainer(h *host.Host, rc config.RunnerConfig, instance
 		// Run inside the container if it's still alive; ignore errors.
 		_, _ = h.Run(fmt.Sprintf(
 			"docker exec %s su - runner -c \"cd /home/runner/actions-runner && ./config.sh remove --token %s\" 2>/dev/null || true",
-			cName, posixSingleQuote(removeTok),
+			cName, hostshell.PosixSingleQuote(removeTok),
 		))
 	}
 
@@ -353,7 +354,7 @@ func (m *Manager) removeContainer(h *host.Host, rc config.RunnerConfig, instance
 		// Fall back to unresolved path; rm -rf in the shell will still expand $HOME.
 		stateDir = containerStateDir(h, instanceName)
 	}
-	if _, err := h.Run(fmt.Sprintf("rm -rf %s", posixSingleQuote(stateDir))); err != nil {
+	if _, err := h.Run(fmt.Sprintf("rm -rf %s", hostshell.PosixSingleQuote(stateDir))); err != nil {
 		fmt.Fprintf(m.out(), "  %s: warning: failed to remove state dir %s: %v\n", instanceName, stateDir, err)
 	}
 
@@ -389,7 +390,7 @@ func parseContainerStatusInspectOutput(out string) (local, image, imageRev strin
 // containerLocalStatusImageAndRevision returns local status, Config.Image, and the
 // gh-sr.image-revision label on the container's image (one SSH round-trip).
 func (m *Manager) containerLocalStatusImageAndRevision(h *host.Host, instanceName string) (string, string, string) {
-	cid := posixSingleQuote(containerName(instanceName))
+	cid := hostshell.PosixSingleQuote(containerName(instanceName))
 	script := fmt.Sprintf(
 		"cid=%s\n"+
 			"line=$(docker inspect --format '{{.State.Status}}|{{.Config.Image}}|{{.Image}}' \"$cid\" 2>/dev/null) || line=\"\"\n"+
@@ -454,7 +455,7 @@ func (m *Manager) rebuildContainerImage(h *host.Host, rc config.RunnerConfig) er
 	// reference those digests; removing them breaks `docker image inspect` and
 	// BUILD shows "?" until those runners are rebuilt too.
 	fmt.Fprintf(m.out(), "  %s: removing image %s (if present)...\n", rc.Name, imageTag)
-	_, _ = h.Run(fmt.Sprintf("docker rmi -f %s 2>/dev/null || true", posixSingleQuote(imageTag)))
+	_, _ = h.Run(fmt.Sprintf("docker rmi -f %s 2>/dev/null || true", hostshell.PosixSingleQuote(imageTag)))
 
 	fmt.Fprintf(m.out(), "  %s: building container runner image %s (this may take several minutes)...\n", rc.Name, imageTag)
 	if err := buildAgenticRunnerImage(h, imageTag, version, arch, m.GhSrVersion, m.containerImageExtraApt()); err != nil {
@@ -491,7 +492,7 @@ func (m *Manager) needsSetupContainer(h *host.Host, rc config.RunnerConfig) bool
 func containerImageExists(h *host.Host, imageTag string) (bool, error) {
 	out, err := h.Run(fmt.Sprintf(
 		"docker image inspect %s --format='{{.Id}}' 2>/dev/null | grep -q . && echo yes || echo no",
-		posixSingleQuote(imageTag),
+		hostshell.PosixSingleQuote(imageTag),
 	))
 	if err != nil {
 		return false, nil
@@ -622,16 +623,16 @@ chmod +x %s`, path, embedTextForRemoteWrite(hk.content), path)
 
 	// Build (stamp labels so gh sr status can compare layout to this binary).
 	rev := ContainerImageLayoutRevision(ghSrVersion, extraApt)
-	labelRev := posixSingleQuote(dockerLabelImageRevision + "=" + rev)
-	labelCLI := posixSingleQuote(dockerLabelCLIVersion + "=" + ghSrVersion)
+	labelRev := hostshell.PosixSingleQuote(dockerLabelImageRevision + "=" + rev)
+	labelCLI := hostshell.PosixSingleQuote(dockerLabelCLIVersion + "=" + ghSrVersion)
 	buildCmd := fmt.Sprintf(
 		"docker build --build-arg RUNNER_VERSION=%s --build-arg RUNNER_ARCH=%s --label %s --label %s -t %s %s",
-		posixSingleQuote(runnerVersion),
-		posixSingleQuote(runnerArch),
+		hostshell.PosixSingleQuote(runnerVersion),
+		hostshell.PosixSingleQuote(runnerArch),
 		labelRev,
 		labelCLI,
-		posixSingleQuote(imageTag),
-		posixSingleQuote(buildDir),
+		hostshell.PosixSingleQuote(imageTag),
+		hostshell.PosixSingleQuote(buildDir),
 	)
 	if _, err := h.Run(buildCmd); err != nil {
 		return fmt.Errorf("docker build: %w", err)
