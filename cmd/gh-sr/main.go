@@ -143,6 +143,37 @@ func newManager(cfg *config.Config, w io.Writer) (*runner.Manager, error) {
 	return m, nil
 }
 
+// runnerCommandContext is the common preamble of most top-level gh sr
+// subcommands: load the resolved config and build a runner manager wired to
+// the command's stdout. Returns an error on either failure so callers can
+// bubble it up directly.
+func runnerCommandContext(cmd *cobra.Command) (*config.Config, *runner.Manager, error) {
+	cfg, err := loadConfig()
+	if err != nil {
+		return nil, nil, err
+	}
+	mgr, err := newManager(cfg, cmd.OutOrStdout())
+	if err != nil {
+		return nil, nil, err
+	}
+	return cfg, mgr, nil
+}
+
+// runRunnerCmd wraps an ops function with the standard
+// (w, cfg, mgr, filterHost, filterRepo, nameArgs) signature into a cobra
+// RunE that loads the config and manager first, then forwards to the ops
+// function. The package-level filterHost / filterRepo flags are applied
+// automatically; only the ops call itself varies between subcommands.
+func runRunnerCmd(op func(io.Writer, *config.Config, *runner.Manager, string, string, []string) error) func(*cobra.Command, []string) error {
+	return func(cmd *cobra.Command, args []string) error {
+		cfg, mgr, err := runnerCommandContext(cmd)
+		if err != nil {
+			return err
+		}
+		return op(cmd.OutOrStdout(), cfg, mgr, filterHost, filterRepo, args)
+	}
+}
+
 func initCmd() *cobra.Command {
 	var force bool
 	var quick bool
@@ -597,17 +628,7 @@ func setupCmd() *cobra.Command {
 		Use:   "setup [runner-names...]",
 		Short: "Install runner prerequisites and configure runners on hosts",
 		Long:  "Installs and configures runners on remote hosts over SSH." + linuxSetupPrivilegesHelp,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, err := loadConfig()
-			if err != nil {
-				return err
-			}
-			mgr, err := newManager(cfg, cmd.OutOrStdout())
-			if err != nil {
-				return err
-			}
-			return ops.Setup(cmd.OutOrStdout(), cfg, mgr, filterHost, filterRepo, args)
-		},
+		RunE:  runRunnerCmd(ops.Setup),
 	}
 }
 
@@ -615,17 +636,7 @@ func upCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "up [runner-names...]",
 		Short: "Start runners (all, or filtered by name/host/repo)",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, err := loadConfig()
-			if err != nil {
-				return err
-			}
-			mgr, err := newManager(cfg, cmd.OutOrStdout())
-			if err != nil {
-				return err
-			}
-			return ops.Up(cmd.OutOrStdout(), cfg, mgr, filterHost, filterRepo, args)
-		},
+		RunE:  runRunnerCmd(ops.Up),
 	}
 }
 
@@ -633,17 +644,7 @@ func downCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "down [runner-names...]",
 		Short: "Stop runners",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, err := loadConfig()
-			if err != nil {
-				return err
-			}
-			mgr, err := newManager(cfg, cmd.OutOrStdout())
-			if err != nil {
-				return err
-			}
-			return ops.Down(cmd.OutOrStdout(), cfg, mgr, filterHost, filterRepo, args)
-		},
+		RunE:  runRunnerCmd(ops.Down),
 	}
 }
 
@@ -651,17 +652,7 @@ func restartCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "restart [runner-names...]",
 		Short: "Restart runners (stop then start)",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, err := loadConfig()
-			if err != nil {
-				return err
-			}
-			mgr, err := newManager(cfg, cmd.OutOrStdout())
-			if err != nil {
-				return err
-			}
-			return ops.Restart(cmd.OutOrStdout(), cfg, mgr, filterHost, filterRepo, args)
-		},
+		RunE:  runRunnerCmd(ops.Restart),
 	}
 }
 
@@ -680,17 +671,7 @@ cache inside the container) is preserved across the rebuild, so runners stay
 registered with GitHub and do not consume a new registration token.
 
 Runners with runner_mode: native are skipped (no error); only runner_mode: container rows are rebuilt.`,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, err := loadConfig()
-			if err != nil {
-				return err
-			}
-			mgr, err := newManager(cfg, cmd.OutOrStdout())
-			if err != nil {
-				return err
-			}
-			return ops.RebuildImage(cmd.OutOrStdout(), cfg, mgr, filterHost, filterRepo, args)
-		},
+		RunE: runRunnerCmd(ops.RebuildImage),
 	}
 }
 
@@ -699,11 +680,7 @@ func statusCmd() *cobra.Command {
 		Use:   "status",
 		Short: "Show status of all runners",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, err := loadConfig()
-			if err != nil {
-				return err
-			}
-			mgr, err := newManager(cfg, cmd.OutOrStdout())
+			cfg, mgr, err := runnerCommandContext(cmd)
 			if err != nil {
 				return err
 			}
@@ -723,11 +700,7 @@ func logsCmd() *cobra.Command {
 		Short: "Show recent logs from a runner",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, err := loadConfig()
-			if err != nil {
-				return err
-			}
-			mgr, err := newManager(cfg, cmd.OutOrStdout())
+			cfg, mgr, err := runnerCommandContext(cmd)
 			if err != nil {
 				return err
 			}
@@ -746,11 +719,7 @@ func cleanupCmd() *cobra.Command {
 		Use:   "cleanup",
 		Short: "Remove offline/ghost runners from GitHub",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, err := loadConfig()
-			if err != nil {
-				return err
-			}
-			mgr, err := newManager(cfg, cmd.OutOrStdout())
+			cfg, mgr, err := runnerCommandContext(cmd)
 			if err != nil {
 				return err
 			}
@@ -765,17 +734,7 @@ func updateCmd() *cobra.Command {
 		Use:   "update [runner-names...]",
 		Short: "Update runner binary on hosts (remove + setup + start)",
 		Long:  "Removes each runner, runs setup again, then starts it. Re-runs the same remote install paths as gh sr setup." + linuxSetupPrivilegesHelp,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, err := loadConfig()
-			if err != nil {
-				return err
-			}
-			mgr, err := newManager(cfg, cmd.OutOrStdout())
-			if err != nil {
-				return err
-			}
-			return ops.Update(cmd.OutOrStdout(), cfg, mgr, filterHost, filterRepo, args)
-		},
+		RunE:  runRunnerCmd(ops.Update),
 	}
 }
 
@@ -788,17 +747,7 @@ the runner entry from ~/.gh-sr/runners.yml. Unlike gh sr update, this does not
 re-setup the runner afterward.
 
 Use --host and/or --repo to filter which runners to remove.` + linuxSetupPrivilegesHelp,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, err := loadConfig()
-			if err != nil {
-				return err
-			}
-			mgr, err := newManager(cfg, cmd.OutOrStdout())
-			if err != nil {
-				return err
-			}
-			return ops.Remove(cmd.OutOrStdout(), cfg, mgr, filterHost, filterRepo, args)
-		},
+		RunE: runRunnerCmd(ops.Remove),
 	}
 }
 
