@@ -1,0 +1,1 @@
+- [Perf Improver state 2026-06](notes.md) — last run 2026-06-06, repo in maintenance mode
