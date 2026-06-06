@@ -9,29 +9,30 @@ metadata:
 
 ## Last run
 
-- Run ID: 27053267544
-- Selected tasks: 2 (Issue Comment), 5 (Coding Improvements), 3 (Issue Fix)
-- Branch: `repo-assist/refactor-cmd-boilerplate` (off main, single commit `e39c0d3`)
-- Draft PR for #92 declared via `safeoutputs create_pull_request` (success — patch at /tmp/gh-aw/aw-repo-assist-refactor-cmd-boilerplate.patch, bundle at .bundle). PR number pending — verify on next run.
+- Run ID: 27062630621
+- Selected tasks: 2 (Issue Comment), 3 (Issue Fix), 5 (Coding Improvements)
+- Branch: `repo-assist/refactor-remote-shell-helpers` (off main, single commit `3cd6be3`)
+- Draft PR for #96 declared via `safeoutputs create_pull_request` (success — patch at /tmp/gh-aw/aw-repo-assist-refactor-remote-shell-helpers.patch). PR number pending — verify on next run.
 
 ## Completed work
 
-- **Refactored `cmd/gh-sr/main.go` subcommand boilerplate (closes #92):** added `runnerCommandContext(cmd)` helper and `runRunnerCmd(op)` higher-order wrapper in `cmd/gh-sr/main.go`. 7 subcommands (setup, up, down, restart, rebuild, update, remove) now use `RunE: runRunnerCmd(ops.X)` (one-liner). 3 subcommands (status, logs, cleanup) call `runnerCommandContext` directly. Net: -92 / +41 lines (file shrank 889 → 838). All packages build, vet, `go test -race` pass.
-- **Prior: Refactored `internal/host` Executor output-capture (closes #95):** merged as PR #99 at 2026-06-06T05:01:05Z by @an-lee. Verified this run.
+- **Refactored cross-package remote-shell helpers (closes #96):** created new `internal/hostshell/` package with exported `PosixSingleQuote`, `PowerShellSingleQuote`, `WriteRemoteBytes`, and parameterised `LinuxElevatePrelude(failureMsg)`. Removed duplicates from `internal/runner/native.go`, `internal/runner/linux_sudo.go`, `internal/autostart/autostart.go`, `internal/autostart/shell.go`, `internal/autostart/linux.go`. Added per-package `sudoPrelude()` wrappers that capture the right user-facing failure message once. 11 call sites stay one-liners. Merged `Test_posixSingleQuote` and `Test_powerShellSingleQuoted` test cases into `internal/hostshell/hostshell_test.go`; added `TestLinuxElevatePrelude`. Diff: 12 files, +98 / -232 (net -134 lines). All packages build, vet, `go test -race` pass, gofmt clean.
+- **Prior: Refactored `cmd/gh-sr/main.go` subcommand boilerplate (closes #92):** merged as PR #102 at 2026-06-06 by @an-lee.
+- **Prior: Refactored `internal/host` Executor output-capture (closes #95):** merged as PR #99 at 2026-06-06T05:01:05Z by @an-lee.
 
 ## In-flight work
 
-- Draft PR for the #92 refactor. The patch + git bundle are in `/tmp/gh-aw/`. Awaiting the safeoutputs push step.
+- Draft PR for the #96 refactor. The patch + git bundle are in `/tmp/gh-aw/aw-repo-assist-refactor-remote-shell-helpers.{patch,bundle}`. Awaiting the safeoutputs push step.
 
 ## Backlog / next high-value task
 
-The other open duplicate-code issues still pending and worth tackling after #92 lands:
-- #96 (cross-package remote-shell plumbing: `writeRemoteBytes`, `linuxElevatePrelude`, `posixSingleQuote`, `powerShellSingleQuoted`)
+The other open duplicate-code issues still pending and worth tackling after #96 lands:
 - #94 (TUI table-rendering helpers in `internal/tui/{dashboard_view.go, metrics.go, status.go}`)
-- #98 (pre-activation `MAX_OPEN_PRS` gate duplicated across 5 agentic workflows)
-- #97 (agentic workflow `imports:` + `runs-on:` block duplicated across 7 workflow .md files)
+- #103 (hostGroup grouping logic duplicated in `internal/ops/ops.go`)
+- #104 (`scopeKey` struct duplicated in `internal/runner/runner.go`; four unscoped wrapper methods in `internal/runner/github.go` that are unused inside the package)
+- #105 (heredoc file-write pattern repeated 6+ times in `buildAgenticRunnerImage`)
 
-#96 and #94 are pure Go refactors suitable for the next refactor PR. #98 and #97 touch `.github/workflows/` and require recompiling the agentic workflows (`gh aw compile`); leave those for the maintainers unless they explicitly ask.
+All four are pure Go refactors suitable for the next run. #98 and #97 touch `.github/workflows/` and require recompiling the agentic workflows (`gh aw compile`); leave those for the maintainers unless they explicitly ask.
 
 ## Backlog cursor for Task 2 (Issue Comment)
 
@@ -39,11 +40,12 @@ Process oldest-first. Earliest open issues are #85–#94, but most are auto-gene
 
 ## Activity / PR history
 
-- 2026-06-06 (run 27053267544): Created draft PR for `refactor(cmd): extract runnerCommandContext + runRunnerCmd to deduplicate subcommand preamble` (Closes #92). Branch: `repo-assist/refactor-cmd-boilerplate`.
+- 2026-06-06 (run 27062630621): Created draft PR for `refactor: extract remote-shell helpers to internal/hostshell` (Closes #96). Branch: `repo-assist/refactor-remote-shell-helpers`.
+- 2026-06-06 (run 27053267544): Created draft PR for `refactor(cmd): extract runnerCommandContext + runRunnerCmd to deduplicate subcommand preamble` (Closes #92). Branch: `repo-assist/refactor-cmd-boilerplate`. **Merged** as PR #102.
 - 2026-06-06 (run 27048457009): Created draft PR for `refactor(host): extract runWithCapture helper for Executor output capture` (Closes #95). Branch: `repo-assist/refactor-host-output-capture`. **Merged** as PR #99.
 
 ## Notes for next run
 
-- Verify the PR for the #92 refactor merged or got maintainer feedback; if it needs updates, push via `push_to_pull_request_branch`.
-- After #92 lands, consider #96 (cross-package remote-shell helpers) as the next refactor — it's the most impactful remaining duplicate-code issue.
+- Verify the PR for the #96 refactor merged or got maintainer feedback; if it needs updates, push via `push_to_pull_request_branch`.
+- After #96 lands, consider #103 or #104 next (smallest scope, all pure Go).
 - Memory is currently a single `state.md` file. If the activity grows, split into `state.md`, `comments_made.md`, and `fix_attempts.md` for cleanliness.
