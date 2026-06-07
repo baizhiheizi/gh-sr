@@ -514,78 +514,35 @@ func embedTextForRemoteWrite(s string) string {
 func buildAgenticRunnerImage(h *host.Host, imageTag, runnerVersion, runnerArch, ghSrVersion string, extraApt []string) error {
 	buildDir := "/tmp/gh-sr-agentic-runner-build"
 
-	// Write Dockerfile.
-	dfPath := buildDir + "/Dockerfile"
-	writeDockerfile := fmt.Sprintf(`
-mkdir -p %s
-cat > %s << 'GHSR_EOF'
-%s
-GHSR_EOF`,
-		buildDir,
-		dfPath,
-		embedTextForRemoteWrite(agenticRunnerDockerfile),
-	)
-	if _, err := h.Run(writeDockerfile); err != nil {
-		return fmt.Errorf("writing Dockerfile: %w", err)
+	// Write the 8 build-context files via the shared helpers. writeRemoteHeredocFile
+	// creates the parent directory on the host, and writeRemoteHeredocExecutable
+	// additionally chmods the file +x — so each site collapses to a single call.
+	if err := writeRemoteHeredocFile(h, buildDir+"/Dockerfile", agenticRunnerDockerfile); err != nil {
+		return err
+	}
+	if err := writeRemoteHeredocFile(h, buildDir+"/apt-packages-core.txt", agenticRunnerAptPackagesCore); err != nil {
+		return err
 	}
 
-	// Write apt-packages-core.txt (embedded manifest).
-	corePath := buildDir + "/apt-packages-core.txt"
-	writeCore := fmt.Sprintf(`cat > %s << 'GHSR_EOF'
-%s
-GHSR_EOF`,
-		corePath,
-		embedTextForRemoteWrite(agenticRunnerAptPackagesCore),
-	)
-	if _, err := h.Run(writeCore); err != nil {
-		return fmt.Errorf("writing apt-packages-core.txt: %w", err)
-	}
-
-	// Write apt-packages-extra.txt (from config; validated at load time).
-	extraPath := buildDir + "/apt-packages-extra.txt"
+	// apt-packages-extra.txt is empty when no extras are configured: truncate instead
+	// of writing an empty heredoc (avoids a stray newline and a confusing file).
 	extraSorted := containerRunnerImageExtraSorted(extraApt)
-	var writeExtra string
+	extraPath := buildDir + "/apt-packages-extra.txt"
 	if len(extraSorted) == 0 {
-		writeExtra = fmt.Sprintf(": > %s", extraPath)
+		if _, err := h.Run(formatEmptyRemoteFile(extraPath)); err != nil {
+			return fmt.Errorf("writing %s: %w", extraPath, err)
+		}
 	} else {
-		extraBody := strings.Join(extraSorted, "\n")
-		writeExtra = fmt.Sprintf(`cat > %s << 'GHSR_EOF'
-%s
-GHSR_EOF`,
-			extraPath,
-			embedTextForRemoteWrite(extraBody),
-		)
-	}
-	if _, err := h.Run(writeExtra); err != nil {
-		return fmt.Errorf("writing apt-packages-extra.txt: %w", err)
+		if err := writeRemoteHeredocFile(h, extraPath, joinExtraPackages(extraSorted)); err != nil {
+			return err
+		}
 	}
 
-	// Write entrypoint.sh.
-	epPath := buildDir + "/entrypoint.sh"
-	writeEntrypoint := fmt.Sprintf(`cat > %s << 'GHSR_EOF'
-%s
-GHSR_EOF
-chmod +x %s`,
-		epPath,
-		embedTextForRemoteWrite(agenticRunnerEntrypoint),
-		epPath,
-	)
-	if _, err := h.Run(writeEntrypoint); err != nil {
-		return fmt.Errorf("writing entrypoint.sh: %w", err)
+	if err := writeRemoteHeredocExecutable(h, buildDir+"/entrypoint.sh", agenticRunnerEntrypoint); err != nil {
+		return err
 	}
-
-	// Write docker-wrapper.sh.
-	wrapperPath := buildDir + "/docker-wrapper.sh"
-	writeWrapper := fmt.Sprintf(`cat > %s << 'GHSR_EOF'
-%s
-GHSR_EOF
-chmod +x %s`,
-		wrapperPath,
-		embedTextForRemoteWrite(agenticRunnerDockerWrapper),
-		wrapperPath,
-	)
-	if _, err := h.Run(writeWrapper); err != nil {
-		return fmt.Errorf("writing docker-wrapper.sh: %w", err)
+	if err := writeRemoteHeredocExecutable(h, buildDir+"/docker-wrapper.sh", agenticRunnerDockerWrapper); err != nil {
+		return err
 	}
 
 	// Write baked inner-Docker network configs (Pillar 2: deterministic DNS, single dockerd start).
@@ -593,31 +550,19 @@ chmod +x %s`,
 		{"daemon.json", agenticRunnerDaemonJSON},
 		{"dnsmasq-gh-sr.conf", agenticRunnerDnsmasqConf},
 	} {
-		path := buildDir + "/" + f.name
-		writeCmd := fmt.Sprintf(`cat > %s << 'GHSR_EOF'
-%s
-GHSR_EOF`, path, embedTextForRemoteWrite(f.content))
-		if _, err := h.Run(writeCmd); err != nil {
-			return fmt.Errorf("writing %s: %w", f.name, err)
+		if err := writeRemoteHeredocFile(h, buildDir+"/"+f.name, f.content); err != nil {
+			return err
 		}
 	}
 
-	// Write per-job reset hooks into the build context (Pillar 1).
-	hooksDir := buildDir + "/hooks"
-	if _, err := h.Run(fmt.Sprintf("mkdir -p %s", hooksDir)); err != nil {
-		return fmt.Errorf("creating hooks build dir: %w", err)
-	}
+	// Write per-job reset hooks into the build context (Pillar 1). The helper mkdirs
+	// the parent of every path, so the explicit `mkdir -p buildDir/hooks` is gone.
 	for _, hk := range []struct{ name, content string }{
 		{"job-started.sh", agenticRunnerJobStartedHook},
 		{"job-completed.sh", agenticRunnerJobCompletedHook},
 	} {
-		path := hooksDir + "/" + hk.name
-		writeCmd := fmt.Sprintf(`cat > %s << 'GHSR_EOF'
-%s
-GHSR_EOF
-chmod +x %s`, path, embedTextForRemoteWrite(hk.content), path)
-		if _, err := h.Run(writeCmd); err != nil {
-			return fmt.Errorf("writing hook %s: %w", hk.name, err)
+		if err := writeRemoteHeredocExecutable(h, buildDir+"/hooks/"+hk.name, hk.content); err != nil {
+			return err
 		}
 	}
 
