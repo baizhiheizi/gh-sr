@@ -148,31 +148,6 @@ func Test_nativeConfigURL(t *testing.T) {
 	}
 }
 
-func Test_powerShellSingleQuoted(t *testing.T) {
-	t.Parallel()
-	cases := []struct {
-		input string
-		want  string
-	}{
-		{`hello`, `'hello'`},
-		{`didn't`, `'didn''t'`},
-		{`it's "quoted"`, `'it''s "quoted"'`},
-		{`a'b`, `'a''b'`},
-		{``, `''`},
-		{`no quotes`, `'no quotes'`},
-		{`trailing'`, `'trailing'''`},
-		{`'leading'`, `'''leading'''`},
-	}
-	for _, tc := range cases {
-		t.Run(tc.input, func(t *testing.T) {
-			t.Parallel()
-			if got := powerShellSingleQuoted(tc.input); got != tc.want {
-				t.Errorf("powerShellSingleQuoted(%q): got %q, want %q", tc.input, got, tc.want)
-			}
-		})
-	}
-}
-
 func Test_staleRegistrationMsg(t *testing.T) {
 	t.Parallel()
 	logLine := `Failed to create a session. The runner registration has been deleted from the server, please re-configure.`
