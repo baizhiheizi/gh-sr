@@ -306,8 +306,13 @@ func expectedGitHubRunnerOS(hostOS string) string {
 	}
 }
 
+// scopeKey is the (scope, target) pair used to dedupe GitHub API calls per
+// repo/org across multiple runner instances in EnrichWithGitHubStatus and
+// CleanupOffline. Declared at package level so both call sites share a single
+// type definition.
+type scopeKey struct{ scope, target string }
+
 func (m *Manager) EnrichWithGitHubStatus(statuses []RunnerStatus, cfg *config.Config) {
-	type scopeKey struct{ scope, target string }
 	keys := make(map[scopeKey]bool)
 	for _, r := range cfg.Runners {
 		keys[scopeKey{r.Scope(), r.ScopeTarget()}] = true
@@ -365,7 +370,6 @@ func (m *Manager) EnrichWithGitHubStatus(statuses []RunnerStatus, cfg *config.Co
 }
 
 func (m *Manager) CleanupOffline(cfg *config.Config) (int, error) {
-	type scopeKey struct{ scope, target string }
 	seen := make(map[scopeKey]bool)
 	removed := 0
 
