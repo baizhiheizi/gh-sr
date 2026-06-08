@@ -19,7 +19,7 @@ func NativeRunnerConfigPresent(h *host.Host, instanceName string) (bool, error) 
 	if h.OS == "windows" {
 		out, err := h.RunShell(fmt.Sprintf(
 			"%s; if ((Test-Path $runnerDir -PathType Container) -and (Test-Path (Join-Path $runnerDir 'run.cmd')) -and (Test-Path (Join-Path $runnerDir '.runner'))) { Write-Output 'yes' } else { Write-Output 'no' }",
-			windowsRunnerDirAssignment(h, "runnerDir", instanceName),
+			windowsRunnerDirAssignment(h, instanceName),
 		))
 		if err != nil {
 			return false, err
@@ -84,14 +84,18 @@ func archForGitHub(arch string) string {
 // powerShellSingleQuoted was moved to internal/hostshell.
 // Call sites use hostshell.PowerShellSingleQuote directly.
 
-func windowsRunnerDirAssignment(h *host.Host, varName, instanceName string) string {
-	return fmt.Sprintf("$%s = %s", varName, h.RunnerDirPS(instanceName))
+// windowsRunnerDirAssignment returns the PowerShell snippet that assigns
+// $runnerDir to the per-instance runner directory on Windows.
+// The variable name is fixed: every Windows script in this package expects
+// $runnerDir, so the helper has no second-variable form.
+func windowsRunnerDirAssignment(h *host.Host, instanceName string) string {
+	return "$runnerDir = " + h.RunnerDirPS(instanceName)
 }
 
 func windowsNativeInstallScript(h *host.Host, instanceName, version, url string) string {
 	zipName := fmt.Sprintf("actions-runner-%s.zip", version)
 	return strings.Join([]string{
-		windowsRunnerDirAssignment(h, "runnerDir", instanceName),
+		windowsRunnerDirAssignment(h, instanceName),
 		"New-Item -ItemType Directory -Force -Path $runnerDir | Out-Null",
 		fmt.Sprintf("$zip = Join-Path %s %s", h.TempDirPS(), hostshell.PowerShellSingleQuote(zipName)),
 		"[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12",
@@ -124,7 +128,7 @@ func windowsNativeConfigScript(h *host.Host, rc config.RunnerConfig, instanceNam
 		cmd += " --ephemeral"
 	}
 	return strings.Join([]string{
-		windowsRunnerDirAssignment(h, "runnerDir", instanceName),
+		windowsRunnerDirAssignment(h, instanceName),
 		"Set-Location -Path $runnerDir",
 		cmd,
 	}, "; ")
@@ -141,7 +145,7 @@ func windowsNativeStartScript(h *host.Host, instanceName string) string {
 	// ShowWindow=0 is kept as belt-and-suspenders but CREATE_NO_WINDOW is the flag that actually
 	// suppresses the visible cmd.exe console on modern Windows.
 	parts := []string{
-		windowsRunnerDirAssignment(h, "runnerDir", instanceName) + "; ",
+		windowsRunnerDirAssignment(h, instanceName) + "; ",
 		`$pidFile = Join-Path $runnerDir '.runner_pid'; `,
 		`$logFile = Join-Path $runnerDir 'runner.log'; `,
 		`if (Test-Path $pidFile) { $existingPid = Get-Content $pidFile; try { Get-Process -Id $existingPid -EA Stop | Out-Null; Write-Host 'already running'; exit 0 } catch {} }; `,
@@ -169,7 +173,7 @@ func windowsCheckStaleRegistration(h *host.Host, instanceName string) string {
 			"if ($alive) { Write-Host 'ok' } "+
 			"elseif ((Test-Path $logFile) -and (Select-String -Path $logFile -Pattern %s -Quiet)) { Write-Host 'stale' } "+
 			"else { Write-Host 'ok' }",
-		windowsRunnerDirAssignment(h, "runnerDir", instanceName),
+		windowsRunnerDirAssignment(h, instanceName),
 		hostshell.PowerShellSingleQuote(staleRegistrationMsg),
 	)
 }
@@ -180,7 +184,7 @@ func windowsDeleteRunnerConfig(h *host.Host, instanceName string) string {
 		"%s; Remove-Item -Force (Join-Path $runnerDir '.runner') -EA SilentlyContinue; "+
 			"Remove-Item -Force (Join-Path $runnerDir '.credentials') -EA SilentlyContinue; "+
 			"Remove-Item -Force (Join-Path $runnerDir '.credentials_rsaparams') -EA SilentlyContinue",
-		windowsRunnerDirAssignment(h, "runnerDir", instanceName),
+		windowsRunnerDirAssignment(h, instanceName),
 	)
 }
 
@@ -422,7 +426,7 @@ func (m *Manager) stopNative(h *host.Host, instanceName string) error {
 				"$null = & taskkill.exe /PID $p /T /F 2>&1; "+
 				"if ($LASTEXITCODE -eq 0) { Write-Host 'stopped' } else { Write-Host 'not running' }; "+
 				"Remove-Item $pidFile -Force -EA SilentlyContinue",
-			windowsRunnerDirAssignment(h, "runnerDir", instanceName),
+			windowsRunnerDirAssignment(h, instanceName),
 		)
 		out, err := h.RunShell(cmd)
 		if err != nil {
@@ -469,7 +473,7 @@ func (m *Manager) removeNative(h *host.Host, rc config.RunnerConfig, instanceNam
 		if h.OS == "windows" {
 			cmd := fmt.Sprintf(
 				"%s; Set-Location -Path $runnerDir; & .\\config.cmd remove --token %s",
-				windowsRunnerDirAssignment(h, "runnerDir", instanceName),
+				windowsRunnerDirAssignment(h, instanceName),
 				hostshell.PowerShellSingleQuote(removeToken),
 			)
 			h.RunShell(cmd)
@@ -481,7 +485,7 @@ func (m *Manager) removeNative(h *host.Host, rc config.RunnerConfig, instanceNam
 	}
 
 	if h.OS == "windows" {
-		h.RunShell(fmt.Sprintf("%s; Remove-Item -Recurse -Force $runnerDir", windowsRunnerDirAssignment(h, "runnerDir", instanceName)))
+		h.RunShell(fmt.Sprintf("%s; Remove-Item -Recurse -Force $runnerDir", windowsRunnerDirAssignment(h, instanceName)))
 	} else {
 		h.Run(fmt.Sprintf("rm -rf %s", dir))
 	}
@@ -531,7 +535,7 @@ func (m *Manager) statusNative(h *host.Host, instanceName string) string {
 				"if (-not (Test-Path $pidFile)) { Write-Host 'stopped'; exit 0 }; "+
 				"$p = Get-Content $pidFile; "+
 				"try { Get-Process -Id $p -EA Stop | Out-Null; Write-Host 'running' } catch { Write-Host 'stopped' }",
-			windowsRunnerDirAssignment(h, "runnerDir", instanceName),
+			windowsRunnerDirAssignment(h, instanceName),
 		)
 		out, _ := h.RunShell(cmd)
 		return strings.TrimSpace(out)
@@ -591,7 +595,7 @@ func (m *Manager) logsNative(h *host.Host, instanceName string) (string, error) 
 				"if ($latest) { Write-Output ('--- _diag/' + $latest.Name + ' (last 50 lines) ---'); Get-Content -LiteralPath $latest.FullName -Tail 50 } "+
 				"else { Write-Output 'no logs found' } } "+
 				"else { Write-Output 'no logs found' }",
-			windowsRunnerDirAssignment(h, "runnerDir", instanceName),
+			windowsRunnerDirAssignment(h, instanceName),
 		)
 		return h.RunShell(cmd)
 	}

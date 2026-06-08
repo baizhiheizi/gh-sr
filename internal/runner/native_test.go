@@ -156,6 +156,41 @@ func Test_staleRegistrationMsg(t *testing.T) {
 	}
 }
 
+func Test_windowsRunnerDirAssignment(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name         string
+		instanceName string
+		wantSuffix   string // expected trailing expression from h.RunnerDirPS(...)
+	}{
+		{
+			name:         "simple instance name",
+			instanceName: "r1",
+			wantSuffix:   "Join-Path (Join-Path $env:USERPROFILE '.gh-sr\\runners') 'r1'",
+		},
+		{
+			name:         "hyphenated instance name",
+			instanceName: "runner-1",
+			wantSuffix:   "Join-Path (Join-Path $env:USERPROFILE '.gh-sr\\runners') 'runner-1'",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			h := &host.Host{HostConfig: config.HostConfig{OS: "windows"}}
+			got := windowsRunnerDirAssignment(h, tc.instanceName)
+			want := "$runnerDir = " + tc.wantSuffix
+			if got != want {
+				t.Errorf("windowsRunnerDirAssignment(windows, %q): got %q, want %q",
+					tc.instanceName, got, want)
+			}
+			if !strings.HasPrefix(got, "$runnerDir = ") {
+				t.Errorf("result must start with %q, got %q", "$runnerDir = ", got)
+			}
+		})
+	}
+}
+
 func Test_windowsDeleteRunnerConfig_removesCredentialFiles(t *testing.T) {
 	t.Parallel()
 	h := host.NewHost("win", config.HostConfig{Addr: "u@h", OS: "windows", Arch: "amd64"})
