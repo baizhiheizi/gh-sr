@@ -63,6 +63,25 @@ func BenchmarkFilterRunners_AllFilters(b *testing.B) {
 	}
 }
 
+// BenchmarkFindRunner_ByBaseName exercises the base-name short-circuit path.
+func BenchmarkFindRunner_ByBaseName(b *testing.B) {
+	cfg := makeRunnerCfg(100, 10)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, _ = cfg.FindRunner("runner-a")
+	}
+}
+
+// BenchmarkFindRunner_ByInstanceName exercises the per-runner instance-name scan path.
+func BenchmarkFindRunner_ByInstanceName(b *testing.B) {
+	cfg := makeRunnerCfg(100, 10)
+	// instance name matches after scanning base-name misses
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, _ = cfg.FindRunner("runner-a-2")
+	}
+}
+
 func BenchmarkInstanceNames(b *testing.B) {
 	rc := RunnerConfig{Name: "my-runner", Count: 10}
 	b.ResetTimer()
