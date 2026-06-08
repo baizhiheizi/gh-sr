@@ -1,1 +1,1 @@
-- [Perf Improver state 2026-06](notes.md) — last run 2026-06-06, repo in maintenance mode
+- [Perf Improver state 2026-06](notes.md) — last run 2026-06-08 14:24 UTC, fixed Validate inline instance-name lookup
