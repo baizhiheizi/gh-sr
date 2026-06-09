@@ -378,6 +378,7 @@ func runHostChecks(w io.Writer, hostName string, h *host.Host, runners []config.
 			}
 		}
 	}
+	checkRunnerDiskUsage(w, hostName, h, runners, r)
 }
 
 func checkNativeRunnerInstall(w io.Writer, hostName string, h *host.Host, runners []config.RunnerConfig, r *Result) {
@@ -581,6 +582,56 @@ func checkContainerAgenticInnerHygiene(w io.Writer, hostName string, h *host.Hos
 			if f.DocRef != "" {
 				fmt.Fprintf(w, "       See: %s\n", f.DocRef)
 			}
+		}
+	}
+}
+
+func checkRunnerDiskUsage(w io.Writer, hostName string, h *host.Host, runners []config.RunnerConfig, r *Result) {
+	threshold := runner.DiskWarnThresholdBytes()
+	rcByInstance := make(map[string]*config.RunnerConfig)
+	for i := range runners {
+		rc := &runners[i]
+		if rc.Host != hostName {
+			continue
+		}
+		for _, inst := range rc.InstanceNames() {
+			rcByInstance[inst] = rc
+		}
+	}
+
+	seen := make(map[string]struct{})
+	instances := make([]string, 0, len(rcByInstance))
+	for inst := range rcByInstance {
+		instances = append(instances, inst)
+		seen[inst] = struct{}{}
+	}
+	if diskDirs, err := runner.ListRunnerInstanceDirs(h); err == nil {
+		for _, inst := range diskDirs {
+			if _, ok := seen[inst]; ok {
+				continue
+			}
+			seen[inst] = struct{}{}
+			instances = append(instances, inst)
+		}
+	}
+	sort.Strings(instances)
+
+	for _, inst := range instances {
+		rc := rcByInstance[inst]
+		entry := runner.MeasureDiskUsage(h, hostName, inst, rc)
+		if entry.Err != nil {
+			printLine(w, sevWarn, hostName, fmt.Sprintf("disk: instance %s: %v", inst, entry.Err))
+			r.Warn++
+			continue
+		}
+		if entry.TotalBytes >= threshold {
+			label := inst
+			if entry.Orphan {
+				label = inst + " (orphan)"
+			}
+			printLine(w, sevWarn, hostName, fmt.Sprintf("disk: instance %s uses %s under %s; run: gh sr disk prune --yes",
+				label, runner.FormatBytesHuman(entry.TotalBytes), entry.Path))
+			r.Warn++
 		}
 	}
 }

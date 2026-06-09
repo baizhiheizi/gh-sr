@@ -1,0 +1,358 @@
+package diskschedule
+
+import (
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"runtime"
+	"strings"
+)
+
+const (
+	serviceBase = "ghsr-disk-prune"
+	labelBase   = "com.an-lee.gh-sr.disk-prune"
+	// DefaultAtTime is the local daily schedule when AtTime is empty.
+	DefaultAtTime = "03:00"
+)
+
+// ScheduleKind describes how disk prune scheduling is installed locally.
+type ScheduleKind string
+
+const (
+	KindNone          ScheduleKind = ""
+	KindSystemdUser   ScheduleKind = "systemd-user-timer"
+	KindLaunchd       ScheduleKind = "launchd"
+	KindWindowsTask   ScheduleKind = "windows-task"
+)
+
+// InstallOpts configures local schedule installation.
+type InstallOpts struct {
+	ConfigPath string
+	GhPath     string
+	// AtTime is local daily time HH:MM (default 03:00).
+	AtTime string
+}
+
+// Detect reports whether a disk prune schedule is installed on this machine.
+func Detect() (ScheduleKind, error) {
+	switch runtime.GOOS {
+	case "linux":
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return KindNone, err
+		}
+		timerPath := filepath.Join(home, ".config", "systemd", "user", serviceBase+".timer")
+		if _, err := os.Stat(timerPath); err == nil {
+			return KindSystemdUser, nil
+		}
+		return KindNone, nil
+	case "darwin":
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return KindNone, err
+		}
+		plistPath := filepath.Join(home, "Library", "LaunchAgents", labelBase+".plist")
+		if _, err := os.Stat(plistPath); err == nil {
+			return KindLaunchd, nil
+		}
+		return KindNone, nil
+	case "windows":
+		out, err := exec.Command("powershell.exe", "-NoProfile", "-NonInteractive", "-Command",
+			fmt.Sprintf(`if (Get-ScheduledTask -TaskName '%s' -ErrorAction SilentlyContinue) { 'yes' } else { 'no' }`, serviceBase)).Output()
+		if err != nil {
+			return KindNone, err
+		}
+		if strings.TrimSpace(string(out)) == "yes" {
+			return KindWindowsTask, nil
+		}
+		return KindNone, nil
+	default:
+		return KindNone, fmt.Errorf("disk schedule not supported on GOOS %q", runtime.GOOS)
+	}
+}
+
+// Install writes and enables a local daily disk prune schedule.
+func Install(opts InstallOpts) error {
+	if opts.ConfigPath == "" {
+		return fmt.Errorf("config path is required")
+	}
+	if opts.GhPath == "" {
+		gh, err := exec.LookPath("gh")
+		if err != nil {
+			return fmt.Errorf("gh not found on PATH: %w", err)
+		}
+		opts.GhPath = gh
+	}
+	if opts.AtTime == "" {
+		opts.AtTime = DefaultAtTime
+	}
+	hour, minute, err := parseAtTime(opts.AtTime)
+	if err != nil {
+		return err
+	}
+
+	switch runtime.GOOS {
+	case "linux":
+		return installSystemdUser(opts, hour, minute)
+	case "darwin":
+		return installLaunchd(opts, hour, minute)
+	case "windows":
+		return installWindowsTask(opts, hour, minute)
+	default:
+		return fmt.Errorf("disk schedule install not supported on GOOS %q", runtime.GOOS)
+	}
+}
+
+// Uninstall removes the local disk prune schedule.
+func Uninstall() error {
+	switch runtime.GOOS {
+	case "linux":
+		return uninstallSystemdUser()
+	case "darwin":
+		return uninstallLaunchd()
+	case "windows":
+		return uninstallWindowsTask()
+	default:
+		return fmt.Errorf("disk schedule uninstall not supported on GOOS %q", runtime.GOOS)
+	}
+}
+
+// Status returns a human-readable schedule status string.
+func Status() (ScheduleKind, string, error) {
+	kind, err := Detect()
+	if err != nil {
+		return KindNone, "", err
+	}
+	if kind == KindNone {
+		return KindNone, "not installed", nil
+	}
+	switch kind {
+	case KindSystemdUser:
+		out, err := exec.Command("systemctl", "--user", "is-enabled", serviceBase+".timer").CombinedOutput()
+		detail := strings.TrimSpace(string(out))
+		if err != nil {
+			detail += " (check failed: " + err.Error() + ")"
+		}
+		return kind, "installed (systemd user timer): " + detail, nil
+	case KindLaunchd:
+		return kind, "installed (launchd): " + labelBase + ".plist", nil
+	case KindWindowsTask:
+		out, err := exec.Command("powershell.exe", "-NoProfile", "-NonInteractive", "-Command",
+			fmt.Sprintf(`(Get-ScheduledTask -TaskName '%s' -ErrorAction SilentlyContinue | Select-Object -ExpandProperty State)`, serviceBase)).Output()
+		if err != nil {
+			return kind, "installed (task): error " + err.Error(), nil
+		}
+		return kind, "installed (task): " + strings.TrimSpace(string(out)), nil
+	default:
+		return kind, string(kind), nil
+	}
+}
+
+func parseAtTime(at string) (hour, minute int, err error) {
+	at = strings.TrimSpace(at)
+	parts := strings.Split(at, ":")
+	if len(parts) != 2 {
+		return 0, 0, fmt.Errorf("invalid time %q (expected HH:MM)", at)
+	}
+	if _, err = fmt.Sscanf(parts[0], "%d", &hour); err != nil || hour < 0 || hour > 23 {
+		return 0, 0, fmt.Errorf("invalid hour in %q", at)
+	}
+	if _, err = fmt.Sscanf(parts[1], "%d", &minute); err != nil || minute < 0 || minute > 59 {
+		return 0, 0, fmt.Errorf("invalid minute in %q", at)
+	}
+	return hour, minute, nil
+}
+
+func installSystemdUser(opts InstallOpts, hour, minute int) error {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return err
+	}
+	dir := filepath.Join(home, ".config", "systemd", "user")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return err
+	}
+
+	execStart := fmt.Sprintf("%s sr disk prune --yes -c %s", systemdQuoteArg(opts.GhPath), systemdQuoteArg(opts.ConfigPath))
+	envFile := filepath.Join(home, ".gh-sr", "env")
+	service := fmt.Sprintf(`[Unit]
+Description=gh-sr disk prune
+
+[Service]
+Type=oneshot
+EnvironmentFile=-%s
+ExecStart=%s
+`, systemdQuoteArg(envFile), execStart)
+
+	timer := fmt.Sprintf(`[Unit]
+Description=Daily gh-sr disk prune
+
+[Timer]
+OnCalendar=*-*-* %02d:%02d:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+`, hour, minute)
+
+	if err := os.WriteFile(filepath.Join(dir, serviceBase+".service"), []byte(service), 0o600); err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(dir, serviceBase+".timer"), []byte(timer), 0o600); err != nil {
+		return err
+	}
+
+	cmds := [][]string{
+		{"systemctl", "--user", "daemon-reload"},
+		{"systemctl", "--user", "enable", serviceBase + ".timer"},
+		{"systemctl", "--user", "start", serviceBase + ".timer"},
+	}
+	for _, c := range cmds {
+		if out, err := exec.Command(c[0], c[1:]...).CombinedOutput(); err != nil {
+			return fmt.Errorf("%s: %w (%s)", strings.Join(c, " "), err, strings.TrimSpace(string(out)))
+		}
+	}
+	return nil
+}
+
+func uninstallSystemdUser() error {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return err
+	}
+	dir := filepath.Join(home, ".config", "systemd", "user")
+	_ = exec.Command("systemctl", "--user", "disable", "--now", serviceBase+".timer").Run()
+	_ = os.Remove(filepath.Join(dir, serviceBase+".timer"))
+	_ = os.Remove(filepath.Join(dir, serviceBase+".service"))
+	_ = exec.Command("systemctl", "--user", "daemon-reload").Run()
+	return nil
+}
+
+func installLaunchd(opts InstallOpts, hour, minute int) error {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return err
+	}
+	dir := filepath.Join(home, "Library", "LaunchAgents")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return err
+	}
+
+	plist := fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>%s</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>%s</string>
+    <string>sr</string>
+    <string>disk</string>
+    <string>prune</string>
+    <string>--yes</string>
+    <string>-c</string>
+    <string>%s</string>
+  </array>
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key><integer>%d</integer>
+    <key>Minute</key><integer>%d</integer>
+  </dict>
+  <key>StandardOutPath</key><string>%s</string>
+  <key>StandardErrorPath</key><string>%s</string>
+</dict>
+</plist>
+`, xmlEscapePlist(labelBase), xmlEscapePlist(opts.GhPath), xmlEscapePlist(opts.ConfigPath), hour, minute,
+		xmlEscapePlist(filepath.Join(home, ".gh-sr", "disk-prune.log")),
+		xmlEscapePlist(filepath.Join(home, ".gh-sr", "disk-prune.err.log")))
+
+	plistPath := filepath.Join(dir, labelBase+".plist")
+	if err := os.WriteFile(plistPath, []byte(plist), 0o600); err != nil {
+		return err
+	}
+	uid := os.Getuid()
+	load := exec.Command("launchctl", "bootstrap", fmt.Sprintf("gui/%d", uid), plistPath)
+	if out, err := load.CombinedOutput(); err != nil {
+		return fmt.Errorf("launchctl bootstrap: %w (%s)", err, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
+func uninstallLaunchd() error {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return err
+	}
+	plistFile := labelBase + ".plist"
+	script := fmt.Sprintf(`set -e
+UID=$(id -u)
+LABEL=%s
+PLIST="$HOME/Library/LaunchAgents/%s"
+for _DOMAIN in "gui/$UID" "user/$UID"; do
+  launchctl bootout "$_DOMAIN/$LABEL" 2>/dev/null || true
+done
+launchctl unload -w "$PLIST" 2>/dev/null || true
+rm -f "$PLIST"
+`, "'"+strings.ReplaceAll(labelBase, "'", "'\\''")+"'", plistFile)
+	cmd := exec.Command("sh", "-c", script)
+	cmd.Dir = home
+	_ = cmd.Run()
+	return nil
+}
+
+func installWindowsTask(opts InstallOpts, hour, minute int) error {
+	ps := fmt.Sprintf(`
+$tn = '%s'
+$gh = '%s'
+$cfg = '%s'
+Unregister-ScheduledTask -TaskName $tn -Confirm:$false -ErrorAction SilentlyContinue
+$act = New-ScheduledTaskAction -Execute $gh -Argument ('sr disk prune --yes -c ' + [char]34 + $cfg + [char]34)
+$tr = New-ScheduledTaskTrigger -Daily -At (Get-Date '%02d:%02d').TimeOfDay
+$st = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable
+Register-ScheduledTask -TaskName $tn -Action $act -Trigger $tr -Settings $st -Force | Out-Null
+`, serviceBase, escapePS(opts.GhPath), escapePS(opts.ConfigPath), hour, minute)
+	out, err := exec.Command("powershell.exe", "-NoProfile", "-NonInteractive", "-Command", ps).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("registering scheduled task: %w (%s)", err, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
+func uninstallWindowsTask() error {
+	ps := fmt.Sprintf(`Unregister-ScheduledTask -TaskName '%s' -Confirm:$false -ErrorAction SilentlyContinue`, serviceBase)
+	_, err := exec.Command("powershell.exe", "-NoProfile", "-NonInteractive", "-Command", ps).CombinedOutput()
+	return err
+}
+
+// systemdQuoteArg escapes a single argument for systemd unit ExecStart lines.
+func systemdQuoteArg(s string) string {
+	if !strings.ContainsAny(s, " \t\"'\\") {
+		return s
+	}
+	var b strings.Builder
+	b.WriteByte('"')
+	for _, r := range s {
+		switch r {
+		case '\\', '"':
+			b.WriteByte('\\')
+			b.WriteRune(r)
+		default:
+			b.WriteRune(r)
+		}
+	}
+	b.WriteByte('"')
+	return b.String()
+}
+
+func escapePS(s string) string {
+	return strings.ReplaceAll(s, "'", "''")
+}
+
+func xmlEscapePlist(s string) string {
+	s = strings.ReplaceAll(s, `&`, `&amp;`)
+	s = strings.ReplaceAll(s, `"`, `&quot;`)
+	s = strings.ReplaceAll(s, `<`, `&lt;`)
+	s = strings.ReplaceAll(s, `>`, `&gt;`)
+	return s
+}

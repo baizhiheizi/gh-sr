@@ -19,6 +19,9 @@ gh sr status               # Show status table
 gh sr hosts                # Show host resource usage (CPU, memory, disk, load, uptime)
 gh sr logs <name>          # Show recent logs from a runner
 gh sr cleanup              # Remove offline/ghost runners from GitHub
+gh sr disk                 # Show per-instance disk usage under ~/.gh-sr/runners
+gh sr disk prune           # Reclaim disk on idle runners (use --yes to execute)
+gh sr disk schedule install   # Daily automatic disk prune on this machine
 gh sr update [names...]    # Update runner binary (remove + setup + start)
 gh sr service install [--system] [names...]   # Native: OS autostart (systemd / launchd / task)
 gh sr service uninstall [names...]            # Remove gh sr-installed autostart
@@ -99,4 +102,28 @@ gh sr hosts --host mac-mini
 ```
 
 > **Note:** Load averages are not available on Windows and show as `-`.
+
+## Disk usage and cleanup
+
+Runner workspaces under `~/.gh-sr/runners/<instance>` accumulate job checkouts (`_work`), temp files (`_temp`), and — for container/agentic runners — a persistent inner Docker cache (`docker-data`). Per-job hooks wipe runtime state inside the container but **never** prune the image cache, so disk use can grow large over time.
+
+```bash
+gh sr disk usage                    # breakdown per host/instance
+gh sr disk usage --host my-linux    # filter by host
+gh sr disk prune --dry-run          # preview reclaim (default without --yes)
+gh sr disk prune --yes              # clear _work/_temp on idle runners (keeps docker-data cache)
+gh sr disk prune --yes --prune-cache # also reclaim inner Docker cache (slower next job)
+gh sr disk prune --yes --include-orphans   # also remove dirs not in runners.yml
+gh sr disk schedule install         # daily prune at 03:00 on this machine
+gh sr disk schedule status
+gh sr disk schedule uninstall
+```
+
+**Notes:**
+
+- Busy runners (active job on GitHub) are always skipped.
+- Default prune keeps inner Docker cache (`docker-data`) so the next agentic job does not re-pull gh-aw images. Use `--prune-cache` when you need maximum disk recovery.
+- `gh sr cleanup` removes **offline GitHub registrations** only — it does not free disk. Use `gh sr disk prune` for workspace cleanup.
+- `gh sr doctor` warns when any instance directory exceeds 50 GiB (including orphan dirs).
+- `gh sr disk schedule install` runs on **this machine** (where you run gh), not on runner hosts. Ensure `gh` is on PATH, `gh auth login` is done, and `~/.gh-sr/env` contains any tokens needed for remote hosts. On Linux headless servers, run `loginctl enable-linger $USER` so the systemd user timer runs without an interactive login. SSH keys for remote hosts must be available to the scheduled job's user environment.
 

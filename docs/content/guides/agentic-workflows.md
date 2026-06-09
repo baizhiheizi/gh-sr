@@ -155,6 +155,18 @@ Each runner container bind-mounts `$HOME/.gh-sr/runners/<instance>` at `/runner-
 
 The gh-aw runtime tree `/tmp/gh-aw` lives inside the container rootfs and is wiped before/after every job by the reset hooks — it is per-job scratch, never the cache.
 
+### Disk cleanup
+
+When `docker-data` or `_work` grow large (common on busy agentic fleets), use:
+
+```bash
+gh sr disk usage
+gh sr disk prune --yes              # idle runners only; keeps inner Docker cache (default)
+gh sr disk prune --yes --prune-cache # also reclaim docker-data when disk is critical
+```
+
+See [Commands — Disk usage and cleanup](../commands.md#disk-usage-and-cleanup) for scheduling and orphan cleanup.
+
 ## 8. Troubleshooting
 
 | Symptom | Likely cause | Fix |
