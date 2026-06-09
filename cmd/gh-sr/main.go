@@ -12,6 +12,7 @@ import (
 	"golang.org/x/term"
 
 	"github.com/an-lee/gh-sr/internal/config"
+	"github.com/an-lee/gh-sr/internal/diskschedule"
 	"github.com/an-lee/gh-sr/internal/doctor"
 	"github.com/an-lee/gh-sr/internal/editor"
 	"github.com/an-lee/gh-sr/internal/ops"
@@ -81,6 +82,7 @@ With no subcommand, gh sr opens the interactive dashboard on a terminal; use gh 
 		statusCmd(),
 		logsCmd(),
 		cleanupCmd(),
+		diskCmd(),
 		updateCmd(),
 		removeCmd(),
 		serviceCmd(),
@@ -727,6 +729,155 @@ func cleanupCmd() *cobra.Command {
 			return err
 		},
 	}
+}
+
+func diskCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "disk",
+		Short: "Report and prune runner workspace disk usage",
+		Long: `Inspect and reclaim disk space under ~/.gh-sr/runners on runner hosts.
+
+Per-instance state includes _work (job checkouts), _temp, and docker-data (inner
+Docker image cache for container/agentic runners). Prune clears _work/_temp by
+default and keeps docker-data; use disk prune --prune-cache for deeper reclaim.
+Prune skips busy runners.`,
+	}
+	cmd.AddCommand(diskUsageCmd(), diskPruneCmd(), diskScheduleCmd())
+	cmd.RunE = diskUsageCmd().RunE
+	return cmd
+}
+
+func diskUsageCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:     "usage [runner-names...]",
+		Aliases: []string{"show"},
+		Short:   "Show per-instance disk usage under ~/.gh-sr/runners",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, mgr, err := runnerCommandContext(cmd)
+			if err != nil {
+				return err
+			}
+			entries, err := ops.CollectDiskUsage(cmd.OutOrStdout(), cfg, mgr, filterHost, filterRepo, args)
+			if err != nil {
+				return err
+			}
+			ops.PrintDiskUsageTable(cmd.OutOrStdout(), entries)
+			return nil
+		},
+	}
+}
+
+func diskPruneCmd() *cobra.Command {
+	var (
+		dryRun         bool
+		yes            bool
+		pruneCache     bool
+		includeOrphans bool
+		force          bool
+	)
+	cmd := &cobra.Command{
+		Use:   "prune [runner-names...]",
+		Short: "Reclaim disk on idle runners (_work and _temp; cache kept by default)",
+		Long: `Clears _work and _temp on idle runners. Inner Docker image cache (docker-data)
+is preserved by default so the next job does not re-pull gh-aw images. Use
+--prune-cache for a deeper reclaim that also runs inner docker system prune.
+
+Busy runners are always skipped. Orphan directories (not in runners.yml) are
+removed only with --include-orphans.
+
+Examples:
+  gh sr disk prune --dry-run
+  gh sr disk prune --yes
+  gh sr disk prune --yes --prune-cache
+  gh sr disk prune --yes --host my-linux-box`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, mgr, err := runnerCommandContext(cmd)
+			if err != nil {
+				return err
+			}
+			opts := runner.PruneOptions{
+				DryRun:         dryRun || !yes,
+				PruneCache:     pruneCache,
+				IncludeOrphans: includeOrphans,
+				Force:          force,
+			}
+			_, err = ops.PruneDisk(cmd.OutOrStdout(), cfg, mgr, filterHost, filterRepo, args, opts)
+			return err
+		},
+	}
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "print planned actions without executing (default unless --yes)")
+	cmd.Flags().BoolVar(&yes, "yes", false, "execute prune (required to make changes)")
+	cmd.Flags().BoolVar(&pruneCache, "prune-cache", false, "also prune inner Docker cache (docker-data); default keeps cache for faster next job")
+	cmd.Flags().BoolVar(&includeOrphans, "include-orphans", false, "remove instance directories not in runners.yml")
+	cmd.Flags().BoolVar(&force, "force", false, "prune when GitHub runner status is unknown")
+	return cmd
+}
+
+func diskScheduleCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "schedule",
+		Short: "Install a daily disk prune timer on this machine",
+		Long: `Installs a local daily timer that runs 'gh sr disk prune --yes' against the
+resolved config. Linux uses a systemd user timer; macOS uses a LaunchAgent;
+Windows uses a Scheduled Task. On Linux headless servers you may need
+loginctl enable-linger for the timer to run without an interactive login.`,
+	}
+	var atTime string
+	install := &cobra.Command{
+		Use:   "install",
+		Short: "Install daily disk prune schedule",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfgPath, err := config.ResolveConfigPath(cfgFile)
+			if err != nil {
+				return err
+			}
+			if err := diskschedule.Install(diskschedule.InstallOpts{
+				ConfigPath: cfgPath,
+				AtTime:     atTime,
+			}); err != nil {
+				return err
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "Installed daily disk prune schedule (config: %s, time: %s).\n", cfgPath, atTimeOrDefault(atTime))
+			return nil
+		},
+	}
+	install.Flags().StringVar(&atTime, "at", "03:00", "local daily time HH:MM")
+	uninstall := &cobra.Command{
+		Use:   "uninstall",
+		Short: "Remove disk prune schedule",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := diskschedule.Uninstall(); err != nil {
+				return err
+			}
+			fmt.Fprintln(cmd.OutOrStdout(), "Disk prune schedule removed.")
+			return nil
+		},
+	}
+	status := &cobra.Command{
+		Use:   "status",
+		Short: "Show disk prune schedule state",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			kind, detail, err := diskschedule.Status()
+			if err != nil {
+				return err
+			}
+			if kind == diskschedule.KindNone {
+				fmt.Fprintln(cmd.OutOrStdout(), detail)
+				return nil
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "%s: %s\n", kind, detail)
+			return nil
+		},
+	}
+	cmd.AddCommand(install, uninstall, status)
+	return cmd
+}
+
+func atTimeOrDefault(at string) string {
+	if strings.TrimSpace(at) == "" {
+		return "03:00"
+	}
+	return at
 }
 
 func updateCmd() *cobra.Command {

@@ -378,6 +378,7 @@ func runHostChecks(w io.Writer, hostName string, h *host.Host, runners []config.
 			}
 		}
 	}
+	checkRunnerDiskUsage(w, hostName, h, runners, r)
 }
 
 func checkNativeRunnerInstall(w io.Writer, hostName string, h *host.Host, runners []config.RunnerConfig, r *Result) {
@@ -581,6 +582,33 @@ func checkContainerAgenticInnerHygiene(w io.Writer, hostName string, h *host.Hos
 			if f.DocRef != "" {
 				fmt.Fprintf(w, "       See: %s\n", f.DocRef)
 			}
+		}
+	}
+}
+
+func checkRunnerDiskUsage(w io.Writer, hostName string, h *host.Host, runners []config.RunnerConfig, r *Result) {
+	threshold := runner.DiskWarnThresholdBytes()
+	rcByInstance := make(map[string]*config.RunnerConfig)
+	for i := range runners {
+		rc := &runners[i]
+		if rc.Host != hostName {
+			continue
+		}
+		for _, inst := range rc.InstanceNames() {
+			rcByInstance[inst] = rc
+		}
+	}
+	for inst, rc := range rcByInstance {
+		entry := runner.MeasureDiskUsage(h, hostName, inst, rc)
+		if entry.Err != nil {
+			printLine(w, sevWarn, hostName, fmt.Sprintf("disk: instance %s: %v", inst, entry.Err))
+			r.Warn++
+			continue
+		}
+		if entry.TotalBytes >= threshold {
+			printLine(w, sevWarn, hostName, fmt.Sprintf("disk: instance %s uses %s under %s; run: gh sr disk prune --yes",
+				inst, runner.FormatBytesHuman(entry.TotalBytes), entry.Path))
+			r.Warn++
 		}
 	}
 }
