@@ -58,27 +58,9 @@ func DiskWarnThresholdBytes() int64 {
 	return int64(DiskWarnThresholdGiB) * 1024 * 1024 * 1024
 }
 
-func absoluteRunnerDir(h *host.Host, instanceName string) (string, error) {
-	dir := h.RunnerDir(instanceName)
-	if !strings.HasPrefix(dir, "$HOME") && !strings.HasPrefix(dir, "$env:USERPROFILE") {
-		return dir, nil
-	}
-	if h.OS == "windows" {
-		out, err := h.RunShell(`Write-Output $env:USERPROFILE`)
-		if err != nil {
-			return "", fmt.Errorf("resolving home dir: %w", err)
-		}
-		home := strings.TrimSpace(out)
-		suffix := strings.TrimPrefix(dir, `$env:USERPROFILE`)
-		suffix = strings.TrimPrefix(suffix, `\`)
-		return home + `\` + suffix, nil
-	}
-	out, err := h.Run("echo $HOME")
-	if err != nil {
-		return "", fmt.Errorf("resolving home dir: %w", err)
-	}
-	home := strings.TrimSpace(out)
-	return home + dir[len("$HOME"):], nil
+func posixRunnerDirVar(instance string) string {
+	inst := strings.NewReplacer(`\`, `\\`, `"`, `\"`, "$", `\$`, "`", "\\`").Replace(instance)
+	return fmt.Sprintf(`dir="$HOME/.gh-sr/runners/%s"`, inst)
 }
 
 // ListRunnerInstanceDirs returns subdirectory names under ~/.gh-sr/runners on the host.
@@ -116,13 +98,8 @@ func MeasureDiskUsage(h *host.Host, hostName, instance string, rc *config.Runner
 	entry := DiskUsageEntry{
 		Instance: instance,
 		Host:     hostName,
+		Path:     h.RunnerDir(instance),
 	}
-	dir, err := absoluteRunnerDir(h, instance)
-	if err != nil {
-		entry.Err = err
-		return entry
-	}
-	entry.Path = dir
 
 	if rc != nil {
 		if rc.IsContainerMode() {
@@ -135,7 +112,7 @@ func MeasureDiskUsage(h *host.Host, hostName, instance string, rc *config.Runner
 		entry.Mode = "unknown"
 	}
 
-	total, work, temp, dockerData, err := dirSizes(h, dir)
+	total, work, temp, dockerData, err := dirSizes(h, instance)
 	if err != nil {
 		entry.Err = err
 		return entry
@@ -152,27 +129,27 @@ func MeasureDiskUsage(h *host.Host, hostName, instance string, rc *config.Runner
 	return entry
 }
 
-func dirSizes(h *host.Host, dir string) (total, work, temp, dockerData int64, err error) {
+func dirSizes(h *host.Host, instance string) (total, work, temp, dockerData int64, err error) {
 	switch h.OS {
 	case "windows":
-		return dirSizesWindows(h, dir)
+		return dirSizesWindows(h, instance)
 	default:
-		return dirSizesPOSIX(h, dir)
+		return dirSizesPOSIX(h, instance)
 	}
 }
 
-func dirSizesPOSIX(h *host.Host, dir string) (total, work, temp, dockerData int64, err error) {
-	q := hostshell.PosixSingleQuote(dir)
+func dirSizesPOSIX(h *host.Host, instance string) (total, work, temp, dockerData int64, err error) {
 	script := fmt.Sprintf(`
 set -e
-if [ ! -d %s ]; then echo "0 0 0 0"; exit 0; fi
-total=$(du -sb %s 2>/dev/null | awk '{print $1}')
+%s
+if [ ! -d "$dir" ]; then echo "0 0 0 0"; exit 0; fi
+total=$(du -sk "$dir" 2>/dev/null | awk '{print $1*1024}')
 work=0; temp=0; docker=0
-if [ -d %s/_work ]; then work=$(du -sb %s/_work 2>/dev/null | awk '{print $1}'); fi
-if [ -d %s/_temp ]; then temp=$(du -sb %s/_temp 2>/dev/null | awk '{print $1}'); fi
-if [ -d %s/docker-data ]; then docker=$(du -sb %s/docker-data 2>/dev/null | awk '{print $1}'); fi
+if [ -d "$dir/_work" ]; then work=$(du -sk "$dir/_work" 2>/dev/null | awk '{print $1*1024}'); fi
+if [ -d "$dir/_temp" ]; then temp=$(du -sk "$dir/_temp" 2>/dev/null | awk '{print $1*1024}'); fi
+if [ -d "$dir/docker-data" ]; then docker=$(du -sk "$dir/docker-data" 2>/dev/null | awk '{print $1*1024}'); fi
 echo "$total $work $temp $docker"
-`, q, q, q, q, q, q, q, q)
+`, posixRunnerDirVar(instance))
 	out, err := h.Run(script)
 	if err != nil {
 		return 0, 0, 0, 0, err
@@ -180,8 +157,8 @@ echo "$total $work $temp $docker"
 	return parseFourInt64s(out)
 }
 
-func dirSizesWindows(h *host.Host, dir string) (total, work, temp, dockerData int64, err error) {
-	q := hostshell.PowerShellSingleQuote(dir)
+func dirSizesWindows(h *host.Host, instance string) (total, work, temp, dockerData int64, err error) {
+	dirExpr := h.RunnerDirPS(instance)
 	ps := fmt.Sprintf(`
 function Ghsr-DirSize([string]$p) {
   if (-not (Test-Path -LiteralPath $p)) { return 0 }
@@ -195,7 +172,7 @@ $w = Ghsr-DirSize (Join-Path $d '_work')
 $te = Ghsr-DirSize (Join-Path $d '_temp')
 $dk = Ghsr-DirSize (Join-Path $d 'docker-data')
 Write-Output "$t $w $te $dk"
-`, q)
+`, dirExpr)
 	out, err := h.RunShell(ps)
 	if err != nil {
 		return 0, 0, 0, 0, err
@@ -232,11 +209,7 @@ func (m *Manager) PruneInstance(h *host.Host, hostName, instance string, rc *con
 		return res
 	}
 
-	dir, err := absoluteRunnerDir(h, instance)
-	if err != nil {
-		res.Err = err
-		return res
-	}
+	dir := h.RunnerDir(instance)
 
 	isOrphan := rc == nil
 	if isOrphan && !opts.IncludeOrphans {
@@ -249,7 +222,7 @@ func (m *Manager) PruneInstance(h *host.Host, hostName, instance string, rc *con
 		action := fmt.Sprintf("remove orphan directory %s", dir)
 		res.Actions = append(res.Actions, action)
 		if !opts.DryRun {
-			if err := removeDirTree(h, dir); err != nil {
+			if err := removeDirTree(h, instance); err != nil {
 				res.Err = err
 			}
 		}
@@ -260,7 +233,7 @@ func (m *Manager) PruneInstance(h *host.Host, hostName, instance string, rc *con
 	workAction := fmt.Sprintf("clear %s/_work and %s/_temp", dir, dir)
 	res.Actions = append(res.Actions, workAction)
 	if !opts.DryRun {
-		if err := clearWorkTemp(h, dir); err != nil {
+		if err := clearWorkTemp(h, instance); err != nil {
 			res.Err = err
 			return res
 		}
@@ -280,45 +253,50 @@ func (m *Manager) PruneInstance(h *host.Host, hostName, instance string, rc *con
 	return res
 }
 
-func clearWorkTemp(h *host.Host, dir string) error {
+func clearWorkTemp(h *host.Host, instance string) error {
 	switch h.OS {
 	case "windows":
-		q := hostshell.PowerShellSingleQuote(dir)
+		dirExpr := h.RunnerDirPS(instance)
 		ps := fmt.Sprintf(`
 foreach ($sub in @('_work','_temp')) {
-  $p = Join-Path %s $sub
+  $p = Join-Path (%s) $sub
   if (Test-Path -LiteralPath $p) {
     Get-ChildItem -LiteralPath $p -Force -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
   }
 }
-`, q)
+`, dirExpr)
 		_, err := h.RunShell(ps)
 		return err
 	default:
-		q := hostshell.PosixSingleQuote(dir)
 		script := fmt.Sprintf(`
 set -e
+%s
 for sub in _work _temp; do
-  p=%s/$sub
+  p="$dir/$sub"
   if [ -d "$p" ]; then
-    rm -rf "$p"/*
+    find "$p" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
   fi
 done
-`, q)
+`, posixRunnerDirVar(instance))
 		_, err := h.Run(script)
 		return err
 	}
 }
 
-func removeDirTree(h *host.Host, dir string) error {
+func removeDirTree(h *host.Host, instance string) error {
 	switch h.OS {
 	case "windows":
-		ps := fmt.Sprintf(`if (Test-Path -LiteralPath %s) { Remove-Item -LiteralPath %s -Recurse -Force }`,
-			hostshell.PowerShellSingleQuote(dir), hostshell.PowerShellSingleQuote(dir))
+		dirExpr := h.RunnerDirPS(instance)
+		ps := fmt.Sprintf(`if (Test-Path -LiteralPath (%s)) { Remove-Item -LiteralPath (%s) -Recurse -Force }`, dirExpr, dirExpr)
 		_, err := h.RunShell(ps)
 		return err
 	default:
-		_, err := h.Run(fmt.Sprintf("rm -rf %s", hostshell.PosixSingleQuote(dir)))
+		script := fmt.Sprintf(`
+set -e
+%s
+rm -rf "$dir"
+`, posixRunnerDirVar(instance))
+		_, err := h.Run(script)
 		return err
 	}
 }

@@ -31,6 +31,31 @@ func (lw *lockedWriter) Write(p []byte) (int, error) {
 	return lw.w.Write(p)
 }
 
+// hostGroup bundles runners that share the same host, preserving the order
+// in which they were discovered. Callers use this to issue a single SSH
+// connection per host and process that host's runners sequentially on it.
+type hostGroup struct {
+	name    string
+	runners []config.RunnerConfig
+}
+
+// groupRunnersByHost buckets runners by their Host field, preserving the
+// original input order within each group and the discovery order of groups
+// (so multi-host runs are deterministic).
+func groupRunnersByHost(runners []config.RunnerConfig) []hostGroup {
+	groups := make([]hostGroup, 0)
+	groupIdx := make(map[string]int)
+	for _, rc := range runners {
+		if i, ok := groupIdx[rc.Host]; ok {
+			groups[i].runners = append(groups[i].runners, rc)
+		} else {
+			groupIdx[rc.Host] = len(groups)
+			groups = append(groups, hostGroup{name: rc.Host, runners: []config.RunnerConfig{rc}})
+		}
+	}
+	return groups
+}
+
 // runPerHostParallel groups runners by host and executes fn for each runner concurrently
 // across hosts. Within each host group runners are processed sequentially using a single
 // SSH connection, reducing connection overhead from O(N_runners) to O(N_hosts).
@@ -42,20 +67,7 @@ func runPerHostParallel(
 	runners []config.RunnerConfig,
 	fn func(w io.Writer, h *host.Host, rc config.RunnerConfig) error,
 ) error {
-	type hostGroup struct {
-		name    string
-		runners []config.RunnerConfig
-	}
-	var groups []hostGroup
-	groupIdx := make(map[string]int)
-	for _, rc := range runners {
-		if i, ok := groupIdx[rc.Host]; ok {
-			groups[i].runners = append(groups[i].runners, rc)
-		} else {
-			groupIdx[rc.Host] = len(groups)
-			groups = append(groups, hostGroup{name: rc.Host, runners: []config.RunnerConfig{rc}})
-		}
-	}
+	groups := groupRunnersByHost(runners)
 
 	var out io.Writer = io.Discard
 	if w != nil {
@@ -323,20 +335,7 @@ func CollectStatus(w io.Writer, cfg *config.Config, mgr *runner.Manager, filterH
 	runners := config.FilterRunners(cfg, filterHost, filterRepo, nameArgs)
 
 	// Group runners by host, preserving original order for deterministic output.
-	type hostGroup struct {
-		name    string
-		runners []config.RunnerConfig
-	}
-	var groups []hostGroup
-	groupIdx := make(map[string]int)
-	for _, rc := range runners {
-		if i, ok := groupIdx[rc.Host]; ok {
-			groups[i].runners = append(groups[i].runners, rc)
-		} else {
-			groupIdx[rc.Host] = len(groups)
-			groups = append(groups, hostGroup{name: rc.Host, runners: []config.RunnerConfig{rc}})
-		}
-	}
+	groups := groupRunnersByHost(runners)
 
 	type groupResult struct {
 		statuses []runner.RunnerStatus

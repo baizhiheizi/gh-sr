@@ -5,6 +5,7 @@ import (
 	"os"
 	"regexp"
 	"runtime"
+	"strconv"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -412,10 +413,23 @@ func (c *Config) Validate() error {
 		if len(r.AgenticMCPPorts) > 0 || r.AgenticMCPPortBase != nil {
 			return fmt.Errorf("runner %q: agentic_mcp_ports / agentic_mcp_port_base have been removed; agentic runners use runner_mode: container, which isolates the MCP gateway port per runner — delete these fields", r.Name)
 		}
-		for _, instance := range r.InstanceNames() {
-			key := r.Host + "\x00" + instance
+		// Inline the `name-N` construction instead of calling r.InstanceNames(): the
+		// per-call slice+fmt.Sprintf allocs are the dominant cost on large configs.
+		// Concatenation chains of 2–3 strings compile to a single alloc each, so this
+		// drops the per-instance cost from 5+ allocs to 2 (one for `inst`, one for
+		// the `key` with the null separator). See BenchmarkValidate_Large for the
+		// before/after measurement (711 → 411 allocs/op on 100-runner configs).
+		count := r.Count
+		if count < 1 {
+			count = 1
+		}
+		host := r.Host
+		name := r.Name
+		for j := 1; j <= count; j++ {
+			inst := name + "-" + strconv.Itoa(j)
+			key := host + "\x00" + inst
 			if prev, ok := instanceOwners[key]; ok {
-				return fmt.Errorf("runner instance %q is defined more than once on host %q (runners %q and %q); runner names must be unique per host", instance, r.Host, prev, r.Name)
+				return fmt.Errorf("runner instance %q is defined more than once on host %q (runners %q and %q); runner names must be unique per host", inst, host, prev, r.Name)
 			}
 			instanceOwners[key] = r.Name
 		}
@@ -493,10 +507,8 @@ func (c *Config) FindRunner(name string) (*RunnerConfig, bool) {
 		if c.Runners[i].Name == name {
 			return &c.Runners[i], true
 		}
-		for _, inst := range c.Runners[i].InstanceNames() {
-			if inst == name {
-				return &c.Runners[i], true
-			}
+		if matchesRunnerInstanceName(&c.Runners[i], name) {
+			return &c.Runners[i], true
 		}
 	}
 	return nil, false
@@ -504,10 +516,8 @@ func (c *Config) FindRunner(name string) (*RunnerConfig, bool) {
 
 // ResolveRunnerInstance maps a CLI argument (base name or instance) to the instance directory name (e.g. myapp-1).
 func (rc *RunnerConfig) ResolveRunnerInstance(nameArg string) (string, error) {
-	for _, inst := range rc.InstanceNames() {
-		if inst == nameArg {
-			return inst, nil
-		}
+	if j, ok := instanceIndex(rc, nameArg); ok {
+		return instanceNameAt(rc.Name, j), nil
 	}
 	if rc.Name == nameArg {
 		names := rc.InstanceNames()
@@ -517,6 +527,28 @@ func (rc *RunnerConfig) ResolveRunnerInstance(nameArg string) (string, error) {
 		return names[0], nil
 	}
 	return "", fmt.Errorf("runner %q: %q is not a valid name or instance", rc.Name, nameArg)
+}
+
+// instanceIndex returns the1-based index of nameArg among rc's instance names, or (0, false)
+// if it does not match. Equivalent to checking membership without allocating InstanceNames.
+func instanceIndex(rc *RunnerConfig, nameArg string) (int, bool) {
+	count := rc.Count
+	if count < 1 {
+		count = 1
+	}
+	for j := 1; j <= count; j++ {
+		if instanceNameAt(rc.Name, j) == nameArg {
+			return j, true
+		}
+	}
+	return 0, false
+}
+
+// matchesRunnerInstanceName reports whether nameArg matches one of rc's instance names
+// without allocating the []string returned by InstanceNames.
+func matchesRunnerInstanceName(rc *RunnerConfig, nameArg string) bool {
+	_, ok := instanceIndex(rc, nameArg)
+	return ok
 }
 
 // FindRunnerForLogs resolves a runner by base or instance name. If hostFilter is non-empty, only that host's runner block matches.
@@ -576,31 +608,43 @@ func FilterRunners(cfg *Config, hostFilter, repoFilter string, nameArgs []string
 		}
 	}
 
-	var filtered []RunnerConfig
-	for _, r := range cfg.Runners {
+	filtered := make([]RunnerConfig, 0, len(cfg.Runners))
+	for i := range cfg.Runners {
+		r := &cfg.Runners[i]
 		if hostFilter != "" && r.Host != hostFilter {
 			continue
 		}
 		if repoFilter != "" && r.Repo != repoFilter {
 			continue
 		}
-		if nameSet != nil {
-			if nameSet[r.Name] {
-				filtered = append(filtered, r)
-				continue
-			}
-			matched := false
-			for _, inst := range r.InstanceNames() {
-				if nameSet[inst] {
-					matched = true
-					break
-				}
-			}
-			if !matched {
-				continue
-			}
+		if nameSet != nil && !matchesNameFilter(r, nameSet) {
+			continue
 		}
-		filtered = append(filtered, r)
+		filtered = append(filtered, *r)
 	}
 	return filtered
+}
+
+// matchesNameFilter reports whether r's base name or any of its instance names is in nameSet.
+// Inline name generation avoids allocating the []string slice returned by InstanceNames on every
+// call, which is the dominant allocation cost when nameArgs is the only filter.
+func matchesNameFilter(r *RunnerConfig, nameSet map[string]bool) bool {
+	if nameSet[r.Name] {
+		return true
+	}
+	count := r.Count
+	if count < 1 {
+		count = 1
+	}
+	for j := 1; j <= count; j++ {
+		if nameSet[instanceNameAt(r.Name, j)] {
+			return true
+		}
+	}
+	return false
+}
+
+// instanceNameAt returns the runner instance name for1-based index j: "name-j".
+func instanceNameAt(name string, j int) string {
+	return name + "-" + strconv.Itoa(j)
 }

@@ -207,6 +207,9 @@ type failIfRunExec struct {
 }
 
 func (f failIfRunExec) Run(cmd string) (string, error) {
+	if strings.Contains(cmd, "du -sk") || strings.Contains(cmd, `dir="$HOME/.gh-sr/runners/`) {
+		return "0 0 0 0\n", nil
+	}
 	f.t.Fatalf("unexpected remote command: %s", cmd)
 	return "", nil
 }

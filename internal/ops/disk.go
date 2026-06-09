@@ -184,7 +184,7 @@ func PruneDisk(w io.Writer, cfg *config.Config, mgr *runner.Manager, filterHost,
 			for _, inst := range targets {
 				rc := rcByInstance[inst]
 				busy := busyByInstance[inst]
-				if !githubKnown[inst] && !opts.Force {
+				if rc != nil && !githubKnown[inst] && !opts.Force {
 					out[i].results = append(out[i].results, runner.PruneResult{
 						Instance: inst,
 						Host:     hostName,

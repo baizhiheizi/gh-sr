@@ -123,7 +123,7 @@ func Run(w io.Writer, cfgPath, envPath string, cfg *config.Config, cfgErr error,
 			apiWg.Add(1)
 			go func(idx int, repo string) {
 				defer apiWg.Done()
-				list, err := gh.ListRunners(repo)
+				list, err := gh.ListRunnersScoped("repo", repo)
 				if err != nil {
 					repoResults[idx] = apiResult{sevFail, fmt.Sprintf("%s: %v", repo, err)}
 				} else {
@@ -598,7 +598,13 @@ func checkRunnerDiskUsage(w io.Writer, hostName string, h *host.Host, runners []
 			rcByInstance[inst] = rc
 		}
 	}
-	for inst, rc := range rcByInstance {
+	instances := make([]string, 0, len(rcByInstance))
+	for inst := range rcByInstance {
+		instances = append(instances, inst)
+	}
+	sort.Strings(instances)
+	for _, inst := range instances {
+		rc := rcByInstance[inst]
 		entry := runner.MeasureDiskUsage(h, hostName, inst, rc)
 		if entry.Err != nil {
 			printLine(w, sevWarn, hostName, fmt.Sprintf("disk: instance %s: %v", inst, entry.Err))
@@ -612,4 +618,3 @@ func checkRunnerDiskUsage(w io.Writer, hostName string, h *host.Host, runners []
 		}
 	}
 }
-

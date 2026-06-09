@@ -84,10 +84,6 @@ func (g *GitHubClient) actionsURL(scope, target, rest string) string {
 	return g.repoActionsURL(target, rest)
 }
 
-func (g *GitHubClient) GetRegistrationToken(repo string) (string, error) {
-	return g.GetRegistrationTokenScoped("repo", repo)
-}
-
 func (g *GitHubClient) GetRegistrationTokenScoped(scope, target string) (string, error) {
 	url := g.actionsURL(scope, target, "runners/registration-token")
 	resp, err := g.post(url, nil)
@@ -105,10 +101,6 @@ func (g *GitHubClient) GetRegistrationTokenScoped(scope, target string) (string,
 	return tok.Token, nil
 }
 
-func (g *GitHubClient) GetRemovalToken(repo string) (string, error) {
-	return g.GetRemovalTokenScoped("repo", repo)
-}
-
 func (g *GitHubClient) GetRemovalTokenScoped(scope, target string) (string, error) {
 	url := g.actionsURL(scope, target, "runners/remove-token")
 	resp, err := g.post(url, nil)
@@ -124,10 +116,6 @@ func (g *GitHubClient) GetRemovalTokenScoped(scope, target string) (string, erro
 		return "", fmt.Errorf("empty removal token for %s", target)
 	}
 	return tok.Token, nil
-}
-
-func (g *GitHubClient) ListRunners(repo string) ([]GitHubRunner, error) {
-	return g.ListRunnersScoped("repo", repo)
 }
 
 func (g *GitHubClient) ListRunnersScoped(scope, target string) ([]GitHubRunner, error) {
@@ -149,10 +137,6 @@ func (g *GitHubClient) ListRunnersScoped(scope, target string) ([]GitHubRunner, 
 		}
 	}
 	return all, nil
-}
-
-func (g *GitHubClient) DeleteRunner(repo string, runnerID int64) error {
-	return g.DeleteRunnerScoped("repo", repo, runnerID)
 }
 
 func (g *GitHubClient) DeleteRunnerScoped(scope, target string, runnerID int64) error {

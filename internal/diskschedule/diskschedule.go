@@ -172,7 +172,7 @@ func installSystemdUser(opts InstallOpts, hour, minute int) error {
 		return err
 	}
 
-	execStart := fmt.Sprintf("%s sr disk prune --yes -c %s", opts.GhPath, shellQuote(opts.ConfigPath))
+	execStart := fmt.Sprintf("%s sr disk prune --yes -c %s", systemdQuoteArg(opts.GhPath), systemdQuoteArg(opts.ConfigPath))
 	service := fmt.Sprintf(`[Unit]
 Description=gh-sr disk prune
 
@@ -311,8 +311,24 @@ func uninstallWindowsTask() error {
 	return err
 }
 
-func shellQuote(s string) string {
-	return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'"
+// systemdQuoteArg escapes a single argument for systemd unit ExecStart lines.
+func systemdQuoteArg(s string) string {
+	if !strings.ContainsAny(s, " \t\"'\\") {
+		return s
+	}
+	var b strings.Builder
+	b.WriteByte('"')
+	for _, r := range s {
+		switch r {
+		case '\\', '"':
+			b.WriteByte('\\')
+			b.WriteRune(r)
+		default:
+			b.WriteRune(r)
+		}
+	}
+	b.WriteByte('"')
+	return b.String()
 }
 
 func escapePS(s string) string {

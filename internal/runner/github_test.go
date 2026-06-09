@@ -21,7 +21,7 @@ func TestGitHubClient_GetRegistrationToken(t *testing.T) {
 	defer ts.Close()
 
 	g := NewGitHubClientWithHTTP("pat", ts.Client(), ts.URL)
-	tok, err := g.GetRegistrationToken("o/r")
+	tok, err := g.GetRegistrationTokenScoped("repo", "o/r")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -38,7 +38,7 @@ func TestGitHubClient_GetRegistrationToken_errors(t *testing.T) {
 	defer ts.Close()
 
 	g := NewGitHubClientWithHTTP("pat", ts.Client(), ts.URL)
-	_, err := g.GetRegistrationToken("o/r")
+	_, err := g.GetRegistrationTokenScoped("repo", "o/r")
 	if err == nil || !strings.Contains(err.Error(), "HTTP") {
 		t.Fatalf("expected HTTP error: %v", err)
 	}
@@ -49,7 +49,7 @@ func TestGitHubClient_GetRegistrationToken_errors(t *testing.T) {
 	defer ts2.Close()
 
 	g2 := NewGitHubClientWithHTTP("pat", ts2.Client(), ts2.URL)
-	_, err = g2.GetRegistrationToken("o/r")
+	_, err = g2.GetRegistrationTokenScoped("repo", "o/r")
 	if err == nil || !strings.Contains(err.Error(), "empty registration token") {
 		t.Fatalf("expected empty token error: %v", err)
 	}
@@ -66,7 +66,7 @@ func TestGitHubClient_GetRemovalToken(t *testing.T) {
 	defer ts.Close()
 
 	g := NewGitHubClientWithHTTP("pat", ts.Client(), ts.URL)
-	tok, err := g.GetRemovalToken("o/r")
+	tok, err := g.GetRemovalTokenScoped("repo", "o/r")
 	if err != nil || tok != "rem" {
 		t.Fatalf("got %q %v", tok, err)
 	}
@@ -85,7 +85,7 @@ func TestGitHubClient_ListRunners(t *testing.T) {
 	defer ts.Close()
 
 	g := NewGitHubClientWithHTTP("pat", ts.Client(), ts.URL)
-	runners, err := g.ListRunners("o/r")
+	runners, err := g.ListRunnersScoped("repo", "o/r")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -118,7 +118,7 @@ func TestGitHubClient_ListRunnersScoped_pagination(t *testing.T) {
 	defer ts.Close()
 
 	g := NewGitHubClientWithHTTP("pat", ts.Client(), ts.URL)
-	runners, err := g.ListRunners("o/r")
+	runners, err := g.ListRunnersScoped("repo", "o/r")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -143,7 +143,7 @@ func TestGitHubClient_DeleteRunner(t *testing.T) {
 	defer ts.Close()
 
 	g := NewGitHubClientWithHTTP("pat", ts.Client(), ts.URL)
-	if err := g.DeleteRunner("o/r", 42); err != nil {
+	if err := g.DeleteRunnerScoped("repo", "o/r", 42); err != nil {
 		t.Fatal(err)
 	}
 	if method != http.MethodDelete {
@@ -159,7 +159,7 @@ func TestGitHubClient_DeleteRunner_errorStatus(t *testing.T) {
 	defer ts.Close()
 
 	g := NewGitHubClientWithHTTP("pat", ts.Client(), ts.URL)
-	err := g.DeleteRunner("o/r", 1)
+	err := g.DeleteRunnerScoped("repo", "o/r", 1)
 	if err == nil || !strings.Contains(err.Error(), "HTTP 400") {
 		t.Fatalf("expected 400: %v", err)
 	}

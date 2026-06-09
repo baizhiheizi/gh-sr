@@ -64,7 +64,7 @@ func TestParseFourInt64s(t *testing.T) {
 func TestMeasureDiskUsage_linux(t *testing.T) {
 	t.Parallel()
 	h := diskMockHost("linux", &sequentialMock{
-		responses: []string{"/home/u", "1000000 500000 100000 300000\n"},
+		responses: []string{"1000000 500000 100000 300000\n"},
 	})
 	rc := config.RunnerConfig{Name: "ci", Count: 1}
 	entry := MeasureDiskUsage(h, "host1", "ci-1", &rc)
@@ -96,7 +96,7 @@ func TestPruneInstance_skipsBusy(t *testing.T) {
 func TestPruneInstance_clearWorkTemp_dryRun(t *testing.T) {
 	t.Parallel()
 	m := NewManager("")
-	mock := &sequentialMock{responses: []string{"/home/u"}}
+	mock := &sequentialMock{}
 	h := diskMockHost("linux", mock)
 	rc := config.RunnerConfig{Name: "ci", Count: 1}
 	res := m.PruneInstance(h, "host1", "ci-1", &rc, false, PruneOptions{DryRun: true})
@@ -114,7 +114,7 @@ func TestPruneInstance_clearWorkTemp_dryRun(t *testing.T) {
 func TestPruneInstance_defaultKeepsDockerCache(t *testing.T) {
 	t.Parallel()
 	m := NewManager("")
-	mock := &sequentialMock{responses: []string{"/home/u"}}
+	mock := &sequentialMock{}
 	h := diskMockHost("linux", mock)
 	rc := config.RunnerConfig{Name: "ci", Count: 1, Profile: "agentic"}
 	res := m.PruneInstance(h, "host1", "ci-1", &rc, false, PruneOptions{DryRun: true})
@@ -128,7 +128,7 @@ func TestPruneInstance_defaultKeepsDockerCache(t *testing.T) {
 func TestPruneInstance_pruneCacheIncludesDockerPrune(t *testing.T) {
 	t.Parallel()
 	m := NewManager("")
-	mock := &sequentialMock{responses: []string{"/home/u"}}
+	mock := &sequentialMock{}
 	h := diskMockHost("linux", mock)
 	rc := config.RunnerConfig{Name: "ci", Count: 1, Profile: "agentic"}
 	res := m.PruneInstance(h, "host1", "ci-1", &rc, false, PruneOptions{DryRun: true, PruneCache: true})
@@ -146,7 +146,7 @@ func TestPruneInstance_pruneCacheIncludesDockerPrune(t *testing.T) {
 func TestPruneInstance_neverTouchesRunnerRegistration(t *testing.T) {
 	t.Parallel()
 	m := NewManager("")
-	mock := &sequentialMock{responses: []string{"/home/u", ""}}
+	mock := &sequentialMock{responses: []string{""}}
 	h := diskMockHost("linux", mock)
 	rc := config.RunnerConfig{Name: "ci", Count: 1}
 	_ = m.PruneInstance(h, "host1", "ci-1", &rc, false, PruneOptions{})
