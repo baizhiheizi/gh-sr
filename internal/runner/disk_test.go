@@ -143,6 +143,31 @@ func TestPruneInstance_pruneCacheIncludesDockerPrune(t *testing.T) {
 	}
 }
 
+func TestClearWorkTempPOSIX_escalatesForContainerMode(t *testing.T) {
+	t.Parallel()
+	script := clearWorkTempPOSIX("rune-agentic-3", true)
+	if !strings.Contains(script, "docker exec") {
+		t.Fatal("container mode should try docker exec for root-owned _work files")
+	}
+	if !strings.Contains(script, "gh-sr-rune-agentic-3") {
+		t.Fatalf("expected container name in script, got: %s", script)
+	}
+	if !strings.Contains(script, "sudo -n") {
+		t.Fatal("expected host sudo fallback")
+	}
+}
+
+func TestClearWorkTempPOSIX_nativeSkipsDockerExec(t *testing.T) {
+	t.Parallel()
+	script := clearWorkTempPOSIX("ci-1", false)
+	if strings.Contains(script, "docker exec") {
+		t.Fatal("native mode should not use docker exec")
+	}
+	if !strings.Contains(script, "sudo -n") {
+		t.Fatal("expected host sudo fallback")
+	}
+}
+
 func TestPruneInstance_neverTouchesRunnerRegistration(t *testing.T) {
 	t.Parallel()
 	m := NewManager("")

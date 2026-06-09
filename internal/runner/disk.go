@@ -268,7 +268,8 @@ func (m *Manager) PruneInstance(h *host.Host, hostName, instance string, rc *con
 	workAction := fmt.Sprintf("clear %s/_work and %s/_temp", dir, dir)
 	res.Actions = append(res.Actions, workAction)
 	if !opts.DryRun {
-		if err := clearWorkTemp(h, instance); err != nil {
+		containerMode := rc != nil && rc.IsContainerMode()
+		if err := clearWorkTemp(h, instance, containerMode); err != nil {
 			res.Err = err
 			return res
 		}
@@ -288,7 +289,7 @@ func (m *Manager) PruneInstance(h *host.Host, hostName, instance string, rc *con
 	return res
 }
 
-func clearWorkTemp(h *host.Host, instance string) error {
+func clearWorkTemp(h *host.Host, instance string, containerMode bool) error {
 	switch h.OS {
 	case "windows":
 		dirExpr := h.RunnerDirPS(instance)
@@ -303,19 +304,66 @@ foreach ($sub in @('_work','_temp')) {
 		_, err := h.RunShell(ps)
 		return err
 	default:
-		script := fmt.Sprintf(`
-set -e
-%s
-for sub in _work _temp; do
-  p="$dir/$sub"
-  if [ -d "$p" ]; then
-    find "$p" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
-  fi
-done
-`, posixRunnerDirVar(instance))
-		_, err := h.Run(script)
+		_, err := h.Run(clearWorkTempPOSIX(instance, containerMode))
 		return err
 	}
+}
+
+// clearWorkTempPOSIX removes job scratch under _work and _temp. CI jobs often leave
+// root-owned files on the host bind mount; we escalate via docker exec (container
+// runners) or passwordless host sudo when a plain rm is not enough.
+func clearWorkTempPOSIX(instance string, containerMode bool) string {
+	containerEscalation := ""
+	if containerMode {
+		q := hostshell.PosixSingleQuote(ContainerDockerName(instance))
+		containerEscalation = fmt.Sprintf(`
+if command -v docker >/dev/null 2>&1; then
+  if ! docker inspect --format='{{.State.Running}}' %s 2>/dev/null | grep -q true; then
+    docker start %s >/dev/null 2>&1 || true
+  fi
+  if docker inspect --format='{{.State.Running}}' %s 2>/dev/null | grep -q true; then
+    docker exec %s sh -c 'for sub in _work _temp; do p="/runner-state/$sub"; if [ -d "$p" ]; then find "$p" -mindepth 1 -maxdepth 1 -exec rm -rf {} +; fi; done' || true
+  fi
+fi
+`, q, q, q, q)
+	}
+	return fmt.Sprintf(`
+%s
+clear_one() {
+  p="$1"
+  if [ ! -d "$p" ]; then return 0; fi
+  find "$p" -mindepth 1 -maxdepth 1 -exec rm -rf {} + 2>/dev/null || true
+  if [ -n "$(ls -A "$p" 2>/dev/null)" ]; then return 1; fi
+  return 0
+}
+need_elev=0
+for sub in _work _temp; do
+  clear_one "$dir/$sub" || need_elev=1
+done
+if [ "$need_elev" -eq 0 ]; then exit 0; fi
+%s
+SUDO=''
+if [ "$(id -u)" -ne 0 ]; then
+  if command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
+    SUDO='sudo -n'
+  fi
+fi
+if [ -n "$SUDO" ] || [ "$(id -u)" -eq 0 ]; then
+  for sub in _work _temp; do
+    p="$dir/$sub"
+    if [ -d "$p" ] && [ -n "$(ls -A "$p" 2>/dev/null)" ]; then
+      find "$p" -mindepth 1 -maxdepth 1 -exec $SUDO rm -rf {} + 2>/dev/null || true
+    fi
+  done
+fi
+for sub in _work _temp; do
+  p="$dir/$sub"
+  if [ -d "$p" ] && [ -n "$(ls -A "$p" 2>/dev/null)" ]; then
+    echo "disk prune: cannot remove files in $p (permission denied); for container runners ensure the container is running or use passwordless sudo on the host" >&2
+    exit 1
+  fi
+done
+`, posixRunnerDirVar(instance), containerEscalation)
 }
 
 func removeDirTree(h *host.Host, instance string) error {
@@ -326,14 +374,44 @@ func removeDirTree(h *host.Host, instance string) error {
 		_, err := h.RunShell(ps)
 		return err
 	default:
-		script := fmt.Sprintf(`
-set -e
-%s
-rm -rf "$dir"
-`, posixRunnerDirVar(instance))
-		_, err := h.Run(script)
+		_, err := h.Run(removeDirTreePOSIX(instance))
 		return err
 	}
+}
+
+func removeDirTreePOSIX(instance string) string {
+	q := hostshell.PosixSingleQuote(ContainerDockerName(instance))
+	return fmt.Sprintf(`
+%s
+if [ -d "$dir" ]; then
+  rm -rf "$dir" 2>/dev/null || true
+fi
+if [ -d "$dir" ]; then
+  if command -v docker >/dev/null 2>&1; then
+    if ! docker inspect --format='{{.State.Running}}' %s 2>/dev/null | grep -q true; then
+      docker start %s >/dev/null 2>&1 || true
+    fi
+    if docker inspect --format='{{.State.Running}}' %s 2>/dev/null | grep -q true; then
+      docker exec %s rm -rf /runner-state || true
+    fi
+  fi
+fi
+if [ -d "$dir" ]; then
+  SUDO=''
+  if [ "$(id -u)" -ne 0 ]; then
+    if command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
+      SUDO='sudo -n'
+    fi
+  fi
+  if [ -n "$SUDO" ] || [ "$(id -u)" -eq 0 ]; then
+    $SUDO rm -rf "$dir" 2>/dev/null || true
+  fi
+fi
+if [ -d "$dir" ]; then
+  echo "disk prune: cannot remove orphan directory $dir (permission denied); ensure the runner container is running or use passwordless sudo on the host" >&2
+  exit 1
+fi
+`, posixRunnerDirVar(instance), q, q, q, q)
 }
 
 func pruneInnerDockerCache(h *host.Host, containerName string) error {
