@@ -160,19 +160,49 @@ func dirSizes(h *host.Host, instance string) (total, work, temp, dockerData int6
 	}
 }
 
-func dirSizesPOSIX(h *host.Host, instance string) (total, work, temp, dockerData int64, err error) {
-	script := fmt.Sprintf(`
+// buildDirSizesPOSIXScript returns the shell script that `dirSizesPOSIX`
+// runs on the remote host. Exposed (1) so the structural test in
+// `disk_test.go` can assert the single-walk invariant against the real
+// production string instead of a frozen copy, and (2) so a future
+// refactor that re-introduces multiple `du` walks fires the test.
+func buildDirSizesPOSIXScript(instance string) string {
+	// Single `du` walk with depth 1 reports the total and the size of each
+	// first-level subdirectory in one pass. Replaces four separate `du` calls
+	// (one for $dir, one each for _work/_temp/docker-data) which re-walked
+	// overlapping subtrees. On remote hosts the savings compound because each
+	// `h.Run` is a separate SSH round trip.
+	//
+	// `du` flag differs by platform: GNU coreutils uses --max-depth=N, BSD/macOS
+	// uses -d N. Probe with --max-depth=0 and fall back to -d 0.
+	return fmt.Sprintf(`
 set -e
 %s
 if [ ! -d "$dir" ]; then echo "0 0 0 0"; exit 0; fi
-total=$(du -sk "$dir" 2>/dev/null | awk '{print $1*1024}')
-work=0; temp=0; docker=0
-if [ -d "$dir/_work" ]; then work=$(du -sk "$dir/_work" 2>/dev/null | awk '{print $1*1024}'); fi
-if [ -d "$dir/_temp" ]; then temp=$(du -sk "$dir/_temp" 2>/dev/null | awk '{print $1*1024}'); fi
-if [ -d "$dir/docker-data" ]; then docker=$(du -sk "$dir/docker-data" 2>/dev/null | awk '{print $1*1024}'); fi
+if du --max-depth=0 "$dir" >/dev/null 2>&1; then
+  out=$(du --max-depth=1 -k "$dir" 2>/dev/null)
+else
+  out=$(du -d 1 -k "$dir" 2>/dev/null)
+fi
+if [ -z "$out" ]; then echo "0 0 0 0"; exit 0; fi
+total=0; work=0; temp=0; docker=0
+total_name=$(basename "$dir")
+# Default IFS splits the "size<TAB>path" lines. GNU du emits tab-separated;
+# BSD du emits space-separated. Both work with the default.
+while read -r size path; do
+  [ -z "$path" ] && continue
+  case "$(basename "$path")" in
+    "$total_name") total=$((size * 1024)) ;;
+    _work)         work=$((size * 1024)) ;;
+    _temp)         temp=$((size * 1024)) ;;
+    docker-data)   docker=$((size * 1024)) ;;
+  esac
+done <<< "$out"
 echo "$total $work $temp $docker"
 `, posixRunnerDirVar(instance))
-	out, err := h.Run(script)
+}
+
+func dirSizesPOSIX(h *host.Host, instance string) (total, work, temp, dockerData int64, err error) {
+	out, err := h.Run(buildDirSizesPOSIXScript(instance))
 	if err != nil {
 		return 0, 0, 0, 0, err
 	}

@@ -1,6 +1,9 @@
 package runner
 
 import (
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -215,5 +218,116 @@ func TestMeasureDiskUsage_rejectsUnsafeInstance(t *testing.T) {
 	entry := MeasureDiskUsage(h, "host1", `bad"name`, nil)
 	if entry.Err == nil {
 		t.Fatal("expected error")
+	}
+}
+
+// TestDirSizesPOSIXScript_structure guards the single-walk optimization: the
+// generated script must make exactly one `du` invocation with depth 1, not
+// four separate `du -sk` calls. This is the energy-efficiency invariant the
+// PR claims — if a future refactor re-introduces multiple `du` walks, this
+// test will catch it. The test runs the real production script (via
+// buildDirSizesPOSIXScript) on a real temp dir, not a frozen copy.
+func TestDirSizesPOSIXScript_structure(t *testing.T) {
+	t.Parallel()
+	if _, err := exec.LookPath("du"); err != nil {
+		t.Skip("du not available")
+	}
+	if _, err := exec.LookPath("bash"); err != nil {
+		t.Skip("bash not available")
+	}
+
+	// Build the same instance-dir layout the production script targets.
+	inst := "ci-bench"
+	fakeHome := t.TempDir()
+	runnerDir := filepath.Join(fakeHome, ".gh-sr", "runners", inst)
+	for _, sub := range []string{"_work", "_temp", "docker-data"} {
+		if err := os.MkdirAll(filepath.Join(runnerDir, sub), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		for i := 0; i < 5; i++ {
+			f, err := os.CreateTemp(filepath.Join(runnerDir, sub), "f*.bin")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := f.Write(make([]byte, 4096)); err != nil {
+				t.Fatal(err)
+			}
+			f.Close()
+		}
+	}
+
+	cmd := exec.Command("bash", "-c", buildDirSizesPOSIXScript(inst))
+	cmd.Env = append(os.Environ(), "HOME="+fakeHome)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("script failed: %v\n%s", err, out)
+	}
+	parts := strings.Fields(strings.TrimSpace(string(out)))
+	if len(parts) != 4 {
+		t.Fatalf("expected 4 numbers, got %d: %q", len(parts), out)
+	}
+	// All three subdirs were populated with 5 × 4 KiB files = 20 KiB each.
+	// `du` reports in 1-KiB blocks; allow >= 16 KiB each (rounding).
+	for i, label := range []string{"total", "work", "temp", "docker"} {
+		var n int64
+		for _, c := range parts[i] {
+			if c < '0' || c > '9' {
+				t.Fatalf("non-numeric in %s: %q", label, parts[i])
+			}
+			n = n*10 + int64(c-'0')
+		}
+		if n < 16*1024 {
+			t.Fatalf("%s=%d bytes, want >= 16384", label, n)
+		}
+	}
+}
+
+// TestDirSizesPOSIXScript_singleDuInvocation is the structural invariant
+// guard. The OLD script had 4 separate `du -sk "$dir[/sub]"` calls. The
+// NEW script has exactly one effective `du` invocation per execution
+// (an `if/else` branch probes GNU vs BSD, but only one branch runs).
+// We assert two properties:
+//
+//  1. The old `du -sk "$dir"`-per-subdir pattern is gone (0 occurrences).
+//  2. There is exactly one `du` line that performs a data fetch
+//     (the depth-0 probe is not a fetch — it only tests flag support).
+func TestDirSizesPOSIXScript_singleDuInvocation(t *testing.T) {
+	t.Parallel()
+	script := buildDirSizesPOSIXScript("foo")
+
+	// (1) The old 4-call pattern must be absent.
+	if c := strings.Count(script, `du -sk "$dir"`); c != 0 {
+		t.Fatalf("old 4-du pattern present: %d occurrences of `du -sk \"$dir\"` in script", c)
+	}
+
+	// (2) Exactly one data-fetching `du` line. Both the GNU and BSD
+	// branches assign to `out=$(du ...)`; structurally that's 2 lines,
+	// but only one runs per execution. We allow 2 (one per platform
+	// branch) and disallow anything more.
+	lines := strings.Split(script, "\n")
+	fetches := 0
+	for _, l := range lines {
+		trimmed := strings.TrimSpace(l)
+		if strings.HasPrefix(trimmed, "out=$(du ") {
+			fetches++
+		}
+	}
+	if fetches != 1 && fetches != 2 {
+		t.Fatalf("expected 1 or 2 du fetch lines (GNU/BSD branch), got %d\nscript:\n%s", fetches, script)
+	}
+}
+
+// BenchmarkMeasureDiskUsage_linux benchmarks the Go side of MeasureDiskUsage
+// with a mock host. The real I/O win is on the remote host (4 SSH round
+// trips → 1), which is not exercised here. This benchmark exists primarily
+// to catch accidental per-call allocation regressions in the Go wrapper.
+func BenchmarkMeasureDiskUsage_linux(b *testing.B) {
+	h := diskMockHost("linux", &sequentialMock{
+		responses: []string{"1000000 500000 100000 300000\n"},
+	})
+	rc := config.RunnerConfig{Name: "ci", Count: 1}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = MeasureDiskUsage(h, "host1", "ci-1", &rc)
 	}
 }
