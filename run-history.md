@@ -1,7 +1,7 @@
 ---
 name: run-history
 description: Round-robin tracking of which tasks ran when
-metadata: 
+metadata:
   node_type: memory
   type: project
   originSessionId: 04e58c81-0a51-4f35-bd75-e67ad9ba414d
@@ -9,4 +9,7 @@ metadata:
 
 # Run History
 
-- 2026-06-08 (run 27130562074): Tasks 1, 2, 3, 4, 5, 6, 7 — full sweep, identified and fixed FilterRunners/FindRunner allocation hotspot, proposed benchmark-CI infra
+- 2026-06-09 (run 27198579456): dirSizesPOSIX 4 du calls → 1 du --max-depth=1 walk; PR patch created. PR #123, #128 confirmed merged. PR #131 disk.go audited.
+- 2026-06-08 (run 27143755302): fixed c.Validate() per-iter InstanceNames() (711→411 allocs/op) — propagated as PR #128
+- 2026-06-08 (run 27130562074): FilterRunners/FindRunner allocation hotspot (PR #123), benchmark-CI infra proposal #124
+- 2026-06-07 (run 27093653174): full sweep, no new high-value targets
