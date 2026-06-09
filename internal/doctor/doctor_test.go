@@ -211,6 +211,9 @@ func (f failIfRunExec) Run(cmd string) (string, error) {
 	if strings.Contains(cmd, "du -sk") || strings.Contains(cmd, `dir="$HOME/.gh-sr/runners/`) {
 		return "0 0 0 0\n", nil
 	}
+	if strings.Contains(cmd, `ls -1 "$HOME/.gh-sr/runners"`) {
+		return "", nil
+	}
 	f.t.Fatalf("unexpected remote command: %s", cmd)
 	return "", nil
 }
