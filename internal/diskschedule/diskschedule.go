@@ -12,6 +12,8 @@ import (
 const (
 	serviceBase = "ghsr-disk-prune"
 	labelBase   = "com.an-lee.gh-sr.disk-prune"
+	// DefaultAtTime is the local daily schedule when AtTime is empty.
+	DefaultAtTime = "03:00"
 )
 
 // ScheduleKind describes how disk prune scheduling is installed locally.
@@ -83,7 +85,7 @@ func Install(opts InstallOpts) error {
 		opts.GhPath = gh
 	}
 	if opts.AtTime == "" {
-		opts.AtTime = "03:00"
+		opts.AtTime = DefaultAtTime
 	}
 	hour, minute, err := parseAtTime(opts.AtTime)
 	if err != nil {
@@ -173,13 +175,15 @@ func installSystemdUser(opts InstallOpts, hour, minute int) error {
 	}
 
 	execStart := fmt.Sprintf("%s sr disk prune --yes -c %s", systemdQuoteArg(opts.GhPath), systemdQuoteArg(opts.ConfigPath))
+	envFile := filepath.Join(home, ".gh-sr", "env")
 	service := fmt.Sprintf(`[Unit]
 Description=gh-sr disk prune
 
 [Service]
 Type=oneshot
+EnvironmentFile=-%s
 ExecStart=%s
-`, execStart)
+`, systemdQuoteArg(envFile), execStart)
 
 	timer := fmt.Sprintf(`[Unit]
 Description=Daily gh-sr disk prune
@@ -259,9 +263,9 @@ func installLaunchd(opts InstallOpts, hour, minute int) error {
   <key>StandardErrorPath</key><string>%s</string>
 </dict>
 </plist>
-`, labelBase, opts.GhPath, opts.ConfigPath, hour, minute,
-		filepath.Join(home, ".gh-sr", "disk-prune.log"),
-		filepath.Join(home, ".gh-sr", "disk-prune.err.log"))
+`, xmlEscapePlist(labelBase), xmlEscapePlist(opts.GhPath), xmlEscapePlist(opts.ConfigPath), hour, minute,
+		xmlEscapePlist(filepath.Join(home, ".gh-sr", "disk-prune.log")),
+		xmlEscapePlist(filepath.Join(home, ".gh-sr", "disk-prune.err.log")))
 
 	plistPath := filepath.Join(dir, labelBase+".plist")
 	if err := os.WriteFile(plistPath, []byte(plist), 0o600); err != nil {
@@ -280,10 +284,20 @@ func uninstallLaunchd() error {
 	if err != nil {
 		return err
 	}
-	plistPath := filepath.Join(home, "Library", "LaunchAgents", labelBase+".plist")
-	uid := os.Getuid()
-	_ = exec.Command("launchctl", "bootout", fmt.Sprintf("gui/%d", uid), labelBase).Run()
-	_ = os.Remove(plistPath)
+	plistFile := labelBase + ".plist"
+	script := fmt.Sprintf(`set -e
+UID=$(id -u)
+LABEL=%s
+PLIST="$HOME/Library/LaunchAgents/%s"
+for _DOMAIN in "gui/$UID" "user/$UID"; do
+  launchctl bootout "$_DOMAIN/$LABEL" 2>/dev/null || true
+done
+launchctl unload -w "$PLIST" 2>/dev/null || true
+rm -f "$PLIST"
+`, "'"+strings.ReplaceAll(labelBase, "'", "'\\''")+"'", plistFile)
+	cmd := exec.Command("sh", "-c", script)
+	cmd.Dir = home
+	_ = cmd.Run()
 	return nil
 }
 
@@ -333,4 +347,12 @@ func systemdQuoteArg(s string) string {
 
 func escapePS(s string) string {
 	return strings.ReplaceAll(s, "'", "''")
+}
+
+func xmlEscapePlist(s string) string {
+	s = strings.ReplaceAll(s, `&`, `&amp;`)
+	s = strings.ReplaceAll(s, `"`, `&quot;`)
+	s = strings.ReplaceAll(s, `<`, `&lt;`)
+	s = strings.ReplaceAll(s, `>`, `&gt;`)
+	return s
 }

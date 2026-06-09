@@ -2,6 +2,7 @@ package doctor
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -339,4 +340,41 @@ func TestRun_GitHubListRunnersUsesAPI(t *testing.T) {
 		t.Fatalf("missing GitHub section:\n%s", out)
 	}
 	_ = res
+}
+
+type diskDoctorMock struct {
+	listOut string
+	duOut   string
+}
+
+func (m *diskDoctorMock) Run(cmd string) (string, error) {
+	if strings.Contains(cmd, `ls -1 "$HOME/.gh-sr/runners"`) {
+		return m.listOut, nil
+	}
+	if strings.Contains(cmd, "du -sk") {
+		return m.duOut, nil
+	}
+	return "0 0 0 0\n", nil
+}
+
+func (m *diskDoctorMock) Upload(string, string) error { return nil }
+func (m *diskDoctorMock) Close() error               { return nil }
+
+func TestCheckRunnerDiskUsage_warnsOrphanOverThreshold(t *testing.T) {
+	t.Parallel()
+	h := host.NewHost("linux", config.HostConfig{OS: "linux", Addr: "local"})
+	h.SetConn(&diskDoctorMock{
+		listOut: "orphan-1\n",
+		duOut:   fmt.Sprintf("%d 0 0 0\n", runner.DiskWarnThresholdBytes()+1),
+	})
+	var buf strings.Builder
+	var r Result
+	checkRunnerDiskUsage(&buf, "linux", h, nil, &r)
+	out := buf.String()
+	if !strings.Contains(out, "orphan-1 (orphan)") {
+		t.Fatalf("expected orphan warning, got:\n%s", out)
+	}
+	if r.Warn != 1 {
+		t.Fatalf("expected 1 warn, got %+v", r)
+	}
 }

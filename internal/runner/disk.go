@@ -30,17 +30,11 @@ type DiskUsageEntry struct {
 	Err             error
 }
 
-// TotalGiB returns total size in gibibytes.
-func (e DiskUsageEntry) TotalGiB() float64 {
-	return float64(e.TotalBytes) / (1024 * 1024 * 1024)
-}
-
 // PruneOptions configures PruneInstance.
 type PruneOptions struct {
 	DryRun         bool
 	PruneCache     bool // also prune inner Docker cache (docker-data); default keeps cache
 	IncludeOrphans bool
-	Force          bool // prune when GitHub status unknown
 }
 
 // PruneResult summarizes one prune attempt.
@@ -58,13 +52,29 @@ func DiskWarnThresholdBytes() int64 {
 	return int64(DiskWarnThresholdGiB) * 1024 * 1024 * 1024
 }
 
+// SafeRunnerInstanceName reports whether name is safe to embed in remote shell paths.
+func SafeRunnerInstanceName(name string) error {
+	if name == "" || name == "." || name == ".." {
+		return fmt.Errorf("invalid instance name %q", name)
+	}
+	if strings.ContainsAny(name, "/\\\x00\n\r") {
+		return fmt.Errorf("invalid instance name %q", name)
+	}
+	if strings.ContainsAny(name, `;"|&<>$`+"`") {
+		return fmt.Errorf("invalid instance name %q", name)
+	}
+	return nil
+}
+
 func posixRunnerDirVar(instance string) string {
 	inst := strings.NewReplacer(`\`, `\\`, `"`, `\"`, "$", `\$`, "`", "\\`").Replace(instance)
 	return fmt.Sprintf(`dir="$HOME/.gh-sr/runners/%s"`, inst)
 }
 
 // ListRunnerInstanceDirs returns subdirectory names under ~/.gh-sr/runners on the host.
+// Names that fail SafeRunnerInstanceName are omitted.
 func ListRunnerInstanceDirs(h *host.Host) ([]string, error) {
+	var raw []string
 	switch h.OS {
 	case "windows":
 		ps := `$base = Join-Path $env:USERPROFILE '.gh-sr\runners'; if (Test-Path $base) { Get-ChildItem -Path $base -Directory -ErrorAction SilentlyContinue | ForEach-Object { $_.Name } }`
@@ -72,14 +82,21 @@ func ListRunnerInstanceDirs(h *host.Host) ([]string, error) {
 		if err != nil {
 			return nil, err
 		}
-		return splitNonEmptyLines(out), nil
+		raw = splitNonEmptyLines(out)
 	default:
 		out, err := h.Run(`ls -1 "$HOME/.gh-sr/runners" 2>/dev/null || true`)
 		if err != nil {
 			return nil, err
 		}
-		return splitNonEmptyLines(out), nil
+		raw = splitNonEmptyLines(out)
 	}
+	var safe []string
+	for _, name := range raw {
+		if SafeRunnerInstanceName(name) == nil {
+			safe = append(safe, name)
+		}
+	}
+	return safe, nil
 }
 
 func splitNonEmptyLines(s string) []string {
@@ -99,6 +116,11 @@ func MeasureDiskUsage(h *host.Host, hostName, instance string, rc *config.Runner
 		Instance: instance,
 		Host:     hostName,
 		Path:     h.RunnerDir(instance),
+	}
+
+	if err := SafeRunnerInstanceName(instance); err != nil {
+		entry.Err = err
+		return entry
 	}
 
 	if rc != nil {
@@ -166,11 +188,22 @@ function Ghsr-DirSize([string]$p) {
   if ($null -eq $sum) { return 0 }
   return [int64]$sum
 }
+function Ghsr-OtherDirSize([string]$root) {
+  if (-not (Test-Path -LiteralPath $root)) { return 0 }
+  $skip = @('_work','_temp','docker-data')
+  $sum = [int64]0
+  Get-ChildItem -LiteralPath $root -Force -ErrorAction SilentlyContinue | ForEach-Object {
+    if ($skip -contains $_.Name) { return }
+    if ($_.PSIsContainer) { $sum += Ghsr-DirSize $_.FullName } else { $sum += [int64]$_.Length }
+  }
+  return $sum
+}
 $d = %s
-$t = Ghsr-DirSize $d
 $w = Ghsr-DirSize (Join-Path $d '_work')
 $te = Ghsr-DirSize (Join-Path $d '_temp')
 $dk = Ghsr-DirSize (Join-Path $d 'docker-data')
+$other = Ghsr-OtherDirSize $d
+$t = $w + $te + $dk + $other
 Write-Output "$t $w $te $dk"
 `, dirExpr)
 	out, err := h.RunShell(ps)
@@ -185,7 +218,6 @@ func parseFourInt64s(out string) (a, b, c, d int64, err error) {
 	if line == "" {
 		return 0, 0, 0, 0, nil
 	}
-	// Use last line in case of noise.
 	if idx := strings.LastIndex(line, "\n"); idx >= 0 {
 		line = strings.TrimSpace(line[idx+1:])
 	}
@@ -203,6 +235,10 @@ func parseFourInt64s(out string) (a, b, c, d int64, err error) {
 // PruneInstance reclaims disk for one runner instance when idle.
 func (m *Manager) PruneInstance(h *host.Host, hostName, instance string, rc *config.RunnerConfig, busy bool, opts PruneOptions) PruneResult {
 	res := PruneResult{Instance: instance, Host: hostName}
+	if err := SafeRunnerInstanceName(instance); err != nil {
+		res.Err = err
+		return res
+	}
 	if busy {
 		res.Skipped = true
 		res.Reason = "busy"
@@ -229,7 +265,6 @@ func (m *Manager) PruneInstance(h *host.Host, hostName, instance string, rc *con
 		return res
 	}
 
-	// Work and temp — safe on host bind mount.
 	workAction := fmt.Sprintf("clear %s/_work and %s/_temp", dir, dir)
 	res.Actions = append(res.Actions, workAction)
 	if !opts.DryRun {
@@ -245,7 +280,7 @@ func (m *Manager) PruneInstance(h *host.Host, hostName, instance string, rc *con
 		res.Actions = append(res.Actions, cacheAction)
 		if !opts.DryRun {
 			if err := pruneInnerDockerCache(h, cname); err != nil {
-				res.Actions = append(res.Actions, "warning: "+err.Error())
+				res.Err = err
 			}
 		}
 	}

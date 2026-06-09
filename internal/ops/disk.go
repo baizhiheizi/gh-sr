@@ -4,11 +4,72 @@ import (
 	"fmt"
 	"io"
 	"sort"
+	"strings"
 	"sync"
 
 	"github.com/an-lee/gh-sr/internal/config"
 	"github.com/an-lee/gh-sr/internal/runner"
 )
+
+// DiskPruneOptions configures PruneDisk.
+type DiskPruneOptions struct {
+	DryRun         bool
+	PruneCache     bool
+	IncludeOrphans bool
+	// Force prunes configured instances when GitHub runner status is unknown.
+	Force bool
+}
+
+func diskHostInstanceKey(hostName, instance string) string {
+	return hostName + "\x00" + instance
+}
+
+type diskStatusMaps struct {
+	busy        map[string]bool
+	remote      map[string]string
+	githubKnown map[string]bool
+}
+
+func diskStatusMapsFrom(statuses []runner.RunnerStatus) diskStatusMaps {
+	m := diskStatusMaps{
+		busy:        make(map[string]bool),
+		remote:      make(map[string]string),
+		githubKnown: make(map[string]bool),
+	}
+	for _, s := range statuses {
+		key := diskHostInstanceKey(s.Host, s.Instance)
+		m.busy[key] = s.Busy
+		m.remote[key] = s.Remote
+		if s.Remote != "" {
+			m.githubKnown[key] = true
+		}
+	}
+	return m
+}
+
+func rcByInstanceForHost(runners []config.RunnerConfig, hostName string) map[string]*config.RunnerConfig {
+	out := make(map[string]*config.RunnerConfig)
+	for i := range runners {
+		rc := &runners[i]
+		if rc.Host != hostName {
+			continue
+		}
+		for _, inst := range rc.InstanceNames() {
+			out[inst] = rc
+		}
+	}
+	return out
+}
+
+func configuredInstancesOnHost(runners []config.RunnerConfig) map[string]struct{} {
+	out := make(map[string]struct{})
+	for _, rc := range runners {
+		for _, inst := range rc.InstanceNames() {
+			out[inst] = struct{}{}
+		}
+	}
+	return out
+}
 
 // CollectDiskUsage gathers disk usage for configured and orphan runner directories.
 func CollectDiskUsage(w io.Writer, cfg *config.Config, mgr *runner.Manager, filterHost, filterRepo string, nameArgs []string) ([]runner.DiskUsageEntry, error) {
@@ -17,43 +78,38 @@ func CollectDiskUsage(w io.Writer, cfg *config.Config, mgr *runner.Manager, filt
 	}
 
 	runners := config.FilterRunners(cfg, filterHost, filterRepo, nameArgs)
+	if len(runners) == 0 {
+		return nil, fmt.Errorf("no runners matching the given filters")
+	}
+
 	statuses, err := CollectStatus(w, cfg, mgr, filterHost, filterRepo, nameArgs)
 	if err != nil {
 		return nil, err
 	}
-	busyByInstance := map[string]bool{}
-	remoteByInstance := map[string]string{}
-	for _, s := range statuses {
-		busyByInstance[s.Instance] = s.Busy
-		remoteByInstance[s.Instance] = s.Remote
-	}
-
-	configuredByHost := configuredInstancesByHost(cfg, runners)
+	statusMaps := diskStatusMapsFrom(statuses)
+	groups := groupRunnersByHost(runners)
 
 	type hostResult struct {
 		entries []runner.DiskUsageEntry
 		err     error
 	}
 
-	hostNames := uniqueHostNamesFromRunners(runners)
-	if len(hostNames) == 0 {
-		return nil, nil
-	}
-
-	results := make([]hostResult, len(hostNames))
+	results := make([]hostResult, len(groups))
 	var wg sync.WaitGroup
 	var wMu sync.Mutex
+	var skippedHosts []string
 
-	for i, hostName := range hostNames {
+	for i, g := range groups {
 		wg.Add(1)
-		go func(i int, hostName string) {
+		go func(i int, g hostGroup) {
 			defer wg.Done()
-			hcfg := cfg.Hosts[hostName]
-			h, err := ConnectHost(hostName, hcfg)
+			hcfg := cfg.Hosts[g.name]
+			h, err := ConnectHost(g.name, hcfg)
 			if err != nil {
 				if w != nil {
 					wMu.Lock()
-					fmt.Fprintf(w, "Warning: cannot connect to %s: %v\n", hostName, err)
+					fmt.Fprintf(w, "Warning: cannot connect to %s: %v\n", g.name, err)
+					skippedHosts = append(skippedHosts, g.name)
 					wMu.Unlock()
 				}
 				return
@@ -61,15 +117,16 @@ func CollectDiskUsage(w io.Writer, cfg *config.Config, mgr *runner.Manager, filt
 			defer h.Close()
 
 			seen := make(map[string]struct{})
-			configured := configuredByHost[hostName]
-			rcByInstance := rcByInstanceForHost(runners, hostName)
+			configured := configuredInstancesOnHost(g.runners)
+			rcByInstance := rcByInstanceForHost(g.runners, g.name)
 
 			for inst := range configured {
 				seen[inst] = struct{}{}
 				rc := rcByInstance[inst]
-				entry := runner.MeasureDiskUsage(h, hostName, inst, rc)
-				entry.Busy = busyByInstance[inst]
-				entry.Remote = remoteByInstance[inst]
+				entry := runner.MeasureDiskUsage(h, g.name, inst, rc)
+				key := diskHostInstanceKey(g.name, inst)
+				entry.Busy = statusMaps.busy[key]
+				entry.Remote = statusMaps.remote[key]
 				results[i].entries = append(results[i].entries, entry)
 			}
 
@@ -82,13 +139,17 @@ func CollectDiskUsage(w io.Writer, cfg *config.Config, mgr *runner.Manager, filt
 				if _, ok := seen[inst]; ok {
 					continue
 				}
-				entry := runner.MeasureDiskUsage(h, hostName, inst, nil)
-				entry.Orphan = true
+				entry := runner.MeasureDiskUsage(h, g.name, inst, nil)
 				results[i].entries = append(results[i].entries, entry)
 			}
-		}(i, hostName)
+		}(i, g)
 	}
 	wg.Wait()
+
+	if len(skippedHosts) > 0 {
+		sort.Strings(skippedHosts)
+		return nil, fmt.Errorf("cannot connect to host(s): %s", strings.Join(skippedHosts, ", "))
+	}
 
 	var all []runner.DiskUsageEntry
 	for _, r := range results {
@@ -108,60 +169,58 @@ func CollectDiskUsage(w io.Writer, cfg *config.Config, mgr *runner.Manager, filt
 }
 
 // PruneDisk reclaims disk space on idle runner instances.
-func PruneDisk(w io.Writer, cfg *config.Config, mgr *runner.Manager, filterHost, filterRepo string, nameArgs []string, opts runner.PruneOptions) ([]runner.PruneResult, error) {
+func PruneDisk(w io.Writer, cfg *config.Config, mgr *runner.Manager, filterHost, filterRepo string, nameArgs []string, opts DiskPruneOptions) ([]runner.PruneResult, error) {
 	if err := ResolveHostInfo(w, cfg); err != nil {
 		return nil, err
 	}
 
 	runners := config.FilterRunners(cfg, filterHost, filterRepo, nameArgs)
+	if len(runners) == 0 {
+		return nil, fmt.Errorf("no runners matching the given filters")
+	}
+
 	statuses, err := CollectStatus(w, cfg, mgr, filterHost, filterRepo, nameArgs)
-	if err != nil && !opts.Force {
+	if err != nil {
 		return nil, err
 	}
+	statusMaps := diskStatusMapsFrom(statuses)
+	groups := groupRunnersByHost(runners)
 
-	busyByInstance := map[string]bool{}
-	githubKnown := map[string]bool{}
-	for _, s := range statuses {
-		busyByInstance[s.Instance] = s.Busy
-		if s.Remote != "" {
-			githubKnown[s.Instance] = true
-		}
+	runnerOpts := runner.PruneOptions{
+		DryRun:         opts.DryRun,
+		PruneCache:     opts.PruneCache,
+		IncludeOrphans: opts.IncludeOrphans,
 	}
-
-	configuredByHost := configuredInstancesByHost(cfg, runners)
 
 	type hostResult struct {
 		results []runner.PruneResult
 		err     error
 	}
 
-	hostNames := uniqueHostNamesFromRunners(runners)
-	if len(hostNames) == 0 {
-		return nil, fmt.Errorf("no runners matching the given filters")
-	}
-
-	out := make([]hostResult, len(hostNames))
+	out := make([]hostResult, len(groups))
 	var wg sync.WaitGroup
 	var wMu sync.Mutex
+	var skippedHosts []string
 
-	for i, hostName := range hostNames {
+	for i, g := range groups {
 		wg.Add(1)
-		go func(i int, hostName string) {
+		go func(i int, g hostGroup) {
 			defer wg.Done()
-			hcfg := cfg.Hosts[hostName]
-			h, err := ConnectHost(hostName, hcfg)
+			hcfg := cfg.Hosts[g.name]
+			h, err := ConnectHost(g.name, hcfg)
 			if err != nil {
 				if w != nil {
 					wMu.Lock()
-					fmt.Fprintf(w, "Warning: cannot connect to %s: %v\n", hostName, err)
+					fmt.Fprintf(w, "Warning: cannot connect to %s: %v\n", g.name, err)
+					skippedHosts = append(skippedHosts, g.name)
 					wMu.Unlock()
 				}
 				return
 			}
 			defer h.Close()
 
-			configured := configuredByHost[hostName]
-			rcByInstance := rcByInstanceForHost(runners, hostName)
+			configured := configuredInstancesOnHost(g.runners)
+			rcByInstance := rcByInstanceForHost(g.runners, g.name)
 
 			var targets []string
 			for inst := range configured {
@@ -183,22 +242,24 @@ func PruneDisk(w io.Writer, cfg *config.Config, mgr *runner.Manager, filterHost,
 
 			for _, inst := range targets {
 				rc := rcByInstance[inst]
-				busy := busyByInstance[inst]
-				if rc != nil && !githubKnown[inst] && !opts.Force {
-					out[i].results = append(out[i].results, runner.PruneResult{
+				key := diskHostInstanceKey(g.name, inst)
+				busy := statusMaps.busy[key]
+				if rc != nil && !statusMaps.githubKnown[key] && !opts.Force {
+					res := runner.PruneResult{
 						Instance: inst,
-						Host:     hostName,
+						Host:     g.name,
 						Skipped:  true,
 						Reason:   "GitHub status unknown (use --force)",
-					})
+					}
+					out[i].results = append(out[i].results, res)
 					if w != nil {
 						wMu.Lock()
-						printPruneResult(w, out[i].results[len(out[i].results)-1], opts.DryRun)
+						printPruneResult(w, res, opts.DryRun)
 						wMu.Unlock()
 					}
 					continue
 				}
-				res := mgr.PruneInstance(h, hostName, inst, rc, busy, opts)
+				res := mgr.PruneInstance(h, g.name, inst, rc, busy, runnerOpts)
 				out[i].results = append(out[i].results, res)
 				if w != nil {
 					wMu.Lock()
@@ -206,9 +267,14 @@ func PruneDisk(w io.Writer, cfg *config.Config, mgr *runner.Manager, filterHost,
 					wMu.Unlock()
 				}
 			}
-		}(i, hostName)
+		}(i, g)
 	}
 	wg.Wait()
+
+	if len(skippedHosts) > 0 {
+		sort.Strings(skippedHosts)
+		return nil, fmt.Errorf("cannot connect to host(s): %s", strings.Join(skippedHosts, ", "))
+	}
 
 	var all []runner.PruneResult
 	for _, r := range out {
@@ -217,7 +283,23 @@ func PruneDisk(w io.Writer, cfg *config.Config, mgr *runner.Manager, filterHost,
 		}
 		all = append(all, r.results...)
 	}
+	if err := pruneResultsError(all); err != nil {
+		return all, err
+	}
 	return all, nil
+}
+
+func pruneResultsError(results []runner.PruneResult) error {
+	var parts []string
+	for _, r := range results {
+		if r.Err != nil {
+			parts = append(parts, fmt.Sprintf("%s on %s: %v", r.Instance, r.Host, r.Err))
+		}
+	}
+	if len(parts) == 0 {
+		return nil
+	}
+	return fmt.Errorf("disk prune failed for %d instance(s): %s", len(parts), strings.Join(parts, "; "))
 }
 
 func printPruneResult(w io.Writer, res runner.PruneResult, dryRun bool) {
@@ -236,46 +318,6 @@ func printPruneResult(w io.Writer, res runner.PruneResult, dryRun bool) {
 	for _, a := range res.Actions {
 		fmt.Fprintf(w, "%s%s on %s: %s\n", prefix, res.Instance, res.Host, a)
 	}
-}
-
-func configuredInstancesByHost(cfg *config.Config, runners []config.RunnerConfig) map[string]map[string]struct{} {
-	out := make(map[string]map[string]struct{})
-	for _, rc := range runners {
-		if out[rc.Host] == nil {
-			out[rc.Host] = make(map[string]struct{})
-		}
-		for _, inst := range rc.InstanceNames() {
-			out[rc.Host][inst] = struct{}{}
-		}
-	}
-	return out
-}
-
-func rcByInstanceForHost(runners []config.RunnerConfig, hostName string) map[string]*config.RunnerConfig {
-	out := make(map[string]*config.RunnerConfig)
-	for i := range runners {
-		rc := &runners[i]
-		if rc.Host != hostName {
-			continue
-		}
-		for _, inst := range rc.InstanceNames() {
-			out[inst] = rc
-		}
-	}
-	return out
-}
-
-func uniqueHostNamesFromRunners(runners []config.RunnerConfig) []string {
-	seen := make(map[string]struct{})
-	for _, rc := range runners {
-		seen[rc.Host] = struct{}{}
-	}
-	out := make([]string, 0, len(seen))
-	for name := range seen {
-		out = append(out, name)
-	}
-	sort.Strings(out)
-	return out
 }
 
 // PrintDiskUsageTable prints disk usage entries to w.
@@ -319,9 +361,9 @@ func PrintDiskUsageTable(w io.Writer, entries []runner.DiskUsageEntry) {
 	}
 
 	widths := columnWidths(headers, rows)
-	printRow(w, headers, widths, true)
+	printRow(w, headers, widths)
 	for _, row := range rows {
-		printRow(w, row, widths, false)
+		printRow(w, row, widths)
 	}
 	fmt.Fprintf(w, "\nTotal: %s across %d instance(s)\n", runner.FormatBytesHuman(totalBytes), len(entries))
 }
@@ -341,16 +383,12 @@ func columnWidths(headers []string, rows [][]string) []int {
 	return widths
 }
 
-func printRow(w io.Writer, cells []string, widths []int, header bool) {
+func printRow(w io.Writer, cells []string, widths []int) {
 	for i, cell := range cells {
 		if i >= len(widths) {
 			break
 		}
-		if header {
-			fmt.Fprintf(w, "%-*s  ", widths[i], cell)
-		} else {
-			fmt.Fprintf(w, "%-*s  ", widths[i], cell)
-		}
+		fmt.Fprintf(w, "%-*s  ", widths[i], cell)
 	}
 	fmt.Fprintln(w)
 }

@@ -124,5 +124,6 @@ gh sr disk schedule uninstall
 - Busy runners (active job on GitHub) are always skipped.
 - Default prune keeps inner Docker cache (`docker-data`) so the next agentic job does not re-pull gh-aw images. Use `--prune-cache` when you need maximum disk recovery.
 - `gh sr cleanup` removes **offline GitHub registrations** only — it does not free disk. Use `gh sr disk prune` for workspace cleanup.
-- `gh sr doctor` warns when any instance directory exceeds 50 GiB.
+- `gh sr doctor` warns when any instance directory exceeds 50 GiB (including orphan dirs).
+- `gh sr disk schedule install` runs on **this machine** (where you run gh), not on runner hosts. Ensure `gh` is on PATH, `gh auth login` is done, and `~/.gh-sr/env` contains any tokens needed for remote hosts. On Linux headless servers, run `loginctl enable-linger $USER` so the systemd user timer runs without an interactive login. SSH keys for remote hosts must be available to the scheduled job's user environment.
 

@@ -598,11 +598,24 @@ func checkRunnerDiskUsage(w io.Writer, hostName string, h *host.Host, runners []
 			rcByInstance[inst] = rc
 		}
 	}
+
+	seen := make(map[string]struct{})
 	instances := make([]string, 0, len(rcByInstance))
 	for inst := range rcByInstance {
 		instances = append(instances, inst)
+		seen[inst] = struct{}{}
+	}
+	if diskDirs, err := runner.ListRunnerInstanceDirs(h); err == nil {
+		for _, inst := range diskDirs {
+			if _, ok := seen[inst]; ok {
+				continue
+			}
+			seen[inst] = struct{}{}
+			instances = append(instances, inst)
+		}
 	}
 	sort.Strings(instances)
+
 	for _, inst := range instances {
 		rc := rcByInstance[inst]
 		entry := runner.MeasureDiskUsage(h, hostName, inst, rc)
@@ -612,8 +625,12 @@ func checkRunnerDiskUsage(w io.Writer, hostName string, h *host.Host, runners []
 			continue
 		}
 		if entry.TotalBytes >= threshold {
+			label := inst
+			if entry.Orphan {
+				label = inst + " (orphan)"
+			}
 			printLine(w, sevWarn, hostName, fmt.Sprintf("disk: instance %s uses %s under %s; run: gh sr disk prune --yes",
-				inst, runner.FormatBytesHuman(entry.TotalBytes), entry.Path))
+				label, runner.FormatBytesHuman(entry.TotalBytes), entry.Path))
 			r.Warn++
 		}
 	}

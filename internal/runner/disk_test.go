@@ -171,3 +171,24 @@ func TestDiskWarnThresholdBytes(t *testing.T) {
 		t.Fatalf("got %d want %d", got, want)
 	}
 }
+
+func TestSafeRunnerInstanceName(t *testing.T) {
+	t.Parallel()
+	if err := SafeRunnerInstanceName("ci-1"); err != nil {
+		t.Fatal(err)
+	}
+	for _, bad := range []string{"", ".", "..", "a/b", "a\nb", `a";rm -rf`} {
+		if err := SafeRunnerInstanceName(bad); err == nil {
+			t.Fatalf("expected error for %q", bad)
+		}
+	}
+}
+
+func TestMeasureDiskUsage_rejectsUnsafeInstance(t *testing.T) {
+	t.Parallel()
+	h := diskMockHost("linux", &sequentialMock{})
+	entry := MeasureDiskUsage(h, "host1", `bad"name`, nil)
+	if entry.Err == nil {
+		t.Fatal("expected error")
+	}
+}

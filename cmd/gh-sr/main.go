@@ -742,8 +742,9 @@ Docker image cache for container/agentic runners). Prune clears _work/_temp by
 default and keeps docker-data; use disk prune --prune-cache for deeper reclaim.
 Prune skips busy runners.`,
 	}
-	cmd.AddCommand(diskUsageCmd(), diskPruneCmd(), diskScheduleCmd())
-	cmd.RunE = diskUsageCmd().RunE
+	usage := diskUsageCmd()
+	cmd.AddCommand(usage, diskPruneCmd(), diskScheduleCmd())
+	cmd.RunE = usage.RunE
 	return cmd
 }
 
@@ -795,7 +796,7 @@ Examples:
 			if err != nil {
 				return err
 			}
-			opts := runner.PruneOptions{
+			opts := ops.DiskPruneOptions{
 				DryRun:         dryRun || !yes,
 				PruneCache:     pruneCache,
 				IncludeOrphans: includeOrphans,
@@ -841,7 +842,7 @@ loginctl enable-linger for the timer to run without an interactive login.`,
 			return nil
 		},
 	}
-	install.Flags().StringVar(&atTime, "at", "03:00", "local daily time HH:MM")
+	install.Flags().StringVar(&atTime, "at", diskschedule.DefaultAtTime, "local daily time HH:MM")
 	uninstall := &cobra.Command{
 		Use:   "uninstall",
 		Short: "Remove disk prune schedule",
@@ -875,7 +876,7 @@ loginctl enable-linger for the timer to run without an interactive login.`,
 
 func atTimeOrDefault(at string) string {
 	if strings.TrimSpace(at) == "" {
-		return "03:00"
+		return diskschedule.DefaultAtTime
 	}
 	return at
 }
