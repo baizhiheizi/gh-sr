@@ -1,1 +1,1 @@
-- [Repo Assist state](state.md) — last run summary, in-flight PR, backlog cursor, next high-value task (#121 windowsRunnerDirAssignment)
+- [Repo Assist state](state.md) — last run summary, in-flight PRs (#127/#131/#136 merged; #134 disk-helpers draft pending), backlog cursor, next high-value task (#132 storage scaffold on hold)
