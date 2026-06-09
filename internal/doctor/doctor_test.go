@@ -208,7 +208,11 @@ type failIfRunExec struct {
 }
 
 func (f failIfRunExec) Run(cmd string) (string, error) {
-	if strings.Contains(cmd, "du -sk") || strings.Contains(cmd, `dir="$HOME/.gh-sr/runners/`) {
+	// The dirSizesPOSIX script now uses `du --max-depth=1` (or `du -d 1`
+	// on BSD) and a `while read` parser. Match the new shape; the old
+	// `du -sk` form is no longer used.
+	if strings.Contains(cmd, "du --max-depth=1") || strings.Contains(cmd, "du -d 1") ||
+		strings.Contains(cmd, `dir="$HOME/.gh-sr/runners/`) {
 		return "0 0 0 0\n", nil
 	}
 	if strings.Contains(cmd, `ls -1 "$HOME/.gh-sr/runners"`) {
@@ -219,7 +223,7 @@ func (f failIfRunExec) Run(cmd string) (string, error) {
 }
 
 func (f failIfRunExec) Upload(string, string) error { return nil }
-func (f failIfRunExec) Close() error               { return nil }
+func (f failIfRunExec) Close() error                { return nil }
 
 func TestRunHostChecks_ContainerOnlySkipsNative(t *testing.T) {
 	t.Parallel()
@@ -354,14 +358,16 @@ func (m *diskDoctorMock) Run(cmd string) (string, error) {
 	if strings.Contains(cmd, `ls -1 "$HOME/.gh-sr/runners"`) {
 		return m.listOut, nil
 	}
-	if strings.Contains(cmd, "du -sk") {
+	// The dirSizesPOSIX script now uses `du --max-depth=1` (or `du -d 1`
+	// on BSD) — match the new shape; the old `du -sk` form is gone.
+	if strings.Contains(cmd, "du --max-depth=1") || strings.Contains(cmd, "du -d 1") {
 		return m.duOut, nil
 	}
 	return "0 0 0 0\n", nil
 }
 
 func (m *diskDoctorMock) Upload(string, string) error { return nil }
-func (m *diskDoctorMock) Close() error               { return nil }
+func (m *diskDoctorMock) Close() error                { return nil }
 
 func TestCheckRunnerDiskUsage_warnsOrphanOverThreshold(t *testing.T) {
 	t.Parallel()
