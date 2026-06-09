@@ -123,7 +123,7 @@ func Run(w io.Writer, cfgPath, envPath string, cfg *config.Config, cfgErr error,
 			apiWg.Add(1)
 			go func(idx int, repo string) {
 				defer apiWg.Done()
-				list, err := gh.ListRunners(repo)
+				list, err := gh.ListRunnersScoped("repo", repo)
 				if err != nil {
 					repoResults[idx] = apiResult{sevFail, fmt.Sprintf("%s: %v", repo, err)}
 				} else {
@@ -584,4 +584,3 @@ func checkContainerAgenticInnerHygiene(w io.Writer, hostName string, h *host.Hos
 		}
 	}
 }
-
