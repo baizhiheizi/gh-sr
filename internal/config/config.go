@@ -413,10 +413,23 @@ func (c *Config) Validate() error {
 		if len(r.AgenticMCPPorts) > 0 || r.AgenticMCPPortBase != nil {
 			return fmt.Errorf("runner %q: agentic_mcp_ports / agentic_mcp_port_base have been removed; agentic runners use runner_mode: container, which isolates the MCP gateway port per runner — delete these fields", r.Name)
 		}
-		for _, instance := range r.InstanceNames() {
-			key := r.Host + "\x00" + instance
+		// Inline the `name-N` construction instead of calling r.InstanceNames(): the
+		// per-call slice+fmt.Sprintf allocs are the dominant cost on large configs.
+		// Concatenation chains of 2–3 strings compile to a single alloc each, so this
+		// drops the per-instance cost from 5+ allocs to 2 (one for `inst`, one for
+		// the `key` with the null separator). See BenchmarkValidate_Large for the
+		// before/after measurement (711 → 411 allocs/op on 100-runner configs).
+		count := r.Count
+		if count < 1 {
+			count = 1
+		}
+		host := r.Host
+		name := r.Name
+		for j := 1; j <= count; j++ {
+			inst := name + "-" + strconv.Itoa(j)
+			key := host + "\x00" + inst
 			if prev, ok := instanceOwners[key]; ok {
-				return fmt.Errorf("runner instance %q is defined more than once on host %q (runners %q and %q); runner names must be unique per host", instance, r.Host, prev, r.Name)
+				return fmt.Errorf("runner instance %q is defined more than once on host %q (runners %q and %q); runner names must be unique per host", inst, host, prev, r.Name)
 			}
 			instanceOwners[key] = r.Name
 		}
