@@ -9,6 +9,77 @@ import (
 	"github.com/an-lee/gh-sr/internal/runner"
 )
 
+func TestGroupRunnersByHost(t *testing.T) {
+	t.Parallel()
+
+	t.Run("empty input returns nil", func(t *testing.T) {
+		t.Parallel()
+		groups := groupRunnersByHost(nil)
+		if len(groups) != 0 {
+			t.Errorf("len(groups) = %d, want 0", len(groups))
+		}
+	})
+
+	t.Run("single host preserves runner order", func(t *testing.T) {
+		t.Parallel()
+		runners := []config.RunnerConfig{
+			{Name: "r1", Host: "h1"},
+			{Name: "r2", Host: "h1"},
+			{Name: "r3", Host: "h1"},
+		}
+		groups := groupRunnersByHost(runners)
+		if len(groups) != 1 {
+			t.Fatalf("got %d groups, want 1", len(groups))
+		}
+		if groups[0].name != "h1" {
+			t.Errorf("group[0].name = %q, want %q", groups[0].name, "h1")
+		}
+		got := []string{
+			groups[0].runners[0].Name,
+			groups[0].runners[1].Name,
+			groups[0].runners[2].Name,
+		}
+		want := []string{"r1", "r2", "r3"}
+		for i := range want {
+			if got[i] != want[i] {
+				t.Errorf("runners[%d] = %q, want %q", i, got[i], want[i])
+			}
+		}
+	})
+
+	t.Run("multiple hosts preserve discovery order", func(t *testing.T) {
+		t.Parallel()
+		// Interleaved hosts: verify that the first occurrence of each host
+		// determines the group's position, not later ones.
+		runners := []config.RunnerConfig{
+			{Name: "r1", Host: "h1"},
+			{Name: "r2", Host: "h2"},
+			{Name: "r3", Host: "h1"},
+			{Name: "r4", Host: "h3"},
+			{Name: "r5", Host: "h2"},
+		}
+		groups := groupRunnersByHost(runners)
+		if len(groups) != 3 {
+			t.Fatalf("got %d groups, want 3", len(groups))
+		}
+		wantOrder := []string{"h1", "h2", "h3"}
+		for i, g := range groups {
+			if g.name != wantOrder[i] {
+				t.Errorf("groups[%d].name = %q, want %q", i, g.name, wantOrder[i])
+			}
+		}
+		if len(groups[0].runners) != 2 {
+			t.Errorf("h1 group size = %d, want 2", len(groups[0].runners))
+		}
+		if len(groups[1].runners) != 2 {
+			t.Errorf("h2 group size = %d, want 2", len(groups[1].runners))
+		}
+		if len(groups[2].runners) != 1 {
+			t.Errorf("h3 group size = %d, want 1", len(groups[2].runners))
+		}
+	})
+}
+
 func TestApplyContainerImageExtras(t *testing.T) {
 	t.Parallel()
 
