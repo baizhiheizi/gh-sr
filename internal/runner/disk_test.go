@@ -171,6 +171,67 @@ func TestClearWorkTempPOSIX_nativeSkipsDockerExec(t *testing.T) {
 	}
 }
 
+func TestContainerEscalation_quotesContainerAndCommand(t *testing.T) {
+	t.Parallel()
+	script := containerEscalation("gh-sr-rune-1", `for sub in _work _temp; do rm -rf "$sub"; done`)
+	if !strings.Contains(script, "docker exec") {
+		t.Fatal("expected docker exec invocation")
+	}
+	if !strings.Contains(script, "docker start") {
+		t.Fatal("expected docker start fallback")
+	}
+	if !strings.Contains(script, "'gh-sr-rune-1'") {
+		t.Fatalf("expected single-quoted container name, got: %s", script)
+	}
+	if !strings.Contains(script, "sh -c") {
+		t.Fatal("expected shell wrapper for the inner command")
+	}
+	if !strings.Contains(script, `for sub in _work _temp; do rm -rf "$sub"; done`) {
+		t.Fatalf("inner command should appear verbatim inside the sh -c quote, got: %s", script)
+	}
+}
+
+func TestContainerEscalation_handlesSpacesInName(t *testing.T) {
+	t.Parallel()
+	script := containerEscalation("weird name", `echo hi`)
+	// hostshell.PosixSingleQuote wraps spaces in single quotes.
+	if !strings.Contains(script, "'weird name'") {
+		t.Fatalf("expected single-quoted container name with spaces, got: %s", script)
+	}
+}
+
+func TestPasswordlessSudo_setsSUDOVariable(t *testing.T) {
+	t.Parallel()
+	script := passwordlessSudo()
+	if !strings.Contains(script, "SUDO=") {
+		t.Fatal("expected SUDO variable assignment")
+	}
+	if !strings.Contains(script, "sudo -n true") {
+		t.Fatal("expected passwordless sudo probe")
+	}
+	if !strings.Contains(script, "sudo -n'") {
+		t.Fatal("expected sudo -n prefix assignment when probe succeeds")
+	}
+}
+
+func TestRemoveDirTreePOSIX_usesSharedEscalationHelpers(t *testing.T) {
+	t.Parallel()
+	script := removeDirTreePOSIX("rune-orphan-7")
+	// Both helpers should appear: docker exec escalation + sudo probe.
+	if !strings.Contains(script, "docker exec") {
+		t.Fatal("expected docker exec escalation in removeDirTreePOSIX")
+	}
+	if !strings.Contains(script, "sudo -n true") {
+		t.Fatal("expected passwordless sudo probe in removeDirTreePOSIX")
+	}
+	if !strings.Contains(script, "rm -rf /runner-state") {
+		t.Fatal("expected inner command to reach the container")
+	}
+	if !strings.Contains(script, "runner-state/rune-orphan-7") && !strings.Contains(script, `runners/rune-orphan-7`) {
+		t.Fatalf("expected runner dir var to point at rune-orphan-7, got: %s", script)
+	}
+}
+
 func TestPruneInstance_neverTouchesRunnerRegistration(t *testing.T) {
 	t.Parallel()
 	m := NewManager("")
