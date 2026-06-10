@@ -47,3 +47,30 @@ func TestDefaultAtTime(t *testing.T) {
 		t.Fatalf("got %q", DefaultAtTime)
 	}
 }
+
+// TestEscapePS pins the PowerShell single-quote escape contract used by
+// installWindowsTask (diskschedule.go:314) to embed GhPath / ConfigPath into
+// the `powershell -Command` string. The escape rule is `'` → `”` — doubling
+// the apostrophe — which is how PowerShell escapes a single quote inside an
+// already-single-quoted literal. A future change to use backslash-escape
+// (or to skip escaping) would break the Windows task install path.
+func TestEscapePS(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{"empty string round-trips", "", ""},
+		{"no apostrophes is a no-op", `C:\Users\me\bin\gh.exe`, `C:\Users\me\bin\gh.exe`},
+		{"single apostrophe doubles", `O'Brien`, `O''Brien`},
+		{"consecutive apostrophes all double", `it's a 'test'`, `it''s a ''test''`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := escapePS(tc.in); got != tc.want {
+				t.Errorf("escapePS(%q) = %q, want %q", tc.in, got, tc.want)
+			}
+		})
+	}
+}
