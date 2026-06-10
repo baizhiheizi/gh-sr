@@ -9,7 +9,8 @@ metadata:
 
 # Run History
 
-- 2026-06-09 (run 27198579456): dirSizesPOSIX 4 du calls → 1 du --max-depth=1 walk; PR patch created. PR #123, #128 confirmed merged. PR #131 disk.go audited.
+- 2026-06-10 (run 27268656760): `InstanceNames` helper fmt.Sprintf → strconv.Itoa; 21→11 allocs/op, 1239→~430 ns/op; PR patch created.
+- 2026-06-09 (run 27198579456): dirSizesPOSIX 4 du calls → 1 du --max-depth=1 walk (PR #136, merged); PR #123, #128 confirmed merged.
 - 2026-06-08 (run 27143755302): fixed c.Validate() per-iter InstanceNames() (711→411 allocs/op) — propagated as PR #128
 - 2026-06-08 (run 27130562074): FilterRunners/FindRunner allocation hotspot (PR #123), benchmark-CI infra proposal #124
 - 2026-06-07 (run 27093653174): full sweep, no new high-value targets

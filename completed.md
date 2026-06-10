@@ -9,13 +9,23 @@ metadata:
 
 # Completed Work
 
-## 2026-06-09 — single du walk in dirSizesPOSIX (this run)
+## 2026-06-10 — InstanceNames helper fmt.Sprintf → strconv.Itoa (this run)
+
+Branch: `efficiency/instance-names-strconv-itoa` (commit 1cc51e5).
+PR title: `[efficiency-improver] perf(config): inline name-N construction in InstanceNames helper`.
+Patch: `/tmp/gh-aw/aw-efficiency-instance-names-strconv-itoa.patch` (awaiting URL).
+
+Files: internal/config/config.go (only the InstanceNames helper; matches the comment style of c.Validate and matchesNameFilter).
+
+`BenchmarkInstanceNames` 1239→~430 ns/op (-65%), 481→320 B/op (-33%), 21→11 allocs/op (-48%). 5 samples: 367-497 ns/op, all 11 allocs/op. Helper is called 23+ times across runner lifecycle (runner.go), doctor (doctor.go), ops (ops.go, disk.go, service.go), container (container.go), and native (native.go) — the alloc reduction compounds across every multi-instance command.
+
+Trade-off: none material. The `+` chain is shorter and more obviously correct than the `Sprintf` format string. The `strconv` import was already present (used by the two existing inlined call sites).
+
+## 2026-06-09 — single du walk in dirSizesPOSIX (merged as #136)
 
 Branch: `efficiency/disk-single-du-walk` (commit d0e357d).
 PR title: `[efficiency-improver] perf(runner): single du walk in dirSizesPOSIX (4 round trips → 1)`.
-Patch: `/tmp/gh-aw/aw-efficiency-disk-single-du-walk.patch` (awaiting URL).
-
-Files: internal/runner/disk.go, internal/runner/disk_test.go, internal/doctor/doctor_test.go.
+Status: MERGED 2026-06-09 (commit 46b6278 on main).
 
 Local 7.9 GB: 0.769s → 0.727s (5% wall-clock); byte-identical output. On 50 GB remote: ~9-15s saved per instance (3 fewer SSH round trips + 3 fewer tree walks).
 

@@ -9,12 +9,13 @@ metadata:
 
 # Work in Progress
 
-- PR open: `[efficiency-improver] perf(runner): single du walk in dirSizesPOSIX (4 round trips → 1)` (branch `efficiency/disk-single-du-walk`, commit d0e357d). Patch at `/tmp/gh-aw/aw-efficiency-disk-single-du-walk.patch`. Awaiting PR URL.
-- Issue #124 open: bench regression detection in CI — no human engagement yet.
+- PR open: `[efficiency-improver] perf(config): inline name-N construction in InstanceNames helper` (branch `efficiency/instance-names-strconv-itoa`, commit 1cc51e5). Patch at `/tmp/gh-aw/aw-efficiency-instance-names-strconv-itoa.patch`. Awaiting PR URL.
+- Issue #124 open: bench regression detection in CI — benchstat comparison step still missing (bench already runs on PRs).
 - Issue #125 open: Monthly Activity 2026-06 — updated this run.
 
 ## Resolved
 
 - PR #123 (inline instance-name lookup) — MERGED 2026-06-09T03:48:43Z.
-- PR #128 (perf-improver alias of Validate fix) — MERGED 2026-06-09T03:49:34Z. This was the WIP `perf-assist/config-validate-inline-instance-name` patch (20812c1) — propagated successfully.
-- PR #131 (an-lee, disk commands) — MERGED 2026-06-09T04:52:18Z. Introduced the disk.go code this run audited.
+- PR #128 (perf-improver alias of Validate fix) — MERGED 2026-06-09T03:49:34Z.
+- PR #131 (an-lee, disk commands) — MERGED 2026-06-09T04:52:18Z. Introduced the disk.go code audited.
+- PR #136 (single du walk) — MERGED 2026-06-09 (commit 46b6278).
