@@ -250,12 +250,7 @@ func (m *Manager) createContainerInstance(h *host.Host, rc config.RunnerConfig, 
 	}
 	labels := rc.EffectiveLabelsForInstance(h.OS, h.Arch, instanceIndex)
 
-	runURL := ""
-	if rc.Repo != "" {
-		runURL = "https://github.com/" + rc.Repo
-	} else if rc.Org != "" {
-		runURL = "https://github.com/" + rc.Org
-	}
+	runURL := rc.GitHubRegistrationURL()
 
 	group := rc.Group
 	if group == "" {

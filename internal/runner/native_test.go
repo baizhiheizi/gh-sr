@@ -120,34 +120,6 @@ func Test_windowsStartNative_usesCimProcessCreateForMergedLogs(t *testing.T) {
 	}
 }
 
-func Test_nativeConfigURL(t *testing.T) {
-	t.Parallel()
-	cases := []struct {
-		name string
-		rc   config.RunnerConfig
-		want string
-	}{
-		{
-			name: "repo scoped",
-			rc:   config.RunnerConfig{Repo: "owner/repo"},
-			want: "https://github.com/owner/repo",
-		},
-		{
-			name: "org scoped",
-			rc:   config.RunnerConfig{Repo: "owner/repo", Org: "my-org"},
-			want: "https://github.com/my-org",
-		},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			if got := nativeConfigURL(tc.rc); got != tc.want {
-				t.Errorf("nativeConfigURL(%+v): got %q, want %q", tc.rc, got, tc.want)
-			}
-		})
-	}
-}
-
 func Test_staleRegistrationMsg(t *testing.T) {
 	t.Parallel()
 	logLine := `Failed to create a session. The runner registration has been deleted from the server, please re-configure.`

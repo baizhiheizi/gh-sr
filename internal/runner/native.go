@@ -104,19 +104,11 @@ func windowsNativeInstallScript(h *host.Host, instanceName, version, url string)
 	}, "; ")
 }
 
-// nativeConfigURL returns the --url value for config.sh / config.cmd.
-func nativeConfigURL(rc config.RunnerConfig) string {
-	if rc.Org != "" {
-		return "https://github.com/" + rc.Org
-	}
-	return "https://github.com/" + rc.Repo
-}
-
 func windowsNativeConfigScript(h *host.Host, rc config.RunnerConfig, instanceName, regToken string, instanceIndex int) string {
 	labels := strings.Join(rc.EffectiveLabelsForInstance(h.OS, h.Arch, instanceIndex), ",")
 	cmd := fmt.Sprintf(
 		"& .\\config.cmd --unattended --url %s --token %s --name %s --labels %s --work '_work' --replace",
-		hostshell.PowerShellSingleQuote(nativeConfigURL(rc)),
+		hostshell.PowerShellSingleQuote(rc.GitHubRegistrationURL()),
 		hostshell.PowerShellSingleQuote(regToken),
 		hostshell.PowerShellSingleQuote(instanceName),
 		hostshell.PowerShellSingleQuote(labels),
@@ -277,7 +269,7 @@ func (m *Manager) setupNative(h *host.Host, rc config.RunnerConfig) error {
 				return fmt.Errorf("configuring runner on Windows: %w", err)
 			}
 		} else {
-			configURL := nativeConfigURL(rc)
+			configURL := rc.GitHubRegistrationURL()
 			configCmd := fmt.Sprintf(
 				"cd %s && ./config.sh --unattended --url '%s' --token '%s' --name '%s' --labels '%s' --work '_work' --replace",
 				dir, configURL, regToken, name, labels,
