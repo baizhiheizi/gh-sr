@@ -17,30 +17,33 @@ type Executor interface {
 }
 ```
 
-`host.Host.conn` is typed as `Executor`; `host.Host.SetConn(Executor)` (exported) lets tests inject a mock. Per-package mocks:
+`host.Host.conn` is typed as `Executor`; `host.Host.SetConn(Executor)` lets tests inject a mock. Per-package mocks:
 
-- `internal/host/mock_test.go` — `mockExecutor` (basic) + `newMockHost` + `matchCmd` helper
+- `internal/host/mock_test.go` — `mockExecutor` (basic)
 - `internal/autostart/autostart_test.go` — same pattern, local copy
-- `internal/agentic/agentic_test.go` — `prereqTestExecutor` with `response map[string]string` keyed on **exact command string**; thread-safe (`sync.Mutex` + `seen` slice)
+- `internal/agentic/agentic_test.go` — `prereqTestExecutor` keyed on **exact command string**; thread-safe (`sync.Mutex`)
 
-The exact-string match in `prereqTestExecutor` is a feature: it catches silent refactors of `docker exec` shell scripts. Real example: this run's first-cut iptables-inner test failed because the inner probe drops `sudo -n` (DinD inner daemon runs as root) — the mock caught it.
-
-The mock's `sync.Mutex` makes it safe to use against parallel goroutine fan-outs (e.g. `ValidateAWFHygiene` with three `go func()` probes sharing a `sync.Mutex`).
+The exact-string match in `prereqTestExecutor` is a feature: it catches silent refactors of `docker exec` shell scripts.
 
 ## Conventions
 
-- `t.Parallel()` on every subtest.
-- `t.Helper()` on assertion helpers.
+- `t.Parallel()` on every subtest; `t.Helper()` on assertion helpers.
 - Table-driven subtests with `name` as the first field.
-- For `PrereqFailure` assertions: check `Name`, `Severity`, then `strings.Contains` on `Message` and `Remediation`. The remediation string is the most valuable assertion: regressions to it leave operators without a recovery path.
+- For `PrereqFailure`: check `Name`, `Severity`, then `strings.Contains` on `Message` and `Remediation`.
 - Use `t.Setenv` (not `os.Setenv`) for env-var-dependent tests.
-- Lift the exact-command strings the production code emits into named constants in the test file, so refactors of the command shape are caught loudly.
+- Lift exact-command strings into named test constants so refactors are caught loudly.
+- For printer/output tests, prefer **suffix-anchored `strings.TrimRight(body, " ")` assertions** over exact-string equality when column widths depend on header content. Use exact strings only when the gutter / newline placement is a user-visible contract.
+- For `config.RunnerConfig` test fixtures, use `Name` values that don't already contain `-` so `InstanceNames()` produces clean `<name>-<n>` keys.
+- For `runner.PruneResult.Actions` printer tests, assert on the **whole** line including the "instance on host: " prefix; name the subtest by the shape (err / skipped / success / dryRun), not the function.
 
 ## Gotchas
 
-- `gofmt -w` may break long literal strings into multi-line; re-run `go test` after `gofmt`. May also remove unused imports.
-- The `prereqTestExecutor.response` map keys are **the exact command string** the helper emits. Whitespace mismatches cause `unexpected command: ...` errors.
-- For non-Linux short-circuit tests, pass an unused `prereqTestExecutor{}` to `h.SetConn()` so `Close()` works; the test only exercises the early-return.
-- `ValidateContainer*` inner variants drop the `sudo -n` prefix on iptables probes (DinD inner daemon runs as root). Keep separate constants for host-level and inner probe shapes.
+- `gofmt -w` may break long literal strings into multi-line; re-run `go test` after `gofmt`.
+- `prereqTestExecutor.response` map keys are the **exact command string** the helper emits.
+- For non-Linux short-circuit tests, pass an unused `prereqTestExecutor{}` to `h.SetConn()` so `Close()` works.
+- `ValidateContainer*` inner variants drop the `sudo -n` prefix on iptables probes. Keep separate constants for host-level and inner probe shapes.
+- `printRow` emits `%-*s  ` for **every** cell (including the last), then `Fprintln` adds `\n`. For cells `[a, b]` with widths `[1, 1]` the output is `"a  b  \n"`.
+- `PrintDiskUsageTable` is a pure printer; it does NOT sort. Sorting is `CollectDiskUsage`'s job at `internal/ops/disk.go:162`.
+- `PrintDiskUsageTable` excludes err-row `TotalBytes` from the totals sum. A naive loop would leak a giant value.
 
 [[repo]] [[commands]] [[backlog]]

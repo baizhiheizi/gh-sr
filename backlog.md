@@ -7,35 +7,46 @@ metadata:
 
 ## High value (likely next runs)
 
-### 1. `internal/ops/ops.go` — `runPerHostParallel` (0%)
-- Concurrency primitive for every multi-host op (`Up`/`Down`/`Restart`/`Update`/`CollectStatus`).
-- Refactor: extract a `hostFactory func(name string, cfg config.HostConfig) (*host.Host, error)` parameter so it's testable without SSH. Or make `ConnectHost` a package-level var.
-- **Note:** repo-assist PR #113 already extracted `groupRunnersByHost` from the body. The fan-out itself still needs a `ConnectHost` injection.
+### 1. `internal/ops` orchestrators — `runPerHostParallel` (still 0%)
+- Concurrency primitive for every multi-host op. Refactor: extract a `hostFactory func(name string, cfg config.HostConfig) (*host.Host, error)` parameter.
+- 2026-06-10 covered the testable pure helpers in `internal/ops/disk.go` (6 functions 0% → 100%); orchestrators still need the refactor.
+- PR #113 (repo-assist) already extracted `groupRunnersByHost`.
 
 ### 2. `internal/ops/detect.go` — `ResolveHostInfo` (0%)
 ### 3. `internal/ops/metrics.go` — `CollectHostMetrics` (0%)
 
-Both need the same `ConnectHost` injection as #1.
+Both need the same `hostFactory` injection as #1.
+
+### 4. `internal/diskschedule` — `escapePS` is the easy next target
+- 15.6% coverage overall. `parseAtTime`/`systemdQuoteArg`/`xmlEscapePlist` already have basic tests; could be expanded.
+- `escapePS`, `Detect`, `Install`, `Uninstall`, `Status` are 0%.
 
 ## Medium value
 
-### 4. `internal/runner/container.go` — large lifecycle functions
-`setupContainer`, `createContainerInstance`, `startContainer`, `stopContainer`, `removeContainer`, `containerLocalStatusImageAndRevision`, `logsContainer`, `rebuildContainerImage`, `needsSetupContainer`, `buildAgenticRunnerImage` (all 0%). Real Docker work; integration-tested implicitly.
+### 5. `internal/runner/container.go` — large lifecycle functions (37% coverage)
+Real Docker work; integration-tested implicitly. Hard to unit-test.
 
-### 5. `internal/runner/native.go` — 21 untested fns
-Mostly Docker exec wrappers needing SSH. Lower priority.
+### 6. `internal/hostshell` — `WriteRemoteBytes` (0%)
+Newer package. Other helpers well-tested. `WriteRemoteBytes` depends on `*host.Host`.
+
+### 7. `internal/runner/native.go` — 21 untested fns
+Mostly Docker exec wrappers needing SSH.
 
 ## Low value (defer)
 
-### 6. `internal/tui/*` (4.6%)
-UI rendering. Hard to test without snapshot testing.
+### 8. `internal/tui/*` (4.6%) — UI rendering
+### 9. `cmd/gh-sr/*` (0%) — tested via `internal/ops`
+### 10. `internal/autostart` (18.5%) — side-effect install helpers
 
-### 7. `cmd/gh-sr/*` (0%)
-Tested via `internal/ops`; direct unit tests would need refactoring `loadConfig` / `newManager` to be injectable.
+## Test infrastructure ideas (Task 6 candidates)
+
+- **Mock Executor consolidation** — open issue "Mock Executor implementations across test files" from the duplicate-code detector. A shared `internal/host/hosttest` package with one mock + exec-scripting DSL would prevent drift between the three per-package mocks.
+- **Test-only constants for emitted commands** — lift exact shell command strings into named test constants. Pattern already used in `agentic_awf_hygiene_test.go`.
 
 ## Completed (do not re-do)
 
-- `ValidateAWFHygiene` and `ValidateAWFHygieneInner` in `internal/agentic` — June 2026 run, branch `test-assist/awf-hygiene-validators`. Coverage 60.5% → 83.9% (+23.4 pp).
-- Five `Validate*` helpers in `internal/agentic/agentic.go` — June 2026 run, branch `test-assist/agentic-validation-helpers`. Coverage 44.8% → 60.5%.
+- 2026-06-10: columnWidths, printRow, printPruneResult, PrintDiskUsageTable, diskHostInstanceKey, rcByInstanceForHost in `internal/ops/disk.go` — 0% → 100%; `internal/ops` 9.6% → 19.6% (+10.0 pp)
+- 2026-06-08: ValidateAWFHygiene, ValidateAWFHygieneInner in `internal/agentic` — 0% → 100%; `internal/agentic` 60.5% → 83.9% (+23.4 pp)
+- 2026-06-06: Five `Validate*` helpers in `internal/agentic/agentic.go` — 0% → 100%; `internal/agentic` 44.8% → 60.5%
 
 [[repo]] [[testing-notes]] [[wip]] [[run-history]]
