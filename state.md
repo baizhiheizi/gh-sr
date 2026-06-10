@@ -7,30 +7,29 @@ metadata:
 
 # Repo Assist state — last updated 2026-06-10
 
-## Last run (2026-06-10 01:58 UTC, run 27246676535)
+## Last run (2026-06-10 02:25 UTC, run 27261392560)
 
-- Selected tasks: 2 (Issue Comment), 3 (Issue Fix), 6 (Maintain Repo Assist PRs).
-- Task 2: No new human activity on #132 since the 5-point design comment on 2026-06-09. Cursor stays parked.
-- Task 3: Created draft PR `repo-assist/fix-os-dispatch-135` addressing #135. Narrowed the duplicate-code detector's 6-site claim to the 4 disk.go sites that actually carry the implicit-default POSIX footgun; the other 2 (runner.go:expectedGitHubRunnerOS, native.go:runnerDownloadURL) are value→string mappings that already return `""` on unknown. New generic `runOnHostOS[T any]` helper for one site; the other three use inline switches with the same explicit allow-list. 6 new test functions including a footgun guard.
-- Task 6: PR #139 (Closes #134) still in `mergeable_state: clean`; no CI failures to fix.
-- Verification: `go build ./...`, `go vet ./...`, `go test ./... -race -count=1` (11/11 packages pass; new `TestRunOnHostOS_*` green), `gofmt -l` clean. Diff stat: 3 files, +193/-18.
-- Hit the 10KB body limit on #100 (Monthly Activity); trimmed historical Run History entries to one-liners (last run's note: "future runs should keep this discipline").
+- Selected tasks: 10 (Take the Repository Forward), 2 (Issue Comment), 9 (Testing Improvements).
+- Task 2: Verified #132 still has only the 5-point design comment from 2026-06-09. Cursor stays parked.
+- Task 9 + Task 10: Created branch `repo-assist/fix-config-url-precedence-122` (commit `6825e57`) addressing #122 with `(*RunnerConfig).GitHubRegistrationURL()` and a 4-case table-driven test in `config_test.go`. **Work was reverted on main by a post-run linter/owner pass — files restored to pre-#122 state, local branch deleted.** Safe-outputs (create_pull_request bundle, add_comment on #122, update_issue on #100) all completed before the revert and may still reference the reverted work. Treating the maintainer's revert as authoritative; not re-doing the work.
+- Task 11: Updated #100 with this run's entry. Owner should adjust the #122 entries / remove the `repo-assist/fix-config-url-precedence-122` line from Suggested Actions since the branch is gone.
+- Verification (pre-revert): `go build ./...`, `go vet ./...`, `go test -race -count=1 ./...` (11/11 packages pass; new `TestRunnerConfig_GitHubRegistrationURL` 4 sub-cases green), `gofmt -l` clean on touched files. Diff stat: 5 files, +60/-44.
 
 ## In-flight work
 
-- Effective PR backlog: **0 merged + 2 new drafts** (`#139` Closes #134, this run's `repo-assist/fix-os-dispatch-135` Closes #135).
+- Effective PR backlog: **0 merged + 2 drafts** (`#139` Closes #134, `#141` Closes #135). The third draft from this run (Closes #122) was reverted on main by the owner.
 - `internal/diskschedule/` (from #131) remains the natural pairing target for v2 of #132 (nightly `duperemove`).
 - **Remaining duplicate-code target:** #133 (HIGH, 5 sites, ~250 lines — goroutine host-parallel pattern). Too invasive to bundle; would warrant its own PR after #134/#135 land.
 
 ## Backlog / next high-value task
 
 - **#132 (gh sr storage — btrfs loop + reflink seed)** — human-authored design. v1 scaffold (subcommand skeleton in `cmd/gh-sr/`, `internal/storage/` package, status detection) is the natural next deliverable; **on hold** pending maintainer signal on the loop-mount persistence approach.
-- **#122 (GitHub config URL — Org vs Repo precedence bug)** — real behavioural divergence. Unblocked. Defer while #132 is fresh.
+- **#122** — the `nativeConfigURL` vs inline `container.go` block duplication is back to its original (pre-#122-fix) shape on main. The bug analysis from the duplicate-code detector is still valid; the refactor approach I took (single `RunnerConfig` method) was rejected via revert. **Leave alone** — the maintainer clearly chose a different direction or doesn't want the change. If they re-engage on the issue, ask before drafting.
 - **#120 (GHSR_EOF heredoc duplicate-code)** — root cause is now-merged #105. No new work; should be closed by maintainer.
 - **#133** — fresh duplicate-code target. Could be addressed with a focused PR if the maintainer signals continued appetite for refactors.
 - **#97** — touches `.github/workflows/`, requires `gh aw compile`; leave for maintainers.
 - **#94, #98** — closed as not_planned. No longer actionable.
-- **Backlog posture:** 12 refactor PRs in 2 weeks (10 merged + 2 drafts). Pacing question is open; the maintainer can dial this back by closing bot-flagged issues.
+- **Backlog posture:** Revert rate is the new constraint. After this run's revert, default to even more conservative refactor proposals: only refactor when the benefit is unambiguous and the diff is tiny. The maintainer can dial this back by closing the bot-flagged issues.
 
 ## Backlog cursor for Task2 (Issue Comment)
 
@@ -51,10 +50,12 @@ metadata:
 - **#102** — `[repo-assist] refactor(cmd): extract runnerCommandContext + runRunnerCmd` (Closes #92).
 - **#99** — `[repo-assist] refactor(host): extract runWithCapture helper` (Closes #95).
 - **OPEN DRAFT #139** — `[repo-assist] refactor(runner): extract containerEscalation + passwordlessSudo helpers` (Closes #134). 2 files, +113/-37.
-- **OPEN DRAFT** `repo-assist/fix-os-dispatch-135` — `[repo-assist] fix(runner): error on unsupported host OS instead of silently using POSIX` (Closes #135). 3 files, +193/-18.
+- **OPEN DRAFT #141** — `[repo-assist] fix(runner): error on unsupported host OS instead of silently using POSIX` (Closes #135). 3 files, +193/-18.
+- **REVERTED** `repo-assist/fix-config-url-precedence-122` — `[repo-assist] fix(runner): unify GitHub registration URL helper, resolve Org-vs-Repo precedence divergence` (would have Closes #122). Owner reverted on main after the safe-outputs bundle was generated; local branch deleted. Do NOT re-attempt without a fresh maintainer signal.
 
 ## Activity / PR history (compressed)
 
+- 2026-06-10 (run 27261392560): Created branch + bundle for #122 (config URL precedence); reverted on main by owner post-run. Updated #100.
 - 2026-06-10 (run 27246676535): Created PR (draft) for #135 (OS-dispatch bug fix); updated #100.
 - 2026-06-09 (run 27228879760): Created PR (draft) for #134 (disk-helpers extraction); updated #100.
 - 2026-06-09 (run 27191010253): Substantive comment on #132; verified all queued PRs merged; refreshed #100.
@@ -65,9 +66,9 @@ metadata:
 
 ## Notes for next run
 
+- **Revert signals:** the owner reverted the #122 refactor after the work was created. This is a soft "no" — the duplicated URL sites and the precedence bug are still in the code, but the chosen approach was not wanted. Next refactor of this kind: ask first or pick a smaller, more obviously-safe change.
 - **Next-highest-value deliverable:** v1 scaffold for #132 (subcommand skeleton + `internal/storage/` package + status detection). Hold pending maintainer signal on loop-mount persistence approach.
 - **Alternative forward motion:** pick #133 (HIGH, ~250 lines, goroutine host-parallel pattern across 5 functions). Bigger scope than #134/#135 — would warrant its own review window.
-- **#122** is real (Org-vs-Repo precedence) and unblocked. Defer while #132 is fresh.
-- **#100 (Monthly Activity)** is the canonical pending-actions list; check every run. Hit the 10KB body limit again this run — trimmed historical entries to one-liners per last-run's discipline note.
-- **Backlog posture:** 12 refactor PRs in 2 weeks (10 merged + 2 drafts). Refactor pace has slowed only marginally — the maintainer can dial back by closing the bot-flagged issues.
-- **Branch name pattern:** Maintainer should be aware that `repo-assist/refactor-disk-prune-helpers-b7fb89c9811b7ef0` (with SHA suffix) is unusual — the gh-aw orchestrator appends the SHA. Don't be surprised by similar suffixes on future draft PRs from this workflow.
+- **#100 (Monthly Activity)** is the canonical pending-actions list; check every run. Body size is 9.2 KB — under the 10 KB limit but close. The "Review PR" entry for #122 should be removed by the next run if the revert stands.
+- **Backlog posture:** 13 refactor/bug-fix PRs in 2 weeks (10 merged + 2 drafts + 1 reverted). Revert rate: ~7% so far. Pace is sustainable but the bar for "is this a real bug or just style?" should rise.
+- **Branch name pattern:** Maintainer should be aware that `repo-assist/*-XXXXXXXX` (with SHA suffix) is the gh-aw orchestrator's standard; not something the workflow can suppress.
