@@ -5,57 +5,57 @@ metadata:
  type: project
 ---
 
-# Repo Assist state — last updated 2026-06-09
+# Repo Assist state — last updated 2026-06-10
 
-## Last run (2026-06-09 19:14 UTC, run 27228879760)
+## Last run (2026-06-10 01:58 UTC, run 27246676535)
 
-- Selected tasks: 10 (Take Repo Forward), 1 (Issue Labelling), 5 (Coding Improvements).
-- Task 1 was N/A (unlabelled_issues=0); fell through to Task 2 (no actionable items — cursor parked on #132, no new human activity).
-- **Action taken (Task 5, folded into Task 10):** Created draft PR `repo-assist/refactor-disk-prune-helpers` addressing duplicate-code detector **#134**. Extracted two helpers in `internal/runner/disk.go`: `containerEscalation(containerName, shellCmd)` and `passwordlessSudo()`. ~25 duplicated shell lines removed between `clearWorkTempPOSIX` and `removeDirTreePOSIX`. 4 new test functions added; existing `TestClearWorkTempPOSIX_*` tests pass unchanged.
-- **Verification:** `go build ./...`, `go vet ./...`, `go test ./... -race -count=1` (11/11 packages pass), `gofmt -l` clean. Diff stat: 2 files changed, 113 insertions(+), 37 deletions(-).
-- **Decision rationale:** Memory last run said "refactor pace should slow", but the bot generated 3 fresh duplicate-code reports today (#133, #134, #135) and #134 targets very recent code (PR #131). Picking the smallest, highest-value target (#134 — 2 sites, ~30 lines, recent code) felt justified; #133 is too invasive (~250 lines across 5 files) and #135 is medium-priority. Maintainer can reject by closing the bot issue.
-- **Tasks 1 and 2 had no actionable items** — cursor still parked on #132 (no new human activity since the previous run's 5-point design comment).
-- **Task 10 (Take Repo Forward):** The highest-value forward step was the small, focused #134 refactor. v1 scaffold for #132 (`gh sr storage`) remains on hold pending maintainer signal on the loop-mount persistence approach.
-- **Action taken:** Updated Monthly Activity #100. New run entry at top of Run History; Suggested Actions refreshed — added new PR (Closes #134), bumped merged PR list to include #136, updated Future Work to mention #133/#135 as remaining duplicate-code targets.
+- Selected tasks: 2 (Issue Comment), 3 (Issue Fix), 6 (Maintain Repo Assist PRs).
+- Task 2: No new human activity on #132 since the 5-point design comment on 2026-06-09. Cursor stays parked.
+- Task 3: Created draft PR `repo-assist/fix-os-dispatch-135` addressing #135. Narrowed the duplicate-code detector's 6-site claim to the 4 disk.go sites that actually carry the implicit-default POSIX footgun; the other 2 (runner.go:expectedGitHubRunnerOS, native.go:runnerDownloadURL) are value→string mappings that already return `""` on unknown. New generic `runOnHostOS[T any]` helper for one site; the other three use inline switches with the same explicit allow-list. 6 new test functions including a footgun guard.
+- Task 6: PR #139 (Closes #134) still in `mergeable_state: clean`; no CI failures to fix.
+- Verification: `go build ./...`, `go vet ./...`, `go test ./... -race -count=1` (11/11 packages pass; new `TestRunOnHostOS_*` green), `gofmt -l` clean. Diff stat: 3 files, +193/-18.
+- Hit the 10KB body limit on #100 (Monthly Activity); trimmed historical Run History entries to one-liners (last run's note: "future runs should keep this discipline").
 
 ## In-flight work
 
-- Effective PR backlog: **0 merged + 1 new draft** (this run's `repo-assist/refactor-disk-prune-helpers` awaiting review/merge).
+- Effective PR backlog: **0 merged + 2 new drafts** (`#139` Closes #134, this run's `repo-assist/fix-os-dispatch-135` Closes #135).
 - `internal/diskschedule/` (from #131) remains the natural pairing target for v2 of #132 (nightly `duperemove`).
-- **New duplicate-code opportunities** from today's bot run: #133 (HIGH, 5 sites, ~250 lines — goroutine host-parallel pattern), #135 (Medium, 6 sites, ~50 lines — Windows/POSIX OS dispatch with implicit-default footgun). Both are valid next refactor targets when/if the maintainer continues to accept this kind of work.
+- **Remaining duplicate-code target:** #133 (HIGH, 5 sites, ~250 lines — goroutine host-parallel pattern). Too invasive to bundle; would warrant its own PR after #134/#135 land.
 
 ## Backlog / next high-value task
 
-- **#132 (gh sr storage — btrfs loop + reflink seed)** — new human-authored design. v1 scaffold (subcommand skeleton in `cmd/gh-sr/`, `internal/storage/` package, status detection) is the natural next deliverable; **on hold** pending maintainer signal on the loop-mount persistence approach.
+- **#132 (gh sr storage — btrfs loop + reflink seed)** — human-authored design. v1 scaffold (subcommand skeleton in `cmd/gh-sr/`, `internal/storage/` package, status detection) is the natural next deliverable; **on hold** pending maintainer signal on the loop-mount persistence approach.
 - **#122 (GitHub config URL — Org vs Repo precedence bug)** — real behavioural divergence. Unblocked. Defer while #132 is fresh.
 - **#120 (GHSR_EOF heredoc duplicate-code)** — root cause is now-merged #105. No new work; should be closed by maintainer.
-- **#133, #135** — fresh duplicate-code reports. Could be addressed with small, focused PRs if the maintainer signals continued appetite for refactors.
+- **#133** — fresh duplicate-code target. Could be addressed with a focused PR if the maintainer signals continued appetite for refactors.
 - **#97** — touches `.github/workflows/`, requires `gh aw compile`; leave for maintainers.
 - **#94, #98** — closed as not_planned. No longer actionable.
-- **Backlog posture:** repo is in feature-driven mode but the maintainer is still accepting refactor PRs when they're tied to bot-flagged duplication. 10 refactor PRs have merged in 2 weeks; the 11th (this run's #134 fix) is the current draft. Pacing question: if the next run finds no new human comment on #132 and no new design issues, the safe defaults are either (a) another small refactor (e.g., #135 with its bug-fix value), or (b) hold and wait. Default to (a) when the bot generates a fresh, well-bounded issue.
+- **Backlog posture:** 12 refactor PRs in 2 weeks (10 merged + 2 drafts). Pacing question is open; the maintainer can dial this back by closing bot-flagged issues.
 
 ## Backlog cursor for Task2 (Issue Comment)
 
-- 27 open issues; only #132 is human-authored. All others are auto-generated by `duplicate-code-detector`, `perf-improver`, `efficiency-improver`, `repo-assist`, `test-improver`, etc. Cursor is parked on #132 — re-engage only if the maintainer or a new human comment appears.
+- 28 open issues; only #132 is human-authored. All others are auto-generated by `duplicate-code-detector`, `perf-improver`, `efficiency-improver`, `repo-assist`, `test-improver`, `doc-updater`, etc. Cursor is parked on #132 — re-engage only if the maintainer or a new human comment appears.
 
 ## Completed work (PRs MERGED + current drafts)
 
+- **#136** — `[efficiency-improver] perf(runner): single du walk in dirSizesPOSIX (4 round trips → 1)`.
 - **#131** — an-lee: `gh sr disk usage|prune|schedule` — adds `internal/diskschedule/` and the `disk` subcommand family.
 - **#128** — `[perf-improver] perf(config): inline instance-name lookup in Validate` — 42% alloc reduction.
 - **#127** — `[repo-assist] refactor(runner): drop dead varName arg from windowsRunnerDirAssignment` (Closes #121).
 - **#126** — `[test-improver] Add tests for ValidateAWFHygiene and ValidateAWFHygieneInner`.
 - **#123** — `[efficiency-improver] perf(config): inline instance-name lookup` — 502× allocs reduction.
-- **#118 + #119** — `[repo-assist] refactor(runner): extract writeRemoteHeredocFile/Executable helpers` (Closes #105). Both PRs survived to merge even after duplicate-flag comments.
+- **#118 + #119** — `[repo-assist] refactor(runner): extract writeRemoteHeredocFile/Executable helpers` (Closes #105).
 - **#114** — `[repo-assist] refactor(runner): hoist scopeKey + drop four dead unscoped wrapper methods` (Closes #104).
 - **#113** — `[repo-assist] refactor(ops): extract groupRunnersByHost helper` (Closes #103).
 - **#110** — `[repo-assist] refactor: extract remote-shell helpers to internal/hostshell` (Closes #96).
 - **#102** — `[repo-assist] refactor(cmd): extract runnerCommandContext + runRunnerCmd` (Closes #92).
 - **#99** — `[repo-assist] refactor(host): extract runWithCapture helper` (Closes #95).
-- **#136** — `[efficiency-improver] perf(runner): single du walk in dirSizesPOSIX (4 round trips → 1)`.
-- **NEW DRAFT** `repo-assist/refactor-disk-prune-helpers` — `[repo-assist] refactor(runner): extract containerEscalation + passwordlessSudo helpers` (Closes #134). 2 files, +113/-37.
+- **OPEN DRAFT #139** — `[repo-assist] refactor(runner): extract containerEscalation + passwordlessSudo helpers` (Closes #134). 2 files, +113/-37.
+- **OPEN DRAFT** `repo-assist/fix-os-dispatch-135` — `[repo-assist] fix(runner): error on unsupported host OS instead of silently using POSIX` (Closes #135). 3 files, +193/-18.
 
 ## Activity / PR history (compressed)
 
+- 2026-06-10 (run 27246676535): Created PR (draft) for #135 (OS-dispatch bug fix); updated #100.
 - 2026-06-09 (run 27228879760): Created PR (draft) for #134 (disk-helpers extraction); updated #100.
 - 2026-06-09 (run 27191010253): Substantive comment on #132; verified all queued PRs merged; refreshed #100.
 - 2026-06-09 (run 27177519565): Held the line on 7 PRs awaiting review. Fixed #100 format violation. New issue #129 (low value).
@@ -66,7 +66,8 @@ metadata:
 ## Notes for next run
 
 - **Next-highest-value deliverable:** v1 scaffold for #132 (subcommand skeleton + `internal/storage/` package + status detection). Hold pending maintainer signal on loop-mount persistence approach.
-- **Alternative forward motion:** pick the next bot-flagged duplicate-code target. #133 is too invasive (~250 lines), #135 has real bug-fix value (explicit OS allow-list vs implicit default POSIX). #135 is the better default if no #132 response by next run.
+- **Alternative forward motion:** pick #133 (HIGH, ~250 lines, goroutine host-parallel pattern across 5 functions). Bigger scope than #134/#135 — would warrant its own review window.
 - **#122** is real (Org-vs-Repo precedence) and unblocked. Defer while #132 is fresh.
-- **#100 (Monthly Activity)** is the canonical pending-actions list; check every run. Hit the 10KB body limit this run — trimmed historical entries to one-liners; future runs should keep this discipline.
-- **Backlog posture:** repo has shifted to feature-driven mode. Refactor pace has slowed only marginally — 11 refactor PRs in 2 weeks including this run's draft. The maintainer can dial this back by closing the bot-flagged issues.
+- **#100 (Monthly Activity)** is the canonical pending-actions list; check every run. Hit the 10KB body limit again this run — trimmed historical entries to one-liners per last-run's discipline note.
+- **Backlog posture:** 12 refactor PRs in 2 weeks (10 merged + 2 drafts). Refactor pace has slowed only marginally — the maintainer can dial back by closing the bot-flagged issues.
+- **Branch name pattern:** Maintainer should be aware that `repo-assist/refactor-disk-prune-helpers-b7fb89c9811b7ef0` (with SHA suffix) is unusual — the gh-aw orchestrator appends the SHA. Don't be surprised by similar suffixes on future draft PRs from this workflow.
