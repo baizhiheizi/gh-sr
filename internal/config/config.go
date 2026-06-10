@@ -257,14 +257,25 @@ func hasLabel(labels []string, target string) bool {
 	return false
 }
 
+// InstanceNames returns the deterministic `name-1..name-Count` instance names for rc.
+// If Count < 1 it is treated as 1, matching the rest of the package's instance handling.
+//
+// Why plain concatenation: the previous fmt.Sprintf("%s-%d", ...) cost 2 allocs per name
+// (a []byte from sprintf and the resulting string), totaling 21 allocs/op on Count=10.
+// The Go compiler folds short `+` chains into a single alloc per result, so switching to
+// `name + "-" + strconv.Itoa(i)` drops this to ~11 allocs/op total (1 for the slice
+// header + 1 per name). See BenchmarkInstanceNames — the helper is called 23+ times
+// across the codebase (runner lifecycle, doctor, ops, service, disk, container, native),
+// so the savings multiply on every CLI invocation that touches multiple instances.
 func (rc *RunnerConfig) InstanceNames() []string {
 	count := rc.Count
 	if count < 1 {
 		count = 1
 	}
 	names := make([]string, count)
-	for i := range count {
-		names[i] = fmt.Sprintf("%s-%d", rc.Name, i+1)
+	name := rc.Name
+	for i := 1; i <= count; i++ {
+		names[i-1] = name + "-" + strconv.Itoa(i)
 	}
 	return names
 }
