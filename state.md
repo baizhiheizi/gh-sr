@@ -7,33 +7,37 @@ metadata:
 
 # Repo Assist state — last updated 2026-06-10
 
-## Last run (2026-06-10 02:25 UTC, run 27261392560)
+## Last run (2026-06-10 13:38 UTC, run 27279843892)
 
-- Selected tasks: 10 (Take the Repository Forward), 2 (Issue Comment), 9 (Testing Improvements).
-- Task 2: Verified #132 still has only the 5-point design comment from 2026-06-09. Cursor stays parked.
-- Task 9 + Task 10: Created branch `repo-assist/fix-config-url-precedence-122` (commit `6825e57`) addressing #122 with `(*RunnerConfig).GitHubRegistrationURL()` and a 4-case table-driven test in `config_test.go`. **Work was reverted on main by a post-run linter/owner pass — files restored to pre-#122 state, local branch deleted.** Safe-outputs (create_pull_request bundle, add_comment on #122, update_issue on #100) all completed before the revert and may still reference the reverted work. Treating the maintainer's revert as authoritative; not re-doing the work.
-- Task 11: Updated #100 with this run's entry. Owner should adjust the #122 entries / remove the `repo-assist/fix-config-url-precedence-122` line from Suggested Actions since the branch is gone.
-- Verification (pre-revert): `go build ./...`, `go vet ./...`, `go test -race -count=1 ./...` (11/11 packages pass; new `TestRunnerConfig_GitHubRegistrationURL` 4 sub-cases green), `gofmt -l` clean on touched files. Diff stat: 5 files, +60/-44.
+- Selected tasks: 9 (Testing Improvements), 2 (Issue Comment), 3 (Issue Fix).
+- Task 6 (Maintain): Commented on PR #142 noting the draft is stale (work was reverted on main, local branch deleted). Did NOT close it — that's a maintainer decision. Posture: don't auto-close stale drafts, just flag.
+- Task 2 (Comment): No actionable items — cursor still parked on #132, no new human activity since the 5-point design comment from 2026-06-09.
+- Task 3 (Fix) → fell back to Task 9: Bug-fix candidates (#122 reverted, #133 too invasive) were off the table. Test-only addition was the conservative play.
+- Task 9 (Test): Created branch `repo-assist/test-diskschedule-escape-ps` (commit `e1105e6`) with `TestEscapePS` — 4 sub-cases pinning the PowerShell single-quote escape (`'` → `''`) used by `installWindowsTask` at `diskschedule.go:314`. Mirrors the existing `TestSystemdQuoteArg` / `TestXMLEscapePlist` pattern. Coverage: `escapePS` 0% → 100%; `internal/diskschedule` 15.6% → 16.3% (+0.7 pp). Test-only, 1 file, +27/-0.
+- Verification: `go build ./...`, `go vet ./...`, `go test -race -count=1 ./...` (12/12 packages pass; new `TestEscapePS` green), `gofmt -l` clean on the touched file.
+- Task 11 (Activity): Updated #100 with this run's entry. Body size is 9.9 KB — under the 10 KB limit. Replaced the placeholder "Review PR (this run, Closes #135)" line with the concrete PR #141 reference; removed the #122 "Define goal" entry (work was reverted); added "Close PR #142" and "Check comment #142" entries.
 
 ## In-flight work
 
-- Effective PR backlog: **0 merged + 2 drafts** (`#139` Closes #134, `#141` Closes #135). The third draft from this run (Closes #122) was reverted on main by the owner.
-- `internal/diskschedule/` (from #131) remains the natural pairing target for v2 of #132 (nightly `duperemove`).
-- **Remaining duplicate-code target:** #133 (HIGH, 5 sites, ~250 lines — goroutine host-parallel pattern). Too invasive to bundle; would warrant its own PR after #134/#135 land.
+- **4 open drafts in the queue:**
+  - `#139` — `[repo-assist] refactor(runner): extract containerEscalation + passwordlessSudo helpers` (Closes #134). 2 files, +113/-37.
+  - `#141` — `[repo-assist] fix(runner): error on unsupported host OS instead of silently using POSIX` (Closes #135). 3 files, +193/-18.
+  - `#142` — `[repo-assist] fix(runner): unify GitHub registration URL helper` (Closes #122). 5 files, +60/-44. **STALE** — work was reverted on main, local branch deleted. Comment posted this run flagging the staleness. Awaiting maintainer close decision.
+  - `repo-assist/test-diskschedule-escape-ps` (commit `e1105e6`) — this run's `TestEscapePS` work. Created via safe-outputs `create_pull_request` (returns a patch/bundle, no PR number yet — orchestrator will apply it).
 
 ## Backlog / next high-value task
 
 - **#132 (gh sr storage — btrfs loop + reflink seed)** — human-authored design. v1 scaffold (subcommand skeleton in `cmd/gh-sr/`, `internal/storage/` package, status detection) is the natural next deliverable; **on hold** pending maintainer signal on the loop-mount persistence approach.
-- **#122** — the `nativeConfigURL` vs inline `container.go` block duplication is back to its original (pre-#122-fix) shape on main. The bug analysis from the duplicate-code detector is still valid; the refactor approach I took (single `RunnerConfig` method) was rejected via revert. **Leave alone** — the maintainer clearly chose a different direction or doesn't want the change. If they re-engage on the issue, ask before drafting.
+- **#122** — the `nativeConfigURL` vs inline `container.go` block duplication is back to its original (pre-#122-fix) shape on main. The bug analysis is still valid; the refactor approach I took (single `RunnerConfig` method) was rejected via revert. **Leave alone** — the maintainer clearly chose a different direction or doesn't want the change.
 - **#120 (GHSR_EOF heredoc duplicate-code)** — root cause is now-merged #105. No new work; should be closed by maintainer.
 - **#133** — fresh duplicate-code target. Could be addressed with a focused PR if the maintainer signals continued appetite for refactors.
 - **#97** — touches `.github/workflows/`, requires `gh aw compile`; leave for maintainers.
 - **#94, #98** — closed as not_planned. No longer actionable.
-- **Backlog posture:** Revert rate is the new constraint. After this run's revert, default to even more conservative refactor proposals: only refactor when the benefit is unambiguous and the diff is tiny. The maintainer can dial this back by closing the bot-flagged issues.
+- **Backlog posture:** Two refactor attempts in a row now — #122 (reverted) and the test-only `TestEscapePS` (this run, not yet reviewed). The revert rate is still 1/12 (8%), but the maintainer has signalled selectivity. Conservative play from here: prefer test-only additions over production-code refactors unless the bug is unambiguous and the diff is tiny.
 
 ## Backlog cursor for Task2 (Issue Comment)
 
-- 28 open issues; only #132 is human-authored. All others are auto-generated by `duplicate-code-detector`, `perf-improver`, `efficiency-improver`, `repo-assist`, `test-improver`, `doc-updater`, etc. Cursor is parked on #132 — re-engage only if the maintainer or a new human comment appears.
+- 32 open issues; only #132 is human-authored. All others are auto-generated by `duplicate-code-detector`, `perf-improver`, `efficiency-improver`, `repo-assist`, `test-improver`, `doc-updater`, etc. Cursor is parked on #132 — re-engage only if the maintainer or a new human comment appears.
 
 ## Completed work (PRs MERGED + current drafts)
 
@@ -51,11 +55,13 @@ metadata:
 - **#99** — `[repo-assist] refactor(host): extract runWithCapture helper` (Closes #95).
 - **OPEN DRAFT #139** — `[repo-assist] refactor(runner): extract containerEscalation + passwordlessSudo helpers` (Closes #134). 2 files, +113/-37.
 - **OPEN DRAFT #141** — `[repo-assist] fix(runner): error on unsupported host OS instead of silently using POSIX` (Closes #135). 3 files, +193/-18.
-- **REVERTED** `repo-assist/fix-config-url-precedence-122` — `[repo-assist] fix(runner): unify GitHub registration URL helper, resolve Org-vs-Repo precedence divergence` (would have Closes #122). Owner reverted on main after the safe-outputs bundle was generated; local branch deleted. Do NOT re-attempt without a fresh maintainer signal.
+- **OPEN DRAFT #142** — `[repo-assist] fix(runner): unify GitHub registration URL helper` (Closes #122). 5 files, +60/-44. **REVERTED on main by maintainer post-creation; local branch deleted; stale.** Comment posted this run flagging the staleness.
+- **DRAFT (THIS RUN)** — `repo-assist/test-diskschedule-escape-ps` (commit `e1105e6`) — `[repo-assist] test(diskschedule): cover escapePS PowerShell single-quote escape`. 1 file, +27/-0. `escapePS` 0% → 100%.
 
 ## Activity / PR history (compressed)
 
-- 2026-06-10 (run 27261392560): Created branch + bundle for #122 (config URL precedence); reverted on main by owner post-run. Updated #100.
+- 2026-06-10 (run 27279843892): Commented on #142 (stale flag); created TestEscapePS PR; updated #100.
+- 2026-06-10 (run 27261392560): Created PR + bundle for #122 (config URL precedence); reverted on main by owner post-run. Updated #100.
 - 2026-06-10 (run 27246676535): Created PR (draft) for #135 (OS-dispatch bug fix); updated #100.
 - 2026-06-09 (run 27228879760): Created PR (draft) for #134 (disk-helpers extraction); updated #100.
 - 2026-06-09 (run 27191010253): Substantive comment on #132; verified all queued PRs merged; refreshed #100.
@@ -66,9 +72,11 @@ metadata:
 
 ## Notes for next run
 
-- **Revert signals:** the owner reverted the #122 refactor after the work was created. This is a soft "no" — the duplicated URL sites and the precedence bug are still in the code, but the chosen approach was not wanted. Next refactor of this kind: ask first or pick a smaller, more obviously-safe change.
+- **Revert signals:** the owner reverted the #122 refactor after the work was created. The duplicated URL sites and the precedence bug are still in the code, but the chosen approach was not wanted. Next refactor of this kind: ask first or pick a smaller, more obviously-safe change.
+- **PR #142 is now stale and the activity summary flags it as such.** The maintainer can close it whenever; I'm not auto-closing PRs (that's their decision).
+- **Test-only work remains low-risk.** This run's `TestEscapePS` is the safe template for future testing improvements: mirror existing patterns, pin a real contract, no production code change, ≤30-line diff.
 - **Next-highest-value deliverable:** v1 scaffold for #132 (subcommand skeleton + `internal/storage/` package + status detection). Hold pending maintainer signal on loop-mount persistence approach.
-- **Alternative forward motion:** pick #133 (HIGH, ~250 lines, goroutine host-parallel pattern across 5 functions). Bigger scope than #134/#135 — would warrant its own review window.
-- **#100 (Monthly Activity)** is the canonical pending-actions list; check every run. Body size is 9.2 KB — under the 10 KB limit but close. The "Review PR" entry for #122 should be removed by the next run if the revert stands.
-- **Backlog posture:** 13 refactor/bug-fix PRs in 2 weeks (10 merged + 2 drafts + 1 reverted). Revert rate: ~7% so far. Pace is sustainable but the bar for "is this a real bug or just style?" should rise.
+- **Alternative forward motion:** pick #133 (HIGH, ~250 lines, goroutine host-parallel pattern across 5 functions). Bigger scope than #134/#135 — would warrant its own review window. Defer until #134/#135 land or are rejected.
+- **#100 (Monthly Activity)** is the canonical pending-actions list; check every run. Body size is 9.9 KB — under the 10 KB limit. If approaching 10 KB, compress older run history entries.
+- **Backlog posture:** 14 refactor/test PRs in 2 weeks (11 merged + 3 drafts incl. #142-stale + this run's TestEscapePS). Revert rate: 1/12 (~8%) so far. Pace is sustainable. Test-only PRs are the safest forward path; production refactors should be paired with a bot-flagged issue and be small.
 - **Branch name pattern:** Maintainer should be aware that `repo-assist/*-XXXXXXXX` (with SHA suffix) is the gh-aw orchestrator's standard; not something the workflow can suppress.

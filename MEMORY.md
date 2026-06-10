@@ -1,1 +1,1 @@
-- [Repo Assist state](state.md) — last run summary, in-flight PRs (#127/#131/#136 merged; #134 disk-helpers draft pending), backlog cursor, next high-value task (#132 storage scaffold on hold)
+- [Repo Assist state](state.md) — last run 2026-06-10 13:38 UTC: TestEscapePS PR created (#142 stale flag posted), #100 activity summary updated, in-flight: 3 drafts (#139, #141, #142-stale) + 1 this-run; backlog cursor parked on #132
