@@ -95,12 +95,12 @@ runners:
 | Field | Description |
 |---|---|
 | `hosts.<name>.addr` | SSH target (`user@host` or `user@ip`), or `local` to run on the machine where gh sr is running. Remote commands run as that user; on Linux, privilege expectations for `setup` / `update` follow [Linux SSH user and privileges](host-setup.md#linux-ssh-user-and-privileges). |
-| `hosts.<name>.os` | `linux`, `darwin`, or `windows`. Auto-detected when `addr` is `local`. |
+| `hosts.<name>.os` | `linux`, `darwin`, or `windows`. Auto-detected when `addr` is `local`. **Only these three values are accepted** — anything else (typos like `Linux` / `Darwin`, or unsupported OSes like `freebsd` / `illumos`) now surfaces an explicit `unsupported host OS %q` error from disk-prune and related paths instead of silently using the POSIX implementation. |
 | `hosts.<name>.arch` | `amd64` or `arm64`. Auto-detected when `addr` is `local`. |
 | `hosts.<name>.windows_ps` | Optional; **Windows hosts only.** Which executable runs remote PowerShell payloads: `powershell` (default, `powershell.exe`) or `pwsh` (`pwsh.exe`). gh sr uses `-EncodedCommand` so the user’s SSH default shell (cmd.exe or pwsh) does not break nested quoting. |
 | `runners[].name` | Base name (instances become `name-1`, `name-2`, ...) |
 | `runners[].repo` | GitHub `owner/repo`. Required unless `org` is set. |
-| `runners[].org` | GitHub organization name. Use instead of `repo` for org-level runners. |
+| `runners[].org` | GitHub organization name. Use instead of `repo` for org-level runners. **If both `repo` and `org` are set, `org` wins** — the GitHub registration URL is `https://github.com/<org>` for both native and container modes (matches `Scope` / `ScopeTarget`). Setting both was previously a misconfiguration that registered the same runner against a different URL depending on `runner_mode`. |
 | `runners[].group` | Runner group name (org-level runners only). Passed as `--runnergroup` during registration. |
 | `runners[].host` | References a key under `hosts` |
 | `runners[].count` | Number of parallel instances (default: 1) |
@@ -113,3 +113,10 @@ runners:
 | `container_runner_image.mtu` | Optional integer (576–1500). Forces the Docker network MTU for `runner_mode: container` — both the outer runner container's egress interface and the inner `dockerd` bridge. Leave unset (0) to **auto-detect** the host's egress MTU, which fixes the common reduced-MTU case (cloud overlay networks like GCP's 1460, VPN/WireGuard) where large-packet TLS handshakes otherwise fail with `Client network socket disconnected before secure TLS connection was established` (e.g. `actions/setup-go`). Set this only when the host's real path MTU is below its NIC MTU (a tunnel the NIC is unaware of) so auto-detection cannot see it. Only ever lowers the MTU; applied at container-create time, so changing it requires `gh sr rebuild <name>`. |
 
 **Unique runner names per repository:** GitHub registers each self-hosted runner by its **instance** name (`name-1`, `name-2`, …). That name must be **unique within a given `owner/repo`**. If two machines use the same base `name` and `count: 1`, both try to register as `name-1` and only one registration remains active. Prefer distinct base names (for example `myapp-win` vs `myapp-linux`) so every machine has its own GitHub runner record and `gh sr status` matches the right row.
+
+## Recent behavior changes
+
+These are user-visible changes to how `gh sr` interprets config. Internal refactors, test additions, and microbenchmarks are not listed here.
+
+- **GitHub registration URL now has a single source of truth** (PR #142) — Both the native (`config.sh` / `config.cmd`) and container (`GH_SR_RUNNER_URL`) registration paths now go through `(*RunnerConfig).GitHubRegistrationURL()`. When both `repo` and `org` are set in a runner block, **`org` wins** in both modes — previously the two paths disagreed (native was Org-first, container was Repo-first), so the same config registered against different GitHub URLs depending on `runner_mode`. This is the same precedence used by `Scope()` / `ScopeTarget()`. If you had `org` and `repo` set together, treat that as a config error and remove the field you don't want.
+- **Unsupported `hosts.*.os` values now error explicitly** (PR #141) — Disk-prune and related disk-management paths used to silently fall into the POSIX branch for any unknown `h.OS` value. They now return an explicit `unsupported host OS %q` error for values outside `{linux, darwin, windows}` (typos like `Linux` / `Darwin`, or unsupported OSes like `freebsd` / `illumos`). Fix `hosts.*.os` in `runners.yml` if you see this error.
