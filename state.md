@@ -7,23 +7,23 @@ metadata:
 
 # Repo Assist state — last updated 2026-06-11
 
-## Last run (2026-06-11 12:00 UTC, run 27299664116)
+## Last run (2026-06-11 02:21 UTC, run 27317475276)
 
-- Selected tasks: 10 (Take the Repository Forward), 3 (Issue Fix), 4 (Engineering Investments).
-- Held the line — no PR this run. Backlog reasoning: 4 of my own drafts already unmerged (#139, #141, #142-stale, #149) + 2 other-bot PRs (#146, #147). The three new duplicate-code findings from yesterday (#143 mock-executor, #144 POSIX script header, #145 `IsContainerMode` dispatch) are all production-code refactors at the same risk profile as the reverted #122. Adding another would only grow the queue; better to let the maintainer clear it first.
-- Task 3 (Issue Fix) — fell back to Task 2. Bug-fix candidates (#122 reverted, #134 in #139 draft, #135 in #141 draft) all in flight or rejected. Cursor parked on #132, no new human activity.
-- Task 4 (Engineering) — fell back to Task 5 → Task 9. No CI/dependency/build gaps identifiable.
-- Verified: `go build ./...` ✅, `go test ./... -count=1` ✅ (12/12 packages pass), coverage unchanged.
-- Task 11 (Activity): Updated #100 with this run's entry. Body size is 9.9 KB — under the 10 KB limit. Compressed older run-history entries (2026-06-08 and earlier collapsed to one-line summaries) to make room for the new PRs (#146, #147, #149) and issues (#143, #144, #145) in Suggested Actions. Added #140/#148/#150 to the close-list.
-- **Fact-check on #144:** The issue claims `clearWorkTempPOSIX` is missing `set -e` that the "other two" scripts have. Inspected `internal/runner/disk.go` — actually BOTH `clearWorkTempPOSIX` (line 360) and `removeDirTreePOSIX` (line 414) lack `set -e`; only `buildDirSizesPOSIXScript` (line 178) has it. The "missing set -e" claim in #144 is partially wrong. Both `clearWorkTempPOSIX` and `removeDirTreePOSIX` use `|| true` on every potentially-failing command and end with explicit `exit 1` on the failure path, so adding `set -e` would be a behavioral change (and could break things if a future refactor removes the `|| true` patterns). Noted in memory; declined to act on #144 this run.
+- Selected tasks: 2 (Issue Investigation and Comment), 10 (Take the Repository Forward), 8 (Performance Improvements).
+- Held the line — no PR this run. Identical situation to the 12:00 UTC run ~14 hours earlier: 4 of my own drafts unmerged (#139, #141, #142-stale, #149) + 2 other-bot PRs (#146, #147). The 3 new duplicate-code findings from yesterday (#143/#144/#145) are all production-code refactors at the same risk profile as the reverted #122. Adding another would only grow the queue.
+- Task 2 (Comment) — cursor parked on #132, no new human comments. The 2026-06-09 5-point design comment is still the most recent substantive engagement.
+- Task 10 (Forward) — #132 v1 scaffold still on hold pending maintainer signal on loop-mount persistence. #133 next-highest but defer until #139/#141 land.
+- Task 8 (Performance) — perf-improver monthly activity (#85) shows repo in maintenance mode; no new high-value targets. Recent wins #123/#128/#136 already merged; #146 (InstanceNames) is the only perf PR still in flight.
+- Verified: `go build ./...` ✅, `go test ./... -count=1` ✅ (11/11 packages pass; +1 main package with no test files), coverage unchanged.
+- Task 11 (Activity): Updated #100 with this run's entry at the top of Run History. Body size 9.5 KB — under the 10 KB limit. Compressed 2026-06-08 and earlier run-history entries to a one-line summary. No changes to Suggested Actions (state is unchanged from the 12:00 UTC run).
 
 ## In-flight work
 
 - **4 open drafts in the queue:**
   - `#139` — `[repo-assist] refactor(runner): extract containerEscalation + passwordlessSudo helpers` (Closes #134). 2 files, +113/-37.
   - `#141` — `[repo-assist] fix(runner): error on unsupported host OS instead of silently using POSIX` (Closes #135). 3 files, +193/-18.
-  - `#142` — `[repo-assist] fix(runner): unify GitHub registration URL helper` (Closes #122). 5 files, +60/-44. **STALE** — work was reverted on main, local branch deleted. Comment posted last run flagging the staleness. Awaiting maintainer close decision.
-  - `#149` — `[repo-assist] test(diskschedule): cover escapePS PowerShell single-quote escape`. 1 file, +27/-0. Landed this run (was the `repo-assist/test-diskschedule-escape-ps` bundle from previous run; orchestrator applied the patch and produced the real PR).
+  - `#142` — `[repo-assist] fix(runner): unify GitHub registration URL helper` (Closes #122). 5 files, +60/-44. **STALE** — work was reverted on main, local branch deleted. Comment posted 2026-06-10 flagging the staleness. Awaiting maintainer close decision.
+  - `#149` — `[repo-assist] test(diskschedule): cover escapePS PowerShell single-quote escape`. 1 file, +27/-0. Landed 2026-06-10.
 
 ## Backlog / next high-value task
 
@@ -60,13 +60,14 @@ metadata:
 - **#99** — `[repo-assist] refactor(host): extract runWithCapture helper` (Closes #95).
 - **OPEN DRAFT #139** — `[repo-assist] refactor(runner): extract containerEscalation + passwordlessSudo helpers` (Closes #134). 2 files, +113/-37.
 - **OPEN DRAFT #141** — `[repo-assist] fix(runner): error on unsupported host OS instead of silently using POSIX` (Closes #135). 3 files, +193/-18.
-- **OPEN DRAFT #142** — `[repo-assist] fix(runner): unify GitHub registration URL helper` (Closes #122). 5 files, +60/-44. **REVERTED on main by maintainer post-creation; local branch deleted; stale.** Comment posted last run flagging the staleness.
+- **OPEN DRAFT #142** — `[repo-assist] fix(runner): unify GitHub registration URL helper` (Closes #122). 5 files, +60/-44. **REVERTED on main by maintainer post-creation; local branch deleted; stale.** Comment posted 2026-06-10 flagging the staleness.
 - **OPEN DRAFT #149** — `[repo-assist] test(diskschedule): cover escapePS PowerShell single-quote escape`. 1 file, +27/-0. `escapePS` 0% → 100%; `internal/diskschedule` 15.6% → 16.3% (+0.7 pp).
 - **OPEN DRAFT #146** (other bot) — `[efficiency-improver] perf(config): inline name-N construction in InstanceNames helper`. ~65% time, ~48% allocs reduction on `BenchmarkInstanceNames`.
 - **OPEN DRAFT #147** (other bot, flagged `agentic-threat-detected`) — `[test-improver] test(ops): cover disk-printer helpers and per-host instance map`. `internal/ops` 9.6% → 19.6% (+10 pp).
 
 ## Activity / PR history (compressed)
 
+- 2026-06-11 (run 27317475276): Held the line. No PR. Updated #100.
 - 2026-06-11 (run 27299664116): Held the line. No PR. Updated #100.
 - 2026-06-10 (run 27279843892): Commented on #142 (stale flag); created TestEscapePS PR (landed as #149); updated #100.
 - 2026-06-10 (run 27261392560): Created PR + bundle for #122 (config URL precedence); reverted on main by owner post-run. Updated #100.
@@ -86,6 +87,6 @@ metadata:
 - **Next-highest-value deliverable:** v1 scaffold for #132 (subcommand skeleton + `internal/storage/` package + status detection). Hold pending maintainer signal on loop-mount persistence approach.
 - **Alternative forward motion:** pick #133 (HIGH, ~250 lines, goroutine host-parallel pattern across 5 functions). Bigger scope than #134/#135 — would warrant its own review window. Defer until #134/#135 land or are rejected.
 - **#143/#144/#145 are all production-code refactors.** #144 has a factual inaccuracy in its bug claim (verified: the `set -e` asymmetry claim is wrong). All three should hold the line until maintainer signals appetite.
-- **#100 (Monthly Activity)** is the canonical pending-actions list; check every run. Body size is 9.9 KB — under the 10 KB limit. If approaching 10 KB, compress older run history entries (this run collapsed 2026-06-08 and earlier to one-line summaries).
+- **#100 (Monthly Activity)** is the canonical pending-actions list; check every run. Body size is 9.5 KB — under the 10 KB limit. If approaching 10 KB, compress older run history entries (this run collapsed 2026-06-08 and earlier to a one-line summary).
 - **Backlog posture:** 14 refactor/test PRs in 2 weeks (11 merged + 3 drafts incl. #142-stale + #149 + 2 other-bot PRs). Revert rate: 1/14 (~7%) so far. Pace is sustainable. Test-only PRs are the safest forward path; production refactors should be paired with a bot-flagged issue and be small.
 - **Branch name pattern:** Maintainer should be aware that `repo-assist/*-XXXXXXXX` (with SHA suffix) is the gh-aw orchestrator's standard; not something the workflow can suppress.
