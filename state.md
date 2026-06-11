@@ -5,25 +5,25 @@ metadata:
  type: project
 ---
 
-# Repo Assist state — last updated 2026-06-10
+# Repo Assist state — last updated 2026-06-11
 
-## Last run (2026-06-10 13:38 UTC, run 27279843892)
+## Last run (2026-06-11 12:00 UTC, run 27299664116)
 
-- Selected tasks: 9 (Testing Improvements), 2 (Issue Comment), 3 (Issue Fix).
-- Task 6 (Maintain): Commented on PR #142 noting the draft is stale (work was reverted on main, local branch deleted). Did NOT close it — that's a maintainer decision. Posture: don't auto-close stale drafts, just flag.
-- Task 2 (Comment): No actionable items — cursor still parked on #132, no new human activity since the 5-point design comment from 2026-06-09.
-- Task 3 (Fix) → fell back to Task 9: Bug-fix candidates (#122 reverted, #133 too invasive) were off the table. Test-only addition was the conservative play.
-- Task 9 (Test): Created branch `repo-assist/test-diskschedule-escape-ps` (commit `e1105e6`) with `TestEscapePS` — 4 sub-cases pinning the PowerShell single-quote escape (`'` → `''`) used by `installWindowsTask` at `diskschedule.go:314`. Mirrors the existing `TestSystemdQuoteArg` / `TestXMLEscapePlist` pattern. Coverage: `escapePS` 0% → 100%; `internal/diskschedule` 15.6% → 16.3% (+0.7 pp). Test-only, 1 file, +27/-0.
-- Verification: `go build ./...`, `go vet ./...`, `go test -race -count=1 ./...` (12/12 packages pass; new `TestEscapePS` green), `gofmt -l` clean on the touched file.
-- Task 11 (Activity): Updated #100 with this run's entry. Body size is 9.9 KB — under the 10 KB limit. Replaced the placeholder "Review PR (this run, Closes #135)" line with the concrete PR #141 reference; removed the #122 "Define goal" entry (work was reverted); added "Close PR #142" and "Check comment #142" entries.
+- Selected tasks: 10 (Take the Repository Forward), 3 (Issue Fix), 4 (Engineering Investments).
+- Held the line — no PR this run. Backlog reasoning: 4 of my own drafts already unmerged (#139, #141, #142-stale, #149) + 2 other-bot PRs (#146, #147). The three new duplicate-code findings from yesterday (#143 mock-executor, #144 POSIX script header, #145 `IsContainerMode` dispatch) are all production-code refactors at the same risk profile as the reverted #122. Adding another would only grow the queue; better to let the maintainer clear it first.
+- Task 3 (Issue Fix) — fell back to Task 2. Bug-fix candidates (#122 reverted, #134 in #139 draft, #135 in #141 draft) all in flight or rejected. Cursor parked on #132, no new human activity.
+- Task 4 (Engineering) — fell back to Task 5 → Task 9. No CI/dependency/build gaps identifiable.
+- Verified: `go build ./...` ✅, `go test ./... -count=1` ✅ (12/12 packages pass), coverage unchanged.
+- Task 11 (Activity): Updated #100 with this run's entry. Body size is 9.9 KB — under the 10 KB limit. Compressed older run-history entries (2026-06-08 and earlier collapsed to one-line summaries) to make room for the new PRs (#146, #147, #149) and issues (#143, #144, #145) in Suggested Actions. Added #140/#148/#150 to the close-list.
+- **Fact-check on #144:** The issue claims `clearWorkTempPOSIX` is missing `set -e` that the "other two" scripts have. Inspected `internal/runner/disk.go` — actually BOTH `clearWorkTempPOSIX` (line 360) and `removeDirTreePOSIX` (line 414) lack `set -e`; only `buildDirSizesPOSIXScript` (line 178) has it. The "missing set -e" claim in #144 is partially wrong. Both `clearWorkTempPOSIX` and `removeDirTreePOSIX` use `|| true` on every potentially-failing command and end with explicit `exit 1` on the failure path, so adding `set -e` would be a behavioral change (and could break things if a future refactor removes the `|| true` patterns). Noted in memory; declined to act on #144 this run.
 
 ## In-flight work
 
 - **4 open drafts in the queue:**
   - `#139` — `[repo-assist] refactor(runner): extract containerEscalation + passwordlessSudo helpers` (Closes #134). 2 files, +113/-37.
   - `#141` — `[repo-assist] fix(runner): error on unsupported host OS instead of silently using POSIX` (Closes #135). 3 files, +193/-18.
-  - `#142` — `[repo-assist] fix(runner): unify GitHub registration URL helper` (Closes #122). 5 files, +60/-44. **STALE** — work was reverted on main, local branch deleted. Comment posted this run flagging the staleness. Awaiting maintainer close decision.
-  - `repo-assist/test-diskschedule-escape-ps` (commit `e1105e6`) — this run's `TestEscapePS` work. Created via safe-outputs `create_pull_request` (returns a patch/bundle, no PR number yet — orchestrator will apply it).
+  - `#142` — `[repo-assist] fix(runner): unify GitHub registration URL helper` (Closes #122). 5 files, +60/-44. **STALE** — work was reverted on main, local branch deleted. Comment posted last run flagging the staleness. Awaiting maintainer close decision.
+  - `#149` — `[repo-assist] test(diskschedule): cover escapePS PowerShell single-quote escape`. 1 file, +27/-0. Landed this run (was the `repo-assist/test-diskschedule-escape-ps` bundle from previous run; orchestrator applied the patch and produced the real PR).
 
 ## Backlog / next high-value task
 
@@ -31,13 +31,18 @@ metadata:
 - **#122** — the `nativeConfigURL` vs inline `container.go` block duplication is back to its original (pre-#122-fix) shape on main. The bug analysis is still valid; the refactor approach I took (single `RunnerConfig` method) was rejected via revert. **Leave alone** — the maintainer clearly chose a different direction or doesn't want the change.
 - **#120 (GHSR_EOF heredoc duplicate-code)** — root cause is now-merged #105. No new work; should be closed by maintainer.
 - **#133** — fresh duplicate-code target. Could be addressed with a focused PR if the maintainer signals continued appetite for refactors.
+- **#143, #144, #145** — new duplicate-code findings from 2026-06-10. All production-code refactors:
+  - #143: mock executor duplication across 5 test files (~110 lines). Recommended `internal/testutil/executor.go`. Risk: cross-package test refactor.
+  - #144: POSIX shell-script header pattern in `disk.go` (3 sites, ~12 lines). Recommended `posixScriptHeader` helper + `posixRunnerDirLayout` constant. Note: the issue's "missing set -e" claim is factually wrong (BOTH `clearWorkTempPOSIX` and `removeDirTreePOSIX` lack it, not just one), and adding `set -e` to those scripts would be a behavioral change.
+  - #145: `IsContainerMode()` / runner-mode dispatch (23+ sites). Recommended `Mode` enum + `Mode()` accessor. Largest scope (~3 hours).
+  - **Posture:** All three fall in the "production-code refactor in the same risk profile as #122" bucket. Hold the line.
 - **#97** — touches `.github/workflows/`, requires `gh aw compile`; leave for maintainers.
 - **#94, #98** — closed as not_planned. No longer actionable.
-- **Backlog posture:** Two refactor attempts in a row now — #122 (reverted) and the test-only `TestEscapePS` (this run, not yet reviewed). The revert rate is still 1/12 (8%), but the maintainer has signalled selectivity. Conservative play from here: prefer test-only additions over production-code refactors unless the bug is unambiguous and the diff is tiny.
+- **Backlog posture:** Three of my own drafts (#139, #141, #149) + 2 other-bot PRs (#146, #147) are healthy test/refactor candidates for the maintainer. #142 is stale and waiting on close decision. Revert rate: 1/14 (~7%) so far. Conservative play from here: prefer test-only additions over production-code refactors unless the bug is unambiguous and the diff is tiny.
 
 ## Backlog cursor for Task2 (Issue Comment)
 
-- 32 open issues; only #132 is human-authored. All others are auto-generated by `duplicate-code-detector`, `perf-improver`, `efficiency-improver`, `repo-assist`, `test-improver`, `doc-updater`, etc. Cursor is parked on #132 — re-engage only if the maintainer or a new human comment appears.
+- 30 open issues; only #132 is human-authored. All others are auto-generated by `duplicate-code-detector`, `perf-improver`, `efficiency-improver`, `repo-assist`, `test-improver`, `doc-updater`, `agentic-workflows` (failure tracker), etc. Cursor is parked on #132 — re-engage only if the maintainer or a new human comment appears.
 
 ## Completed work (PRs MERGED + current drafts)
 
@@ -55,18 +60,21 @@ metadata:
 - **#99** — `[repo-assist] refactor(host): extract runWithCapture helper` (Closes #95).
 - **OPEN DRAFT #139** — `[repo-assist] refactor(runner): extract containerEscalation + passwordlessSudo helpers` (Closes #134). 2 files, +113/-37.
 - **OPEN DRAFT #141** — `[repo-assist] fix(runner): error on unsupported host OS instead of silently using POSIX` (Closes #135). 3 files, +193/-18.
-- **OPEN DRAFT #142** — `[repo-assist] fix(runner): unify GitHub registration URL helper` (Closes #122). 5 files, +60/-44. **REVERTED on main by maintainer post-creation; local branch deleted; stale.** Comment posted this run flagging the staleness.
-- **DRAFT (THIS RUN)** — `repo-assist/test-diskschedule-escape-ps` (commit `e1105e6`) — `[repo-assist] test(diskschedule): cover escapePS PowerShell single-quote escape`. 1 file, +27/-0. `escapePS` 0% → 100%.
+- **OPEN DRAFT #142** — `[repo-assist] fix(runner): unify GitHub registration URL helper` (Closes #122). 5 files, +60/-44. **REVERTED on main by maintainer post-creation; local branch deleted; stale.** Comment posted last run flagging the staleness.
+- **OPEN DRAFT #149** — `[repo-assist] test(diskschedule): cover escapePS PowerShell single-quote escape`. 1 file, +27/-0. `escapePS` 0% → 100%; `internal/diskschedule` 15.6% → 16.3% (+0.7 pp).
+- **OPEN DRAFT #146** (other bot) — `[efficiency-improver] perf(config): inline name-N construction in InstanceNames helper`. ~65% time, ~48% allocs reduction on `BenchmarkInstanceNames`.
+- **OPEN DRAFT #147** (other bot, flagged `agentic-threat-detected`) — `[test-improver] test(ops): cover disk-printer helpers and per-host instance map`. `internal/ops` 9.6% → 19.6% (+10 pp).
 
 ## Activity / PR history (compressed)
 
-- 2026-06-10 (run 27279843892): Commented on #142 (stale flag); created TestEscapePS PR; updated #100.
+- 2026-06-11 (run 27299664116): Held the line. No PR. Updated #100.
+- 2026-06-10 (run 27279843892): Commented on #142 (stale flag); created TestEscapePS PR (landed as #149); updated #100.
 - 2026-06-10 (run 27261392560): Created PR + bundle for #122 (config URL precedence); reverted on main by owner post-run. Updated #100.
 - 2026-06-10 (run 27246676535): Created PR (draft) for #135 (OS-dispatch bug fix); updated #100.
 - 2026-06-09 (run 27228879760): Created PR (draft) for #134 (disk-helpers extraction); updated #100.
 - 2026-06-09 (run 27191010253): Substantive comment on #132; verified all queued PRs merged; refreshed #100.
 - 2026-06-09 (run 27177519565): Held the line on 7 PRs awaiting review. Fixed #100 format violation. New issue #129 (low value).
-- 2026-06-08 (runs 27160400089, 27141972090, 27124221841, 27110913774): Created PR #127 (merged as 27141972090); posted duplicate-flag comments on #118/#119 (both subsequently merged); all 5 PRs verified CI clean.
+- 2026-06-08 (runs 27160400089, 27141972090, 27124221841, 27110913774): Created PR #127 (merged); posted duplicate-flag comments on #118/#119 (both subsequently merged); all 5 PRs verified CI clean.
 - 2026-06-07 (runs 27101365663, 27092997574, 27079117216): Created PRs #118, #114 (both merged); #105 helpers re-declared after first attempt's branch never reached origin.
 - 2026-06-06 (runs 27070656223, 27062630621, 27053267544, 27048457009): Created PRs #113, #110, #102, #99 (all merged).
 
@@ -74,9 +82,10 @@ metadata:
 
 - **Revert signals:** the owner reverted the #122 refactor after the work was created. The duplicated URL sites and the precedence bug are still in the code, but the chosen approach was not wanted. Next refactor of this kind: ask first or pick a smaller, more obviously-safe change.
 - **PR #142 is now stale and the activity summary flags it as such.** The maintainer can close it whenever; I'm not auto-closing PRs (that's their decision).
-- **Test-only work remains low-risk.** This run's `TestEscapePS` is the safe template for future testing improvements: mirror existing patterns, pin a real contract, no production code change, ≤30-line diff.
+- **Test-only work remains low-risk.** #149 is the safe template for future testing improvements: mirror existing patterns, pin a real contract, no production code change, ≤30-line diff.
 - **Next-highest-value deliverable:** v1 scaffold for #132 (subcommand skeleton + `internal/storage/` package + status detection). Hold pending maintainer signal on loop-mount persistence approach.
 - **Alternative forward motion:** pick #133 (HIGH, ~250 lines, goroutine host-parallel pattern across 5 functions). Bigger scope than #134/#135 — would warrant its own review window. Defer until #134/#135 land or are rejected.
-- **#100 (Monthly Activity)** is the canonical pending-actions list; check every run. Body size is 9.9 KB — under the 10 KB limit. If approaching 10 KB, compress older run history entries.
-- **Backlog posture:** 14 refactor/test PRs in 2 weeks (11 merged + 3 drafts incl. #142-stale + this run's TestEscapePS). Revert rate: 1/12 (~8%) so far. Pace is sustainable. Test-only PRs are the safest forward path; production refactors should be paired with a bot-flagged issue and be small.
+- **#143/#144/#145 are all production-code refactors.** #144 has a factual inaccuracy in its bug claim (verified: the `set -e` asymmetry claim is wrong). All three should hold the line until maintainer signals appetite.
+- **#100 (Monthly Activity)** is the canonical pending-actions list; check every run. Body size is 9.9 KB — under the 10 KB limit. If approaching 10 KB, compress older run history entries (this run collapsed 2026-06-08 and earlier to one-line summaries).
+- **Backlog posture:** 14 refactor/test PRs in 2 weeks (11 merged + 3 drafts incl. #142-stale + #149 + 2 other-bot PRs). Revert rate: 1/14 (~7%) so far. Pace is sustainable. Test-only PRs are the safest forward path; production refactors should be paired with a bot-flagged issue and be small.
 - **Branch name pattern:** Maintainer should be aware that `repo-assist/*-XXXXXXXX` (with SHA suffix) is the gh-aw orchestrator's standard; not something the workflow can suppress.

@@ -1,1 +1,1 @@
-- [Repo Assist state](state.md) — last run 2026-06-10 13:38 UTC: TestEscapePS PR created (#142 stale flag posted), #100 activity summary updated, in-flight: 3 drafts (#139, #141, #142-stale) + 1 this-run; backlog cursor parked on #132
+- [Repo Assist state](state.md) — last run 2026-06-11 12:00 UTC: held the line (no PR this run), #100 activity summary updated with PRs #146/#147/#149 and issues #143/#144/#145; backlog cursor parked on #132; in-flight: 4 of my drafts (#139, #141, #142-stale, #149) + 2 other-bot PRs (#146, #147)
