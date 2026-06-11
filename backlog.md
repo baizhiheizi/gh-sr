@@ -17,17 +17,16 @@ metadata:
 
 Both need the same `hostFactory` injection as #1.
 
-### 4. `internal/diskschedule` — `escapePS` is the easy next target
-- 15.6% coverage overall. `parseAtTime`/`systemdQuoteArg`/`xmlEscapePlist` already have basic tests; could be expanded.
-- `escapePS`, `Detect`, `Install`, `Uninstall`, `Status` are 0%.
+### 4. `internal/diskschedule` — Detect/Install/Uninstall/Status (0%)
+- `escapePS` (PR #149, 2026-06-11), `parseAtTime`, `systemdQuoteArg`, `xmlEscapePlist` already covered.
+- `Detect`/`Install`/`Uninstall`/`Status` need an `exec.Command` injection refactor — too many platform-system-call branches to mock at the boundary.
 
 ## Medium value
 
 ### 5. `internal/runner/container.go` — large lifecycle functions (37% coverage)
 Real Docker work; integration-tested implicitly. Hard to unit-test.
 
-### 6. `internal/hostshell` — `WriteRemoteBytes` (0%)
-Newer package. Other helpers well-tested. `WriteRemoteBytes` depends on `*host.Host`.
+### 6. ~~`internal/hostshell` — `WriteRemoteBytes` (0%)~~ **DONE 2026-06-11** (run #27346830049) — 0% → 100%; package 23.1% → 100.0%
 
 ### 7. `internal/runner/native.go` — 21 untested fns
 Mostly Docker exec wrappers needing SSH.
@@ -40,11 +39,13 @@ Mostly Docker exec wrappers needing SSH.
 
 ## Test infrastructure ideas (Task 6 candidates)
 
-- **Mock Executor consolidation** — open issue "Mock Executor implementations across test files" from the duplicate-code detector. A shared `internal/host/hosttest` package with one mock + exec-scripting DSL would prevent drift between the three per-package mocks.
+- **Mock Executor consolidation** — open issue "Mock Executor implementations across test files" from the duplicate-code detector. A shared `internal/host/hosttest` package with one mock + exec-scripting DSL would prevent drift between the three per-package mocks. Note: as of 2026-06-11 there are now FOUR per-package mocks (host/mock_test.go, autostart, agentic, hostshell) — the hostshell one (`recordingExecutor`) is a near-clone of host's `mockExecutor`. Worth a follow-up.
 - **Test-only constants for emitted commands** — lift exact shell command strings into named test constants. Pattern already used in `agentic_awf_hygiene_test.go`.
 
 ## Completed (do not re-do)
 
+- 2026-06-11: `WriteRemoteBytes` in `internal/hostshell/hostshell.go` — 0% → 100%; `internal/hostshell` 23.1% → 100.0% (+76.9 pp)
+- 2026-06-11: `escapePS` in `internal/diskschedule/diskschedule.go` — 0% → 100%; `internal/diskschedule` 15.6% → 16.3% (+0.7 pp) (PR #149)
 - 2026-06-10: columnWidths, printRow, printPruneResult, PrintDiskUsageTable, diskHostInstanceKey, rcByInstanceForHost in `internal/ops/disk.go` — 0% → 100%; `internal/ops` 9.6% → 19.6% (+10.0 pp)
 - 2026-06-08: ValidateAWFHygiene, ValidateAWFHygieneInner in `internal/agentic` — 0% → 100%; `internal/agentic` 60.5% → 83.9% (+23.4 pp)
 - 2026-06-06: Five `Validate*` helpers in `internal/agentic/agentic.go` — 0% → 100%; `internal/agentic` 44.8% → 60.5%

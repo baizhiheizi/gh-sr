@@ -5,6 +5,22 @@ metadata:
   type: project
 ---
 
+## 2026-06-11 12:39 UTC — Run 27346830049
+
+- Branch: `test-assist/hostshell-write-remote-bytes`; commit ab1f73f
+- PR: draft via `create_pull_request` safeoutputs
+- Patch: `/tmp/gh-aw/aw-test-assist-hostshell-write-remote-bytes.patch` (~14 KB / 362 lines)
+- Coverage: `internal/hostshell` 23.1% → 100.0% (+76.9 pp); `WriteRemoteBytes` 0% → 100%
+- New file: `internal/hostshell/hostshell_remote_test.go` (362 lines, 4 test functions, 16 sub-tests, parallel)
+- Pinned contracts: PosixSingleQuote round-trips through `'\\''` escape in script, PowerShellSingleQuote round-trips through `''` doubling, executor errors propagate, Upload() never called
+
+## 2026-06-11 04:08 UTC — Off-cycle run (PR #149 merged)
+
+- escapePS PowerShell single-quote escape in internal/diskschedule: 0% → 100%
+- internal/diskschedule coverage: 15.6% → 16.3% (+0.7 pp)
+- 27 lines added to internal/diskschedule/diskschedule_test.go
+- Note: not in repo-memory before this run; backfilled now.
+
 ## 2026-06-10 12:35 UTC — Run 27275755111
 
 - Branch: `test-assist/disk-printer-helpers`; commit 5508526
