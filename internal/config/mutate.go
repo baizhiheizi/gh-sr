@@ -7,24 +7,36 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// AddHost adds a host entry to the config file at cfgPath. It reads the existing
-// YAML, appends the host, validates, and writes back.
-func AddHost(cfgPath, name, addr, hostOS, arch string) error {
+// loadYAMLRoot reads the YAML config at cfgPath, unmarshals it into a yaml.Node,
+// and returns the top-level mapping node. It centralises the read/unmarshal/
+// document+mapping validation that all mutator functions (AddHost, AddRunner,
+// RemoveRunner) need before modifying the tree.
+func loadYAMLRoot(cfgPath string) (*yaml.Node, error) {
 	data, err := os.ReadFile(cfgPath)
 	if err != nil {
-		return fmt.Errorf("reading config: %w", err)
+		return nil, fmt.Errorf("reading config: %w", err)
 	}
 
 	var root yaml.Node
 	if err := yaml.Unmarshal(data, &root); err != nil {
-		return fmt.Errorf("parsing config: %w", err)
+		return nil, fmt.Errorf("parsing config: %w", err)
 	}
 	if root.Kind != yaml.DocumentNode || len(root.Content) == 0 {
-		return fmt.Errorf("unexpected YAML structure")
+		return nil, fmt.Errorf("unexpected YAML structure")
 	}
 	top := root.Content[0]
 	if top.Kind != yaml.MappingNode {
-		return fmt.Errorf("config root is not a mapping")
+		return nil, fmt.Errorf("config root is not a mapping")
+	}
+	return top, nil
+}
+
+// AddHost adds a host entry to the config file at cfgPath. It reads the existing
+// YAML, appends the host, validates, and writes back.
+func AddHost(cfgPath, name, addr, hostOS, arch string) error {
+	top, err := loadYAMLRoot(cfgPath)
+	if err != nil {
+		return err
 	}
 
 	hostsNode := findMapValue(top, "hosts")
@@ -64,7 +76,7 @@ func AddHost(cfgPath, name, addr, hostOS, arch string) error {
 		hostEntry,
 	)
 
-	return writeYAMLBack(cfgPath, &root)
+	return writeYAMLBack(cfgPath, top)
 }
 
 // AddRunnerOpts holds parameters for AddRunner.
@@ -93,21 +105,9 @@ func AddRunner(cfgPath, name, repo, hostName string, count int, labels []string)
 
 // AddRunnerFull adds a runner entry with all options.
 func AddRunnerFull(cfgPath string, opts AddRunnerOpts) error {
-	data, err := os.ReadFile(cfgPath)
+	top, err := loadYAMLRoot(cfgPath)
 	if err != nil {
-		return fmt.Errorf("reading config: %w", err)
-	}
-
-	var root yaml.Node
-	if err := yaml.Unmarshal(data, &root); err != nil {
-		return fmt.Errorf("parsing config: %w", err)
-	}
-	if root.Kind != yaml.DocumentNode || len(root.Content) == 0 {
-		return fmt.Errorf("unexpected YAML structure")
-	}
-	top := root.Content[0]
-	if top.Kind != yaml.MappingNode {
-		return fmt.Errorf("config root is not a mapping")
+		return err
 	}
 
 	runnersNode := findMapValue(top, "runners")
@@ -186,26 +186,14 @@ func AddRunnerFull(cfgPath string, opts AddRunnerOpts) error {
 
 	runnersNode.Content = append(runnersNode.Content, entry)
 
-	return writeYAMLBack(cfgPath, &root)
+	return writeYAMLBack(cfgPath, top)
 }
 
 // RemoveRunner removes a runner entry from the config file at cfgPath by runner name.
 func RemoveRunner(cfgPath, runnerName string) error {
-	data, err := os.ReadFile(cfgPath)
+	top, err := loadYAMLRoot(cfgPath)
 	if err != nil {
-		return fmt.Errorf("reading config: %w", err)
-	}
-
-	var root yaml.Node
-	if err := yaml.Unmarshal(data, &root); err != nil {
-		return fmt.Errorf("parsing config: %w", err)
-	}
-	if root.Kind != yaml.DocumentNode || len(root.Content) == 0 {
-		return fmt.Errorf("unexpected YAML structure")
-	}
-	top := root.Content[0]
-	if top.Kind != yaml.MappingNode {
-		return fmt.Errorf("config root is not a mapping")
+		return err
 	}
 
 	runnersNode := findMapValue(top, "runners")
@@ -235,7 +223,7 @@ func RemoveRunner(cfgPath, runnerName string) error {
 	}
 
 	runnersNode.Content = newContent
-	return writeYAMLBack(cfgPath, &root)
+	return writeYAMLBack(cfgPath, top)
 }
 
 func findMapValue(mapping *yaml.Node, key string) *yaml.Node {
