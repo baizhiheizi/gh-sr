@@ -71,6 +71,44 @@ func posixRunnerDirVar(instance string) string {
 	return fmt.Sprintf(`dir="$HOME/.gh-sr/runners/%s"`, inst)
 }
 
+// containerEscalation returns the "docker inspect → start if down → exec if up"
+// shell snippet. shellCmd is run via `sh -c` inside the container, so callers
+// can pass compound commands like `for sub in ...; do ...; done` without
+// re-quoting. When the docker CLI is unavailable or the container cannot be
+// started, the snippet is a no-op; the surrounding script must still degrade
+// gracefully when the inner command never runs.
+func containerEscalation(containerName, shellCmd string) string {
+	q := hostshell.PosixSingleQuote(containerName)
+	return fmt.Sprintf(`
+if command -v docker >/dev/null 2>&1; then
+  if ! docker inspect --format='{{.State.Running}}' %s 2>/dev/null | grep -q true; then
+    docker start %s >/dev/null 2>&1 || true
+  fi
+  if docker inspect --format='{{.State.Running}}' %s 2>/dev/null | grep -q true; then
+    docker exec %s sh -c %s || true
+  fi
+fi
+`, q, q, q, q, hostshell.PosixSingleQuote(shellCmd))
+}
+
+// passwordlessSudo returns a shell snippet that sets $SUDO to `sudo -n` when
+// (a) the current user is non-root, and (b) sudo is installed and accepts
+// passwordless commands. Otherwise $SUDO stays empty. Callers prepend "$SUDO"
+// to the commands they want to elevate; the empty-string case means "no sudo
+// prefix" and the command runs as-is, which is correct for the root case
+// (id -u == 0) where the surrounding guard already gates on `$SUDO` being
+// non-empty OR the effective uid being 0.
+func passwordlessSudo() string {
+	return `
+SUDO=''
+if [ "$(id -u)" -ne 0 ]; then
+  if command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
+    SUDO='sudo -n'
+  fi
+fi
+`
+}
+
 // ListRunnerInstanceDirs returns subdirectory names under ~/.gh-sr/runners on the host.
 // Names that fail SafeRunnerInstanceName are omitted.
 func ListRunnerInstanceDirs(h *host.Host) ([]string, error) {
@@ -343,19 +381,12 @@ foreach ($sub in @('_work','_temp')) {
 // root-owned files on the host bind mount; we escalate via docker exec (container
 // runners) or passwordless host sudo when a plain rm is not enough.
 func clearWorkTempPOSIX(instance string, containerMode bool) string {
-	containerEscalation := ""
+	var containerBlock string
 	if containerMode {
-		q := hostshell.PosixSingleQuote(ContainerDockerName(instance))
-		containerEscalation = fmt.Sprintf(`
-if command -v docker >/dev/null 2>&1; then
-  if ! docker inspect --format='{{.State.Running}}' %s 2>/dev/null | grep -q true; then
-    docker start %s >/dev/null 2>&1 || true
-  fi
-  if docker inspect --format='{{.State.Running}}' %s 2>/dev/null | grep -q true; then
-    docker exec %s sh -c 'for sub in _work _temp; do p="/runner-state/$sub"; if [ -d "$p" ]; then find "$p" -mindepth 1 -maxdepth 1 -exec rm -rf {} +; fi; done' || true
-  fi
-fi
-`, q, q, q, q)
+		containerBlock = containerEscalation(
+			ContainerDockerName(instance),
+			`for sub in _work _temp; do p="/runner-state/$sub"; if [ -d "$p" ]; then find "$p" -mindepth 1 -maxdepth 1 -exec rm -rf {} +; fi; done`,
+		)
 	}
 	return fmt.Sprintf(`
 %s
@@ -372,12 +403,7 @@ for sub in _work _temp; do
 done
 if [ "$need_elev" -eq 0 ]; then exit 0; fi
 %s
-SUDO=''
-if [ "$(id -u)" -ne 0 ]; then
-  if command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
-    SUDO='sudo -n'
-  fi
-fi
+%s
 if [ -n "$SUDO" ] || [ "$(id -u)" -eq 0 ]; then
   for sub in _work _temp; do
     p="$dir/$sub"
@@ -393,7 +419,7 @@ for sub in _work _temp; do
     exit 1
   fi
 done
-`, posixRunnerDirVar(instance), containerEscalation)
+`, posixRunnerDirVar(instance), containerBlock, passwordlessSudo())
 }
 
 func removeDirTree(h *host.Host, instance string) error {
@@ -410,29 +436,18 @@ func removeDirTree(h *host.Host, instance string) error {
 }
 
 func removeDirTreePOSIX(instance string) string {
-	q := hostshell.PosixSingleQuote(ContainerDockerName(instance))
+	containerBlock := containerEscalation(
+		ContainerDockerName(instance),
+		`rm -rf /runner-state`,
+	)
 	return fmt.Sprintf(`
 %s
 if [ -d "$dir" ]; then
   rm -rf "$dir" 2>/dev/null || true
 fi
 if [ -d "$dir" ]; then
-  if command -v docker >/dev/null 2>&1; then
-    if ! docker inspect --format='{{.State.Running}}' %s 2>/dev/null | grep -q true; then
-      docker start %s >/dev/null 2>&1 || true
-    fi
-    if docker inspect --format='{{.State.Running}}' %s 2>/dev/null | grep -q true; then
-      docker exec %s rm -rf /runner-state || true
-    fi
-  fi
-fi
-if [ -d "$dir" ]; then
-  SUDO=''
-  if [ "$(id -u)" -ne 0 ]; then
-    if command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
-      SUDO='sudo -n'
-    fi
-  fi
+  %s
+  %s
   if [ -n "$SUDO" ] || [ "$(id -u)" -eq 0 ]; then
     $SUDO rm -rf "$dir" 2>/dev/null || true
   fi
@@ -441,7 +456,7 @@ if [ -d "$dir" ]; then
   echo "disk prune: cannot remove orphan directory $dir (permission denied); ensure the runner container is running or use passwordless sudo on the host" >&2
   exit 1
 fi
-`, posixRunnerDirVar(instance), q, q, q, q)
+`, posixRunnerDirVar(instance), containerBlock, passwordlessSudo())
 }
 
 func pruneInnerDockerCache(h *host.Host, containerName string) error {
