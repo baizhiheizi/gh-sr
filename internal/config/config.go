@@ -577,43 +577,38 @@ func matchesRunnerInstanceName(rc *RunnerConfig, nameArg string) bool {
 // FindRunnerForLogs resolves a runner by base or instance name. If hostFilter is non-empty, only that host's runner block matches.
 // Returns an error when nothing matches or when multiple hosts match the same name without a host filter.
 func (c *Config) FindRunnerForLogs(nameArg, hostFilter string) (*RunnerConfig, error) {
-	var matches []*RunnerConfig
-	seen := map[*RunnerConfig]bool{}
+	var match *RunnerConfig
+	var otherHost string
 	for i := range c.Runners {
 		r := &c.Runners[i]
 		if hostFilter != "" && r.Host != hostFilter {
 			continue
 		}
-		matched := false
-		if r.Name == nameArg {
-			matched = true
-		} else {
-			for _, inst := range r.InstanceNames() {
-				if inst == nameArg {
-					matched = true
-					break
-				}
-			}
+		if r.Name != nameArg && !matchesRunnerInstanceName(r, nameArg) {
+			continue
 		}
-		if matched && !seen[r] {
-			seen[r] = true
-			matches = append(matches, r)
+		if match == nil {
+			match = r
+			continue
 		}
+		// Second match: the result is already "ambiguous". Remember the
+		// other host for the error message and short-circuit so we don't
+		// keep allocating or scanning after the answer is known.
+		if otherHost == "" {
+			otherHost = r.Host
+		}
+		break
 	}
-	if len(matches) == 0 {
+	if match == nil {
 		if hostFilter != "" {
 			return nil, fmt.Errorf("runner %q not found for host %q", nameArg, hostFilter)
 		}
 		return nil, fmt.Errorf("runner %q not found in config", nameArg)
 	}
-	if len(matches) > 1 {
-		hosts := make([]string, 0, len(matches))
-		for _, r := range matches {
-			hosts = append(hosts, r.Host)
-		}
-		return nil, fmt.Errorf("runner %q matches multiple hosts %v; specify --host", nameArg, hosts)
+	if otherHost != "" {
+		return nil, fmt.Errorf("runner %q matches multiple hosts (%s, %s); specify --host", nameArg, match.Host, otherHost)
 	}
-	return matches[0], nil
+	return match, nil
 }
 
 // FilterRunners returns runners matching optional host, repo, and/or explicit runner/instance names.
