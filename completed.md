@@ -9,17 +9,28 @@ metadata:
 
 # Completed Work
 
-## 2026-06-10 — InstanceNames helper fmt.Sprintf → strconv.Itoa (this run)
+## 2026-06-11 — FindRunnerForLogs single-pointer + early-exit (this run)
 
-Branch: `efficiency/instance-names-strconv-itoa` (commit 1cc51e5).
+Branch: `efficiency/config-find-runner-for-logs` (commit 2eb47b6).
+PR title: `[efficiency-improver] perf(config): inline single-pointer scan + early-exit in FindRunnerForLogs`.
+Patch: `/tmp/gh-aw/aw-efficiency-config-find-runner-for-logs.patch` (awaiting PR URL).
+
+Files: internal/config/config.go (FindRunnerForLogs), internal/config/bench_test.go (+2 benchmarks).
+
+`BenchmarkFindRunnerForLogs_Match` 5906→790 ns/op (-86%), 6430→144 B/op (-98%), 297→5 allocs/op (-98%).
+`BenchmarkFindRunnerForLogs_Ambiguous` 3987→150 ns/op (-96%), 5254→144 B/op (-97%), 66→5 allocs/op (-92%).
+
+Three layered fixes:
+1. Drop dead-code `map[*RunnerConfig]bool` (each `r := &c.Runners[i]` is unique — `seen[r]` was always false).
+2. Replace allocating `r.InstanceNames()` with the existing allocation-free `matchesRunnerInstanceName` helper.
+3. Single `*RunnerConfig` + `string otherHost` state, break on second match (result already known).
+
+Trade-off: ambiguous-host error message format changed from `[h1 h2 h3]` to `(h1, h2)` — short-circuits after two matches. Actionable instruction identical ("specify --host"). Test only asserts error is returned, not format, so it passes.
+
+## 2026-06-10 — InstanceNames helper fmt.Sprintf → strconv.Itoa (merged as #146)
+
+Branch: `efficiency/instance-names-strconv-itoa` (commit 1cc51e5). MERGED 2026-06-11T04:06:49Z as PR #146.
 PR title: `[efficiency-improver] perf(config): inline name-N construction in InstanceNames helper`.
-Patch: `/tmp/gh-aw/aw-efficiency-instance-names-strconv-itoa.patch` (awaiting URL).
-
-Files: internal/config/config.go (only the InstanceNames helper; matches the comment style of c.Validate and matchesNameFilter).
-
-`BenchmarkInstanceNames` 1239→~430 ns/op (-65%), 481→320 B/op (-33%), 21→11 allocs/op (-48%). 5 samples: 367-497 ns/op, all 11 allocs/op. Helper is called 23+ times across runner lifecycle (runner.go), doctor (doctor.go), ops (ops.go, disk.go, service.go), container (container.go), and native (native.go) — the alloc reduction compounds across every multi-instance command.
-
-Trade-off: none material. The `+` chain is shorter and more obviously correct than the `Sprintf` format string. The `strconv` import was already present (used by the two existing inlined call sites).
 
 ## 2026-06-09 — single du walk in dirSizesPOSIX (merged as #136)
 

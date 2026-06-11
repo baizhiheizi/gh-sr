@@ -12,7 +12,7 @@ metadata:
 | Priority | Focus Area | Opportunity | Estimated Impact |
 |----------|------------|-------------|------------------|
 | LOW | Data | `BenchmarkLoad_Large` ~3.1k allocs/op — YAML loading hotspot, ~230µs/op | TBD (yaml.v3 internals) |
-| LOW | Code-Level | TUI `viewMain` allocates `[]string{9}` cells slice per row × render; `computeWidths` duplicates the same work — could fold into one pass | TBD |
+| ~~LOW~~ | Code-Level | ~~TUI `viewMain` allocates `[]string{9}` cells slice per row × render; `computeWidths` duplicates the same work — could fold into one pass~~ | **Skipped — escape analysis stack-allocates the `cells` slice (1 alloc/op); actual hotspot is lipgloss Render. Not worth chasing.** |
 | TBD | Network | Audit repeated `gh run` calls for batching | TBD |
 | TBD | Network | TUI status refresh polling vs event-driven | TBD |
 | LOW | Code | `Remove` parallelization (per-host) | Rare op, config-mutation concerns |
