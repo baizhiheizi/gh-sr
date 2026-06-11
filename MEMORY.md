@@ -1,1 +1,1 @@
-- [Perf Improver state 2026-06](notes.md) — last run 2026-06-09 14:30 UTC, maintenance mode confirmed, re-validated commands and benchmarks
+- [Perf Improver state 2026-06](notes.md) — last run 2026-06-11 14:00 UTC, maintenance mode confirmed (5th consecutive run), re-validated commands and benchmarks, PR #146 (Efficiency Improver) closed last helper-level alloc win
