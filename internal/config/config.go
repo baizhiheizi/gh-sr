@@ -183,6 +183,18 @@ func (rc *RunnerConfig) ScopeTarget() string {
 	return rc.Repo
 }
 
+// GitHubRegistrationURL returns the canonical `https://github.com/` URL the
+// runner should register against. Org takes precedence over Repo when both are
+// set — matching Scope / ScopeTarget. Both the native config.sh / config.cmd
+// path and the container GH_SR_RUNNER_URL path use this, so the two sites
+// cannot drift.
+func (rc *RunnerConfig) GitHubRegistrationURL() string {
+	if rc.Org != "" {
+		return "https://github.com/" + rc.Org
+	}
+	return "https://github.com/" + rc.Repo
+}
+
 // DefaultLabels generates standard GitHub Actions labels based on host OS and arch.
 func DefaultLabels(hostOS, arch string) []string {
 	labels := []string{"self-hosted"}

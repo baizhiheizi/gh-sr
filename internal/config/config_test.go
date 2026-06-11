@@ -997,3 +997,48 @@ func TestConfig_ContainerRunnerImageExtraAptPackages_copy(t *testing.T) {
 		t.Fatal("ContainerRunnerImageExtraAptPackages should return a copy")
 	}
 }
+
+func TestRunnerConfig_GitHubRegistrationURL(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name string
+		rc   RunnerConfig
+		want string
+	}{
+		{
+			name: "repo only",
+			rc:   RunnerConfig{Repo: "owner/repo"},
+			want: "https://github.com/owner/repo",
+		},
+		{
+			name: "org only",
+			rc:   RunnerConfig{Org: "my-org"},
+			want: "https://github.com/my-org",
+		},
+		{
+			// Precedence must match Scope / ScopeTarget: Org wins when both
+			// are set, so a user with a misconfigured dual-set RunnerConfig
+			// still registers against the org the rest of the package uses
+			// for API calls.
+			name: "both set: org takes precedence",
+			rc:   RunnerConfig{Repo: "owner/repo", Org: "my-org"},
+			want: "https://github.com/my-org",
+		},
+		{
+			// Empty / unset RunnerConfig returns the empty-prefix URL. The
+			// runner config flow is expected to short-circuit before this
+			// ever reaches the network, but the helper should not panic.
+			name: "both empty",
+			rc:   RunnerConfig{},
+			want: "https://github.com/",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := tc.rc.GitHubRegistrationURL(); got != tc.want {
+				t.Errorf("GitHubRegistrationURL(%+v): got %q, want %q", tc.rc, got, tc.want)
+			}
+		})
+	}
+}
