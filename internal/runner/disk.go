@@ -112,21 +112,25 @@ fi
 // ListRunnerInstanceDirs returns subdirectory names under ~/.gh-sr/runners on the host.
 // Names that fail SafeRunnerInstanceName are omitted.
 func ListRunnerInstanceDirs(h *host.Host) ([]string, error) {
-	var raw []string
-	switch h.OS {
-	case "windows":
-		ps := `$base = Join-Path $env:USERPROFILE '.gh-sr\runners'; if (Test-Path $base) { Get-ChildItem -Path $base -Directory -ErrorAction SilentlyContinue | ForEach-Object { $_.Name } }`
-		out, err := h.RunShell(ps)
-		if err != nil {
-			return nil, err
-		}
-		raw = splitNonEmptyLines(out)
-	default:
-		out, err := h.Run(`ls -1 "$HOME/.gh-sr/runners" 2>/dev/null || true`)
-		if err != nil {
-			return nil, err
-		}
-		raw = splitNonEmptyLines(out)
+	raw, err := runOnHostOS(h,
+		func() ([]string, error) {
+			ps := `$base = Join-Path $env:USERPROFILE '.gh-sr\runners'; if (Test-Path $base) { Get-ChildItem -Path $base -Directory -ErrorAction SilentlyContinue | ForEach-Object { $_.Name } }`
+			out, err := h.RunShell(ps)
+			if err != nil {
+				return nil, err
+			}
+			return splitNonEmptyLines(out), nil
+		},
+		func() ([]string, error) {
+			out, err := h.Run(`ls -1 "$HOME/.gh-sr/runners" 2>/dev/null || true`)
+			if err != nil {
+				return nil, err
+			}
+			return splitNonEmptyLines(out), nil
+		},
+	)
+	if err != nil {
+		return nil, err
 	}
 	var safe []string
 	for _, name := range raw {
@@ -193,8 +197,10 @@ func dirSizes(h *host.Host, instance string) (total, work, temp, dockerData int6
 	switch h.OS {
 	case "windows":
 		return dirSizesWindows(h, instance)
-	default:
+	case "linux", "darwin":
 		return dirSizesPOSIX(h, instance)
+	default:
+		return 0, 0, 0, 0, fmt.Errorf("unsupported host OS %q", h.OS)
 	}
 }
 
@@ -371,9 +377,11 @@ foreach ($sub in @('_work','_temp')) {
 `, dirExpr)
 		_, err := h.RunShell(ps)
 		return err
-	default:
+	case "linux", "darwin":
 		_, err := h.Run(clearWorkTempPOSIX(instance, containerMode))
 		return err
+	default:
+		return fmt.Errorf("unsupported host OS %q", h.OS)
 	}
 }
 
@@ -429,9 +437,11 @@ func removeDirTree(h *host.Host, instance string) error {
 		ps := fmt.Sprintf(`if (Test-Path -LiteralPath (%s)) { Remove-Item -LiteralPath (%s) -Recurse -Force }`, dirExpr, dirExpr)
 		_, err := h.RunShell(ps)
 		return err
-	default:
+	case "linux", "darwin":
 		_, err := h.Run(removeDirTreePOSIX(instance))
 		return err
+	default:
+		return fmt.Errorf("unsupported host OS %q", h.OS)
 	}
 }
 
