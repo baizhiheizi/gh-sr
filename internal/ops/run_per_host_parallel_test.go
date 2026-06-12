@@ -76,7 +76,6 @@ func cfgWithHosts(names ...string) *config.Config {
 func TestRunPerHostParallel_EmptyRunners(t *testing.T) {
 	t.Parallel()
 
-	var connects atomic.Int32
 	var fnCalls atomic.Int32
 	installMockConnectHost(t, map[string]host.Executor{})
 
@@ -87,9 +86,6 @@ func TestRunPerHostParallel_EmptyRunners(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
-	}
-	if got := connects.Load(); got != 0 {
-		t.Errorf("connectHostFn should not be called for empty runners, got %d calls", got)
 	}
 	if got := fnCalls.Load(); got != 0 {
 		t.Errorf("fn should not be called for empty runners, got %d calls", got)
@@ -167,7 +163,7 @@ func TestRunPerHostParallel_MultiHostConcurrent(t *testing.T) {
 	runners := make([]config.RunnerConfig, N)
 	hostNames := make([]string, N)
 	for i := 0; i < N; i++ {
-		hostNames[i] = "h" + string('1'+rune(i))
+		hostNames[i] = "h" + itoa(i+1)
 		runners[i] = config.RunnerConfig{Name: "r", Host: hostNames[i]}
 	}
 
@@ -201,9 +197,9 @@ func TestRunPerHostParallel_MultiHostConcurrent(t *testing.T) {
 }
 
 // TestRunPerHostParallel_ConnectError verifies that a connect failure on any
-// host propagates as the orchestrator's error, no fn is invoked, and the
-// remaining host groups still run. The first failing host in the results
-// slice wins (no aggregation — single error return).
+// host propagates as the orchestrator's error and fn is never invoked. The
+// first failing host in the results slice wins (no aggregation — single
+// error return).
 func TestRunPerHostParallel_ConnectError(t *testing.T) {
 	t.Parallel()
 
@@ -380,7 +376,7 @@ func TestRunPerHostParallel_LockedWriterSerializesOutput(t *testing.T) {
 	}
 	seen := make(map[string]bool, N)
 	for i, line := range lines {
-		if !strings.HasPrefix(line, "host=h") || !strings.Contains(line, " instance=r") || !strings.HasSuffix(line, "") {
+		if !strings.HasPrefix(line, "host=h") || !strings.Contains(line, " instance=r") {
 			t.Errorf("line %d malformed: %q", i, line)
 			continue
 		}
