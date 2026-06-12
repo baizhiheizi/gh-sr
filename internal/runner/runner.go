@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -336,11 +337,31 @@ func (m *Manager) EnrichWithGitHubStatus(statuses []RunnerStatus, cfg *config.Co
 	}
 	wg.Wait()
 
+	m.enrichFromScopeRunners(statuses, cfg, scopeRunners)
+}
+
+// enrichFromScopeRunners matches statuses against GitHub runner data already
+// fetched in scopeRunners, mutating statuses[i].Remote/Busy in place. Extracted
+// from EnrichWithGitHubStatus so the inner work can be benchmarked and unit-
+// tested without going through the GitHub API.
+//
+// The rcByInstance build inlines the deterministic `name-N` construction
+// instead of calling rc.InstanceNames(): the helper would allocate a
+// []string slice header per RunnerConfig in addition to the N name strings,
+// and the slice is consumed only as map keys. The Go compiler folds the short
+// `+` chain into a single allocation per result, so the inline form costs
+// the unavoidable per-name string allocation only.
+func (m *Manager) enrichFromScopeRunners(statuses []RunnerStatus, cfg *config.Config, scopeRunners map[scopeKey][]GitHubRunner) {
 	rcByInstance := make(map[string]*config.RunnerConfig)
 	for i := range cfg.Runners {
 		rc := &cfg.Runners[i]
-		for _, inst := range rc.InstanceNames() {
-			rcByInstance[inst] = rc
+		count := rc.Count
+		if count < 1 {
+			count = 1
+		}
+		name := rc.Name
+		for j := 1; j <= count; j++ {
+			rcByInstance[name+"-"+strconv.Itoa(j)] = rc
 		}
 	}
 
