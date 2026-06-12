@@ -62,6 +62,15 @@ func TestPowerShellSingleQuote(t *testing.T) {
 	}
 }
 
+func TestPlistEscape(t *testing.T) {
+	t.Parallel()
+	got := PlistEscape(`a&b"c<d>e`)
+	want := `a&amp;b&quot;c&lt;d&gt;e`
+	if got != want {
+		t.Fatalf("PlistEscape = %q, want %q", got, want)
+	}
+}
+
 func TestLinuxElevatePrelude(t *testing.T) {
 	t.Parallel()
 	// Both callers produce shells that:

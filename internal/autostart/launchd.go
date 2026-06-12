@@ -47,8 +47,9 @@ exit 1
 `, qlabel, qplist, bootout)
 }
 
-// launchdBootoutScript unloads a LaunchAgent from both gui and user domains.
-func launchdBootoutScript(qlabel, plistFileName string) string {
+// LaunchdBootoutScript unloads a LaunchAgent from both gui and user domains.
+// qlabel must already be posixSingleQuote'd.
+func LaunchdBootoutScript(qlabel, plistFileName string) string {
 	return fmt.Sprintf(`set -e
 UID=$(id -u)
 LABEL=%s

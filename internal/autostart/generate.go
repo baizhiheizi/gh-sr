@@ -2,7 +2,8 @@ package autostart
 
 import (
 	"fmt"
-	"strings"
+
+	"github.com/an-lee/gh-sr/internal/hostshell"
 )
 
 // SystemdUserUnit returns a systemd user unit for the GitHub Actions runner listener.
@@ -52,14 +53,6 @@ func LaunchdLabel(instanceSanitized string) string {
 	return "com.github.ghsr.runner." + instanceSanitized
 }
 
-func xmlEscapePlist(s string) string {
-	s = strings.ReplaceAll(s, `&`, `&amp;`)
-	s = strings.ReplaceAll(s, `"`, `&quot;`)
-	s = strings.ReplaceAll(s, `<`, `&lt;`)
-	s = strings.ReplaceAll(s, `>`, `&gt;`)
-	return s
-}
-
 // LaunchdPlist returns a LaunchAgent plist that runs run.sh in the runner directory.
 func LaunchdPlist(instanceSanitized, absRunnerDir string) string {
 	label := LaunchdLabel(instanceSanitized)
@@ -82,7 +75,7 @@ func LaunchdPlist(instanceSanitized, absRunnerDir string) string {
 	<true/>
 </dict>
 </plist>
-`, xmlEscapePlist(label), xmlEscapePlist(script), xmlEscapePlist(absRunnerDir))
+`, hostshell.PlistEscape(label), hostshell.PlistEscape(script), hostshell.PlistEscape(absRunnerDir))
 }
 
 // WindowsTaskName returns the scheduled task name for an instance.

@@ -9,49 +9,14 @@ import (
 
 	"github.com/an-lee/gh-sr/internal/config"
 	"github.com/an-lee/gh-sr/internal/host"
+	"github.com/an-lee/gh-sr/internal/testutil"
 )
 
-type diskMockExecutor struct {
-	output string
-	err    error
-	calls  []string
-}
-
-func (m *diskMockExecutor) Run(cmd string) (string, error) {
-	m.calls = append(m.calls, cmd)
-	if m.err != nil {
-		return "", m.err
-	}
-	return m.output, nil
-}
-
-func (m *diskMockExecutor) Upload(_, _ string) error { return nil }
-func (m *diskMockExecutor) Close() error             { return nil }
-
-func diskMockHost(os string, mock host.Executor) *host.Host {
+func diskMockHost(os string, mock *testutil.MockExecutor) *host.Host {
 	h := host.NewHost("test", config.HostConfig{OS: os, Addr: "local"})
 	h.SetConn(mock)
 	return h
 }
-
-type sequentialMock struct {
-	responses []string
-	idx       int
-	calls     []string
-}
-
-func (m *sequentialMock) Run(cmd string) (string, error) {
-	m.calls = append(m.calls, cmd)
-	if m.idx >= len(m.responses) {
-		return "", nil
-	}
-	out := m.responses[m.idx]
-	m.idx++
-	return out, nil
-}
-
-func (m *sequentialMock) Upload(_, _ string) error { return nil }
-func (m *sequentialMock) Close() error             { return nil }
 
 func TestParseFourInt64s(t *testing.T) {
 	t.Parallel()
@@ -66,8 +31,8 @@ func TestParseFourInt64s(t *testing.T) {
 
 func TestMeasureDiskUsage_linux(t *testing.T) {
 	t.Parallel()
-	h := diskMockHost("linux", &sequentialMock{
-		responses: []string{"1000000 500000 100000 300000\n"},
+	h := diskMockHost("linux", &testutil.MockExecutor{
+		Responses: []string{"1000000 500000 100000 300000\n"},
 	})
 	rc := config.RunnerConfig{Name: "ci", Count: 1}
 	entry := MeasureDiskUsage(h, "host1", "ci-1", &rc)
@@ -85,10 +50,38 @@ func TestMeasureDiskUsage_linux(t *testing.T) {
 	}
 }
 
+func TestMeasureDiskUsage_agenticMode(t *testing.T) {
+	t.Parallel()
+	h := diskMockHost("linux", &testutil.MockExecutor{
+		Responses: []string{"100 0 0 0\n"},
+	})
+	rc := config.RunnerConfig{Name: "ag", Count: 1, Profile: "agentic"}
+	entry := MeasureDiskUsage(h, "host1", "ag-1", &rc)
+	if entry.Err != nil {
+		t.Fatal(entry.Err)
+	}
+	if entry.Mode != "container" {
+		t.Fatalf("mode=%q, want container", entry.Mode)
+	}
+}
+
+func TestPOSIXScripts_includeSetE(t *testing.T) {
+	t.Parallel()
+	for name, script := range map[string]string{
+		"dirSizes":      buildDirSizesPOSIXScript("ci-1"),
+		"clearWorkTemp": clearWorkTempPOSIX("ci-1", false),
+		"removeDir":     removeDirTreePOSIX("ci-1"),
+	} {
+		if !strings.Contains(script, "set -e") {
+			t.Fatalf("%s script missing set -e", name)
+		}
+	}
+}
+
 func TestPruneInstance_skipsBusy(t *testing.T) {
 	t.Parallel()
 	m := NewManager("")
-	h := diskMockHost("linux", &diskMockExecutor{})
+	h := diskMockHost("linux", &testutil.MockExecutor{})
 	rc := config.RunnerConfig{Name: "ci", Count: 1}
 	res := m.PruneInstance(h, "host1", "ci-1", &rc, true, PruneOptions{})
 	if !res.Skipped || res.Reason != "busy" {
@@ -99,7 +92,7 @@ func TestPruneInstance_skipsBusy(t *testing.T) {
 func TestPruneInstance_clearWorkTemp_dryRun(t *testing.T) {
 	t.Parallel()
 	m := NewManager("")
-	mock := &sequentialMock{}
+	mock := &testutil.MockExecutor{}
 	h := diskMockHost("linux", mock)
 	rc := config.RunnerConfig{Name: "ci", Count: 1}
 	res := m.PruneInstance(h, "host1", "ci-1", &rc, false, PruneOptions{DryRun: true})
@@ -109,15 +102,15 @@ func TestPruneInstance_clearWorkTemp_dryRun(t *testing.T) {
 	if len(res.Actions) == 0 {
 		t.Fatal("expected actions")
 	}
-	if len(mock.calls) > 0 {
-		t.Fatalf("dry-run should not run remote commands, got %d calls", len(mock.calls))
+	if len(mock.Calls) > 0 {
+		t.Fatalf("dry-run should not run remote commands, got %d calls", len(mock.Calls))
 	}
 }
 
 func TestPruneInstance_defaultKeepsDockerCache(t *testing.T) {
 	t.Parallel()
 	m := NewManager("")
-	mock := &sequentialMock{}
+	mock := &testutil.MockExecutor{}
 	h := diskMockHost("linux", mock)
 	rc := config.RunnerConfig{Name: "ci", Count: 1, Profile: "agentic"}
 	res := m.PruneInstance(h, "host1", "ci-1", &rc, false, PruneOptions{DryRun: true})
@@ -131,7 +124,7 @@ func TestPruneInstance_defaultKeepsDockerCache(t *testing.T) {
 func TestPruneInstance_pruneCacheIncludesDockerPrune(t *testing.T) {
 	t.Parallel()
 	m := NewManager("")
-	mock := &sequentialMock{}
+	mock := &testutil.MockExecutor{}
 	h := diskMockHost("linux", mock)
 	rc := config.RunnerConfig{Name: "ci", Count: 1, Profile: "agentic"}
 	res := m.PruneInstance(h, "host1", "ci-1", &rc, false, PruneOptions{DryRun: true, PruneCache: true})
@@ -235,11 +228,11 @@ func TestRemoveDirTreePOSIX_usesSharedEscalationHelpers(t *testing.T) {
 func TestPruneInstance_neverTouchesRunnerRegistration(t *testing.T) {
 	t.Parallel()
 	m := NewManager("")
-	mock := &sequentialMock{responses: []string{""}}
+	mock := &testutil.MockExecutor{Responses: []string{""}}
 	h := diskMockHost("linux", mock)
 	rc := config.RunnerConfig{Name: "ci", Count: 1}
 	_ = m.PruneInstance(h, "host1", "ci-1", &rc, false, PruneOptions{})
-	for _, cmd := range mock.calls {
+	for _, cmd := range mock.Calls {
 		if strings.Contains(cmd, ".runner") {
 			t.Fatalf("prune must not touch .runner: %q", cmd)
 		}
@@ -275,7 +268,7 @@ func TestSafeRunnerInstanceName(t *testing.T) {
 
 func TestMeasureDiskUsage_rejectsUnsafeInstance(t *testing.T) {
 	t.Parallel()
-	h := diskMockHost("linux", &sequentialMock{})
+	h := diskMockHost("linux", &testutil.MockExecutor{})
 	entry := MeasureDiskUsage(h, "host1", `bad"name`, nil)
 	if entry.Err == nil {
 		t.Fatal("expected error")
@@ -383,8 +376,8 @@ func TestDirSizesPOSIXScript_singleDuInvocation(t *testing.T) {
 // trips → 1), which is not exercised here. This benchmark exists primarily
 // to catch accidental per-call allocation regressions in the Go wrapper.
 func BenchmarkMeasureDiskUsage_linux(b *testing.B) {
-	h := diskMockHost("linux", &sequentialMock{
-		responses: []string{"1000000 500000 100000 300000\n"},
+	h := diskMockHost("linux", &testutil.MockExecutor{
+		Responses: []string{"1000000 500000 100000 300000\n"},
 	})
 	rc := config.RunnerConfig{Name: "ci", Count: 1}
 	b.ResetTimer()

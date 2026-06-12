@@ -71,6 +71,10 @@ func posixRunnerDirVar(instance string) string {
 	return fmt.Sprintf(`dir="$HOME/.gh-sr/runners/%s"`, inst)
 }
 
+func posixScriptHeader(instance string) string {
+	return "set -e\n" + posixRunnerDirVar(instance) + "\n"
+}
+
 // containerEscalation returns the "docker inspect → start if down → exec if up"
 // shell snippet. shellCmd is run via `sh -c` inside the container, so callers
 // can pass compound commands like `for sub in ...; do ...; done` without
@@ -166,11 +170,7 @@ func MeasureDiskUsage(h *host.Host, hostName, instance string, rc *config.Runner
 	}
 
 	if rc != nil {
-		if rc.IsContainerMode() {
-			entry.Mode = "container"
-		} else {
-			entry.Mode = "native"
-		}
+		entry.Mode = rc.EffectiveRunnerMode()
 	} else {
 		entry.Orphan = true
 		entry.Mode = "unknown"
@@ -219,9 +219,7 @@ func buildDirSizesPOSIXScript(instance string) string {
 	// `du` flag differs by platform: GNU coreutils uses --max-depth=N, BSD/macOS
 	// uses -d N. Probe with --max-depth=0 and fall back to -d 0.
 	return fmt.Sprintf(`
-set -e
-%s
-if [ ! -d "$dir" ]; then echo "0 0 0 0"; exit 0; fi
+%sif [ ! -d "$dir" ]; then echo "0 0 0 0"; exit 0; fi
 if du --max-depth=0 "$dir" >/dev/null 2>&1; then
   out=$(du --max-depth=1 -k "$dir" 2>/dev/null)
 else
@@ -242,7 +240,7 @@ while read -r size path; do
   esac
 done <<< "$out"
 echo "$total $work $temp $docker"
-`, posixRunnerDirVar(instance))
+`, posixScriptHeader(instance))
 }
 
 func dirSizesPOSIX(h *host.Host, instance string) (total, work, temp, dockerData int64, err error) {
@@ -342,14 +340,13 @@ func (m *Manager) PruneInstance(h *host.Host, hostName, instance string, rc *con
 	workAction := fmt.Sprintf("clear %s/_work and %s/_temp", dir, dir)
 	res.Actions = append(res.Actions, workAction)
 	if !opts.DryRun {
-		containerMode := rc != nil && rc.IsContainerMode()
-		if err := clearWorkTemp(h, instance, containerMode); err != nil {
+		if err := clearWorkTemp(h, instance, containerPruneMode(rc)); err != nil {
 			res.Err = err
 			return res
 		}
 	}
 
-	if rc != nil && rc.IsContainerMode() && opts.PruneCache {
+	if containerPruneMode(rc) && opts.PruneCache {
 		cname := ContainerDockerName(instance)
 		cacheAction := fmt.Sprintf("inner docker cache prune in %s", cname)
 		res.Actions = append(res.Actions, cacheAction)
@@ -361,6 +358,11 @@ func (m *Manager) PruneInstance(h *host.Host, hostName, instance string, rc *con
 	}
 
 	return res
+}
+
+// containerPruneMode reports whether disk prune should use container escalation paths.
+func containerPruneMode(rc *config.RunnerConfig) bool {
+	return rc != nil && rc.IsContainerMode()
 }
 
 func clearWorkTemp(h *host.Host, instance string, containerMode bool) error {
@@ -427,7 +429,7 @@ for sub in _work _temp; do
     exit 1
   fi
 done
-`, posixRunnerDirVar(instance), containerBlock, passwordlessSudo())
+`, posixScriptHeader(instance), containerBlock, passwordlessSudo())
 }
 
 func removeDirTree(h *host.Host, instance string) error {
@@ -466,7 +468,7 @@ if [ -d "$dir" ]; then
   echo "disk prune: cannot remove orphan directory $dir (permission denied); ensure the runner container is running or use passwordless sudo on the host" >&2
   exit 1
 fi
-`, posixRunnerDirVar(instance), containerBlock, passwordlessSudo())
+`, posixScriptHeader(instance), containerBlock, passwordlessSudo())
 }
 
 func pruneInnerDockerCache(h *host.Host, containerName string) error {
