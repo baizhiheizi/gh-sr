@@ -22,17 +22,7 @@ func PrintHostMetricsTable(metrics []host.HostMetrics) {
 		rows[i] = metricsRow(m)
 	}
 
-	widths := make([]int, len(headers))
-	for i, h := range headers {
-		widths[i] = len(h)
-	}
-	for _, row := range rows {
-		for j, cell := range row {
-			if len(cell) > widths[j] {
-				widths[j] = len(cell)
-			}
-		}
-	}
+	widths := computeColumnWidths(headers, rows)
 
 	var headerLine string
 	for i, h := range headers {
@@ -70,17 +60,7 @@ func FormatHostMetrics(metrics []host.HostMetrics) string {
 		rows[i] = metricsRow(m)
 	}
 
-	widths := make([]int, len(headers))
-	for i, h := range headers {
-		widths[i] = len(h)
-	}
-	for _, row := range rows {
-		for j, cell := range row {
-			if len(cell) > widths[j] {
-				widths[j] = len(cell)
-			}
-		}
-	}
+	widths := computeColumnWidths(headers, rows)
 
 	var b strings.Builder
 	for i, h := range headers {

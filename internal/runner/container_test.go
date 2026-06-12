@@ -10,6 +10,7 @@ import (
 	"github.com/an-lee/gh-sr/internal/config"
 	"github.com/an-lee/gh-sr/internal/host"
 	"github.com/an-lee/gh-sr/internal/hostshell"
+	"github.com/an-lee/gh-sr/internal/testutil"
 )
 
 func TestContainerName(t *testing.T) {
@@ -658,7 +659,7 @@ func TestContainerRunnerImageExtraSorted(t *testing.T) {
 			empty: false,
 		},
 		{
-			name:  "unsorted input, sorted output",
+			name:  "unsorted input, sorted Output",
 			in:    []string{"sqlite3", "ffmpeg", "curl"},
 			want:  []string{"curl", "ffmpeg", "sqlite3"},
 			empty: false,
@@ -689,7 +690,7 @@ func TestContainerRunnerImageExtraSorted(t *testing.T) {
 	}
 }
 
-// TestParseContainerStatusInspectOutput verifies mapping from container+image inspect output.
+// TestParseContainerStatusInspectOutput verifies mapping from container+image inspect Output.
 func TestParseContainerStatusInspectOutput(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
@@ -777,7 +778,7 @@ func TestResolveAbsoluteRunnerDir(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			h := host.NewHost("test", config.HostConfig{OS: tc.os, Arch: "amd64", Addr: "local"})
-			mock := &containerMockExecutor{runFn: tc.mockFn}
+			mock := &testutil.MockExecutor{RunFn: tc.mockFn}
 			h.SetConn(mock)
 
 			got, err := resolveAbsoluteRunnerDir(h, "ci-1")
@@ -803,28 +804,28 @@ func TestContainerRunnerPresent(t *testing.T) {
 	cases := []struct {
 		name string
 		os   string
-		mock *containerMockExecutor
+		mock *testutil.MockExecutor
 		inst string
 		want bool
 	}{
 		{
 			name: "present",
 			os:   "linux",
-			mock: &containerMockExecutor{output: "yes"},
+			mock: &testutil.MockExecutor{Output: "yes"},
 			inst: "ci-1",
 			want: true,
 		},
 		{
 			name: "absent",
 			os:   "linux",
-			mock: &containerMockExecutor{output: "no"},
+			mock: &testutil.MockExecutor{Output: "no"},
 			inst: "ci-1",
 			want: false,
 		},
 		{
 			name: "command fails",
 			os:   "linux",
-			mock: &containerMockExecutor{runErr: assertCalledError()},
+			mock: &testutil.MockExecutor{RunErr: assertCalledError()},
 			inst: "ci-1",
 			want: false,
 		},
@@ -847,28 +848,28 @@ func TestContainerImageExists(t *testing.T) {
 	cases := []struct {
 		name     string
 		os       string
-		mock     *containerMockExecutor
+		mock     *testutil.MockExecutor
 		imageTag string
 		want     bool
 	}{
 		{
 			name:     "exists",
 			os:       "linux",
-			mock:     &containerMockExecutor{output: "yes"},
+			mock:     &testutil.MockExecutor{Output: "yes"},
 			imageTag: "gh-sr/agentic-runner:2.320.0",
 			want:     true,
 		},
 		{
 			name:     "not found",
 			os:       "linux",
-			mock:     &containerMockExecutor{output: "no"},
+			mock:     &testutil.MockExecutor{Output: "no"},
 			imageTag: "gh-sr/agentic-runner:2.320.0",
 			want:     false,
 		},
 		{
 			name:     "command fails",
 			os:       "linux",
-			mock:     &containerMockExecutor{runErr: assertCalledError()},
+			mock:     &testutil.MockExecutor{RunErr: assertCalledError()},
 			imageTag: "gh-sr/agentic-runner:2.320.0",
 			want:     false,
 		},
@@ -933,8 +934,8 @@ func TestDetectHostEgressMTU(t *testing.T) {
 	cases := []struct {
 		name   string
 		os     string
-		output string
-		runErr error
+		Output string
+		RunErr error
 		want   int
 	}{
 		{"reduced mtu", "linux", "1460\n", nil, 1460},
@@ -951,7 +952,7 @@ func TestDetectHostEgressMTU(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			h := host.NewHost("test", config.HostConfig{OS: tc.os, Arch: "amd64", Addr: "local"})
-			h.SetConn(&containerMockExecutor{output: tc.output, runErr: tc.runErr})
+			h.SetConn(&testutil.MockExecutor{Output: tc.Output, RunErr: tc.RunErr})
 			if got := DetectHostEgressMTU(h); got != tc.want {
 				t.Errorf("DetectHostEgressMTU = %d, want %d", got, tc.want)
 			}
@@ -966,7 +967,7 @@ func TestResolveContainerMTU(t *testing.T) {
 		t.Parallel()
 		h := host.NewHost("test", config.HostConfig{OS: "linux", Arch: "amd64", Addr: "local"})
 		// Detection would return 1460, but the explicit override must take precedence.
-		h.SetConn(&containerMockExecutor{output: "1460"})
+		h.SetConn(&testutil.MockExecutor{Output: "1460"})
 		m := &Manager{ContainerMTU: 1400}
 		if got := m.resolveContainerMTU(h); got != 1400 {
 			t.Errorf("resolveContainerMTU = %d, want 1400 (override)", got)
@@ -976,35 +977,12 @@ func TestResolveContainerMTU(t *testing.T) {
 	t.Run("auto-detect when no override", func(t *testing.T) {
 		t.Parallel()
 		h := host.NewHost("test", config.HostConfig{OS: "linux", Arch: "amd64", Addr: "local"})
-		h.SetConn(&containerMockExecutor{output: "1460"})
+		h.SetConn(&testutil.MockExecutor{Output: "1460"})
 		m := &Manager{}
 		if got := m.resolveContainerMTU(h); got != 1460 {
 			t.Errorf("resolveContainerMTU = %d, want 1460 (detected)", got)
 		}
 	})
-}
-
-// containerMockExecutor for container tests.
-type containerMockExecutor struct {
-	output string
-	runErr error
-
-	runFn func(cmd string) (string, error)
-}
-
-func (m *containerMockExecutor) Run(cmd string) (string, error) {
-	if m.runFn != nil {
-		return m.runFn(cmd)
-	}
-	return m.output, m.runErr
-}
-
-func (m *containerMockExecutor) Upload(localPath, remotePath string) error {
-	return nil
-}
-
-func (m *containerMockExecutor) Close() error {
-	return nil
 }
 
 var errCalled = calledErrorErr{}

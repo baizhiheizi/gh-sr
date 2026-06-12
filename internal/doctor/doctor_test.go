@@ -14,6 +14,7 @@ import (
 	"github.com/an-lee/gh-sr/internal/config"
 	"github.com/an-lee/gh-sr/internal/host"
 	"github.com/an-lee/gh-sr/internal/runner"
+	"github.com/an-lee/gh-sr/internal/testutil"
 )
 
 func TestExitCode(t *testing.T) {
@@ -349,32 +350,19 @@ func TestRun_GitHubListRunnersUsesAPI(t *testing.T) {
 	_ = res
 }
 
-type diskDoctorMock struct {
-	listOut string
-	duOut   string
-}
-
-func (m *diskDoctorMock) Run(cmd string) (string, error) {
-	if strings.Contains(cmd, `ls -1 "$HOME/.gh-sr/runners"`) {
-		return m.listOut, nil
-	}
-	// The dirSizesPOSIX script now uses `du --max-depth=1` (or `du -d 1`
-	// on BSD) — match the new shape; the old `du -sk` form is gone.
-	if strings.Contains(cmd, "du --max-depth=1") || strings.Contains(cmd, "du -d 1") {
-		return m.duOut, nil
-	}
-	return "0 0 0 0\n", nil
-}
-
-func (m *diskDoctorMock) Upload(string, string) error { return nil }
-func (m *diskDoctorMock) Close() error                { return nil }
-
 func TestCheckRunnerDiskUsage_warnsOrphanOverThreshold(t *testing.T) {
 	t.Parallel()
 	h := host.NewHost("linux", config.HostConfig{OS: "linux", Addr: "local"})
-	h.SetConn(&diskDoctorMock{
-		listOut: "orphan-1\n",
-		duOut:   fmt.Sprintf("%d 0 0 0\n", runner.DiskWarnThresholdBytes()+1),
+	h.SetConn(&testutil.MockExecutor{
+		RunFn: func(cmd string) (string, error) {
+			if strings.Contains(cmd, `ls -1 "$HOME/.gh-sr/runners"`) {
+				return "orphan-1\n", nil
+			}
+			if strings.Contains(cmd, "du --max-depth=1") || strings.Contains(cmd, "du -d 1") {
+				return fmt.Sprintf("%d 0 0 0\n", runner.DiskWarnThresholdBytes()+1), nil
+			}
+			return "0 0 0 0\n", nil
+		},
 	})
 	var buf strings.Builder
 	var r Result

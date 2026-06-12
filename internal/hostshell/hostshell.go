@@ -23,6 +23,15 @@ func PowerShellSingleQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", "''") + "'"
 }
 
+// PlistEscape escapes s for embedding in XML/plist string values.
+func PlistEscape(s string) string {
+	s = strings.ReplaceAll(s, `&`, `&amp;`)
+	s = strings.ReplaceAll(s, `"`, `&quot;`)
+	s = strings.ReplaceAll(s, `<`, `&lt;`)
+	s = strings.ReplaceAll(s, `>`, `&gt;`)
+	return s
+}
+
 // WriteRemoteBytes writes data to a remote path using base64 (POSIX) or PowerShell (Windows).
 // Parent directories are created on the host.
 func WriteRemoteBytes(h *host.Host, remotePath string, data []byte) error {

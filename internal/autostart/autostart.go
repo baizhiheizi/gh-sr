@@ -292,7 +292,7 @@ $SUDO systemctl daemon-reload
 
 	case KindLaunchd:
 		label := LaunchdLabel(san)
-		cmd := launchdBootoutScript(hostshell.PosixSingleQuote(label), label+".plist")
+		cmd := LaunchdBootoutScript(hostshell.PosixSingleQuote(label), label+".plist")
 		_, err := h.Run(cmd)
 		return err
 

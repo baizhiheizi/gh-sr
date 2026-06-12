@@ -7,14 +7,13 @@ import (
 	"github.com/an-lee/gh-sr/internal/config"
 	"github.com/an-lee/gh-sr/internal/host"
 	"github.com/an-lee/gh-sr/internal/hostshell"
+	"github.com/an-lee/gh-sr/internal/testutil"
 )
 
-// newEmbedutilTestHost returns a host wired to a recording mock executor. The mock
-// records every command issued via Run so tests can assert on the exact shell shape.
-func newEmbedutilTestHost(t *testing.T) (*host.Host, *containerMockExecutor) {
+func newEmbedutilTestHost(t *testing.T) (*host.Host, *testutil.MockExecutor) {
 	t.Helper()
 	h := host.NewHost("test", config.HostConfig{OS: "linux", Arch: "amd64", Addr: "local"})
-	mock := &containerMockExecutor{runFn: func(cmd string) (string, error) {
+	mock := &testutil.MockExecutor{RunFn: func(cmd string) (string, error) {
 		return "", nil
 	}}
 	h.SetConn(mock)
@@ -152,7 +151,7 @@ func TestWriteRemoteHeredocFile_PathQuoting(t *testing.T) {
 func TestWriteRemoteHeredocFile_RunErrorWrapsPath(t *testing.T) {
 	t.Parallel()
 	h := host.NewHost("test", config.HostConfig{OS: "linux", Arch: "amd64", Addr: "local"})
-	h.SetConn(&containerMockExecutor{runFn: func(cmd string) (string, error) {
+	h.SetConn(&testutil.MockExecutor{RunFn: func(cmd string) (string, error) {
 		return "", assertCalledError()
 	}})
 
@@ -196,7 +195,7 @@ func TestWriteRemoteHeredocExecutable_TwoCalls(t *testing.T) {
 func TestWriteRemoteHeredocExecutable_WriteFailureSkipsChmod(t *testing.T) {
 	t.Parallel()
 	h := host.NewHost("test", config.HostConfig{OS: "linux", Arch: "amd64", Addr: "local"})
-	h.SetConn(&containerMockExecutor{runFn: func(cmd string) (string, error) {
+	h.SetConn(&testutil.MockExecutor{RunFn: func(cmd string) (string, error) {
 		// First call (the write) fails; chmod must NOT be attempted.
 		return "", assertCalledError()
 	}})
@@ -213,7 +212,7 @@ func TestWriteRemoteHeredocExecutable_WriteFailureSkipsChmod(t *testing.T) {
 func TestWriteRemoteHeredocExecutable_ChmodFailureWrapsPath(t *testing.T) {
 	t.Parallel()
 	h := host.NewHost("test", config.HostConfig{OS: "linux", Arch: "amd64", Addr: "local"})
-	h.SetConn(&containerMockExecutor{runFn: func(cmd string) (string, error) {
+	h.SetConn(&testutil.MockExecutor{RunFn: func(cmd string) (string, error) {
 		// Write succeeds, chmod fails.
 		if strings.Contains(cmd, "chmod") {
 			return "", assertCalledError()

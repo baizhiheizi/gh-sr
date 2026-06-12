@@ -39,7 +39,7 @@ func TestLaunchdActivateScriptBootoutFirst(t *testing.T) {
 
 func TestLaunchdBootoutScript(t *testing.T) {
 	label := "'com.github.ghsr.runner.test'"
-	script := launchdBootoutScript(label, "com.github.ghsr.runner.test.plist")
+	script := LaunchdBootoutScript(label, "com.github.ghsr.runner.test.plist")
 
 	for _, want := range []string{
 		`"gui/$UID"`,

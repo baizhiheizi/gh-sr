@@ -6,36 +6,15 @@ import (
 
 	"github.com/an-lee/gh-sr/internal/config"
 	"github.com/an-lee/gh-sr/internal/host"
+	"github.com/an-lee/gh-sr/internal/testutil"
 )
 
-// mockExecutor implements the Executor interface for testing.
-type mockExecutor struct {
-	output string
-	runErr error
-
-	runFn func(cmd string) (string, error)
-}
-
-func (m *mockExecutor) Run(cmd string) (string, error) {
-	if m.runFn != nil {
-		return m.runFn(cmd)
-	}
-	return m.output, m.runErr
-}
-
-func (m *mockExecutor) Upload(localPath, remotePath string) error {
-	return nil
-}
-
-func (m *mockExecutor) Close() error {
-	return nil
-}
-
-func newMockHost(name string, cfg config.HostConfig, mock *mockExecutor) *host.Host {
+func newMockHost(name string, cfg config.HostConfig, mock *testutil.MockExecutor) *host.Host {
 	h := host.NewHost(name, cfg)
 	h.SetConn(mock)
 	return h
 }
+
 
 func TestServiceBasename(t *testing.T) {
 	t.Parallel()
@@ -79,7 +58,7 @@ func TestIsServiceActive(t *testing.T) {
 	cases := []struct {
 		name string
 		os   string
-		mock *mockExecutor
+		mock *testutil.MockExecutor
 		inst string
 		kind Kind
 		want bool
@@ -88,7 +67,7 @@ func TestIsServiceActive(t *testing.T) {
 		{
 			name: "systemd-user active",
 			os:   "linux",
-			mock: &mockExecutor{output: "active"},
+			mock: &testutil.MockExecutor{Output: "active"},
 			inst: "ci-1",
 			kind: KindSystemdUser,
 			want: true,
@@ -96,7 +75,7 @@ func TestIsServiceActive(t *testing.T) {
 		{
 			name: "systemd-user inactive",
 			os:   "linux",
-			mock: &mockExecutor{output: "inactive"},
+			mock: &testutil.MockExecutor{Output: "inactive"},
 			inst: "ci-1",
 			kind: KindSystemdUser,
 			want: false,
@@ -104,8 +83,8 @@ func TestIsServiceActive(t *testing.T) {
 		{
 			name: "launchd running",
 			os:   "darwin",
-			mock: &mockExecutor{
-				runFn: func(cmd string) (string, error) {
+			mock: &testutil.MockExecutor{
+				RunFn: func(cmd string) (string, error) {
 					if strings.Contains(cmd, "launchctl print") {
 						return "state = running\n", nil
 					}
@@ -119,8 +98,8 @@ func TestIsServiceActive(t *testing.T) {
 		{
 			name: "launchd not running",
 			os:   "darwin",
-			mock: &mockExecutor{
-				runFn: func(cmd string) (string, error) {
+			mock: &testutil.MockExecutor{
+				RunFn: func(cmd string) (string, error) {
 					if strings.Contains(cmd, "launchctl print") {
 						return "state = stopped\n", nil
 					}
@@ -134,7 +113,7 @@ func TestIsServiceActive(t *testing.T) {
 		{
 			name: "windows task running",
 			os:   "windows",
-			mock: &mockExecutor{output: "Running"},
+			mock: &testutil.MockExecutor{Output: "Running"},
 			inst: "ci-1",
 			kind: KindWindowsTask,
 			want: true,
@@ -142,7 +121,7 @@ func TestIsServiceActive(t *testing.T) {
 		{
 			name: "windows task stopped",
 			os:   "windows",
-			mock: &mockExecutor{output: "Stopped"},
+			mock: &testutil.MockExecutor{Output: "Stopped"},
 			inst: "ci-1",
 			kind: KindWindowsTask,
 			want: false,
@@ -150,7 +129,7 @@ func TestIsServiceActive(t *testing.T) {
 		{
 			name: "unknown kind",
 			os:   "linux",
-			mock: &mockExecutor{},
+			mock: &testutil.MockExecutor{},
 			inst: "ci-1",
 			kind: KindNone,
 			want: false,
@@ -182,7 +161,7 @@ func TestIsServiceActive_errors(t *testing.T) {
 	t.Parallel()
 	t.Run("systemd-user command fails", func(t *testing.T) {
 		t.Parallel()
-		h := newMockHost("test", config.HostConfig{OS: "linux"}, &mockExecutor{runErr: errCalled})
+		h := newMockHost("test", config.HostConfig{OS: "linux"}, &testutil.MockExecutor{RunErr: errCalled})
 		_, err := IsServiceActive(h, "ci-1", KindSystemdUser)
 		if err == nil {
 			t.Error("expected error")
@@ -190,7 +169,7 @@ func TestIsServiceActive_errors(t *testing.T) {
 	})
 	t.Run("launchd command fails", func(t *testing.T) {
 		t.Parallel()
-		h := newMockHost("test", config.HostConfig{OS: "darwin"}, &mockExecutor{runErr: errCalled})
+		h := newMockHost("test", config.HostConfig{OS: "darwin"}, &testutil.MockExecutor{RunErr: errCalled})
 		_, err := IsServiceActive(h, "ci-1", KindLaunchd)
 		if err == nil {
 			t.Error("expected error")
@@ -198,7 +177,7 @@ func TestIsServiceActive_errors(t *testing.T) {
 	})
 	t.Run("windows task command fails", func(t *testing.T) {
 		t.Parallel()
-		h := newMockHost("test", config.HostConfig{OS: "windows"}, &mockExecutor{runErr: errCalled})
+		h := newMockHost("test", config.HostConfig{OS: "windows"}, &testutil.MockExecutor{RunErr: errCalled})
 		_, err := IsServiceActive(h, "ci-1", KindWindowsTask)
 		if err == nil {
 			t.Error("expected error")

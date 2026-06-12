@@ -7,6 +7,9 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+
+	"github.com/an-lee/gh-sr/internal/autostart"
+	"github.com/an-lee/gh-sr/internal/hostshell"
 )
 
 const (
@@ -263,9 +266,9 @@ func installLaunchd(opts InstallOpts, hour, minute int) error {
   <key>StandardErrorPath</key><string>%s</string>
 </dict>
 </plist>
-`, xmlEscapePlist(labelBase), xmlEscapePlist(opts.GhPath), xmlEscapePlist(opts.ConfigPath), hour, minute,
-		xmlEscapePlist(filepath.Join(home, ".gh-sr", "disk-prune.log")),
-		xmlEscapePlist(filepath.Join(home, ".gh-sr", "disk-prune.err.log")))
+`, hostshell.PlistEscape(labelBase), hostshell.PlistEscape(opts.GhPath), hostshell.PlistEscape(opts.ConfigPath), hour, minute,
+		hostshell.PlistEscape(filepath.Join(home, ".gh-sr", "disk-prune.log")),
+		hostshell.PlistEscape(filepath.Join(home, ".gh-sr", "disk-prune.err.log")))
 
 	plistPath := filepath.Join(dir, labelBase+".plist")
 	if err := os.WriteFile(plistPath, []byte(plist), 0o600); err != nil {
@@ -285,16 +288,7 @@ func uninstallLaunchd() error {
 		return err
 	}
 	plistFile := labelBase + ".plist"
-	script := fmt.Sprintf(`set -e
-UID=$(id -u)
-LABEL=%s
-PLIST="$HOME/Library/LaunchAgents/%s"
-for _DOMAIN in "gui/$UID" "user/$UID"; do
-  launchctl bootout "$_DOMAIN/$LABEL" 2>/dev/null || true
-done
-launchctl unload -w "$PLIST" 2>/dev/null || true
-rm -f "$PLIST"
-`, "'"+strings.ReplaceAll(labelBase, "'", "'\\''")+"'", plistFile)
+	script := autostart.LaunchdBootoutScript(hostshell.PosixSingleQuote(labelBase), plistFile)
 	cmd := exec.Command("sh", "-c", script)
 	cmd.Dir = home
 	_ = cmd.Run()
@@ -303,15 +297,15 @@ rm -f "$PLIST"
 
 func installWindowsTask(opts InstallOpts, hour, minute int) error {
 	ps := fmt.Sprintf(`
-$tn = '%s'
-$gh = '%s'
-$cfg = '%s'
+$tn = %s
+$gh = %s
+$cfg = %s
 Unregister-ScheduledTask -TaskName $tn -Confirm:$false -ErrorAction SilentlyContinue
 $act = New-ScheduledTaskAction -Execute $gh -Argument ('sr disk prune --yes -c ' + [char]34 + $cfg + [char]34)
 $tr = New-ScheduledTaskTrigger -Daily -At (Get-Date '%02d:%02d').TimeOfDay
 $st = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable
 Register-ScheduledTask -TaskName $tn -Action $act -Trigger $tr -Settings $st -Force | Out-Null
-`, serviceBase, escapePS(opts.GhPath), escapePS(opts.ConfigPath), hour, minute)
+`, hostshell.PowerShellSingleQuote(serviceBase), hostshell.PowerShellSingleQuote(opts.GhPath), hostshell.PowerShellSingleQuote(opts.ConfigPath), hour, minute)
 	out, err := exec.Command("powershell.exe", "-NoProfile", "-NonInteractive", "-Command", ps).CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("registering scheduled task: %w (%s)", err, strings.TrimSpace(string(out)))
@@ -320,7 +314,7 @@ Register-ScheduledTask -TaskName $tn -Action $act -Trigger $tr -Settings $st -Fo
 }
 
 func uninstallWindowsTask() error {
-	ps := fmt.Sprintf(`Unregister-ScheduledTask -TaskName '%s' -Confirm:$false -ErrorAction SilentlyContinue`, serviceBase)
+	ps := fmt.Sprintf(`Unregister-ScheduledTask -TaskName %s -Confirm:$false -ErrorAction SilentlyContinue`, hostshell.PowerShellSingleQuote(serviceBase))
 	_, err := exec.Command("powershell.exe", "-NoProfile", "-NonInteractive", "-Command", ps).CombinedOutput()
 	return err
 }
@@ -343,16 +337,4 @@ func systemdQuoteArg(s string) string {
 	}
 	b.WriteByte('"')
 	return b.String()
-}
-
-func escapePS(s string) string {
-	return strings.ReplaceAll(s, "'", "''")
-}
-
-func xmlEscapePlist(s string) string {
-	s = strings.ReplaceAll(s, `&`, `&amp;`)
-	s = strings.ReplaceAll(s, `"`, `&quot;`)
-	s = strings.ReplaceAll(s, `<`, `&lt;`)
-	s = strings.ReplaceAll(s, `>`, `&gt;`)
-	return s
 }

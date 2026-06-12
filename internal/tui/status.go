@@ -18,29 +18,11 @@ func PrintStatusTable(statuses []runner.RunnerStatus) {
 	fmt.Println(titleStyle.Render("Runner Status"))
 
 	headers := []string{"INSTANCE", "HOST", "REPO", "MODE", "IMAGE", "BUILD", "LOCAL", "GITHUB", "LABELS"}
-	widths := make([]int, len(headers))
-	for i, h := range headers {
-		widths[i] = len(h)
-	}
-
 	rows := make([][]string, len(statuses))
 	for i, s := range statuses {
-		githubStatus := formatGitHubStatus(s)
-		img := s.ContainerImage
-		if img == "" {
-			img = "-"
-		}
-		build := s.ContainerImageBuild
-		if build == "" {
-			build = "-"
-		}
-		rows[i] = []string{s.Instance, s.Host, s.Repo, s.Mode, img, build, s.Local, githubStatus, s.Labels}
-		for j, cell := range rows[i] {
-			if len(cell) > widths[j] {
-				widths[j] = len(cell)
-			}
-		}
+		rows[i] = runnerStatusCells(s)
 	}
+	widths := computeColumnWidths(headers, rows)
 
 	var headerLine string
 	for i, h := range headers {

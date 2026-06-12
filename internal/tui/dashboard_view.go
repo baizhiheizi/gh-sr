@@ -6,8 +6,6 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/lipgloss"
-
-	"github.com/an-lee/gh-sr/internal/runner"
 )
 
 func (m *dashboardModel) View() tea.View {
@@ -85,7 +83,11 @@ func (m *dashboardModel) viewMain() tea.View {
 	}
 
 	headers := []string{"INSTANCE", "HOST", "REPO", "MODE", "IMAGE", "BUILD", "LOCAL", "GITHUB", "LABELS"}
-	widths := computeWidths(headers, m.statuses)
+	rows := make([][]string, len(m.statuses))
+	for i, s := range m.statuses {
+		rows[i] = runnerStatusCells(s)
+	}
+	widths := computeColumnWidths(headers, rows)
 
 	var headerLine string
 	for i, h := range headers {
@@ -93,18 +95,7 @@ func (m *dashboardModel) viewMain() tea.View {
 	}
 	b.WriteString(headerLine + "\n")
 
-	for i, s := range m.statuses {
-		ghStatus := formatGitHubStatus(s)
-		img := s.ContainerImage
-		if img == "" {
-			img = "-"
-		}
-		build := s.ContainerImageBuild
-		if build == "" {
-			build = "-"
-		}
-		cells := []string{s.Instance, s.Host, s.Repo, s.Mode, img, build, s.Local, ghStatus, s.Labels}
-
+	for i, cells := range rows {
 		var line string
 		for j, cell := range cells {
 			styled := cell
@@ -299,17 +290,7 @@ func (m *dashboardModel) viewHostMetrics() tea.View {
 			rows[i] = metricsRow(met)
 		}
 
-		widths := make([]int, len(headers))
-		for i, h := range headers {
-			widths[i] = len(h)
-		}
-		for _, row := range rows {
-			for j, cell := range row {
-				if len(cell) > widths[j] {
-					widths[j] = len(cell)
-				}
-			}
-		}
+		widths := computeColumnWidths(headers, rows)
 
 		var headerLine string
 		for i, h := range headers {
@@ -334,29 +315,4 @@ func (m *dashboardModel) viewHostMetrics() tea.View {
 	v := tea.NewView(b.String())
 	v.AltScreen = true
 	return v
-}
-
-func computeWidths(headers []string, statuses []runner.RunnerStatus) []int {
-	widths := make([]int, len(headers))
-	for i, h := range headers {
-		widths[i] = len(h)
-	}
-	for _, s := range statuses {
-		ghStatus := formatGitHubStatus(s)
-		img := s.ContainerImage
-		if img == "" {
-			img = "-"
-		}
-		build := s.ContainerImageBuild
-		if build == "" {
-			build = "-"
-		}
-		cells := []string{s.Instance, s.Host, s.Repo, s.Mode, img, build, s.Local, ghStatus, s.Labels}
-		for j, cell := range cells {
-			if len(cell) > widths[j] {
-				widths[j] = len(cell)
-			}
-		}
-	}
-	return widths
 }

@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/an-lee/gh-sr/internal/config"
+	"github.com/an-lee/gh-sr/internal/testutil"
 )
 
 func TestDetectOS(t *testing.T) {
@@ -13,27 +14,27 @@ func TestDetectOS(t *testing.T) {
 	cases := []struct {
 		name string
 		cfg  config.HostConfig
-		mock *mockExecutor
+		mock *testutil.MockExecutor
 		want string
 		err  bool
 	}{
 		{
 			name: "linux",
 			cfg:  config.HostConfig{OS: "linux"},
-			mock: &mockExecutor{output: "Linux"},
+			mock: &testutil.MockExecutor{Output: "Linux"},
 			want: "linux",
 		},
 		{
 			name: "darwin",
 			cfg:  config.HostConfig{OS: "linux"},
-			mock: &mockExecutor{output: "Darwin"},
+			mock: &testutil.MockExecutor{Output: "Darwin"},
 			want: "darwin",
 		},
 		{
 			name: "windows via powershell fallback",
 			cfg:  config.HostConfig{OS: "windows"},
-			mock: &mockExecutor{
-				runFn: func(cmd string) (string, error) {
+			mock: &testutil.MockExecutor{
+				RunFn: func(cmd string) (string, error) {
 					if strings.Contains(cmd, "uname") {
 						return "", assertCalledError()
 					}
@@ -48,8 +49,8 @@ func TestDetectOS(t *testing.T) {
 		{
 			name: "windows via pwsh fallback",
 			cfg:  config.HostConfig{OS: "windows"},
-			mock: &mockExecutor{
-				runFn: func(cmd string) (string, error) {
+			mock: &testutil.MockExecutor{
+				RunFn: func(cmd string) (string, error) {
 					if strings.Contains(cmd, "uname") {
 						return "", assertCalledError()
 					}
@@ -64,15 +65,15 @@ func TestDetectOS(t *testing.T) {
 		{
 			name: "unknown uname output",
 			cfg:  config.HostConfig{OS: "linux"},
-			mock: &mockExecutor{output: "FreeBSD"},
+			mock: &testutil.MockExecutor{Output: "FreeBSD"},
 			want: "",
 			err:  true,
 		},
 		{
 			name: "all probes fail",
 			cfg:  config.HostConfig{OS: "linux"},
-			mock: &mockExecutor{
-				runFn: func(cmd string) (string, error) {
+			mock: &testutil.MockExecutor{
+				RunFn: func(cmd string) (string, error) {
 					return "", assertCalledError()
 				},
 			},
@@ -109,27 +110,27 @@ func TestDetectArch(t *testing.T) {
 	cases := []struct {
 		name string
 		cfg  config.HostConfig
-		mock *mockExecutor
+		mock *testutil.MockExecutor
 		want string
 		err  bool
 	}{
 		{
 			name: "amd64 via uname",
 			cfg:  config.HostConfig{OS: "linux"},
-			mock: &mockExecutor{output: "x86_64"},
+			mock: &testutil.MockExecutor{Output: "x86_64"},
 			want: "amd64",
 		},
 		{
 			name: "arm64 via uname",
 			cfg:  config.HostConfig{OS: "linux"},
-			mock: &mockExecutor{output: "aarch64"},
+			mock: &testutil.MockExecutor{Output: "aarch64"},
 			want: "arm64",
 		},
 		{
 			name: "windows via powershell",
 			cfg:  config.HostConfig{OS: "windows"},
-			mock: &mockExecutor{
-				runFn: func(cmd string) (string, error) {
+			mock: &testutil.MockExecutor{
+				RunFn: func(cmd string) (string, error) {
 					if strings.Contains(cmd, "uname") {
 						return "", assertCalledError()
 					}
@@ -144,8 +145,8 @@ func TestDetectArch(t *testing.T) {
 		{
 			name: "windows via pwsh",
 			cfg:  config.HostConfig{OS: "windows"},
-			mock: &mockExecutor{
-				runFn: func(cmd string) (string, error) {
+			mock: &testutil.MockExecutor{
+				RunFn: func(cmd string) (string, error) {
 					if strings.Contains(cmd, "uname") {
 						return "", assertCalledError()
 					}
@@ -163,15 +164,15 @@ func TestDetectArch(t *testing.T) {
 		{
 			name: "unsupported arch",
 			cfg:  config.HostConfig{OS: "linux"},
-			mock: &mockExecutor{output: "i386"},
+			mock: &testutil.MockExecutor{Output: "i386"},
 			want: "",
 			err:  true,
 		},
 		{
 			name: "all probes fail",
 			cfg:  config.HostConfig{OS: "linux"},
-			mock: &mockExecutor{
-				runFn: func(cmd string) (string, error) {
+			mock: &testutil.MockExecutor{
+				RunFn: func(cmd string) (string, error) {
 					return "", assertCalledError()
 				},
 			},
@@ -208,39 +209,39 @@ func TestDetectDockerAvailable(t *testing.T) {
 	cases := []struct {
 		name string
 		cfg  config.HostConfig
-		mock *mockExecutor
+		mock *testutil.MockExecutor
 		want bool
 	}{
 		{
 			name: "linux docker available",
 			cfg:  config.HostConfig{OS: "linux"},
-			mock: &mockExecutor{output: "24.0.0"},
+			mock: &testutil.MockExecutor{Output: "24.0.0"},
 			want: true,
 		},
 		{
 			name: "linux docker unavailable",
 			cfg:  config.HostConfig{OS: "linux"},
-			mock: &mockExecutor{
-				runErr: assertCalledError(),
+			mock: &testutil.MockExecutor{
+				RunErr: assertCalledError(),
 			},
 			want: false,
 		},
 		{
 			name: "linux docker returns empty",
 			cfg:  config.HostConfig{OS: "linux"},
-			mock: &mockExecutor{output: ""},
+			mock: &testutil.MockExecutor{Output: ""},
 			want: false,
 		},
 		{
 			name: "windows docker available",
 			cfg:  config.HostConfig{OS: "windows"},
-			mock: &mockExecutor{output: "24.0.0"},
+			mock: &testutil.MockExecutor{Output: "24.0.0"},
 			want: true,
 		},
 		{
 			name: "darwin docker available",
 			cfg:  config.HostConfig{OS: "darwin"},
-			mock: &mockExecutor{output: "24.0.0"},
+			mock: &testutil.MockExecutor{Output: "24.0.0"},
 			want: true,
 		},
 	}
