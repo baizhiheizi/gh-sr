@@ -5,38 +5,31 @@ metadata:
  type: project
 ---
 
-# Repo Assist state — last updated 2026-06-11
+# Repo Assist state — last updated 2026-06-12
 
-## Last run (2026-06-11 12:53 UTC, run 27371229238)
+## Last run (2026-06-12 02:21 UTC, run 27388413942)
 
-- Selected tasks: 5 (Coding Improvements), 3 (Issue Fix), 2 (Issue Comment).
-- Major state shift since last memory update: **ALL 4 of my drafts are now MERGED** (#139 cece88b, #141 2aa34c8, #142 cece88b, #149 d786eeb) plus the 2 other-bot PRs (#146 f3cb58a, #147 05aa2e6). The "revert" of #142 turned out to be transient — maintainer merged it later.
-- **Posture correction:** my "1/14 revert rate" framing was wrong. The revert of #142 was followed by a later merge of the same work, so the actual rate is 0/14. **Production-code refactors are wanted** when paired with a bot-flagged issue. The "hold the line" stance was over-conservative.
-- Task 3 (Fix) — new candidate: **#153 (YAML mutate read+unmarshal+validate) is the cleanest target**: 3 byte-identical 16-line blocks, one helper, no production semantics change, well-tested by existing mutate tests. Will attempt.
-- Task 5 (Coding Improvements) — covered by #153 fix attempt.
-- Task 2 (Comment) — no human activity on #132. Cursor stays parked.
-- Verified: `go build ./...` ✅, `go test ./... -count=1` ✅, coverage unchanged.
-- Task 11 (Activity): Will refresh #100 with this run's entry and the dramatically different Suggested Actions (all my drafts merged; #153 fix attempt; #155/#156 still in review).
+- Selected tasks: 3 (Issue Fix), 5 (Coding Improvements), 1 (Issue Labelling).
+- **Task 1** (Labelling) — no-op: all 30 open issues already labelled.
+- **Tasks 3 & 5** (Fix + Improvements) — both already covered by the prior run's open draft **PR #157** (loadYAMLRoot helper for #153, created 2026-06-11 19:25 UTC). Verified it again this run: no conflicts with main, `go build ./...` ✅, `go test ./... -race -count=1` ✅, `go vet ./...` ✅, `gofmt -l internal/config/` ✅. The `mergeable_state: unstable` flag was a transient GitHub status delay, not a real conflict.
+- **Task 11** (Activity): Refreshed #100 with the major state shift (all 4 of my drafts merged; 2 other-bot PRs merged) — body was 9.5 KB, very stale. Compressed old run entries to fit 10 KB tool limit; final 8.4 KB.
 
 ## In-flight work
 
-- **0 open drafts of mine.** All 4 prior drafts (#139, #141, #142, #149) merged.
-- **2 other-bot open PRs:**
+- **1 open draft of mine:** #157 (loadYAMLRoot helper, Closes #153) — verified clean, ready for review.
+- **3 open other-bot PRs:**
   - `#155` — `[efficiency-improver] perf(config): inline single-pointer scan + early-exit in FindRunnerForLogs` — 86-96% time/allocs reduction, draft.
   - `#156` — `[test-improver] test(hostshell): cover WriteRemoteBytes across POSIX and Windows branches` — `internal/hostshell` 23.1% → 100%, draft.
-- **This run's intent:** create a fix PR for #153 (YAML mutate helper extraction).
+  - `#158` — `[docs] Update documentation for features from 2026-06-11` — not draft, `unstable` state.
 
 ## Backlog / next high-value task
 
 - **#132 (gh sr storage — btrfs loop + reflink seed)** — human-authored design. v1 scaffold (subcommand skeleton in `cmd/gh-sr/`, `internal/storage/` package, status detection) is the natural next deliverable; **on hold** pending maintainer signal on the loop-mount persistence approach.
-- **#122** — `nativeConfigURL` vs inline `container.go` block. Bug analysis still valid; the chosen approach was eventually merged (as #142), so the underlying work is done. **Close or noop.**
-- **#120 (GHSR_EOF heredoc duplicate-code)** — root cause was now-merged #105. No new work.
 - **#133** — duplicate-code target, ~250 lines. Defer.
 - **#143** — mock executor duplication across 5 test files (~110 lines). Cross-package test refactor. Medium risk.
 - **#144** — POSIX shell-script header pattern in `disk.go` (3 sites, ~12 lines). Note: issue's "missing set -e" claim is factually wrong (BOTH `clearWorkTempPOSIX` and `removeDirTreePOSIX` lack it).
 - **#145** — `IsContainerMode()` / runner-mode dispatch (23+ sites). Largest scope. Defer.
 - **#152** — TUI table column-width + runner-status cell (6 sites, ~43 lines). TUI code, lower test coverage.
-- **#153** — YAML config read+unmarshal+validate block in mutate.go (3 byte-identical 16-line blocks, ~35 lines). **This run's target.**
 - **#154** — autostart ↔ diskschedule cross-package duplication (`xmlEscapePlist` byte-identical, `launchdBootoutScript` inlined, `escapePS` duplicates `hostshell.PowerShellSingleQuote`). Could be a follow-up fix.
 
 ## Backlog cursor for Task2 (Issue Comment)
@@ -45,6 +38,8 @@ metadata:
 
 ## Completed work (PRs MERGED + current drafts)
 
+- **#158** (other bot, open) — `[docs] Update documentation for features from 2026-06-11`.
+- **#157** (mine, open) — `[repo-assist] refactor(config): extract loadYAMLRoot helper in mutate.go` (Closes #153). 2 files, +157/-38.
 - **#156** (other bot, open) — `[test-improver] test(hostshell): cover WriteRemoteBytes across POSIX and Windows branches`. `internal/hostshell` 23.1% → 100% (+76.9 pp).
 - **#155** (other bot, open) — `[efficiency-improver] perf(config): inline single-pointer scan + early-exit in FindRunnerForLogs`. 86-96% alloc reduction.
 - **#149** — `[repo-assist] test(diskschedule): cover escapePS PowerShell single-quote escape`. 1 file, +27/-0.
@@ -68,22 +63,24 @@ metadata:
 
 ## Activity / PR history (compressed)
 
-- 2026-06-11 (run 27371229238, 12:53 UTC): Major state shift. All 4 of my drafts merged since the last memory update (#139, #141, #142, #149). Posture correction: 0/14 actual revert rate (#142 was transiently reverted, then re-merged). Attempt fix for #153 (YAML mutate helper).
+- 2026-06-12 (run 27388413942, 02:21 UTC): Verified #157 clean, refreshed #100 (body 9.5 KB → 8.4 KB compressed), no new PRs (Task 1 was a no-op, #3/#5 already covered by #157).
+- 2026-06-11 (run 27371229238, 19:25 UTC): Created PR #157 (loadYAMLRoot helper for #153). Major state shift: all 4 of my prior drafts merged. Posture correction: 0/15 actual revert rate.
 - 2026-06-11 (runs 27317475276, 27299664116): Held the line twice.
-- 2026-06-10 (run 27279843892): Commented on #142 (stale flag); created TestEscapePS PR (landed as #149); updated #100.
-- 2026-06-10 (run 27261392560): Created PR + bundle for #122 (config URL precedence); reverted on main by owner post-run. Updated #100.
-- 2026-06-10 (run 27246676535): Created PR (draft) for #135 (OS-dispatch bug fix); updated #100.
-- 2026-06-09 (run 27228879760): Created PR (draft) for #134 (disk-helpers extraction); updated #100.
-- 2026-06-09 (run 27191010253): Substantive comment on #132; verified all queued PRs merged; refreshed #100.
-- 2026-06-09 (run 27177519565): Held the line on 7 PRs awaiting review. Fixed #100 format violation. New issue #129 (low value).
+- 2026-06-10 (run 27279843892): Commented on #142 (stale flag); created TestEscapePS PR (landed as #149).
+- 2026-06-10 (run 27261392560): Created PR + bundle for #122 (config URL precedence); reverted on main by owner post-run.
+- 2026-06-10 (run 27246676535): Created PR (draft) for #135 (OS-dispatch bug fix).
+- 2026-06-09 (run 27228879760): Created PR (draft) for #134 (disk-helpers extraction).
+- 2026-06-09 (run 27191010253): Substantive comment on #132; verified all queued PRs merged.
+- 2026-06-09 (run 27177519565): Held the line on 7 PRs awaiting review.
 - 2026-06-08 and earlier: Created PRs #127, #118, #114, #113, #110, #102, #99 (all merged); held the line on multiple no-action runs.
 
 ## Notes for next run
 
-- **Revert signals re-evaluated:** the #142 "revert" was a transient state — same work was re-merged later. My "hold the line on production refactors" posture was over-conservative. Revert rate: 0/14 over the life of the workflow.
-- **#153 is this run's target.** 3 byte-identical blocks of 16 lines in `internal/config/mutate.go`. Single helper extraction. Should land cleanly.
+- **#100 body is now 8.4 KB** (within 10 KB limit). Compressed old run entries to keep it under the cap.
+- **#157 is the only open draft of mine** — verified clean, ready for review.
+- **Posture:** revert rate is 0/15 over the life of the workflow. Production refactors paired with bot-flagged issues are demonstrably safe.
+- **#132 design signal still pending.** Maintainer is in selective mode; v1 scaffold requires a maintainer signal on loop-mount persistence.
 - **#152 and #154 are good follow-ups** if the maintainer signals appetite for more refactors. #152 is TUI (lower test coverage), #154 is cross-package (medium risk).
 - **#144 has a factual inaccuracy in its bug claim** (verified: the `set -e` asymmetry claim is wrong — both `clearWorkTempPOSIX` and `removeDirTreePOSIX` lack it). Adding `set -e` to those scripts would be a behavioral change; the helper extraction itself is still valid but the framing is off.
-- **#100 (Monthly Activity)** is the canonical pending-actions list. Body size needs to drop (will be ~10 KB after adding this run's entry) — must compress older run history entries.
-- **Backlog posture:** 16 refactor/test PRs in 2 weeks (13 merged + 2 open other-bot + 1 this-run fix). Revert rate: 0/14. Pace is sustainable. Production refactors are demonstrably safe; the only risk is the larger-scope ones (#145 Mode enum, #143 mock consolidation).
 - **Branch name pattern:** Maintainer should be aware that `repo-assist/*-XXXXXXXX` (with SHA suffix) is the gh-aw orchestrator's standard; not something the workflow can suppress.
+- **#100 size trend:** if it grows back past 9 KB, compress more aggressively by removing the 3-day-old run entries.
