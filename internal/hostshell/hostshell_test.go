@@ -124,3 +124,34 @@ func TestLinuxElevatePrelude(t *testing.T) {
 		})
 	}
 }
+
+func TestLinuxElevatePreludeSoft(t *testing.T) {
+	t.Parallel()
+	// The soft variant must:
+	//   * initialise $SUDO to ''
+	//   * detect root via id -u
+	//   * try passwordless sudo (sudo -n true)
+	//   * set SUDO='sudo -n' on success
+	// and must NOT:
+	//   * print anything to stderr
+	//   * exit (callers gate usage of $SUDO themselves)
+	got := LinuxElevatePreludeSoft()
+	wantSubs := []string{
+		`SUDO=''`,
+		`if [ "$(id -u)" -ne 0 ]`,
+		`command -v sudo >/dev/null 2>&1`,
+		`sudo -n true 2>/dev/null`,
+		`SUDO='sudo -n'`,
+	}
+	for _, sub := range wantSubs {
+		if !strings.Contains(got, sub) {
+			t.Errorf("LinuxElevatePreludeSoft missing substring %q in output:\n%s", sub, got)
+		}
+	}
+	// Guard against accidental drift toward the strict variant.
+	for _, banned := range []string{"exit 1", ">&2", `echo `} {
+		if strings.Contains(got, banned) {
+			t.Errorf("LinuxElevatePreludeSoft must not contain %q (strict-variant behaviour) but got:\n%s", banned, got)
+		}
+	}
+}

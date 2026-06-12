@@ -73,3 +73,25 @@ if [ "$(id -u)" -ne 0 ]; then
 fi
 `
 }
+
+// LinuxElevatePreludeSoft is the soft-failure sibling of LinuxElevatePrelude:
+// it sets $SUDO to "sudo -n" when passwordless sudo works, or leaves it empty
+// otherwise. It never prints or exits — callers are expected to gate usage of
+// "$SUDO" with `if [ -n "$SUDO" ] || [ "$(id -u)" -eq 0 ]` (or similar) so the
+// surrounding script can keep going and report the per-command failure rather
+// than aborting the entire pipeline.
+//
+// Use this in scripts that run several elevated commands sequentially and need
+// to surface each one's failure individually (e.g. disk prune, dir removal).
+// For commands that have a single natural failure mode, prefer the strict
+// LinuxElevatePrelude so the user gets a clear, early error.
+func LinuxElevatePreludeSoft() string {
+	return `
+SUDO=''
+if [ "$(id -u)" -ne 0 ]; then
+	if command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
+		SUDO='sudo -n'
+	fi
+fi
+`
+}

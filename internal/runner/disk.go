@@ -95,22 +95,19 @@ fi
 `, q, q, q, q, hostshell.PosixSingleQuote(shellCmd))
 }
 
-// passwordlessSudo returns a shell snippet that sets $SUDO to `sudo -n` when
-// (a) the current user is non-root, and (b) sudo is installed and accepts
-// passwordless commands. Otherwise $SUDO stays empty. Callers prepend "$SUDO"
-// to the commands they want to elevate; the empty-string case means "no sudo
-// prefix" and the command runs as-is, which is correct for the root case
-// (id -u == 0) where the surrounding guard already gates on `$SUDO` being
-// non-empty OR the effective uid being 0.
+// passwordlessSudo returns the hostshell.LinuxElevatePreludeSoft fragment used
+// by disk-prune scripts that need non-interactive root or passwordless sudo
+// over SSH. The soft variant is required because these scripts run several
+// elevated commands sequentially (clearWorkTempPOSIX, removeDirTreePOSIX) and
+// must keep going when one fails so the user sees each per-command outcome.
+// Callers gate usage of "$SUDO" with `if [ -n "$SUDO" ] || [ "$(id -u)" -eq 0 ]`
+// (or similar) so the empty-string case falls through to a non-elevated attempt
+// that surfaces the real permission error.
+//
+// This thin wrapper exists for symmetry with internal/runner/sudo.go and so the
+// test can call a package-local name.
 func passwordlessSudo() string {
-	return `
-SUDO=''
-if [ "$(id -u)" -ne 0 ]; then
-  if command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
-    SUDO='sudo -n'
-  fi
-fi
-`
+	return hostshell.LinuxElevatePreludeSoft()
 }
 
 // ListRunnerInstanceDirs returns subdirectory names under ~/.gh-sr/runners on the host.
