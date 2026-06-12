@@ -7,32 +7,30 @@ metadata:
 
 # Repo Assist state — last updated 2026-06-12
 
-## Last run (2026-06-12 08:03 UTC, run 27402673134)
+## Last run (2026-06-12 13:34 UTC, run 27418691649)
 
-- Selected tasks: 1 (Labelling), 4 (Engineering Investments), 2 (Comment).
-- **Task 1** (Labelling) — no-op: all 22 open issues already labelled.
-- **Task 4** (Engineering Investments) — Created draft PR `repo-assist/eng-gofmt-ci-check-2026-06-12` (commit dde5c83): applied `gofmt -w` to 5 files that had drifted (alignment of const blocks, struct fields, table columns, one stray blank line, missing trailing newline), and added a `gofmt` step to `.github/workflows/ci.yml` that fails with `::error::Files not gofmt'd:` and prints the diff. ✅ gofmt empty, vet clean, build OK, race-tests all green.
-- **Task 2** (Comment) — no-op: cursor parked on #132 (human-authored design); no new human activity since 2026-06-09.
-- **Task 11** (Activity) — Attempted to update #100 with the consolidated state (all 5 prior drafts #155, #156, #157, #158, #159 now merged; 5 duplicate-code backlog items remaining; ~22 agentic-workflow tracker issues). Tool returned `success` but the actual GitHub update may not have applied due to `update-issue: target: triggering` not matching this scheduled run.
+- Selected tasks: 2 (Comment), 4 (Engineering Investments), 10 (Take Forward).
+- **Task 2** (Comment) — no-op: cursor parked on #132 (human-authored design); no new human activity.
+- **Task 4** (Engineering Investments) — no-op: the two clear candidates (#160/#161 gofmt CI check, #124 benchstat comparison on PRs) both require editing `.github/workflows/ci.yml`, which is workflow-protected for the automated bot account. Other dependency updates would need web verification.
+- **Task 10** (Take Forward) — implemented #163 (passwordlessSudo dedup): added `hostshell.LinuxElevatePreludeSoft()` (soft sibling of `LinuxElevatePrelude`, no `exit 1`/`>&2`); pointed the runner-side `passwordlessSudo()` wrapper in `internal/runner/disk.go` at the new helper; added `TestLinuxElevatePreludeSoft` that asserts the SUDO/id/sudo shell skeleton AND bans the strict-variant substrings. Build/vet/gofmt/test-race all clean. Local commit `bef40a2` on branch `repo-assist/fix-163-passwordless-sudo-soft`.
+- **Task 11** (Activity) — `update_issue` on #100 returned success but the body did not change (last `updated_at` still 2026-06-12T08:18:03Z).
 
 ## In-flight work
 
-- **0 open drafts of mine.** (Prior run's #157 merged as part of #159? No — #157 was a separate PR that landed 2026-06-12 02:52:19Z, before this run.)
-- **1 local branch + commit ready:** `repo-assist/eng-gofmt-ci-check-2026-06-12` (dde5c83). PR not yet visible on GitHub — safe-outputs tool returned success but no actual PR URL was created. Patch + bundle artifacts exist at `/tmp/gh-aw/aw-repo-assist-eng-gofmt-ci-check-2026-06-12.{patch,bundle}`.
+- **0 open drafts of mine on GitHub.** 1 local branch + commit (`bef40a2` on `repo-assist/fix-163-passwordless-sudo-soft`).
+- **Safe-outputs bridge persistence issue confirmed a third time.** `create_pull_request`, `add_comment`, and `update_issue` all returned `success` at the MCP HTTP layer but the writes did not appear on the repo. Patch + bundle artifacts at `/tmp/gh-aw/aw-repo-assist-fix-163-passwordless-sudo-soft.{patch,bundle}` — the maintainer (or anyone with push access) can apply with: `git fetch origin <remote-branch>; git checkout -b repo-assist/fix-163-passwordless-sudo-soft bef40a2` (after fetching from this checkout).
 
 ## Backlog / next high-value task
 
 - **#132 (gh sr storage — btrfs loop + reflink seed)** — human-authored design. v1 scaffold (subcommand skeleton in `cmd/gh-sr/`, `internal/storage/` package, status detection) is the natural next deliverable; **on hold** pending maintainer signal on the loop-mount persistence approach.
-- **#133** — duplicate-code target, ~250 lines. Defer.
-- **#143** — mock executor duplication across 5 test files (~110 lines). Cross-package test refactor. Medium risk.
-- **#144** — POSIX shell-script header pattern in `disk.go` (3 sites, ~12 lines). Note: issue's "missing set -e" claim is factually wrong (BOTH `clearWorkTempPOSIX` and `removeDirTreePOSIX` lack it).
-- **#145** — `IsContainerMode()` / runner-mode dispatch (23+ sites). Largest scope. Defer.
-- **#152** — TUI table column-width + runner-status cell (6 sites, ~43 lines). TUI code, lower test coverage.
-- **#154** — autostart ↔ diskschedule cross-package duplication (`xmlEscapePlist` byte-identical, `launchdBootoutScript` inlined, `escapePS` duplicates `hostshell.PowerShellSingleQuote`). Could be a follow-up fix.
+- **#165** — duplicate-code target, autostart kind-dispatch (~125 lines, 5 functions). Medium-large refactor with shared helper extraction.
+- **#166** — duplicate-code target, TUI table rendering loop (~50 lines, 4 sites). Lower test coverage on TUI.
+- **#124** — benchstat comparison on PRs (MEDIUM impact, infrastructure). Touches `.github/workflows/ci.yml` — needs manual apply or workflow-permission change first.
 
-## Backlog cursor for Task2 (Issue Comment)
+## Backlog cursor for Task 2 (Issue Comment)
 
-- 22 open issues; only #132 is human-authored. All others are auto-generated by various workflow bots. Cursor is parked on #132 — re-engage only if the maintainer or a new human comment appears.
+- 28 open issues. Cursor parked on #132 (only human-authored). Re-engage when the maintainer or a new human comment appears.
+- Recent bot-only duplicate-code findings (#163/#165/#166, all auto-generated by duplicate-code-detector) are paired-with-refactor candidates — I should fix them as draft PRs when the maintainer's appetite for refactors is open.
 
 ## Completed work (PRs MERGED + current drafts)
 
@@ -47,11 +45,12 @@ metadata:
 - **#142** (mine) — `[repo-assist] fix(runner): unify GitHub registration URL helper` (Closes #122). Merged.
 - **#141** (mine) — `[repo-assist] fix(runner): error on unsupported host OS instead of silently using POSIX` (Closes #135). Merged.
 - **#139** (mine) — `[repo-assist] refactor(runner): extract containerEscalation + passwordlessSudo helpers` (Closes #134). Merged.
-- **#136** — `[efficiency-improver] perf(runner): single du walk in dirSizesPOSIX (4 round trips → 1)`. Merged.
+- **#136** — `[efficiency-improver] perf(runner): single du walk in dirSizesPOSIX (4 SSH round trips → 1)`. Merged.
 - **#131** — an-lee: `gh sr disk usage|prune|schedule` — adds `internal/diskschedule/` and the `disk` subcommand family. Merged.
 
 ## Activity / PR history (compressed)
 
+- 2026-06-12 (run 27418691649, 13:34 UTC): Implemented #163 fix locally (commit bef40a2); build/vet/gofmt/test-race all clean. PR creation + #100 update did not apply via safe-outputs.
 - 2026-06-12 (run 27402673134, 08:03 UTC): Created gofmt fix + CI check PR (dde5c83). All prior drafts verified merged (#155-#159).
 - 2026-06-12 (run 27388413942, 02:21 UTC): Verified #157 clean, refreshed #100 (body 9.5 KB → 8.4 KB compressed), no new PRs.
 - 2026-06-11 (run 27371229238, 19:25 UTC): Created PR #157 (loadYAMLRoot helper for #153). Major state shift: all 4 of my prior drafts merged.
@@ -66,10 +65,10 @@ metadata:
 
 ## Notes for next run
 
-- **safe-outputs MCP behavior:** In this run, `create_pull_request`, `update_issue`, and `add_comment` all returned `success` from the MCP bridge but did not actually modify the GitHub repo. PR #160 does not exist; issue #100 body is unchanged (still 8462 bytes, last updated 2026-06-12T01:34:06Z). The local commit dde5c83 exists on branch `repo-assist/eng-gofmt-ci-check-2026-06-12`. Patch + bundle artifacts saved at `/tmp/gh-aw/aw-repo-assist-eng-gofmt-ci-check-2026-06-12.{patch,bundle}`. If this is a workflow-config issue, the maintainer may need to set `update-issue: target: '*'` and/or `safe-outputs.create-pull-request` overrides. If it's an MCP-server issue, it should be reported.
+- **safe-outputs MCP bridge persistence issue (third occurrence):** every `create_pull_request`/`add_comment`/`update_issue` call returned `success` at the HTTP layer but the writes did not appear on GitHub. Branch did not push to origin. Comment did not appear on #163. Body of #100 unchanged. Patch + bundle artifacts always saved to `/tmp/gh-aw/aw-*.{patch,bundle}` — if the maintainer wants to land the work, they can fetch the branch + checkout locally. **Configuration diagnosis needed:** the issue may be in `safe-outputs.create-pull-request` (not configured for non-protected pushes), in `update-issue: target: '*'` (not set so update targets the triggering issue, which doesn't exist for scheduled runs), or in the MCP server itself. The earlier two runs both exhibited the same symptoms; this is a stable pattern, not a transient.
 - **Posture:** revert rate is 0/15 over the life of the workflow. Production refactors paired with bot-flagged issues are demonstrably safe.
 - **#132 design signal still pending.** Maintainer is in selective mode; v1 scaffold requires a maintainer signal on loop-mount persistence.
-- **#152 and #154 are good follow-ups** if the maintainer signals appetite for more refactors. #152 is TUI (lower test coverage), #154 is cross-package (medium risk).
-- **#144 has a factual inaccuracy in its bug claim** (verified: the `set -e` asymmetry claim is wrong — both `clearWorkTempPOSIX` and `removeDirTreePOSIX` lack it). Adding `set -e` to those scripts would be a behavioral change; the helper extraction itself is still valid but the framing is off.
+- **#165 and #166 are good follow-ups** if the maintainer signals appetite for more refactors. Both auto-generated by duplicate-code-detector this morning (2026-06-12 09:52 UTC).
 - **Branch name pattern:** Maintainer should be aware that `repo-assist/*-XXXXXXXX` (with SHA suffix) is the gh-aw orchestrator's standard; not something the workflow can suppress.
 - **#100 size trend:** if it grows back past 9 KB, compress more aggressively by removing the 3-day-old run entries.
+- **Next high-confidence action if safe-outputs is fixed:** push local `repo-assist/fix-163-passwordless-sudo-soft` to origin + open PR. Work is already complete and tested.
