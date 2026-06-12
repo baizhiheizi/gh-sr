@@ -175,3 +175,51 @@ func BenchmarkValidate_Large(b *testing.B) {
 		_ = cfg.Validate()
 	}
 }
+
+// makeAmbiguousCfg builds a config where multiple runners share the same name
+// across hosts so FindRunnerForLogs must scan to find them (the ambiguous path).
+func makeAmbiguousCfg(n int) *Config {
+	hosts := make(map[string]HostConfig, n)
+	for i := 0; i < n; i++ {
+		name := "host" + string(rune('a'+i%26)) + string(rune('0'+i/26))
+		hosts[name] = HostConfig{Addr: "192.168.1." + string(rune('0'+i%10)), OS: "linux", Arch: "amd64"}
+	}
+	hostNames := make([]string, 0, n)
+	for k := range hosts {
+		hostNames = append(hostNames, k)
+	}
+	runners := make([]RunnerConfig, n)
+	for i := 0; i < n; i++ {
+		runners[i] = RunnerConfig{
+			Name:  "dup",
+			Repo:  "org/repo-" + string(rune('0'+i%10)),
+			Host:  hostNames[i%len(hostNames)],
+			Count: 1,
+		}
+	}
+	return &Config{Hosts: hosts, Runners: runners}
+}
+
+// BenchmarkFindRunnerForLogs_Match exercises the typical path: single host,
+// short-circuit on the first matching base name.
+func BenchmarkFindRunnerForLogs_Match(b *testing.B) {
+	cfg := makeRunnerCfg(100, 10)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, _ = cfg.FindRunnerForLogs("runner-a", "")
+	}
+}
+
+// BenchmarkFindRunnerForLogs_Ambiguous exercises the ambiguous path where
+// multiple hosts define a runner with the same base name. The current
+// implementation walks the whole list to gather every match before returning
+// the error; a single-pointer + early-exit refactor should save work here.
+func BenchmarkFindRunnerForLogs_Ambiguous(b *testing.B) {
+	cfg := makeAmbiguousCfg(50)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, _ = cfg.FindRunnerForLogs("dup", "")
+	}
+}
