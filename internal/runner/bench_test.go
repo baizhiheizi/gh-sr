@@ -18,7 +18,6 @@ func makeEnrichCfg(numRepos, countPerRepo int) (*config.Config, map[scopeKey][]G
 		},
 	}
 	scopeRunners := make(map[scopeKey][]GitHubRunner)
-	statuses := make([]RunnerStatus, 0, numRepos*countPerRepo)
 	for i := 0; i < numRepos; i++ {
 		name := "runner-" + strconv.Itoa(i)
 		repo := "o/r" + strconv.Itoa(i)
@@ -33,12 +32,6 @@ func makeEnrichCfg(numRepos, countPerRepo int) (*config.Config, map[scopeKey][]G
 		for j := 1; j <= countPerRepo; j++ {
 			inst := name + "-" + strconv.Itoa(j)
 			gh[j-1] = GitHubRunner{Name: inst, Status: "online", OS: "Linux"}
-			statuses = append(statuses, RunnerStatus{
-				Instance: inst,
-				Host:     "h",
-				Repo:     repo,
-				Mode:     "docker",
-			})
 		}
 		scopeRunners[key] = gh
 	}
