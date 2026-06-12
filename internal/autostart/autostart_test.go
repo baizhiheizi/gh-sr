@@ -15,7 +15,6 @@ func newMockHost(name string, cfg config.HostConfig, mock *testutil.MockExecutor
 	return h
 }
 
-
 func TestServiceBasename(t *testing.T) {
 	t.Parallel()
 	if got := ServiceBasename("ci-1"); got != "ghsr-runner-ci-1" {
@@ -190,3 +189,43 @@ var errCalled = calledError{}
 type calledError struct{}
 
 func (calledError) Error() string { return "called" }
+
+func TestResolveAutostartTarget(t *testing.T) {
+	t.Parallel()
+	t.Run("detect error propagates", func(t *testing.T) {
+		t.Parallel()
+		h := newMockHost("test", config.HostConfig{OS: "linux"}, &testutil.MockExecutor{RunErr: errCalled})
+		_, _, _, err := resolveAutostartTarget(h, "ci-1")
+		if err == nil {
+			t.Fatal("expected error from Detect, got nil")
+		}
+	})
+	t.Run("invalid instance name error propagates", func(t *testing.T) {
+		t.Parallel()
+		h := newMockHost("test", config.HostConfig{OS: "linux"}, &testutil.MockExecutor{Output: "user"})
+		// SanitizeInstance rejects names that collapse to "" after sanitization
+		// (e.g. "@@@"). Detect is mocked to succeed but the instance name
+		// triggers SanitizeInstance failure.
+		_, _, _, err := resolveAutostartTarget(h, "@@@")
+		if err == nil {
+			t.Fatal("expected error from SanitizeInstance, got nil")
+		}
+	})
+	t.Run("detected kind + sanitized name + base name returned", func(t *testing.T) {
+		t.Parallel()
+		h := newMockHost("test", config.HostConfig{OS: "linux"}, &testutil.MockExecutor{Output: "user"})
+		kind, san, base, err := resolveAutostartTarget(h, "ci-1")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if kind != KindSystemdUser {
+			t.Errorf("kind = %q, want %q", kind, KindSystemdUser)
+		}
+		if san != "ci-1" {
+			t.Errorf("san = %q, want %q", san, "ci-1")
+		}
+		if base != "ghsr-runner-ci-1" {
+			t.Errorf("base = %q, want %q", base, "ghsr-runner-ci-1")
+		}
+	})
+}
