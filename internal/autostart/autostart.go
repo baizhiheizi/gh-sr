@@ -255,20 +255,33 @@ Start-ScheduledTask -TaskName $tn
 	return nil
 }
 
+// resolveAutostartTarget bundles the repeated "detect + sanitize + base-name"
+// preamble used by Uninstall, Start, Stop, and Status. The four callers each
+// handle KindNone differently (Uninstall is a no-op, the others are errors,
+// Status records the state), so the KindNone check stays at the call site.
+// Returns the detected Kind, sanitized instance token, unit basename (without
+// the ".service" suffix), and any error from Detect or SanitizeInstance.
+func resolveAutostartTarget(h *host.Host, instance string) (Kind, string, string, error) {
+	kind, err := Detect(h, instance)
+	if err != nil {
+		return KindNone, "", "", err
+	}
+	san, err := SanitizeInstance(instance)
+	if err != nil {
+		return KindNone, "", "", err
+	}
+	return kind, san, ServiceBasename(san), nil
+}
+
 // Uninstall removes autostart and stops the supervised process where applicable.
 func Uninstall(h *host.Host, instance string) error {
-	kind, err := Detect(h, instance)
+	kind, san, base, err := resolveAutostartTarget(h, instance)
 	if err != nil {
 		return err
 	}
 	if kind == KindNone {
 		return nil
 	}
-	san, err := SanitizeInstance(instance)
-	if err != nil {
-		return err
-	}
-	base := ServiceBasename(san)
 
 	switch kind {
 	case KindSystemdUser:
@@ -312,18 +325,13 @@ $SUDO systemctl daemon-reload
 
 // Start launches the autostart-backed runner (systemd / launchd / scheduled task).
 func Start(h *host.Host, instance string) error {
-	kind, err := Detect(h, instance)
+	kind, san, base, err := resolveAutostartTarget(h, instance)
 	if err != nil {
 		return err
 	}
 	if kind == KindNone {
 		return fmt.Errorf("autostart is not installed for %s", instance)
 	}
-	san, err := SanitizeInstance(instance)
-	if err != nil {
-		return err
-	}
-	base := ServiceBasename(san)
 
 	switch kind {
 	case KindSystemdUser:
@@ -357,18 +365,13 @@ $SUDO systemctl start %s.service
 
 // Stop stops the autostart-backed runner without removing the unit.
 func Stop(h *host.Host, instance string) error {
-	kind, err := Detect(h, instance)
+	kind, san, base, err := resolveAutostartTarget(h, instance)
 	if err != nil {
 		return err
 	}
 	if kind == KindNone {
 		return fmt.Errorf("autostart is not installed for %s", instance)
 	}
-	san, err := SanitizeInstance(instance)
-	if err != nil {
-		return err
-	}
-	base := ServiceBasename(san)
 
 	switch kind {
 	case KindSystemdUser:
@@ -414,7 +417,7 @@ func Status(h *host.Host, hostName, instance, mode string) (StatusRow, error) {
 		return row, nil
 	}
 
-	kind, err := Detect(h, instance)
+	kind, san, base, err := resolveAutostartTarget(h, instance)
 	if err != nil {
 		return row, err
 	}
@@ -423,12 +426,6 @@ func Status(h *host.Host, hostName, instance, mode string) (StatusRow, error) {
 		row.Detail = "autostart not installed"
 		return row, nil
 	}
-
-	san, err := SanitizeInstance(instance)
-	if err != nil {
-		return row, err
-	}
-	base := ServiceBasename(san)
 
 	switch kind {
 	case KindSystemdUser:
