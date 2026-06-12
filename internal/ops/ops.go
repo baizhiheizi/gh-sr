@@ -19,6 +19,13 @@ func ConnectHost(hostName string, hcfg config.HostConfig) (*host.Host, error) {
 	return h, nil
 }
 
+// connectHostFn is the host-connection factory used by every orchestrator in this
+// package. It points at ConnectHost by default and is swapped in tests so the
+// orchestrators can be exercised against host.Executor mocks without standing up
+// an SSH server. Tests that override it must restore it via t.Cleanup so they
+// don't leak state into other tests.
+var connectHostFn = ConnectHost
+
 // lockedWriter serialises concurrent writes to an underlying io.Writer.
 type lockedWriter struct {
 	mu sync.Mutex
@@ -74,6 +81,13 @@ func runPerHostParallel(
 		out = &lockedWriter{w: w}
 	}
 
+	// Capture the host-connection factory in a local so the goroutines below
+	// see the factory that was active when this function was called, not
+	// whatever the package-level var points to later. Tests override
+	// connectHostFn and rely on this capture for per-call isolation when they
+	// run with t.Parallel().
+	connect := connectHostFn
+
 	errs := make([]error, len(groups))
 	var wg sync.WaitGroup
 	for i, g := range groups {
@@ -81,7 +95,7 @@ func runPerHostParallel(
 		go func(i int, g hostGroup) {
 			defer wg.Done()
 			hcfg := cfg.Hosts[g.name]
-			h, err := ConnectHost(g.name, hcfg)
+			h, err := connect(g.name, hcfg)
 			if err != nil {
 				errs[i] = err
 				return
@@ -149,7 +163,7 @@ func Setup(w io.Writer, cfg *config.Config, mgr *runner.Manager, filterHost, fil
 }
 
 func setupHost(w io.Writer, cfg *config.Config, mgr *runner.Manager, rc config.RunnerConfig) error {
-	h, err := ConnectHost(rc.Host, cfg.Hosts[rc.Host])
+	h, err := connectHostFn(rc.Host, cfg.Hosts[rc.Host])
 	if err != nil {
 		return err
 	}
@@ -305,7 +319,7 @@ func Remove(w io.Writer, cfg *config.Config, mgr *runner.Manager, filterHost, fi
 }
 
 func removeHost(w io.Writer, cfg *config.Config, mgr *runner.Manager, cfgPath string, rc config.RunnerConfig) error {
-	h, err := ConnectHost(rc.Host, cfg.Hosts[rc.Host])
+	h, err := connectHostFn(rc.Host, cfg.Hosts[rc.Host])
 	if err != nil {
 		return err
 	}
@@ -351,7 +365,7 @@ func CollectStatus(w io.Writer, cfg *config.Config, mgr *runner.Manager, filterH
 		go func(i int, g hostGroup) {
 			defer wg.Done()
 			hcfg := cfg.Hosts[g.name]
-			h, err := ConnectHost(g.name, hcfg)
+			h, err := connectHostFn(g.name, hcfg)
 			if err != nil {
 				if w != nil {
 					wMu.Lock()
@@ -420,7 +434,7 @@ func Logs(cfg *config.Config, mgr *runner.Manager, filterHost, target string) (s
 		return "", err
 	}
 	hcfg := cfg.Hosts[rc.Host]
-	h, err := ConnectHost(rc.Host, hcfg)
+	h, err := connectHostFn(rc.Host, hcfg)
 	if err != nil {
 		return "", err
 	}

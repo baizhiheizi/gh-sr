@@ -104,7 +104,7 @@ func CollectDiskUsage(w io.Writer, cfg *config.Config, mgr *runner.Manager, filt
 		go func(i int, g hostGroup) {
 			defer wg.Done()
 			hcfg := cfg.Hosts[g.name]
-			h, err := ConnectHost(g.name, hcfg)
+			h, err := connectHostFn(g.name, hcfg)
 			if err != nil {
 				if w != nil {
 					wMu.Lock()
@@ -207,7 +207,7 @@ func PruneDisk(w io.Writer, cfg *config.Config, mgr *runner.Manager, filterHost,
 		go func(i int, g hostGroup) {
 			defer wg.Done()
 			hcfg := cfg.Hosts[g.name]
-			h, err := ConnectHost(g.name, hcfg)
+			h, err := connectHostFn(g.name, hcfg)
 			if err != nil {
 				if w != nil {
 					wMu.Lock()

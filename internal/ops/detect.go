@@ -54,7 +54,7 @@ func ResolveHostInfo(w io.Writer, cfg *config.Config) error {
 				fmt.Fprintf(w, "Detecting OS/arch for host %s (%s)...\n", name, hcfg.Addr)
 				wMu.Unlock()
 			}
-			conn, err := ConnectHost(name, hcfg)
+			conn, err := connectHostFn(name, hcfg)
 			if err != nil {
 				results[i] = detectionResult{name: name, hcfg: hcfg, err: fmt.Errorf("auto-detect %s: %w", name, err)}
 				return

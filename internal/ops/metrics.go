@@ -24,7 +24,7 @@ func CollectHostMetrics(w io.Writer, cfg *config.Config, filterHost string) []ho
 		go func(i int, name string) {
 			defer wg.Done()
 			hcfg := cfg.Hosts[name]
-			h, err := ConnectHost(name, hcfg)
+			h, err := connectHostFn(name, hcfg)
 			if err != nil {
 				if w != nil {
 					wMu.Lock()
