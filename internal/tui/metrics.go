@@ -24,27 +24,16 @@ func PrintHostMetricsTable(metrics []host.HostMetrics) {
 
 	widths := computeColumnWidths(headers, rows)
 
-	var headerLine string
-	for i, h := range headers {
-		headerLine += headerStyle.Width(widths[i] + 2).Render(h)
-	}
-	fmt.Println(headerLine)
-
-	for _, row := range rows {
-		var line string
-		for j, cell := range row {
-			styled := cell
-			switch j {
-			case 1:
-				styled = colorizePercent(cell)
-			case 2:
-				styled = colorizePercent(cell)
-			case 3:
-				styled = colorizePercent(cell)
-			}
-			line += cellStyle.Width(widths[j] + 2).Render(styled)
+	colorize := func(col int, cell string) string {
+		if col >= 1 && col <= 3 {
+			return colorizePercent(cell)
 		}
-		fmt.Println(line)
+		return cell
+	}
+
+	fmt.Println(renderHeader(headers, widths))
+	for _, row := range rows {
+		fmt.Println(renderRow(row, widths, colorize))
 	}
 }
 

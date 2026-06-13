@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/charmbracelet/lipgloss"
 )
 
 func (m *dashboardModel) View() tea.View {
@@ -89,31 +88,27 @@ func (m *dashboardModel) viewMain() tea.View {
 	}
 	widths := computeColumnWidths(headers, rows)
 
-	var headerLine string
-	for i, h := range headers {
-		headerLine += headerStyle.Width(widths[i] + 2).Render(h)
+	colorize := func(col int, cell string) string {
+		switch col {
+		case 5:
+			return colorizeImageBuild(cell)
+		case 6:
+			return colorizeLocalStatus(cell)
+		case 7:
+			return colorizeGitHubStatus(cell)
+		default:
+			return cell
+		}
 	}
-	b.WriteString(headerLine + "\n")
+
+	b.WriteString(renderHeader(headers, widths) + "\n")
 
 	for i, cells := range rows {
-		var line string
-		for j, cell := range cells {
-			styled := cell
-			switch j {
-			case 5:
-				styled = colorizeImageBuild(cell)
-			case 6:
-				styled = colorizeLocalStatus(cell)
-			case 7:
-				styled = colorizeGitHubStatus(cell)
-			}
-			style := cellStyle.Width(widths[j] + 2)
-			if i == m.cursor {
-				style = style.Background(lipgloss.Color("8"))
-			}
-			line += style.Render(styled)
+		if i == m.cursor {
+			b.WriteString(renderHighlightedRow(cells, widths, colorize) + "\n")
+		} else {
+			b.WriteString(renderRow(cells, widths, colorize) + "\n")
 		}
-		b.WriteString(line + "\n")
 	}
 
 	b.WriteString(m.footerMain())
@@ -292,22 +287,17 @@ func (m *dashboardModel) viewHostMetrics() tea.View {
 
 		widths := computeColumnWidths(headers, rows)
 
-		var headerLine string
-		for i, h := range headers {
-			headerLine += headerStyle.Width(widths[i] + 2).Render(h)
+		colorize := func(col int, cell string) string {
+			if col >= 1 && col <= 3 {
+				return colorizePercent(cell)
+			}
+			return cell
 		}
-		b.WriteString(headerLine + "\n")
+
+		b.WriteString(renderHeader(headers, widths) + "\n")
 
 		for _, row := range rows {
-			var line string
-			for j, cell := range row {
-				styled := cell
-				if j >= 1 && j <= 3 {
-					styled = colorizePercent(cell)
-				}
-				line += cellStyle.Width(widths[j] + 2).Render(styled)
-			}
-			b.WriteString(line + "\n")
+			b.WriteString(renderRow(row, widths, colorize) + "\n")
 		}
 	}
 
