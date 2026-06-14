@@ -570,6 +570,7 @@ func checkContainerAgenticInnerHygiene(w io.Writer, hostName string, h *host.Hos
 		}
 
 		failures := agentic.ValidateAWFHygieneInner(h, cname)
+		failures = append(failures, agentic.ValidateContainerNodeNPM(h, cname, runnerName)...)
 		failures = append(failures, agentic.ValidateContainerAWF(h, cname, runnerName)...)
 		failures = append(failures, agentic.ValidateContainerInnerNetwork(h, cname, runnerName)...)
 		failures = append(failures, agentic.ValidateContainerInnerResolv(h, cname, runnerName)...)

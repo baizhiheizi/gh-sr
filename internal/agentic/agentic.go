@@ -723,6 +723,28 @@ If the host's real path MTU is below its NIC MTU (a tunnel the NIC is unaware of
 	return nil
 }
 
+// ValidateContainerNodeNPM checks that node and npm are on PATH inside the runner
+// container. gh-aw activation setup installs @actions/artifact via npm when daily AI
+// credits guardrails are enabled (safe-output-artifact-client), before actions/setup-node runs.
+func ValidateContainerNodeNPM(h *host.Host, outerContainer, runnerName string) []PrereqFailure {
+	if h.OS != "linux" {
+		return nil
+	}
+
+	if _, err := h.Run(containerNodeNPMCheckCommand(outerContainer)); err != nil {
+		return []PrereqFailure{{
+			Name:     "container-node-npm",
+			Severity: SeverityWarning,
+			Message:  fmt.Sprintf("node LTS/npm are not on PATH inside runner container %s", outerContainer),
+			Remediation: fmt.Sprintf(`Rebuild the runner image so it includes Node.js LTS:
+
+  gh sr rebuild %s`, runnerName),
+			DocRef: "agentic-workflows.md §8",
+		}}
+	}
+	return nil
+}
+
 // ValidateContainerAWF checks that the gh-aw firewall CLI is available exactly
 // the way compiled workflows invoke it.
 func ValidateContainerAWF(h *host.Host, outerContainer, runnerName string) []PrereqFailure {
@@ -767,6 +789,11 @@ for i in 1 2 3 4 5; do
   sleep 1
 done
 [ "$ok" -eq 1 ]'`
+}
+
+func containerNodeNPMCheckCommand(outerContainer string) string {
+	q := strconv.Quote(outerContainer)
+	return `docker exec ` + q + ` sh -lc 'command -v node >/dev/null && command -v npm >/dev/null'`
 }
 
 func containerAWFCheckCommand(outerContainer string) string {

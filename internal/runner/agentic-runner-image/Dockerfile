@@ -52,6 +52,14 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
     && apt-get install -y --no-install-recommends gh \
     && rm -rf /var/lib/apt/lists/*
 
+# Node.js LTS (NodeSource) — gh-aw activation setup installs @actions/artifact via npm
+# before actions/setup-node runs in the agent job.
+RUN curl -fsSL https://deb.nodesource.com/setup_lts.x | bash - \
+    && apt-get install -y --no-install-recommends nodejs \
+    && node -v \
+    && npm -v \
+    && rm -rf /var/lib/apt/lists/*
+
 # runner user (non-root, but in docker group so it can talk to the inner dockerd)
 # Full passwordless sudo is required: AWF installs binaries to system paths
 # (/usr/local/lib/awf/) and manipulates iptables rules at job runtime.

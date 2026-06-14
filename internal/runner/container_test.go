@@ -488,6 +488,21 @@ func TestAgenticRunnerDockerfileInstallsAWF(t *testing.T) {
 	}
 }
 
+func TestAgenticRunnerDockerfileInstallsNodeLTS(t *testing.T) {
+	t.Parallel()
+
+	for _, want := range []string{
+		"https://deb.nodesource.com/setup_lts.x",
+		"apt-get install -y --no-install-recommends nodejs",
+		"node -v",
+		"npm -v",
+	} {
+		if !strings.Contains(agenticRunnerDockerfile, want) {
+			t.Fatalf("Dockerfile should install Node.js LTS with %q, got:\n%s", want, agenticRunnerDockerfile)
+		}
+	}
+}
+
 // TestAgenticRunnerDockerfileBakesNetworkAndHooks verifies the Dockerfile bakes the
 // deterministic network config and installs the per-job reset hooks.
 func TestAgenticRunnerDockerfileBakesNetworkAndHooks(t *testing.T) {

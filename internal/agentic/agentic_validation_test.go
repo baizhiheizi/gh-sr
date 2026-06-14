@@ -233,6 +233,54 @@ sudo -n -E awf --version >/dev/null'`: ``,
 	})
 }
 
+func TestValidateContainerNodeNPM(t *testing.T) {
+	t.Parallel()
+
+	t.Run("non-linux short-circuits", func(t *testing.T) {
+		t.Parallel()
+		h := host.NewHost("h", config.HostConfig{OS: "darwin"})
+		h.SetConn(&prereqTestExecutor{})
+		if got := ValidateContainerNodeNPM(h, "gh-sr-runner", "agentic-1"); got != nil {
+			t.Errorf("non-linux must short-circuit, got %#v", got)
+		}
+	})
+
+	t.Run("successful check returns nil", func(t *testing.T) {
+		t.Parallel()
+		exec := &prereqTestExecutor{
+			response: map[string]string{
+				`docker exec "gh-sr-runner" sh -lc 'command -v node >/dev/null && command -v npm >/dev/null'`: ``,
+			},
+		}
+		h := host.NewHost("h", config.HostConfig{OS: "linux"})
+		h.SetConn(exec)
+		if got := ValidateContainerNodeNPM(h, "gh-sr-runner", "agentic-1"); got != nil {
+			t.Errorf("successful check must return nil, got %#v", got)
+		}
+	})
+
+	t.Run("failing check returns container-node-npm warning", func(t *testing.T) {
+		t.Parallel()
+		exec := &prereqTestExecutor{}
+		h := host.NewHost("h", config.HostConfig{OS: "linux"})
+		h.SetConn(exec)
+		failures := ValidateContainerNodeNPM(h, "gh-sr-runner", "agentic-1")
+		f := failureByName(t, failures, "container-node-npm")
+		if f.Name == "" {
+			t.Fatalf("expected container-node-npm failure, got %#v", failures)
+		}
+		if f.Severity != SeverityWarning {
+			t.Errorf("Severity = %q, want warning", f.Severity)
+		}
+		if !strings.Contains(f.Message, "node LTS/npm") {
+			t.Errorf("Message should mention node LTS/npm, got %q", f.Message)
+		}
+		if !strings.Contains(f.Remediation, "gh sr rebuild") {
+			t.Errorf("Remediation should mention rebuild, got %q", f.Remediation)
+		}
+	})
+}
+
 func TestValidateContainerPrereqs_nonLinux(t *testing.T) {
 	t.Parallel()
 	for _, os := range []string{"darwin", "windows"} {
