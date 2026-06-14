@@ -19,20 +19,37 @@ Do not set **`github.pat`** in `runners.yml` or **`GITHUB_PAT`** / **`GITHUB_TOK
 
 ## Required permissions
 
-The authenticated GitHub user must have **admin** access to every repository listed under `runners[].repo` in your config (and appropriate org permissions for org-level runners). The REST API requires that for self-hosted runner management.
+The authenticated GitHub user needs permissions matching the runner scope in your config:
+
+| Scope | Who can manage runners |
+|---|---|
+| **Repo-scoped** (`runners[].repo`) | User with **admin** access to that repository |
+| **Org-scoped** (`runners[].org`) | Org **owner**, or token with **`admin:org`** scope (classic PAT), or equivalent fine-grained org permission for self-hosted runners |
+
+See [Organization runners](guides/org-runners.md) for org-level setup and runner groups.
 
 **gh sr** uses the token for:
 
-| Operation | REST (summary) | Used for |
-| --- | --- | --- |
-| Start / register runners | `POST /repos/{owner}/{repo}/actions/runners/registration-token` | Native and Docker runner startup |
-| Stop / remove runners (native) | `POST .../actions/runners/remove-token` | Native runner removal |
-| Dashboard / status | `GET .../actions/runners` | Match runner names; online / offline / busy |
-| `gh sr cleanup` | `DELETE .../actions/runners/{runner_id}` | Remove offline runners from GitHub |
+| Operation | REST (repo-scoped) | REST (org-scoped) | Used for |
+| --- | --- | --- | --- |
+| Start / register runners | `POST /repos/{owner}/{repo}/actions/runners/registration-token` | `POST /orgs/{org}/actions/runners/registration-token` | Native and container runner startup |
+| Stop / remove runners (native) | `POST .../actions/runners/remove-token` | `POST /orgs/{org}/actions/runners/remove-token` | Native runner removal |
+| Dashboard / status | `GET .../actions/runners` | `GET /orgs/{org}/actions/runners` | Match runner names; online / offline / busy |
+| `gh sr cleanup` | `DELETE .../actions/runners/{runner_id}` | `DELETE /orgs/{org}/actions/runners/{runner_id}` | Remove offline runners from GitHub |
 
 Fetching the latest runner package version uses the public `actions/runner` releases API and does not require extra token permissions beyond a valid request.
 
-If you see **403** responses or an empty registration token, confirm your account has **Administration** access on the target repositories (see GitHub's [repository permissions for Administration](https://docs.github.com/en/rest/authentication/permissions-required-for-fine-grained-personal-access-tokens#repository-permissions-for-administration) and [self-hosted runners API](https://docs.github.com/en/rest/actions/self-hosted-runners)).
+### Troubleshooting 403 errors
+
+**Repo-scoped runners:** confirm your account has **Administration** access on the target repositories. See GitHub's [repository permissions for Administration](https://docs.github.com/en/rest/authentication/permissions-required-for-fine-grained-personal-access-tokens#repository-permissions-for-administration).
+
+**Org-scoped runners:** confirm you are an org owner or re-authenticate with `admin:org` scope:
+
+```bash
+gh auth login --scopes admin:org
+```
+
+`gh sr doctor` checks both repo and org API access and hints when org permissions are missing.
 
 ## Verify
 
@@ -40,6 +57,12 @@ Run `gh sr doctor` to confirm a token was found:
 
 ```
 OK    [local       ] GitHub token: from gh CLI (gh auth login)
+```
+
+For org-scoped runners, doctor also reports:
+
+```
+OK    [github      ] org my-org: list runners OK (3 registered)
 ```
 
 If gh is not logged in:

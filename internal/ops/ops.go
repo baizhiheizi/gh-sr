@@ -375,14 +375,10 @@ func CollectStatus(w io.Writer, cfg *config.Config, mgr *runner.Manager, filterH
 				var unreachable []runner.RunnerStatus
 				for _, rc := range g.runners {
 					for _, name := range rc.InstanceNames() {
-						repoDisplay := rc.Repo
-						if rc.Org != "" {
-							repoDisplay = "org:" + rc.Org
-						}
 						unreachable = append(unreachable, runner.RunnerStatus{
 							Instance:            name,
 							Host:                rc.Host,
-							Repo:                repoDisplay,
+							Repo:                rc.DisplayTarget(),
 							Mode:                "native",
 							Local:               "unreachable",
 							ContainerImageBuild: "-",

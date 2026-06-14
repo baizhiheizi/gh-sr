@@ -59,13 +59,14 @@ runners:
   #   count: 1
   #   labels: [self-hosted, Linux, X64]
   #
-  # Organization-level runner with runner group:
+  # Organization-level runner (shared across all repos in the org):
   #
   # - name: org-runner
   #   org: my-org
-  #   group: my-runner-group
+  #   group: my-runner-group   # optional; create the group in GitHub org settings first
   #   host: vps-1
   #   count: 2
+  #   labels: [self-hosted, Linux, X64]
   #
   # Ephemeral runner (one job then auto-deregister):
   #

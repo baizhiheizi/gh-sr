@@ -195,6 +195,20 @@ func (rc *RunnerConfig) GitHubRegistrationURL() string {
 	return "https://github.com/" + rc.Repo
 }
 
+// DisplayTarget returns the user-facing registration target for status and
+// progress output: owner/repo for repo-scoped runners, org:<name> for
+// org-scoped runners, with an optional " group=<name>" suffix.
+func (rc *RunnerConfig) DisplayTarget() string {
+	target := rc.Repo
+	if rc.Org != "" {
+		target = "org:" + rc.Org
+	}
+	if rc.Group != "" {
+		target += " group=" + rc.Group
+	}
+	return target
+}
+
 // DefaultLabels generates standard GitHub Actions labels based on host OS and arch.
 func DefaultLabels(hostOS, arch string) []string {
 	labels := []string{"self-hosted"}
