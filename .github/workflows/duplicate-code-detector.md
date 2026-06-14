@@ -1,35 +1,33 @@
 ---
-name: Duplicate Code Detector
-description: Identifies duplicate code patterns across the codebase and suggests refactoring opportunities
-
 on:
-  workflow_dispatch:
   schedule: daily
-
-runs-on: [self-hosted, linux]
-runs-on-slim: self-hosted
-imports:
-   - shared/engine-minimax.md
-   - shared/runtime.md
-
+  workflow_dispatch: null
 permissions:
   contents: read
   issues: read
   pull-requests: read
-
+imports:
+- shared/engine-minimax.md
+- shared/runtime.md
 safe-outputs:
   create-issue:
-    expires: 2d
-    title-prefix: "[duplicate-code] "
-    labels: [code-quality, automated-analysis]
     assignees: copilot
+    expires: 2d
     group: true
+    labels:
+    - code-quality
+    - automated-analysis
     max: 3
-
+    title-prefix: "[duplicate-code] "
+description: Identifies duplicate code patterns across the codebase and suggests refactoring opportunities
+name: Duplicate Code Detector
+runs-on:
+- self-hosted
+- linux
+runs-on-slim: self-hosted
+source: githubnext/agentics/workflows/duplicate-code-detector.md@e15e57b40918dbca11b350c55d02ab61934afa75
 timeout-minutes: 15
-source: githubnext/agentics/workflows/duplicate-code-detector.md@c02eadfca420f2b351f9fcaee883c507a63ca316
 ---
-
 # Duplicate Code Detection
 
 Analyze code to identify duplicated patterns using semantic analysis. Report significant findings that require refactoring.
