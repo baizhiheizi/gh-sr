@@ -385,8 +385,8 @@ $SUDO systemctl stop %s.service
 		return err
 	case KindLaunchd:
 		label := LaunchdLabel(san)
-		cmd := fmt.Sprintf(`UID=$(id -u); LABEL=%s; for _DOMAIN in "gui/$UID" "user/$UID"; do launchctl bootout "$_DOMAIN/$LABEL" 2>/dev/null || true; done`,
-			hostshell.PosixSingleQuote(label))
+		cmd := fmt.Sprintf(`UID=$(id -u); LABEL=%s; for _DOMAIN in %s; do launchctl bootout "$_DOMAIN/$LABEL" 2>/dev/null || true; done`,
+			hostshell.PosixSingleQuote(label), launchdDomainList())
 		_, err := h.Run(cmd)
 		return err
 	case KindWindowsTask:
