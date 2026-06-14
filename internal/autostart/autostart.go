@@ -427,49 +427,33 @@ func Status(h *host.Host, hostName, instance, mode string) (StatusRow, error) {
 		return row, nil
 	}
 
+	out, err := runActiveCheck(h, kind, san, base)
+	if err != nil {
+		row.Detail = "installed (" + kindLabel(kind) + "): check failed: " + err.Error()
+		return row, nil
+	}
+
 	switch kind {
 	case KindSystemdUser:
-		out, err := h.Run(fmt.Sprintf(`systemctl --user is-active %s.service 2>/dev/null || echo inactive`, base))
-		active := strings.TrimSpace(out)
-		if err != nil {
-			row.Detail = "installed (user): " + active + " (check failed: " + err.Error() + ")"
-			return row, nil
-		}
-		row.Detail = "installed (user): " + active
+		row.Detail = "installed (user): " + strings.TrimSpace(out)
 		return row, nil
 
 	case KindSystemdSystem:
-		script := sudoPrelude() + fmt.Sprintf(`
-$SUDO systemctl is-active %s.service 2>/dev/null || echo inactive
-`, base)
-		out, err := h.Run(script)
-		active := strings.TrimSpace(out)
-		if err != nil {
-			row.Detail = "installed (system): " + active + " (check failed: " + err.Error() + ")"
-			return row, nil
-		}
-		row.Detail = "installed (system): " + active
+		row.Detail = "installed (system): " + strings.TrimSpace(out)
 		return row, nil
 
 	case KindLaunchd:
-		label := LaunchdLabel(san)
-		cmd := launchdPrintScript(hostshell.PosixSingleQuote(label)) + " | head -n 5"
-		out, err := h.Run(cmd)
-		if err != nil {
-			row.Detail = "installed (launchd): error " + err.Error()
-			return row, nil
+		// Preserve the original `| head -n 5` post-pipe behavior: cap to
+		// first 5 lines of launchd output before flattening newlines to
+		// spaces (runActiveCheck returns the full launchd print).
+		lines := strings.Split(out, "\n")
+		if len(lines) > 5 {
+			lines = lines[:5]
 		}
-		row.Detail = "installed (launchd): " + strings.TrimSpace(strings.ReplaceAll(out, "\n", " "))
+		row.Detail = "installed (launchd): " + strings.TrimSpace(strings.Join(lines, " "))
 		return row, nil
 
 	case KindWindowsTask:
-		name := WindowsTaskName(san)
-		ps := fmt.Sprintf(`(Get-ScheduledTask -TaskName %s -ErrorAction SilentlyContinue | Select-Object -ExpandProperty State)`, hostshell.PowerShellSingleQuote(name))
-		out, err := h.RunShell(ps)
-		if err != nil {
-			row.Detail = "installed (task): error " + err.Error()
-			return row, nil
-		}
 		row.Detail = "installed (task): " + strings.TrimSpace(out)
 		return row, nil
 	}
