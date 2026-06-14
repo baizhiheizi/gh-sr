@@ -63,6 +63,19 @@ func groupRunnersByHost(runners []config.RunnerConfig) []hostGroup {
 	return groups
 }
 
+// resolveAndFilter runs ResolveHostInfo and returns the filtered runners.
+// It is the common preamble to every orchestrator in this package; each
+// orchestrator then dispatches the per-runner work in its own way
+// (runPerHostParallel, a custom goroutine fan-out, a sequential loop, etc.).
+// Logs does not use this helper because it operates on a single resolved
+// runner instance rather than the broad FilterRunners result.
+func resolveAndFilter(w io.Writer, cfg *config.Config, filterHost, filterRepo string, nameArgs []string) ([]config.RunnerConfig, error) {
+	if err := ResolveHostInfo(w, cfg); err != nil {
+		return nil, err
+	}
+	return config.FilterRunners(cfg, filterHost, filterRepo, nameArgs), nil
+}
+
 // runPerHostParallel groups runners by host and executes fn for each runner concurrently
 // across hosts. Within each host group runners are processed sequentially using a single
 // SSH connection, reducing connection overhead from O(N_runners) to O(N_hosts).
@@ -134,11 +147,11 @@ func applyContainerImageExtras(mgr *runner.Manager, cfg *config.Config) {
 
 // Setup installs and configures runners, mirroring the gh sr setup command.
 func Setup(w io.Writer, cfg *config.Config, mgr *runner.Manager, filterHost, filterRepo string, nameArgs []string) error {
-	if err := ResolveHostInfo(w, cfg); err != nil {
+	runners, err := resolveAndFilter(w, cfg, filterHost, filterRepo, nameArgs)
+	if err != nil {
 		return err
 	}
 	applyContainerImageExtras(mgr, cfg)
-	runners := config.FilterRunners(cfg, filterHost, filterRepo, nameArgs)
 	hostsDone := map[string]bool{}
 	for _, rc := range runners {
 		if hostsDone[rc.Host] {
@@ -177,11 +190,11 @@ func setupHost(w io.Writer, cfg *config.Config, mgr *runner.Manager, rc config.R
 // All host groups are started concurrently, reducing wall-clock time from
 // O(N_hosts × SSH_latency) to O(SSH_latency) for multi-host configurations.
 func Up(w io.Writer, cfg *config.Config, mgr *runner.Manager, filterHost, filterRepo string, nameArgs []string) error {
-	if err := ResolveHostInfo(w, cfg); err != nil {
+	runners, err := resolveAndFilter(w, cfg, filterHost, filterRepo, nameArgs)
+	if err != nil {
 		return err
 	}
 	applyContainerImageExtras(mgr, cfg)
-	runners := config.FilterRunners(cfg, filterHost, filterRepo, nameArgs)
 	return runPerHostParallel(w, cfg, runners, func(w io.Writer, h *host.Host, rc config.RunnerConfig) error {
 		fmt.Fprintf(w, "Starting %s on %s...\n", rc.Name, rc.Host)
 		if err := mgr.EnsureSetup(h, rc); err != nil {
@@ -197,10 +210,10 @@ func Up(w io.Writer, cfg *config.Config, mgr *runner.Manager, filterHost, filter
 // All host groups are stopped concurrently, reducing wall-clock time from
 // O(N_hosts × SSH_latency) to O(SSH_latency) for multi-host configurations.
 func Down(w io.Writer, cfg *config.Config, mgr *runner.Manager, filterHost, filterRepo string, nameArgs []string) error {
-	if err := ResolveHostInfo(w, cfg); err != nil {
+	runners, err := resolveAndFilter(w, cfg, filterHost, filterRepo, nameArgs)
+	if err != nil {
 		return err
 	}
-	runners := config.FilterRunners(cfg, filterHost, filterRepo, nameArgs)
 	return runPerHostParallel(w, cfg, runners, func(w io.Writer, h *host.Host, rc config.RunnerConfig) error {
 		fmt.Fprintf(w, "Stopping %s on %s...\n", rc.Name, rc.Host)
 		return mgr.Stop(h, rc)
@@ -213,10 +226,10 @@ func Down(w io.Writer, cfg *config.Config, mgr *runner.Manager, filterHost, filt
 // All host groups are restarted concurrently, reducing wall-clock time from
 // O(N_hosts × SSH_latency) to O(SSH_latency) for multi-host configurations.
 func Restart(w io.Writer, cfg *config.Config, mgr *runner.Manager, filterHost, filterRepo string, nameArgs []string) error {
-	if err := ResolveHostInfo(w, cfg); err != nil {
+	runners, err := resolveAndFilter(w, cfg, filterHost, filterRepo, nameArgs)
+	if err != nil {
 		return err
 	}
-	runners := config.FilterRunners(cfg, filterHost, filterRepo, nameArgs)
 	return runPerHostParallel(w, cfg, runners, func(w io.Writer, h *host.Host, rc config.RunnerConfig) error {
 		fmt.Fprintf(w, "Restarting %s on %s...\n", rc.Name, rc.Host)
 		_ = mgr.Stop(h, rc)
@@ -241,11 +254,11 @@ func partitionRebuildTargets(runners []config.RunnerConfig) (container []config.
 // starts them. Native-mode runners in the selection are skipped (logged); only
 // container-mode runners are rebuilt.
 func RebuildImage(w io.Writer, cfg *config.Config, mgr *runner.Manager, filterHost, filterRepo string, nameArgs []string) error {
-	if err := ResolveHostInfo(w, cfg); err != nil {
+	runners, err := resolveAndFilter(w, cfg, filterHost, filterRepo, nameArgs)
+	if err != nil {
 		return err
 	}
 	applyContainerImageExtras(mgr, cfg)
-	runners := config.FilterRunners(cfg, filterHost, filterRepo, nameArgs)
 	containerRunners, skipped := partitionRebuildTargets(runners)
 	for _, rc := range skipped {
 		fmt.Fprintf(w, "Skipping %s (runner_mode: native); gh sr rebuild applies only to runner_mode: container\n", rc.Name)
@@ -267,11 +280,11 @@ func RebuildImage(w io.Writer, cfg *config.Config, mgr *runner.Manager, filterHo
 // All host groups are updated concurrently, reducing wall-clock time from
 // O(N_hosts × SSH_latency) to O(SSH_latency) for multi-host configurations.
 func Update(w io.Writer, cfg *config.Config, mgr *runner.Manager, filterHost, filterRepo string, nameArgs []string) error {
-	if err := ResolveHostInfo(w, cfg); err != nil {
+	runners, err := resolveAndFilter(w, cfg, filterHost, filterRepo, nameArgs)
+	if err != nil {
 		return err
 	}
 	applyContainerImageExtras(mgr, cfg)
-	runners := config.FilterRunners(cfg, filterHost, filterRepo, nameArgs)
 	if err := runPerHostParallel(w, cfg, runners, func(w io.Writer, h *host.Host, rc config.RunnerConfig) error {
 		fmt.Fprintf(w, "Updating %s on %s...\n", rc.Name, rc.Host)
 		_ = mgr.Remove(h, rc)
@@ -289,10 +302,10 @@ func Update(w io.Writer, cfg *config.Config, mgr *runner.Manager, filterHost, fi
 
 // Remove deregisters a runner from GitHub, removes it from the host, and removes it from the local config.
 func Remove(w io.Writer, cfg *config.Config, mgr *runner.Manager, filterHost, filterRepo string, nameArgs []string) error {
-	if err := ResolveHostInfo(w, cfg); err != nil {
+	runners, err := resolveAndFilter(w, cfg, filterHost, filterRepo, nameArgs)
+	if err != nil {
 		return err
 	}
-	runners := config.FilterRunners(cfg, filterHost, filterRepo, nameArgs)
 	if len(runners) == 0 {
 		return fmt.Errorf("no runners matching the given filters")
 	}
@@ -343,10 +356,10 @@ func removeHost(w io.Writer, cfg *config.Config, mgr *runner.Manager, cfgPath st
 // All host groups are queried concurrently, reducing wall-clock time from
 // O(N_hosts × SSH_latency) to O(SSH_latency) for multi-host configurations.
 func CollectStatus(w io.Writer, cfg *config.Config, mgr *runner.Manager, filterHost, filterRepo string, nameArgs []string) ([]runner.RunnerStatus, error) {
-	if err := ResolveHostInfo(w, cfg); err != nil {
+	runners, err := resolveAndFilter(w, cfg, filterHost, filterRepo, nameArgs)
+	if err != nil {
 		return nil, err
 	}
-	runners := config.FilterRunners(cfg, filterHost, filterRepo, nameArgs)
 
 	// Group runners by host, preserving original order for deterministic output.
 	groups := groupRunnersByHost(runners)

@@ -166,3 +166,114 @@ func TestLockedWriter_Concurrent(t *testing.T) {
 		t.Errorf("buf.Len() = %d, want %d", buf.Len(), expected)
 	}
 }
+
+func TestResolveAndFilter(t *testing.T) {
+	t.Parallel()
+
+	// fully resolved local host → ResolveHostInfo short-circuits
+	resolvedCfg := func() *config.Config {
+		return &config.Config{
+			Hosts: map[string]config.HostConfig{
+				"h1": {Addr: "local", OS: "linux", Arch: "amd64"},
+			},
+			Runners: []config.RunnerConfig{
+				{Name: "r1", Host: "h1", Repo: "org/repo"},
+				{Name: "r2", Host: "h1", Repo: "org/repo"},
+			},
+		}
+	}
+
+	t.Run("returns all runners when no filters", func(t *testing.T) {
+		t.Parallel()
+		runners, err := resolveAndFilter(nil, resolvedCfg(), "", "", nil)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(runners) != 2 {
+			t.Errorf("len(runners) = %d, want 2", len(runners))
+		}
+	})
+
+	t.Run("filters by host", func(t *testing.T) {
+		t.Parallel()
+		cfg := &config.Config{
+			Hosts: map[string]config.HostConfig{
+				"h1": {Addr: "local", OS: "linux", Arch: "amd64"},
+				"h2": {Addr: "local", OS: "linux", Arch: "amd64"},
+			},
+			Runners: []config.RunnerConfig{
+				{Name: "r1", Host: "h1", Repo: "org/repo"},
+				{Name: "r2", Host: "h2", Repo: "org/repo"},
+			},
+		}
+		runners, err := resolveAndFilter(nil, cfg, "h1", "", nil)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(runners) != 1 {
+			t.Fatalf("len(runners) = %d, want 1", len(runners))
+		}
+		if runners[0].Host != "h1" {
+			t.Errorf("runners[0].Host = %q, want h1", runners[0].Host)
+		}
+	})
+
+	t.Run("filters by repo", func(t *testing.T) {
+		t.Parallel()
+		cfg := &config.Config{
+			Hosts: map[string]config.HostConfig{
+				"h1": {Addr: "local", OS: "linux", Arch: "amd64"},
+			},
+			Runners: []config.RunnerConfig{
+				{Name: "r1", Host: "h1", Repo: "org/repo1"},
+				{Name: "r2", Host: "h1", Repo: "org/repo2"},
+			},
+		}
+		runners, err := resolveAndFilter(nil, cfg, "", "org/repo1", nil)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(runners) != 1 {
+			t.Fatalf("len(runners) = %d, want 1", len(runners))
+		}
+		if runners[0].Repo != "org/repo1" {
+			t.Errorf("runners[0].Repo = %q, want org/repo1", runners[0].Repo)
+		}
+	})
+
+	t.Run("filters by name args", func(t *testing.T) {
+		t.Parallel()
+		cfg := &config.Config{
+			Hosts: map[string]config.HostConfig{
+				"h1": {Addr: "local", OS: "linux", Arch: "amd64"},
+			},
+			Runners: []config.RunnerConfig{
+				{Name: "r1", Host: "h1", Repo: "org/repo"},
+				{Name: "r2", Host: "h1", Repo: "org/repo"},
+				{Name: "r3", Host: "h1", Repo: "org/repo"},
+			},
+		}
+		runners, err := resolveAndFilter(nil, cfg, "", "", []string{"r1", "r3"})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(runners) != 2 {
+			t.Fatalf("len(runners) = %d, want 2", len(runners))
+		}
+		got := []string{runners[0].Name, runners[1].Name}
+		if got[0] != "r1" || got[1] != "r3" {
+			t.Errorf("got names %v, want [r1 r3]", got)
+		}
+	})
+
+	t.Run("returns empty slice when no match", func(t *testing.T) {
+		t.Parallel()
+		runners, err := resolveAndFilter(nil, resolvedCfg(), "", "nonexistent", nil)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(runners) != 0 {
+			t.Errorf("len(runners) = %d, want 0", len(runners))
+		}
+	})
+}

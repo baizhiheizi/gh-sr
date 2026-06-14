@@ -73,11 +73,10 @@ func configuredInstancesOnHost(runners []config.RunnerConfig) map[string]struct{
 
 // CollectDiskUsage gathers disk usage for configured and orphan runner directories.
 func CollectDiskUsage(w io.Writer, cfg *config.Config, mgr *runner.Manager, filterHost, filterRepo string, nameArgs []string) ([]runner.DiskUsageEntry, error) {
-	if err := ResolveHostInfo(w, cfg); err != nil {
+	runners, err := resolveAndFilter(w, cfg, filterHost, filterRepo, nameArgs)
+	if err != nil {
 		return nil, err
 	}
-
-	runners := config.FilterRunners(cfg, filterHost, filterRepo, nameArgs)
 	if len(runners) == 0 {
 		return nil, fmt.Errorf("no runners matching the given filters")
 	}
@@ -170,11 +169,10 @@ func CollectDiskUsage(w io.Writer, cfg *config.Config, mgr *runner.Manager, filt
 
 // PruneDisk reclaims disk space on idle runner instances.
 func PruneDisk(w io.Writer, cfg *config.Config, mgr *runner.Manager, filterHost, filterRepo string, nameArgs []string, opts DiskPruneOptions) ([]runner.PruneResult, error) {
-	if err := ResolveHostInfo(w, cfg); err != nil {
+	runners, err := resolveAndFilter(w, cfg, filterHost, filterRepo, nameArgs)
+	if err != nil {
 		return nil, err
 	}
-
-	runners := config.FilterRunners(cfg, filterHost, filterRepo, nameArgs)
 	if len(runners) == 0 {
 		return nil, fmt.Errorf("no runners matching the given filters")
 	}
