@@ -12,10 +12,10 @@ import (
 
 // ServiceInstall installs OS-level autostart for native runners (systemd, LaunchAgent, or scheduled task).
 func ServiceInstall(w io.Writer, cfg *config.Config, filterHost, filterRepo string, nameArgs []string, system bool) error {
-	if err := ResolveHostInfo(w, cfg); err != nil {
+	runners, err := resolveAndFilter(w, cfg, filterHost, filterRepo, nameArgs)
+	if err != nil {
 		return err
 	}
-	runners := config.FilterRunners(cfg, filterHost, filterRepo, nameArgs)
 	return runPerHostParallel(w, cfg, runners, func(w io.Writer, h *host.Host, rc config.RunnerConfig) error {
 		hcfg := cfg.Hosts[rc.Host]
 		if system && hcfg.OS != "linux" {
@@ -45,10 +45,10 @@ func ServiceInstall(w io.Writer, cfg *config.Config, filterHost, filterRepo stri
 
 // ServiceUninstall removes autostart definitions created by gh sr service install.
 func ServiceUninstall(w io.Writer, cfg *config.Config, filterHost, filterRepo string, nameArgs []string) error {
-	if err := ResolveHostInfo(w, cfg); err != nil {
+	runners, err := resolveAndFilter(w, cfg, filterHost, filterRepo, nameArgs)
+	if err != nil {
 		return err
 	}
-	runners := config.FilterRunners(cfg, filterHost, filterRepo, nameArgs)
 	return runPerHostParallel(w, cfg, runners, func(w io.Writer, h *host.Host, rc config.RunnerConfig) error {
 		hcfg := cfg.Hosts[rc.Host]
 		if config.IsLocalAddr(hcfg.Addr) {
@@ -76,10 +76,10 @@ func ServiceUninstall(w io.Writer, cfg *config.Config, filterHost, filterRepo st
 
 // ServiceStatus prints autostart installation state per runner instance.
 func ServiceStatus(w io.Writer, cfg *config.Config, filterHost, filterRepo string, nameArgs []string) error {
-	if err := ResolveHostInfo(w, cfg); err != nil {
+	runners, err := resolveAndFilter(w, cfg, filterHost, filterRepo, nameArgs)
+	if err != nil {
 		return err
 	}
-	runners := config.FilterRunners(cfg, filterHost, filterRepo, nameArgs)
 	return runPerHostParallel(w, cfg, runners, func(w io.Writer, h *host.Host, rc config.RunnerConfig) error {
 		for _, inst := range rc.InstanceNames() {
 			row, err := autostart.Status(h, rc.Host, inst, "native")
