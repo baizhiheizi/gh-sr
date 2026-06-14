@@ -1,1 +1,1 @@
-- [Perf Improver state 2026-06](notes.md) — last run 2026-06-12 14:02 UTC, maintenance mode confirmed (6th consecutive run), commented on #124 supporting benchmark-regression-detection option (a)
+- [Perf Improver state 2026-06](notes.md) — last run 2026-06-14 03:00 UTC, maintenance mode confirmed (7th consecutive run), backlog updated with PR #155/#167 merges (items 15/16 ✅), issue #85 body compressed to 8.6 KB
