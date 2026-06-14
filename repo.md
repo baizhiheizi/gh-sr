@@ -17,7 +17,7 @@ Packages and coverage (2026-06-12):
 - `internal/editor` 53.8% — editor picker
 - `internal/host` 58.8% — SSH+local exec; `Executor` interface
 - `internal/hostshell` 100.0% — shell-quoting + remote-write helpers (fully covered 2026-06-11)
-- `internal/ops` 24.2% — orchestration; pure helpers + `runPerHostParallel` 100%, orchestrators still need per-function coverage
+- `internal/ops` 33.4% — orchestration; pure helpers + `runPerHostParallel` + `ResolveHostInfo` 100%, orchestrators still need per-function coverage
 - `internal/runner` 37.4% — container + native lifecycle
 - `internal/testutil` 88.2% — shared mocks (MockExecutor + per-call capture pattern)
 - `internal/tui` 4.9% — bubbletea TUI
