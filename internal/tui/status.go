@@ -24,27 +24,22 @@ func PrintStatusTable(statuses []runner.RunnerStatus) {
 	}
 	widths := computeColumnWidths(headers, rows)
 
-	var headerLine string
-	for i, h := range headers {
-		headerLine += headerStyle.Width(widths[i] + 2).Render(h)
-	}
-	fmt.Println(headerLine)
-
-	for _, row := range rows {
-		var line string
-		for j, cell := range row {
-			styled := cell
-			switch j {
-			case 5: // BUILD
-				styled = colorizeImageBuild(cell)
-			case 6: // LOCAL
-				styled = colorizeLocalStatus(cell)
-			case 7: // GITHUB
-				styled = colorizeGitHubStatus(cell)
-			}
-			line += cellStyle.Width(widths[j] + 2).Render(styled)
+	colorize := func(col int, cell string) string {
+		switch col {
+		case 5: // BUILD
+			return colorizeImageBuild(cell)
+		case 6: // LOCAL
+			return colorizeLocalStatus(cell)
+		case 7: // GITHUB
+			return colorizeGitHubStatus(cell)
+		default:
+			return cell
 		}
-		fmt.Println(line)
+	}
+
+	fmt.Println(renderHeader(headers, widths))
+	for _, row := range rows {
+		fmt.Println(renderRow(row, widths, colorize))
 	}
 }
 
