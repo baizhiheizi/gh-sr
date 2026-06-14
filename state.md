@@ -7,33 +7,34 @@ metadata:
 
 # Repo Assist state — last updated 2026-06-14
 
-## Last run (2026-06-14 03:48 UTC, run 27467295298)
+## Last run (2026-06-14 03:30 UTC, run 27460481325)
 
-- Selected tasks: 2 (Comment), 3 (Issue Fix), 6 (Maintain Repo Assist PRs).
-- **Task 2** (Comment) — no-op: cursor parked on #132; new candidates are agentic-automated-analysis or workflow-tracker issues (#174/#175/#176/#177/#179), not human-originated, so left alone.
-- **Task 3** (Issue Fix) — implemented #175 fix locally: extracted `resolveAndFilter(w, cfg, filterHost, filterRepo, nameArgs) ([]config.RunnerConfig, error)` helper in `internal/ops/ops.go`; migrated 12 call sites (Setup, Up, Down, Restart, RebuildImage, Update, Remove, CollectStatus, CollectDiskUsage, PruneDisk, ServiceInstall, ServiceUninstall, ServiceStatus). `applyContainerImageExtras` stays at the call site (rationale: only 4 sites have it, and a `bool` parameter would force it to broaden scope or add noise). `Logs` deliberately not migrated (single-runner flow with `FindRunnerForLogs`). Commit `94979db` on branch `repo-assist/fix-175-orchestrator-preamble-helper`. Build/vet/gofmt/test-race all clean across 12 packages. 5 new sub-tests in `TestResolveAndFilter`.
-- **Task 6** (Maintain PRs) — flagged PR #181 as a duplicate of #180 via a comment on #181 (same title, same body, same diff, opened 16s apart from run 27460481325).
-- **Task 11** (Activity) — updated #100 with this run's entry, removed the now-stale "Apply patch manually #176" line, promoted it to "Review PR #180/#181 (duplicate)". Added #175 patch-and-bundle line.
-- **safe-outputs bridge:** `create_pull_request` for #175 returned `success` with patch/bundle artifacts but did not push to origin (7th consecutive occurrence of the persistence issue). The bridge DID push earlier this run (PRs #180/#181). Patch + bundle saved at `/tmp/gh-aw/aw-repo-assist-fix-175-orchestrator-preamble-helper.{patch,bundle}`. Maintainer can apply with `git am < /tmp/gh-aw/aw-repo-assist-fix-175-orchestrator-preamble-helper.patch`.
+- Selected tasks: 3 (Issue Fix), 9 (Testing), 4 (Engineering Investments).
+- **Task 3** (Issue Fix) — implemented #176 fix locally: extracted `launchdDomainList() string` returning the pre-quoted shell word list `"gui/$UID" "user/$UID"`; migrated 4 call sites (3 in `internal/autostart/launchd.go`, 1 in `internal/autostart/autostart.go::Stop` KindLaunchd arm) to splice the helper via `fmt.Sprintf`. New `TestLaunchdDomainList_IsSingleSourceOfTruth` (counts the canonical for-loop line in each generated script) and `TestLaunchdDomainList_ReturnsPreQuotedTokens` (locks the contract). Commit `5048410` on branch `repo-assist/fix-176-launchd-domain-list`. Build/vet/gofmt/`go test -race ./... -count=1` all clean across 12 packages.
+- **Task 9** (Testing) — addressed as part of Task 3: 2 new subtests lock the helper's contract.
+- **Task 4** (Engineering Investments) — no-op. Dependencies current (Go 1.25.9, latest charmbracelet/cli/cobra). CI config minimal and clean; no actionable gaps.
+- **Task 6** (Maintain Repo Assist PRs) — verified PR #172 (the #166 fix) is open; not stale.
+- **Task 11** (Activity) — `create_pull_request` for #176 returned `success` twice with patch/bundle artifacts but the branch never pushed to origin (6th consecutive occurrence of the persistence issue). `update_issue` on #100 returned `success` but the body refresh did not apply. `add_comment` on #100 returned `success` with temporary_id `aw_O5wV5Myg` but the comment may or may not have applied (response cached at 2 comments, may appear in next poll).
 
 ## In-flight work
 
-- **1 local commit, no new open PR of mine on origin this run.** Local: `94979db` on `repo-assist/fix-175-orchestrator-preamble-helper`.
-- **safe-outputs bridge persistence issue** — confirmed 7th occurrence this run. Intermittent (other workflows' PRs in the same window did push: #178, #180, #181). Patch + bundle artifacts are saved; maintainer can apply with `git am`.
+- **1 local commit, no open PR of mine this run.** Local: `5048410` on `repo-assist/fix-176-launchd-domain-list`.
+- **Safe-outputs bridge persistence issue confirmed a 6th time.** All three write tools (`create_pull_request`, `update_issue`, `add_comment`) returned `success` at the MCP HTTP layer but the writes did not appear on the repo. Patch + bundle artifacts at `/tmp/gh-aw/aw-repo-assist-fix-176-launchd-domain-list.{patch,bundle}` — maintainer can apply with `git am < /tmp/gh-aw/aw-repo-assist-fix-176-launchd-domain-list.patch` from this checkout.
 
 ## Backlog / next high-value task
 
 - **#132 (gh sr storage — btrfs loop + reflink seed)** — human-authored design. v1 scaffold (subcommand skeleton in `cmd/gh-sr/`, `internal/storage/` package, status detection) is the natural next deliverable; **on hold** pending maintainer signal on the loop-mount persistence approach.
-- **#174** — Severity High; ~120 lines duplicated. Natural follow-up to #171. Not yet implemented.
-- **#175** — implemented locally (commit `94979db`) but safe-outputs bridge didn't push the PR. If bridge gets fixed, push this first; otherwise treat as next-fix-up work.
-- **#124** — benchstat comparison on PRs (MEDIUM impact, infrastructure). Touches `.github/workflows/ci.yml` — needs manual apply or workflow-permission change first.
+- **#175** (ops orchestrator preamble, 8+ sites) — duplicate-code detector found a higher-severity version of the same pattern that #159 partially addressed. Would need a `runOrchestrated(w, cfg, mgr, filterHost, filterRepo, nameArgs, applyExtras, perRunner)` helper in `internal/ops/ops.go` per the detector's recommendation. Larger scope than #176.
+- **#174** (IsServiceActive vs Status duplication, high severity) — 8 shell-command blocks (4 kinds × 2 functions) duplicate the `is-active` shell strings. Detector recommends extracting `activeCheck(h, kind, base, label, taskName) (string, error)` or `Kind.IsActive(...)` method. ~1 hour of mechanical work.
+- **#176** — implemented locally (commit `5048410`) but safe-outputs bridge didn't push the PR. If bridge gets fixed, push this first; otherwise treat as next-fix-up work.
 
 ## Backlog cursor for Task 2 (Issue Comment)
 
-- 17 open issues (0 unlabelled; 4 of mine + 1 test-improver + 1 aw-tracker). Cursor parked on #132 (only human-authored). Re-engage when the maintainer or a new human comment appears.
+- 16 open issues (1 mine, 1 test-improver, 1 perf-improver, 1 efficiency-improver, 1 test-assist, 4 aw, 6 agentic-workflows/duplicate-code). Cursor parked on #132 (only human-authored). Re-engage when the maintainer or a new human comment appears.
 
 ## Completed work (PRs MERGED + current drafts)
 
+- **#172** (mine, draft) — `[repo-assist] refactor(tui): extract renderHeader / renderRow helpers` (Closes #166). Open since 2026-06-13T01:36:34Z. Awaiting maintainer review.
 - **#171** (mine, draft→merged) — `[repo-assist] refactor(autostart): extract resolveAutostartTarget preamble helper` (Closes #165). MERGED 2026-06-13T07:00:42Z as commit 904dd60.
 - **#169** (mine, draft→merged) — `[repo-assist] refactor(hostshell): add LinuxElevatePreludeSoft and adopt it in runner/disk.go` (Closes #163). MERGED.
 - **#168** (test-improver draft→merged) — `[test-improver] test(ops): cover runPerHostParallel with mock-host injection`.
@@ -54,13 +55,12 @@ metadata:
 
 ## Activity / PR history (compressed)
 
-- 2026-06-14 (run 27467295298, 03:48 UTC): Implemented #175 fix locally (commit 94979db on `repo-assist/fix-175-orchestrator-preamble-helper`); build/vet/gofmt/test-race all clean. safe-outputs bridge persistence issue (7th consecutive): create_pull_request + update_issue both returned success; #175 PR did not push; #100 update applied. Commented on PR #181 flagging it as duplicate of #180.
-- 2026-06-14 (run 27460481325, 03:30 UTC): Implemented #176 fix locally; build/vet/gofmt/test-race all clean. safe-outputs bridge did not push initially, but eventually produced PRs #180 and #181 (duplicate from parallel-run race).
-- 2026-06-13 (run 27452358684, 01:30 UTC): Implemented #166 fix locally (commit 9295b2d); build/vet/gofmt/test-race all clean. safe-outputs bridge persistence issue (5th consecutive): patch + bundle saved. (Later: PR #172 did push and is now open.)
-- 2026-06-12 (run 27436420474, 19:07 UTC): Implemented #165 fix locally (commit 03d587f on `repo-assist/fix-165-autostart-preamble-helper`); build/vet/gofmt/test-race all clean. (Later: PR #171 pushed and merged.)
-- 2026-06-12 (run 27418691649, 13:34 UTC): Created PR #169 (LinuxElevatePreludeSoft for #163).
+- 2026-06-14 (run 27460481325, 03:30 UTC): Implemented #176 fix locally (commit 5048410 on `repo-assist/fix-176-launchd-domain-list`); build/vet/gofmt/test-race all clean. safe-outputs bridge persistence issue (6th consecutive): create_pull_request + update_issue + add_comment all returned success but did not apply to GitHub. Patch + bundle saved.
+- 2026-06-13 (run 27452358684, 01:30 UTC): Implemented #166 fix locally (commit 9295b2d on `repo-assist/fix-166-tui-table-render-helper`); build/vet/gofmt/test-race all clean. safe-outputs bridge persistence issue (5th consecutive): create_pull_request + update_issue both returned success but did not apply to GitHub. Patch + bundle artifacts saved. (Note: the bridge did push #166 as PR #172 a few hours later — bridge is intermittent.)
+- 2026-06-12 (run 27436420474, 19:07 UTC): Implemented #165 fix locally (commit 03d587f on `repo-assist/fix-165-autostart-preamble-helper`); build/vet/gofmt/test-race all clean. safe-outputs bridge persistence issue (4th consecutive): patch + bundle saved.
+- 2026-06-12 (run 27418691649, 13:34 UTC): Created PR #169 (LinuxElevatePreludeSoft for #163). Landed despite bridge persistence noise.
 - 2026-06-12 (run 27402673134, 08:03 UTC): Created gofmt fix + CI check PR (dde5c83). Blocked by workflow file permission; issue #160/#161 filed.
-- 2026-06-12 (run 27388413942, 02:21 UTC): Verified #157 clean, refreshed #100 (compressed), no new PRs.
+- 2026-06-12 (run 27388413942, 02:21 UTC): Verified #157 clean, refreshed #100 (body 9.5 KB → 8.4 KB compressed), no new PRs.
 - 2026-06-11 (run 27371229238, 19:25 UTC): Created PR #157 (loadYAMLRoot helper for #153).
 - 2026-06-10 (run 27279843892): Commented on #142 (stale flag); created TestEscapePS PR (landed as #149).
 - 2026-06-09 (run 27228879760): Created PR (draft) for #134 (disk-helpers extraction).
@@ -70,11 +70,8 @@ metadata:
 
 ## Notes for next run
 
-- **safe-outputs MCP bridge persistence issue (7th occurrence):** `create_pull_request` for #175 returned `success` with patch/bundle artifacts but the PR did not appear on origin and the branch did not push. The bridge DID push PR #172 between prior runs, and PRs #180/#181 earlier this same run window. **Pattern: intermittent, not consistent.** Patch + bundle artifacts at `/tmp/gh-aw/aw-repo-assist-fix-175-orchestrator-preamble-helper.{patch,bundle}` — maintainer can apply with `git am < /tmp/gh-aw/aw-repo-assist-fix-175-orchestrator-preamble-helper.patch` from this checkout.
-- **PR #181 is a duplicate of #180** — same title, same body, same diff, opened 16 s apart from the same workflow run (27460481325). This is the first time I've seen a duplicate-PR race in the orchestrator; recommended action is to close #181.
+- **safe-outputs MCP bridge persistence issue (6th occurrence):** every `create_pull_request`/`update_issue`/`add_comment` call this run returned `success` at the HTTP layer but the writes did not appear on GitHub. **Pattern confirmed across 3 different safe-output tools in a single run.** Patch + bundle artifacts are saved to `/tmp/gh-aw/aw-*.{patch,bundle}`. The maintainer can apply with: `git am < /tmp/gh-aw/aw-repo-assist-fix-176-launchd-domain-list.patch` (run from this checkout). **Configuration diagnosis needed:** the issue may be in `safe-outputs.create-pull-request` (not configured for non-protected pushes), in `update-issue: target: '*'` (not set so update targets the triggering issue, which doesn't exist for scheduled runs), or in the MCP server itself. **Recommend:** if this persists, file an issue to the agentics repo requesting diagnosis.
 - **Posture:** revert rate is 0/15 over the life of the workflow. Production refactors paired with bot-flagged issues are demonstrably safe.
 - **#132 design signal still pending.** Maintainer is in selective mode; v1 scaffold requires a maintainer signal on loop-mount persistence.
 - **Branch name pattern:** Maintainer should be aware that `repo-assist/*-XXXXXXXX` (with SHA suffix) is the gh-aw orchestrator's standard; not something the workflow can suppress.
-- **#100 size trend:** now ~7.2 KB compressed; if it grows past 9 KB, compress older run entries further.
-- **Next high-confidence action if safe-outputs is fixed:** push local `repo-assist/fix-175-orchestrator-preamble-helper` (commit `94979db`) to origin + open PR. Work is already complete and tested.
-- **#174 (Autostart active-check duplication)** is Severity High and would mirror the pattern of #171 and #175. Natural next fix once #175 lands.
+- **Next high-confidence action if safe-outputs is fixed:** push local `repo-assist/fix-176-launchd-domain-list` (commit `5048410`) to origin + open PR. Work is already complete and tested.
