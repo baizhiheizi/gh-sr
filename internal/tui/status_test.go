@@ -33,7 +33,7 @@ func TestFormatConfig_containsHostsAndRunners(t *testing.T) {
 		},
 	}
 	out := FormatConfig(cfg)
-	if !strings.Contains(out, "h1") || !strings.Contains(out, "r1") || !strings.Contains(out, "o/r") {
+	if !strings.Contains(out, "h1") || !strings.Contains(out, "r1") || !strings.Contains(out, "target=o/r") {
 		t.Fatalf("unexpected FormatConfig output:\n%s", out)
 	}
 	if strings.Contains(out, "github_pat_") {
@@ -57,11 +57,27 @@ func TestFormatConfigShowsEffectiveRunnerMode(t *testing.T) {
 	}
 
 	out := FormatConfig(cfg)
-	if !strings.Contains(out, "native  repo=o/native  host=h1  count=0  mode=native") {
+	if !strings.Contains(out, "native  target=o/native  host=h1  count=0  mode=native") {
 		t.Fatalf("expected native runner to show native mode, got:\n%s", out)
 	}
-	if !strings.Contains(out, "container  repo=o/container  host=h1  count=0  mode=container") {
+	if !strings.Contains(out, "container  target=o/container  host=h1  count=0  mode=container") {
 		t.Fatalf("expected container runner to show container mode, got:\n%s", out)
+	}
+}
+
+func TestFormatConfig_orgRunnerDisplayTarget(t *testing.T) {
+	t.Parallel()
+	cfg := &config.Config{
+		Hosts: map[string]config.HostConfig{
+			"h1": {Addr: "local", OS: "linux", Arch: "amd64"},
+		},
+		Runners: []config.RunnerConfig{
+			{Name: "org-ci", Org: "my-org", Group: "ci-pool", Host: "h1", Count: 2},
+		},
+	}
+	out := FormatConfig(cfg)
+	if !strings.Contains(out, "target=org:my-org group=ci-pool") {
+		t.Fatalf("expected org display target with group, got:\n%s", out)
 	}
 }
 

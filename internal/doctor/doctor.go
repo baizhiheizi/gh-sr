@@ -137,7 +137,7 @@ func Run(w io.Writer, cfgPath, envPath string, cfg *config.Config, cfgErr error,
 				defer apiWg.Done()
 				list, err := gh.ListRunnersScoped("org", org)
 				if err != nil {
-					orgResults[idx] = apiResult{sevFail, fmt.Sprintf("org %s: %v", org, err)}
+					orgResults[idx] = apiResult{sevFail, formatOrgAPIError(org, err)}
 				} else {
 					orgResults[idx] = apiResult{sevOK, fmt.Sprintf("org %s: list runners OK (%d registered)", org, len(list))}
 				}
@@ -272,6 +272,20 @@ func uniqueOrgs(runners []config.RunnerConfig) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// formatOrgAPIError formats a GitHub org runner API failure with a permission
+// hint when the error looks like missing org admin access.
+func formatOrgAPIError(org string, err error) string {
+	msg := fmt.Sprintf("org %s: %v", org, err)
+	if err == nil {
+		return msg
+	}
+	lower := strings.ToLower(err.Error())
+	if strings.Contains(lower, "http 403") || strings.Contains(lower, "permission") || strings.Contains(lower, "forbidden") {
+		msg += " (org-level runners require org owner access or admin:org scope — run `gh auth login` with sufficient org permissions)"
+	}
+	return msg
 }
 
 func uniqueHostNames(runners []config.RunnerConfig) []string {

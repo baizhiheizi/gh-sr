@@ -88,7 +88,19 @@ runners:
     host: vps-1
     profile: agentic
     count: 2
+
+  # Organization-level runner — shared across all repos in the org.
+  # Create runner groups in GitHub org settings before referencing group:.
+  - name: myorg-ci
+    org: my-org
+    group: ci-pool
+    host: vps-1
+    count: 4
+    labels: [self-hosted, Linux, X64]
+    runner_mode: container
 ```
+
+See [Organization runners](guides/org-runners.md) for runner groups, workflow targeting, and migrating from per-repo runners.
 
 ## Config reference
 
@@ -99,9 +111,9 @@ runners:
 | `hosts.<name>.arch` | `amd64` or `arm64`. Auto-detected when `addr` is `local`. |
 | `hosts.<name>.windows_ps` | Optional; **Windows hosts only.** Which executable runs remote PowerShell payloads: `powershell` (default, `powershell.exe`) or `pwsh` (`pwsh.exe`). gh sr uses `-EncodedCommand` so the user’s SSH default shell (cmd.exe or pwsh) does not break nested quoting. |
 | `runners[].name` | Base name (instances become `name-1`, `name-2`, ...) |
-| `runners[].repo` | GitHub `owner/repo`. Required unless `org` is set. |
-| `runners[].org` | GitHub organization name. Use instead of `repo` for org-level runners. **If both `repo` and `org` are set, `org` wins** — the GitHub registration URL is `https://github.com/<org>` for both native and container modes (matches `Scope` / `ScopeTarget`). Setting both was previously a misconfiguration that registered the same runner against a different URL depending on `runner_mode`. |
-| `runners[].group` | Runner group name (org-level runners only). Passed as `--runnergroup` during registration. |
+| `runners[].repo` | GitHub `owner/repo`. Required unless `org` is set. Mutually exclusive with `org`. |
+| `runners[].org` | GitHub organization name. Use instead of `repo` for org-level runners shared across all repos in the org. Mutually exclusive with `repo`. See [Organization runners](guides/org-runners.md). |
+| `runners[].group` | Runner group name (org-level runners only). Passed as `--runnergroup` during registration. The group must already exist in GitHub org settings. |
 | `runners[].host` | References a key under `hosts` |
 | `runners[].count` | Number of parallel instances (default: 1) |
 | `runners[].labels` | Labels for workflow `runs-on` matching. Include **`agentic`** when the runner should serve [GitHub Agentic Workflows](https://github.github.com/gh-aw/). With **`profile: agentic`**, the `agentic` label is added automatically if omitted. |
@@ -112,7 +124,7 @@ runners:
 | `container_runner_image.extra_apt_packages` | Optional list of additional Debian package names to install in the locally built container runner image (`runner_mode: container`). At most 256 entries; each name must match `[a-z0-9][a-z0-9+.-]*` (max 200 chars). When set, the image tag gains a `-x<8-hex>` suffix so Docker does not reuse an image built without those packages. Core packages are in the repo manifest `internal/runner/agentic-runner-image/apt-packages-core.txt`. |
 | `container_runner_image.mtu` | Optional integer (576–1500). Forces the Docker network MTU for `runner_mode: container` — both the outer runner container's egress interface and the inner `dockerd` bridge. Leave unset (0) to **auto-detect** the host's egress MTU, which fixes the common reduced-MTU case (cloud overlay networks like GCP's 1460, VPN/WireGuard) where large-packet TLS handshakes otherwise fail with `Client network socket disconnected before secure TLS connection was established` (e.g. `actions/setup-go`). Set this only when the host's real path MTU is below its NIC MTU (a tunnel the NIC is unaware of) so auto-detection cannot see it. Only ever lowers the MTU; applied at container-create time, so changing it requires `gh sr rebuild <name>`. |
 
-**Unique runner names per repository:** GitHub registers each self-hosted runner by its **instance** name (`name-1`, `name-2`, …). That name must be **unique within a given `owner/repo`**. If two machines use the same base `name` and `count: 1`, both try to register as `name-1` and only one registration remains active. Prefer distinct base names (for example `myapp-win` vs `myapp-linux`) so every machine has its own GitHub runner record and `gh sr status` matches the right row.
+**Unique runner names per registration scope:** GitHub registers each self-hosted runner by its **instance** name (`name-1`, `name-2`, …). That name must be **unique within the registration scope** — within a given `owner/repo` for repo-scoped runners, or **org-wide** for org-scoped runners. If two machines use the same base `name` and `count: 1` in the same scope, both try to register as `name-1` and only one registration remains active. Prefer distinct base names (for example `myapp-win` vs `myapp-linux`, or `myorg-ci` vs `myorg-gpu`) so every machine has its own GitHub runner record and `gh sr status` matches the right row.
 
 ## Recent behavior changes
 

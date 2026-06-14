@@ -1042,3 +1042,24 @@ func TestRunnerConfig_GitHubRegistrationURL(t *testing.T) {
 		})
 	}
 }
+
+func TestRunnerConfig_DisplayTarget(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name string
+		rc   RunnerConfig
+		want string
+	}{
+		{name: "repo", rc: RunnerConfig{Repo: "o/r"}, want: "o/r"},
+		{name: "org", rc: RunnerConfig{Org: "my-org"}, want: "org:my-org"},
+		{name: "org with group", rc: RunnerConfig{Org: "my-org", Group: "ci-pool"}, want: "org:my-org group=ci-pool"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := tc.rc.DisplayTarget(); got != tc.want {
+				t.Errorf("DisplayTarget(): got %q, want %q", got, tc.want)
+			}
+		})
+	}
+}

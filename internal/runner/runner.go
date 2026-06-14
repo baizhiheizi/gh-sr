@@ -45,7 +45,7 @@ func NewManager(pat string) *Manager {
 type RunnerStatus struct {
 	Instance string
 	Host     string
-	Repo     string // owner/repo for repo-scoped, "org:name" for org-scoped
+	Repo     string // DisplayTarget: owner/repo or org:<name> [group=<name>]
 	Labels   string
 	Mode     string
 	// ContainerImage is the Docker image ref from the container config (runner_mode: container only).
@@ -259,15 +259,11 @@ func (m *Manager) Status(h *host.Host, rc config.RunnerConfig) ([]RunnerStatus, 
 	var statuses []RunnerStatus
 
 	for i, name := range rc.InstanceNames() {
-		repoDisplay := rc.Repo
-		if rc.Org != "" {
-			repoDisplay = "org:" + rc.Org
-		}
 		mode := rc.EffectiveRunnerMode()
 		s := RunnerStatus{
 			Instance: name,
 			Host:     rc.Host,
-			Repo:     repoDisplay,
+			Repo:     rc.DisplayTarget(),
 			Labels:   strings.Join(rc.EffectiveLabelsForInstance(h.OS, h.Arch, i), ", "),
 			Mode:     mode,
 		}

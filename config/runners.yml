@@ -47,6 +47,15 @@ runners:
   #   count: 2
   #   labels: [self-hosted, Linux, X64]
   #
+  # Organization-level runner (shared across all repos in the org):
+  #
+  # - name: org-ci
+  #   org: my-org
+  #   group: ci-pool          # optional; create the group in GitHub org settings first
+  #   host: vps-1
+  #   count: 4
+  #   labels: [self-hosted, Linux, X64]
+  #
   # Runner on the local machine:
   #
   # - name: my-project-local

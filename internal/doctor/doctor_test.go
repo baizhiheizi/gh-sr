@@ -350,6 +350,116 @@ func TestRun_GitHubListRunnersUsesAPI(t *testing.T) {
 	_ = res
 }
 
+func TestFormatOrgAPIError_permissionHint(t *testing.T) {
+	t.Parallel()
+	err403 := fmt.Errorf("listing runners for my-org: HTTP 403: forbidden")
+	got := formatOrgAPIError("my-org", err403)
+	if !strings.Contains(got, "admin:org") {
+		t.Fatalf("expected admin:org hint, got: %s", got)
+	}
+	if !strings.Contains(got, "org my-org:") {
+		t.Fatalf("expected org prefix, got: %s", got)
+	}
+
+	plain := formatOrgAPIError("my-org", fmt.Errorf("connection reset"))
+	if strings.Contains(plain, "admin:org") {
+		t.Fatalf("non-permission error should not get hint: %s", plain)
+	}
+}
+
+func TestRun_GitHubOrgListRunnersUsesAPI(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method", http.StatusMethodNotAllowed)
+			return
+		}
+		if strings.HasSuffix(r.URL.Path, "/orgs/my-org/actions/runners") {
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"total_count": 2,
+				"runners":     []any{},
+			})
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	t.Cleanup(srv.Close)
+
+	cfg := &config.Config{
+		GitHub: config.GitHubConfig{},
+		Hosts: map[string]config.HostConfig{
+			"localh": {Addr: config.LocalAddr, OS: "linux", Arch: "amd64"},
+		},
+		Runners: []config.RunnerConfig{
+			{Name: "org-ci", Org: "my-org", Host: "localh", Labels: []string{"x"}},
+		},
+	}
+	gh := runner.NewGitHubClientWithHTTP("test-token", srv.Client(), srv.URL)
+
+	tmp := t.TempDir()
+	cfgPath := filepath.Join(tmp, "runners.yml")
+	if err := os.WriteFile(cfgPath, []byte("#"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	envPath := filepath.Join(tmp, "env")
+	if err := os.WriteFile(envPath, []byte("#"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	var buf strings.Builder
+	res := Run(&buf, cfgPath, envPath, cfg, nil, gh, "", "", false)
+
+	out := buf.String()
+	if !strings.Contains(out, "org my-org: list runners OK (0 registered)") {
+		t.Fatalf("expected org GitHub OK line, got:\n%s", out)
+	}
+	_ = res
+}
+
+func TestRun_GitHubOrgListRunners403ShowsHint(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/orgs/my-org/actions/runners") {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	t.Cleanup(srv.Close)
+
+	cfg := &config.Config{
+		GitHub: config.GitHubConfig{},
+		Hosts: map[string]config.HostConfig{
+			"localh": {Addr: config.LocalAddr, OS: "linux", Arch: "amd64"},
+		},
+		Runners: []config.RunnerConfig{
+			{Name: "org-ci", Org: "my-org", Host: "localh"},
+		},
+	}
+	gh := runner.NewGitHubClientWithHTTP("test-token", srv.Client(), srv.URL)
+
+	tmp := t.TempDir()
+	cfgPath := filepath.Join(tmp, "runners.yml")
+	if err := os.WriteFile(cfgPath, []byte("#"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	envPath := filepath.Join(tmp, "env")
+	if err := os.WriteFile(envPath, []byte("#"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	var buf strings.Builder
+	res := Run(&buf, cfgPath, envPath, cfg, nil, gh, "", "", false)
+
+	out := buf.String()
+	if !strings.Contains(out, "admin:org") {
+		t.Fatalf("expected org permission hint, got:\n%s", out)
+	}
+	if res.Fail < 1 {
+		t.Fatalf("expected FAIL for org 403, got %+v", res)
+	}
+}
+
 func TestCheckRunnerDiskUsage_warnsOrphanOverThreshold(t *testing.T) {
 	t.Parallel()
 	h := host.NewHost("linux", config.HostConfig{OS: "linux", Addr: "local"})

@@ -78,21 +78,12 @@ func FormatConfig(cfg *config.Config) string {
 	b.WriteString(configKey.Render("Runners:"))
 	b.WriteString("\n")
 	for _, r := range cfg.Runners {
-		target := r.Repo
-		targetKey := "repo"
-		if r.Org != "" {
-			target = r.Org
-			targetKey = "org"
-		}
 		extra := ""
-		if r.Group != "" {
-			extra += fmt.Sprintf("  group=%s", r.Group)
-		}
 		if r.Ephemeral {
 			extra += "  ephemeral"
 		}
-		b.WriteString(fmt.Sprintf("  %s  %s=%s  host=%s  count=%d  mode=%s  labels=[%s]%s\n",
-			configVal.Render(r.Name), targetKey, target, r.Host, r.Count, r.EffectiveRunnerMode(), strings.Join(r.Labels, ", "), extra))
+		b.WriteString(fmt.Sprintf("  %s  target=%s  host=%s  count=%d  mode=%s  labels=[%s]%s\n",
+			configVal.Render(r.Name), r.DisplayTarget(), r.Host, r.Count, r.EffectiveRunnerMode(), strings.Join(r.Labels, ", "), extra))
 	}
 	return b.String()
 }

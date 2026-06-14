@@ -80,10 +80,7 @@ func BenchmarkEnrichFromScopeRunners_Small(b *testing.B) {
 func makeEnrichStatuses(cfg *config.Config) []RunnerStatus {
 	var out []RunnerStatus
 	for _, rc := range cfg.Runners {
-		repoDisplay := rc.Repo
-		if rc.Org != "" {
-			repoDisplay = "org:" + rc.Org
-		}
+		repoDisplay := rc.DisplayTarget()
 		count := rc.Count
 		if count < 1 {
 			count = 1
