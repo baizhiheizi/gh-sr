@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/an-lee/gh-sr/internal/host"
@@ -102,8 +103,13 @@ func extractTrailingPercent(s string) float64 {
 	}
 	s = strings.TrimSpace(s)
 	s = strings.TrimSuffix(s, "%")
-	var v float64
-	if _, err := fmt.Sscanf(s, "%f", &v); err != nil {
+	s = strings.TrimSpace(s)
+	// strconv.ParseFloat is ~7x faster than fmt.Sscanf for a single float
+	// (Sscanf goes through the format-string parser + reflection). On the
+	// TUI metrics render path this is called once per colored cell per host
+	// on every Bubble Tea View() call (per keypress and per refresh tick).
+	v, err := strconv.ParseFloat(s, 64)
+	if err != nil {
 		return 0
 	}
 	return v
