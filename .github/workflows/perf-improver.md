@@ -31,6 +31,7 @@ imports:
 - shared/engine-minimax.md
 - shared/runtime.md
 safe-outputs:
+  report-failure-as-issue: false
   add-comment:
     hide-older-comments: true
     max: 10

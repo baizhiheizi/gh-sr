@@ -30,6 +30,7 @@ imports:
 - shared/engine-minimax.md
 - shared/runtime.md
 safe-outputs:
+  report-failure-as-issue: false
   create-pull-request:
     draft: false
     expires: 2d

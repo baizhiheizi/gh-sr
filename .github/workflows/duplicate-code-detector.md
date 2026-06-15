@@ -10,6 +10,7 @@ imports:
 - shared/engine-minimax.md
 - shared/runtime.md
 safe-outputs:
+  report-failure-as-issue: false
   create-issue:
     assignees: copilot
     expires: 2d

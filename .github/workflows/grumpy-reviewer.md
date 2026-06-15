@@ -13,6 +13,7 @@ imports:
 - shared/engine-minimax.md
 - shared/runtime.md
 safe-outputs:
+  report-failure-as-issue: false
   create-pull-request-review-comment:
     max: 5
     side: RIGHT
