@@ -7,7 +7,7 @@ metadata:
 
 ## Mock infrastructure
 
-`host.Executor` is the universal seam (Run/Upload/Close). `host.Host.SetConn(Executor)` injects mocks. Per-package mocks: `internal/host/mock_test.go` (`newMockHost`), `internal/autostart` (clone), `internal/agentic` (`prereqTestExecutor` keyed on exact command string — catches silent refactors of `docker exec` scripts), `internal/hostshell` (`recordingExecutor`). `internal/testutil/mock_executor.go` is the **shared** `MockExecutor` with `RunFn`, `Responses`, `RunErr`, `UploadCalled` — default for new tests.
+`host.Executor` is the universal seam (Run/Upload/Close). `host.Host.SetConn(Executor)` injects mocks. Per-package mocks: `internal/host/mock_test.go` (`newMockHost`), `internal/autostart` (clone), `internal/agentic` (`prereqTestExecutor` keyed on exact command string), `internal/hostshell` (`recordingExecutor`). `internal/testutil/mock_executor.go` is the **shared** `MockExecutor` with `RunFn`, `Responses`, `RunErr` — default for new tests.
 
 ## Package-level factory + per-call capture (proved in `internal/ops`)
 
@@ -36,11 +36,10 @@ Without mutex, `-race` flags unsynchronised writes. Without local capture, early
 
 ## Conventions
 
-- `t.Parallel()` on every subtest; `t.Helper()` on assertion helpers; `name` first in table-driven subtests.
+- `t.Parallel()` on every subtest; `t.Helper()` on assertion helpers.
 - `t.Setenv` (not `os.Setenv`) for env-var tests.
 - Lift exact-command strings into named test constants.
-- For printer tests, prefer suffix-anchored `strings.TrimRight(body, " ")` over exact equality when column widths depend on header content.
-- For shell-script assertions, write a parser that reverses the escape rules (`'\''` POSIX, `''` PowerShell) and round-trip the path through the extractor — do not `strings.Contains` the literal.
+- For shell-script assertions, write a parser that reverses the escape rules (`'\''` POSIX, `''` PowerShell).
 
 ## Gotchas
 
@@ -51,7 +50,10 @@ Without mutex, `-race` flags unsynchronised writes. Without local capture, early
 - `printRow` emits `%-*s  ` for **every** cell (including the last), then `Fprintln` adds `\n`.
 - `PrintDiskUsageTable` does NOT sort; sorting is `CollectDiskUsage`'s job. Excludes err-row `TotalBytes` from totals.
 - `config.IsLocalAddr("")` is **false** — only `"local"` is local. Empty `Addr` makes `host.wrapCommand` base64-encode on Windows. Use `Addr: "local"` in fixtures when you want the literal script recorded.
-- **`lockedWriter`** serialises each Write call, NOT multi-Write sequences. Use `Write([]byte(completeMessage))` for "no torn writes" tests.
-- **Race detector + concurrent orchestrators**: generous timeout (10s+ under `-race`) and `close(barrier)` on timeout-failure path.
+- **`lockedWriter`** serialises each Write call, NOT multi-Write sequences.
+- **Race detector + concurrent orchestrators**: 10s+ timeout under `-race`; `close(barrier)` on timeout-failure path.
+- **`connectHostMu` queue limit**: mutex held for **entire** test duration. Beyond ~15-20 parallel tests using `installMockConnectHost`, queue exceeds CI's 60s. Drop `t.Parallel()` for new factory-swap tests.
+- **DO NOT call `installMockConnectHost` AND then `connectHostMu.Lock()` in the same test** — deadlock.
+- **Empty result ≠ nil**: `make([]T, len(...))` returns empty (non-nil) slice when no hosts match. Test `len() == 0`, not `== nil`.
 
 [[repo]] [[commands]] [[backlog]]
