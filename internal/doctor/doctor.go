@@ -392,6 +392,9 @@ func runHostChecks(w io.Writer, hostName string, h *host.Host, runners []config.
 			}
 		}
 	}
+	if h.OS == "linux" || h.OS == "darwin" || h.OS == "windows" {
+		checkOrphanRunners(w, hostName, h, runners, r)
+	}
 	checkRunnerDiskUsage(w, hostName, h, runners, r)
 }
 
@@ -599,6 +602,22 @@ func checkContainerAgenticInnerHygiene(w io.Writer, hostName string, h *host.Hos
 			}
 		}
 	}
+}
+
+func checkOrphanRunners(w io.Writer, hostName string, h *host.Host, runners []config.RunnerConfig, r *Result) {
+	configured := runner.ConfiguredInstanceSet(runners, hostName)
+	orphans, err := runner.OrphanInstances(h, configured)
+	if err != nil {
+		printLine(w, sevWarn, hostName, fmt.Sprintf("orphan runners: list: %v", err))
+		r.Warn++
+		return
+	}
+	if len(orphans) == 0 {
+		return
+	}
+	printLine(w, sevWarn, hostName, fmt.Sprintf("orphan runners: %d instance(s) not in runners.yml (%s); run: gh sr service cleanup",
+		len(orphans), strings.Join(orphans, ", ")))
+	r.Warn++
 }
 
 func checkRunnerDiskUsage(w io.Writer, hostName string, h *host.Host, runners []config.RunnerConfig, r *Result) {

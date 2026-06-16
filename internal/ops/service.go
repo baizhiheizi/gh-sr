@@ -18,6 +18,10 @@ func ServiceInstall(w io.Writer, cfg *config.Config, filterHost, filterRepo stri
 	}
 	return runPerHostParallel(w, cfg, runners, func(w io.Writer, h *host.Host, rc config.RunnerConfig) error {
 		hcfg := cfg.Hosts[rc.Host]
+		if rc.IsContainerMode() {
+			fmt.Fprintf(w, "Skipping autostart for %s on %s (runner_mode: container; containers use --restart unless-stopped)\n", rc.Name, rc.Host)
+			return nil
+		}
 		if system && hcfg.OS != "linux" {
 			return fmt.Errorf("--system applies only to Linux hosts (host %q is %s)", rc.Host, hcfg.OS)
 		}
@@ -51,6 +55,10 @@ func ServiceUninstall(w io.Writer, cfg *config.Config, filterHost, filterRepo st
 	}
 	return runPerHostParallel(w, cfg, runners, func(w io.Writer, h *host.Host, rc config.RunnerConfig) error {
 		hcfg := cfg.Hosts[rc.Host]
+		if rc.IsContainerMode() {
+			fmt.Fprintf(w, "Skipping autostart removal for %s on %s (runner_mode: container)\n", rc.Name, rc.Host)
+			return nil
+		}
 		if config.IsLocalAddr(hcfg.Addr) {
 			fmt.Fprintf(w, "Removing autostart for %s on %s (local)...\n", rc.Name, rc.Host)
 		} else {
@@ -90,4 +98,77 @@ func ServiceStatus(w io.Writer, cfg *config.Config, filterHost, filterRepo strin
 		}
 		return nil
 	})
+}
+
+// ServiceCleanup removes orphan runner services and directories on each host that are
+// not listed in runners.yml (typical after rename or manual config edits).
+func ServiceCleanup(w io.Writer, cfg *config.Config, filterHost string, dryRun bool) error {
+	if err := ResolveHostInfo(w, cfg); err != nil {
+		return err
+	}
+	names := sortedHostNames(cfg, filterHost)
+	if len(names) == 0 {
+		if filterHost != "" {
+			return fmt.Errorf("unknown host %q", filterHost)
+		}
+		return fmt.Errorf("no hosts configured")
+	}
+
+	mgr := runner.NewManager("")
+	mgr.Out = w
+
+	var orphanCount, autostartCount, dirCount int
+	for _, name := range names {
+		hcfg := cfg.Hosts[name]
+		if config.IsLocalAddr(hcfg.Addr) {
+			fmt.Fprintf(w, "Checking orphan runners on %s (local)...\n", name)
+		} else {
+			fmt.Fprintf(w, "Checking orphan runners on %s (%s)...\n", name, hcfg.Addr)
+		}
+		h, err := connectHostFn(name, hcfg)
+		if err != nil {
+			return fmt.Errorf("%s: connect: %w", name, err)
+		}
+
+		configured := configuredInstanceSet(cfg, name)
+		orphans, err := runner.OrphanInstances(h, configured)
+		if err != nil {
+			h.Close()
+			return fmt.Errorf("%s: list orphans: %w", name, err)
+		}
+
+		for _, inst := range orphans {
+			plan, err := mgr.CleanupOrphanInstance(h, inst, dryRun)
+			if err != nil {
+				h.Close()
+				return fmt.Errorf("%s: %s: %w", name, inst, err)
+			}
+			if !plan.Autostart && !plan.Directory {
+				continue
+			}
+			orphanCount++
+			if plan.Autostart {
+				autostartCount++
+			}
+			if plan.Directory {
+				dirCount++
+			}
+		}
+		h.Close()
+	}
+
+	if dryRun {
+		fmt.Fprintf(w, "\nFound %d orphan instance(s) (%d autostart, %d directories); re-run without --dry-run to remove.\n",
+			orphanCount, autostartCount, dirCount)
+	} else if orphanCount > 0 {
+		fmt.Fprintf(w, "\nCleaned up %d orphan instance(s) (%d autostart, %d directories).\n",
+			orphanCount, autostartCount, dirCount)
+	} else {
+		fmt.Fprintln(w, "\nNo orphan runner services or directories found.")
+	}
+	return nil
+}
+
+func configuredInstanceSet(cfg *config.Config, hostName string) map[string]struct{} {
+	return runner.ConfiguredInstanceSet(cfg.Runners, hostName)
 }

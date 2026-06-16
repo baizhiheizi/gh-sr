@@ -947,7 +947,21 @@ func serviceCmd() *cobra.Command {
 			return ops.ServiceStatus(cmd.OutOrStdout(), cfg, filterHost, filterRepo, args)
 		},
 	}
-	cmd.AddCommand(install, uninstall, status)
+	cleanup := &cobra.Command{
+		Use:   "cleanup",
+		Short: "Remove orphan runner services and directories not in runners.yml",
+		Long:  "Finds gh-sr autostart units and runner directories under ~/.gh-sr/runners that are not listed in runners.yml — for example after a rename or manual config edit — and removes them." + serviceLongHelp,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, err := loadConfig()
+			if err != nil {
+				return err
+			}
+			dryRun, _ := cmd.Flags().GetBool("dry-run")
+			return ops.ServiceCleanup(cmd.OutOrStdout(), cfg, filterHost, dryRun)
+		},
+	}
+	cleanup.Flags().Bool("dry-run", false, "Report orphan services and directories without removing them")
+	cmd.AddCommand(install, uninstall, status, cleanup)
 	return cmd
 }
 

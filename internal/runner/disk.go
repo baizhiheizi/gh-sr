@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/an-lee/gh-sr/internal/autostart"
 	"github.com/an-lee/gh-sr/internal/config"
 	"github.com/an-lee/gh-sr/internal/host"
 	"github.com/an-lee/gh-sr/internal/hostshell"
@@ -327,6 +328,9 @@ func (m *Manager) PruneInstance(h *host.Host, hostName, instance string, rc *con
 		action := fmt.Sprintf("remove orphan directory %s", dir)
 		res.Actions = append(res.Actions, action)
 		if !opts.DryRun {
+			if kind, err := autostart.Detect(h, instance); err == nil && kind != autostart.KindNone {
+				_ = autostart.Uninstall(h, instance)
+			}
 			if err := removeDirTree(h, instance); err != nil {
 				res.Err = err
 			}

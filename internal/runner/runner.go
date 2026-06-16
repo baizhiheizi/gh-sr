@@ -55,7 +55,7 @@ type RunnerStatus struct {
 	ContainerImageRevision string
 	// ContainerImageBuild is a short match hint: "-", "?", "ok (hexprefix)", "stale (hexprefix)".
 	ContainerImageBuild string
-	Local               string // "running", "stopped", "not installed"
+	Local               string // "running", "stopped", "not installed", "service error"
 	Remote              string // from GitHub API: "online", "offline", ""
 	Busy                bool
 }
