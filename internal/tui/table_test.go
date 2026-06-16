@@ -69,6 +69,61 @@ func TestRenderHighlightedRow_matchesPerCellCursorPattern(t *testing.T) {
 	}
 }
 
+// TestRenderMenuItems_marksSelectedItem verifies the cursor row is rendered
+// with the "  > " arrow marker and every other row uses the plain "    "
+// indent. The arrow marker must wrap in selectedStyle (visible via the
+// surrounding ANSI codes), but the label itself stays readable in both
+// styles so the user can find it on screen.
+func TestRenderMenuItems_marksSelectedItem(t *testing.T) {
+	t.Parallel()
+	items := []string{"alpha", "beta", "gamma"}
+	got := renderMenuItems(items, 1)
+	if !strings.Contains(got, "alpha") || !strings.Contains(got, "beta") || !strings.Contains(got, "gamma") {
+		t.Fatalf("all labels should appear, got: %q", got)
+	}
+	if !strings.Contains(got, "> beta") {
+		t.Errorf("selected row should carry the > arrow marker, got: %q", got)
+	}
+	if strings.Contains(got, "> alpha") || strings.Contains(got, "> gamma") {
+		t.Errorf("non-selected rows should not carry the > marker, got: %q", got)
+	}
+	// 3 items × 1 trailing newline each = 3 newlines.
+	if n := strings.Count(got, "\n"); n != 3 {
+		t.Errorf("expected 3 newlines (one per item), got %d in: %q", n, got)
+	}
+}
+
+// TestRenderMenuItems_firstAndLastCursor positions the cursor at both ends
+// of a 4-item list to confirm the helper covers boundary indices correctly.
+func TestRenderMenuItems_firstAndLastCursor(t *testing.T) {
+	t.Parallel()
+	items := []string{"one", "two", "three", "four"}
+	first := renderMenuItems(items, 0)
+	if !strings.Contains(first, "> one") {
+		t.Errorf("cursor=0 should mark first item, got: %q", first)
+	}
+	last := renderMenuItems(items, 3)
+	if !strings.Contains(last, "> four") {
+		t.Errorf("cursor=3 should mark last item, got: %q", last)
+	}
+}
+
+// TestNewAltView_enablesAltScreen confirms the dashboard's NewView wrapper
+// always sets AltScreen so panels render in the alternate buffer (not the
+// main screen). Without this, a forgetful panel would draw over the user's
+// previous terminal content.
+func TestNewAltView_enablesAltScreen(t *testing.T) {
+	t.Parallel()
+	v := newAltView("hello")
+	if !v.AltScreen {
+		t.Errorf("newAltView should set AltScreen=true, got %+v", v)
+	}
+	// The view content must round-trip through the helper.
+	if v.Content != "hello" {
+		t.Errorf("view content should be %q, got %q", "hello", v.Content)
+	}
+}
+
 // visibleWidth returns the printable width of an ANSI-styled string. lipgloss
 // styled output embeds escape sequences; we approximate by stripping CSI
 // sequences (anything between ESC and a final byte 0x40-0x7e).

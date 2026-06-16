@@ -32,6 +32,34 @@ func (m *dashboardModel) View() tea.View {
 	}
 }
 
+// newAltView wraps tea.NewView with the AltScreen flag the dashboard enables
+// on every panel. Centralising it keeps every View() return path consistent
+// (one of the 11 panels forgetting the flag used to render in the main screen
+// buffer instead of the alternate buffer — easy to miss in a code review).
+func newAltView(s string) tea.View {
+	v := tea.NewView(s)
+	v.AltScreen = true
+	return v
+}
+
+// renderMenuItems builds the per-item list shared by every cursor-driven menu
+// panel (action / global / filter / dynamic filter list). The selected item is
+// prefixed with the "  > " marker through selectedStyle; the remaining items
+// use the plain "    " indent so the column of arrow markers stays aligned.
+// The trailing newline is part of the returned string so callers can append
+// it directly to a strings.Builder.
+func renderMenuItems(items []string, cursor int) string {
+	var b strings.Builder
+	for i, label := range items {
+		if i == cursor {
+			b.WriteString(selectedStyle.Render("  > "+label) + "\n")
+		} else {
+			b.WriteString("    " + label + "\n")
+		}
+	}
+	return b.String()
+}
+
 func (m *dashboardModel) viewMain() tea.View {
 	var b strings.Builder
 
@@ -61,9 +89,7 @@ func (m *dashboardModel) viewMain() tea.View {
 
 	if m.loading && len(m.statuses) == 0 {
 		b.WriteString("  Loading...\n")
-		v := tea.NewView(b.String())
-		v.AltScreen = true
-		return v
+		return newAltView(b.String())
 	}
 
 	if m.lastErr != "" {
@@ -76,9 +102,7 @@ func (m *dashboardModel) viewMain() tea.View {
 		if m.showHelp {
 			b.WriteString("\n" + helpOverlay())
 		}
-		v := tea.NewView(b.String())
-		v.AltScreen = true
-		return v
+		return newAltView(b.String())
 	}
 
 	headers := []string{"INSTANCE", "HOST", "REPO", "MODE", "IMAGE", "BUILD", "LOCAL", "GITHUB", "LABELS"}
@@ -116,9 +140,7 @@ func (m *dashboardModel) viewMain() tea.View {
 		b.WriteString("\n" + helpOverlay())
 	}
 
-	v := tea.NewView(b.String())
-	v.AltScreen = true
-	return v
+	return newAltView(b.String())
 }
 
 func (m *dashboardModel) footerMain() string {
@@ -149,51 +171,27 @@ func (m *dashboardModel) viewActionMenu() tea.View {
 	b.WriteString(titleStyle.Render("Runner actions"))
 	b.WriteString("\n\n")
 	b.WriteString(fmt.Sprintf("  Instance: %s\n\n", configVal.Render(inst)))
-	for i, label := range actionMenuLabels {
-		line := "    " + label
-		if i == m.menuCursor {
-			line = selectedStyle.Render("  > " + label)
-		}
-		b.WriteString(line + "\n")
-	}
+	b.WriteString(renderMenuItems(actionMenuLabels, m.menuCursor))
 	b.WriteString(helpStyle.Render("\n  enter: run  esc: back") + "\n")
-	v := tea.NewView(b.String())
-	v.AltScreen = true
-	return v
+	return newAltView(b.String())
 }
 
 func (m *dashboardModel) viewGlobalMenu() tea.View {
 	var b strings.Builder
 	b.WriteString(titleStyle.Render("Global menu"))
 	b.WriteString("\n\n")
-	for i, label := range globalMenuLabels {
-		line := "    " + label
-		if i == m.menuCursor {
-			line = selectedStyle.Render("  > " + label)
-		}
-		b.WriteString(line + "\n")
-	}
+	b.WriteString(renderMenuItems(globalMenuLabels, m.menuCursor))
 	b.WriteString(helpStyle.Render("\n  enter: choose  esc: back") + "\n")
-	v := tea.NewView(b.String())
-	v.AltScreen = true
-	return v
+	return newAltView(b.String())
 }
 
 func (m *dashboardModel) viewFilterMenu() tea.View {
 	var b strings.Builder
 	b.WriteString(titleStyle.Render("Filters"))
 	b.WriteString("\n\n")
-	for i, label := range filterMenuLabels {
-		line := "    " + label
-		if i == m.menuCursor {
-			line = selectedStyle.Render("  > " + label)
-		}
-		b.WriteString(line + "\n")
-	}
+	b.WriteString(renderMenuItems(filterMenuLabels, m.menuCursor))
 	b.WriteString(helpStyle.Render("\n  enter: choose  esc: back") + "\n")
-	v := tea.NewView(b.String())
-	v.AltScreen = true
-	return v
+	return newAltView(b.String())
 }
 
 func (m *dashboardModel) viewFilterList(choices []string, subtitle string) tea.View {
@@ -204,27 +202,17 @@ func (m *dashboardModel) viewFilterList(choices []string, subtitle string) tea.V
 	if len(choices) == 0 {
 		b.WriteString("  (no values)\n")
 	} else {
-		for i, c := range choices {
-			line := "    " + c
-			if i == m.menuCursor {
-				line = selectedStyle.Render("  > " + c)
-			}
-			b.WriteString(line + "\n")
-		}
+		b.WriteString(renderMenuItems(choices, m.menuCursor))
 	}
 	b.WriteString(helpStyle.Render("\n  enter: apply  esc: back") + "\n")
-	v := tea.NewView(b.String())
-	v.AltScreen = true
-	return v
+	return newAltView(b.String())
 }
 
 func (m *dashboardModel) viewConfirmCleanup() tea.View {
 	s := titleStyle.Render("Confirm cleanup") + "\n\n" +
 		"  Remove offline self-hosted runners via the GitHub API?\n\n" +
 		helpStyle.Render("  y: confirm   n / esc: cancel") + "\n"
-	v := tea.NewView(s)
-	v.AltScreen = true
-	return v
+	return newAltView(s)
 }
 
 func (m *dashboardModel) viewConfirmRemove() tea.View {
@@ -232,9 +220,7 @@ func (m *dashboardModel) viewConfirmRemove() tea.View {
 		fmt.Sprintf("  Remove runner %s? This will deregister it from GitHub,\n  remove it from the host, and delete it from config.\n\n",
 			configVal.Render(m.confirmRemoveInst)) +
 		helpStyle.Render("  y: confirm   n / esc: cancel") + "\n"
-	v := tea.NewView(s)
-	v.AltScreen = true
-	return v
+	return newAltView(s)
 }
 
 func (m *dashboardModel) viewScroll() tea.View {
@@ -259,9 +245,7 @@ func (m *dashboardModel) viewScroll() tea.View {
 	for i := m.scrollOff; i < end; i++ {
 		b.WriteString("  " + m.scrollLines[i] + "\n")
 	}
-	v := tea.NewView(b.String())
-	v.AltScreen = true
-	return v
+	return newAltView(b.String())
 }
 
 func (m *dashboardModel) viewHostMetrics() tea.View {
@@ -271,9 +255,7 @@ func (m *dashboardModel) viewHostMetrics() tea.View {
 
 	if m.metricsLoading && len(m.hostMetrics) == 0 {
 		b.WriteString("  Loading metrics...\n")
-		v := tea.NewView(b.String())
-		v.AltScreen = true
-		return v
+		return newAltView(b.String())
 	}
 
 	if len(m.hostMetrics) == 0 {
@@ -302,7 +284,5 @@ func (m *dashboardModel) viewHostMetrics() tea.View {
 	}
 
 	b.WriteString(helpStyle.Render("\n  r: refresh  esc: back  q: back"))
-	v := tea.NewView(b.String())
-	v.AltScreen = true
-	return v
+	return newAltView(b.String())
 }
