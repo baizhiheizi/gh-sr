@@ -450,18 +450,7 @@ func (m *Manager) stopNative(h *host.Host, instanceName string) error {
 func (m *Manager) removeNative(h *host.Host, rc config.RunnerConfig, instanceName string) error {
 	dir := h.RunnerDir(instanceName)
 
-	// Uninstall svc.sh service if present (before removing files)
-	if h.OS == "linux" && svcShPresent(h, instanceName) {
-		uninstallSvcCmd := fmt.Sprintf("cd %s && %s\n$SUDO ./svc.sh uninstall 2>/dev/null || true", dir, strings.TrimSpace(sudoPrelude()))
-		h.Run(uninstallSvcCmd) // Ignore errors - we're removing anyway
-	}
-
-	if kind, err := autostart.Detect(h, instanceName); err == nil && kind != autostart.KindNone {
-		if uerr := autostart.Uninstall(h, instanceName); uerr != nil {
-			fmt.Fprintf(m.out(), "  %s: warning: failed to remove autostart: %v\n", instanceName, uerr)
-		}
-	}
-
+	m.removeNativeServices(h, instanceName)
 	_ = m.stopNative(h, instanceName)
 
 	removeToken, err := m.GitHub.GetRemovalTokenScoped(rc.Scope(), rc.ScopeTarget())
@@ -482,14 +471,40 @@ func (m *Manager) removeNative(h *host.Host, rc config.RunnerConfig, instanceNam
 		fmt.Fprintf(m.out(), "  %s: deregistered\n", instanceName)
 	}
 
-	if h.OS == "windows" {
-		h.RunShell(fmt.Sprintf("%s; Remove-Item -Recurse -Force $runnerDir", windowsRunnerDirAssignment(h, instanceName)))
-	} else {
-		h.Run(fmt.Sprintf("rm -rf %s", dir))
+	if err := m.removeNativeDirectory(h, instanceName); err != nil {
+		return fmt.Errorf("removing runner directory %s: %w", dir, err)
 	}
+	fmt.Fprintf(m.out(), "  %s: runner directory removed\n", instanceName)
 
 	fmt.Fprintf(m.out(), "  %s: removed\n", instanceName)
 	return nil
+}
+
+func (m *Manager) removeNativeServices(h *host.Host, instanceName string) {
+	dir := h.RunnerDir(instanceName)
+
+	if h.OS == "linux" && svcShPresent(h, instanceName) {
+		uninstallSvcCmd := fmt.Sprintf("cd %s && %s\n$SUDO ./svc.sh uninstall 2>/dev/null || true", dir, strings.TrimSpace(sudoPrelude()))
+		h.Run(uninstallSvcCmd) // Ignore errors - we're removing anyway
+		fmt.Fprintf(m.out(), "  %s: svc.sh service removed\n", instanceName)
+	}
+
+	kind, _ := autostart.Detect(h, instanceName)
+	if err := autostart.Uninstall(h, instanceName); err != nil {
+		fmt.Fprintf(m.out(), "  %s: warning: failed to remove autostart: %v\n", instanceName, err)
+	} else if kind != autostart.KindNone {
+		fmt.Fprintf(m.out(), "  %s: autostart removed\n", instanceName)
+	}
+}
+
+func (m *Manager) removeNativeDirectory(h *host.Host, instanceName string) error {
+	if h.OS == "windows" {
+		_, err := h.RunShell(fmt.Sprintf("%s; Remove-Item -Recurse -Force $runnerDir", windowsRunnerDirAssignment(h, instanceName)))
+		return err
+	}
+	dir := h.RunnerDir(instanceName)
+	_, err := h.Run(fmt.Sprintf("rm -rf %s", hostshell.PosixSingleQuote(dir)))
+	return err
 }
 
 func (m *Manager) statusNative(h *host.Host, instanceName string) string {
