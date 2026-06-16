@@ -116,6 +116,10 @@ func colorizeLocalStatus(status string) string {
 		return statusRunning.Render(status)
 	case "stopped":
 		return statusStopped.Render(status)
+	case "failed":
+		return statusStopped.Render(status)
+	case "restarting":
+		return statusBusy.Render(status)
 	case "service error":
 		return statusBusy.Render(status)
 	case "not installed":

@@ -40,7 +40,28 @@ type ContainerRunnerImageConfig struct {
 	// cannot see it. Valid range 576–1500; only ever used to LOWER the MTU. Applied at
 	// container-create time, so changing it requires `gh sr rebuild <name>`.
 	MTU int `yaml:"mtu,omitempty"`
+	// DockerdStartTimeout is seconds to wait for the inner dockerd during container
+	// bootstrap (0 = default 90). Valid range 30–300. Applied at container-create time.
+	DockerdStartTimeout int `yaml:"dockerd_start_timeout_seconds,omitempty"`
+	// BootstrapMaxRetries is consecutive inner-dockerd start failures before the
+	// entrypoint stops retrying and holds the container in a failed state (0 = default 5).
+	// Valid range 1–20. Applied at container-create time.
+	BootstrapMaxRetries int `yaml:"bootstrap_max_retries,omitempty"`
+	// StartStaggerSeconds is delay between starting each container instance on the
+	// same host during `gh sr up` (0 = default 3). Valid range 0–60.
+	StartStaggerSeconds int `yaml:"start_stagger_seconds,omitempty"`
 }
+
+const (
+	defaultContainerDockerdStartTimeout = 90
+	defaultContainerBootstrapMaxRetries   = 5
+	defaultContainerStartStaggerSeconds   = 3
+	minContainerDockerdStartTimeout       = 30
+	maxContainerDockerdStartTimeout       = 300
+	minContainerBootstrapMaxRetries       = 1
+	maxContainerBootstrapMaxRetries       = 20
+	maxContainerStartStaggerSeconds       = 60
+)
 
 const (
 	maxContainerRunnerExtraAptPackages = 256
@@ -55,6 +76,18 @@ func validateContainerRunnerImage(img *ContainerRunnerImageConfig) error {
 	}
 	if img.MTU != 0 && (img.MTU < 576 || img.MTU > 1500) {
 		return fmt.Errorf("container_runner_image.mtu: must be 0 (auto-detect) or between 576 and 1500 (got %d)", img.MTU)
+	}
+	if img.DockerdStartTimeout != 0 && (img.DockerdStartTimeout < minContainerDockerdStartTimeout || img.DockerdStartTimeout > maxContainerDockerdStartTimeout) {
+		return fmt.Errorf("container_runner_image.dockerd_start_timeout_seconds: must be 0 (default %d) or between %d and %d (got %d)",
+			defaultContainerDockerdStartTimeout, minContainerDockerdStartTimeout, maxContainerDockerdStartTimeout, img.DockerdStartTimeout)
+	}
+	if img.BootstrapMaxRetries != 0 && (img.BootstrapMaxRetries < minContainerBootstrapMaxRetries || img.BootstrapMaxRetries > maxContainerBootstrapMaxRetries) {
+		return fmt.Errorf("container_runner_image.bootstrap_max_retries: must be 0 (default %d) or between %d and %d (got %d)",
+			defaultContainerBootstrapMaxRetries, minContainerBootstrapMaxRetries, maxContainerBootstrapMaxRetries, img.BootstrapMaxRetries)
+	}
+	if img.StartStaggerSeconds != 0 && (img.StartStaggerSeconds < 0 || img.StartStaggerSeconds > maxContainerStartStaggerSeconds) {
+		return fmt.Errorf("container_runner_image.start_stagger_seconds: must be 0 (default %d) or between 0 and %d (got %d)",
+			defaultContainerStartStaggerSeconds, maxContainerStartStaggerSeconds, img.StartStaggerSeconds)
 	}
 	if len(img.ExtraAptPackages) == 0 {
 		return nil
@@ -97,6 +130,33 @@ func (c *Config) ContainerRunnerImageMTU() int {
 		return 0
 	}
 	return c.ContainerRunnerImage.MTU
+}
+
+// ContainerRunnerImageDockerdStartTimeout returns seconds to wait for inner dockerd
+// bootstrap (0 in config yields defaultContainerDockerdStartTimeout).
+func (c *Config) ContainerRunnerImageDockerdStartTimeout() int {
+	if c == nil || c.ContainerRunnerImage.DockerdStartTimeout == 0 {
+		return defaultContainerDockerdStartTimeout
+	}
+	return c.ContainerRunnerImage.DockerdStartTimeout
+}
+
+// ContainerRunnerImageBootstrapMaxRetries returns consecutive dockerd bootstrap
+// failures before giving up (0 in config yields defaultContainerBootstrapMaxRetries).
+func (c *Config) ContainerRunnerImageBootstrapMaxRetries() int {
+	if c == nil || c.ContainerRunnerImage.BootstrapMaxRetries == 0 {
+		return defaultContainerBootstrapMaxRetries
+	}
+	return c.ContainerRunnerImage.BootstrapMaxRetries
+}
+
+// ContainerRunnerImageStartStaggerSeconds returns delay between starting container
+// instances on the same host (0 in config yields defaultContainerStartStaggerSeconds).
+func (c *Config) ContainerRunnerImageStartStaggerSeconds() int {
+	if c == nil || c.ContainerRunnerImage.StartStaggerSeconds == 0 {
+		return defaultContainerStartStaggerSeconds
+	}
+	return c.ContainerRunnerImage.StartStaggerSeconds
 }
 
 type GitHubConfig struct {

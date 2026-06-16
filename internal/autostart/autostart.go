@@ -413,7 +413,7 @@ func Status(h *host.Host, hostName, instance, mode string) (StatusRow, error) {
 	row := StatusRow{Instance: instance, Host: hostName, Mode: mode}
 	if mode != "native" {
 		row.Kind = KindNone
-		row.Detail = "docker: containers use --restart unless-stopped; gh sr down stops the container so it will not auto-start on boot until gh sr up"
+		row.Detail = "docker: containers use --restart on-failure with a bootstrap retry cap; gh sr down stops the container so it will not auto-start on boot until gh sr up"
 		return row, nil
 	}
 

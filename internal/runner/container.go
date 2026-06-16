@@ -22,6 +22,12 @@ const (
 	dockerLabelCLIVersion    = "gh-sr.cli-version"
 )
 
+// Host-side marker files under the runner state bind-mount (/runner-state in container).
+const (
+	bootstrapFailedMarker    = "bootstrap-failed"
+	dockerdStartFailuresFile = "dockerd-start-failures"
+)
+
 // ContainerImageLayoutRevision returns a short hex fingerprint of the embedded
 // container image layout (Dockerfile, manifests, entrypoint, wrapper), gh-sr
 // CLI version, and extra apt package list. It changes when any of those inputs change.
@@ -224,6 +230,27 @@ func mtuDockerCreateArg(mtu int) string {
 	return "  -e GH_SR_HOST_MTU=" + hostshell.PosixSingleQuote(strconv.Itoa(mtu)) + " \\\n"
 }
 
+func dockerdStartTimeoutDockerCreateArg(seconds int) string {
+	if seconds <= 0 {
+		return ""
+	}
+	return "  -e GH_SR_DOCKERD_START_TIMEOUT=" + hostshell.PosixSingleQuote(strconv.Itoa(seconds)) + " \\\n"
+}
+
+func bootstrapMaxRetriesDockerCreateArg(maxRetries int) string {
+	if maxRetries <= 0 {
+		return ""
+	}
+	return "  -e GH_SR_BOOTSTRAP_MAX_RETRIES=" + hostshell.PosixSingleQuote(strconv.Itoa(maxRetries)) + " \\\n"
+}
+
+func containerRestartPolicy(maxRetries int) string {
+	if maxRetries <= 0 {
+		maxRetries = 5
+	}
+	return "on-failure:" + strconv.Itoa(maxRetries)
+}
+
 // resolveContainerMTU returns the MTU to pin for a new runner container: the explicit
 // config override when set, otherwise the auto-detected host egress MTU.
 func (m *Manager) resolveContainerMTU(h *host.Host) int {
@@ -231,6 +258,27 @@ func (m *Manager) resolveContainerMTU(h *host.Host) int {
 		return mtu
 	}
 	return DetectHostEgressMTU(h)
+}
+
+func (m *Manager) containerDockerdStartTimeout() int {
+	if m != nil && m.ContainerDockerdStartTimeout > 0 {
+		return m.ContainerDockerdStartTimeout
+	}
+	return 90
+}
+
+func (m *Manager) containerBootstrapMaxRetries() int {
+	if m != nil && m.ContainerBootstrapMaxRetries > 0 {
+		return m.ContainerBootstrapMaxRetries
+	}
+	return 5
+}
+
+func (m *Manager) containerStartStaggerSeconds() int {
+	if m != nil && m.ContainerStartStaggerSeconds >= 0 && m.ContainerStartStaggerSeconds != 0 {
+		return m.ContainerStartStaggerSeconds
+	}
+	return 3
 }
 
 // createContainerInstance creates (but does not start) a single runner container
@@ -266,18 +314,22 @@ func (m *Manager) createContainerInstance(h *host.Host, rc config.RunnerConfig, 
 	// large-packet TLS handshakes survive a reduced host path MTU (see DetectHostEgressMTU
 	// and entrypoint.sh §2a). Empty (no env) on standard 1500 networks — a no-op.
 	mtuEnv := mtuDockerCreateArg(m.resolveContainerMTU(h))
+	dockerdTimeoutEnv := dockerdStartTimeoutDockerCreateArg(m.containerDockerdStartTimeout())
+	bootstrapRetriesEnv := bootstrapMaxRetriesDockerCreateArg(m.containerBootstrapMaxRetries())
+	restartPolicy := containerRestartPolicy(m.containerBootstrapMaxRetries())
 
-	// Build the `docker create` command. We use `--restart unless-stopped`
-	// so the runner auto-starts on host reboot and auto-restarts after a job.
-	// `--privileged` is required for DinD (inner dockerd needs full capabilities).
-	// Large `/dev/shm` avoids Chromium/Selenium flakiness (default 64 MiB is too small).
+	// Build the `docker create` command. We use `--restart on-failure:N` so bootstrap
+	// failures exit non-zero with bounded Docker retries; the entrypoint also caps
+	// consecutive dockerd start failures via persisted state and holds the container
+	// instead of looping forever. `--privileged` is required for DinD (inner dockerd
+	// needs full capabilities). Large `/dev/shm` avoids Chromium/Selenium flakiness.
 	cmd := fmt.Sprintf(`
 mkdir -p %s
 docker create \
   --name %s \
   --privileged \
   --shm-size=2g \
-  --restart unless-stopped \
+  --restart %s \
   -v %s:/runner-state \
   -e GH_SR_RUNNER_NAME=%s \
   -e GH_SR_RUNNER_TOKEN=%s \
@@ -285,9 +337,10 @@ docker create \
   -e GH_SR_RUNNER_LABELS=%s \
   -e GH_SR_RUNNER_GROUP=%s \
   -e GH_SR_RUNNER_EPHEMERAL=%s \
-%s  %s`,
+%s%s%s  %s`,
 		hostshell.PosixSingleQuote(stateDir),
 		hostshell.PosixSingleQuote(containerName(instanceName)),
+		hostshell.PosixSingleQuote(restartPolicy),
 		hostshell.PosixSingleQuote(stateDir),
 		hostshell.PosixSingleQuote(instanceName),
 		hostshell.PosixSingleQuote(regToken),
@@ -296,6 +349,8 @@ docker create \
 		hostshell.PosixSingleQuote(group),
 		hostshell.PosixSingleQuote(ephemeral),
 		mtuEnv,
+		dockerdTimeoutEnv,
+		bootstrapRetriesEnv,
 		hostshell.PosixSingleQuote(imageTag),
 	)
 
@@ -308,10 +363,46 @@ docker create \
 // startContainer starts an existing runner container (docker start).
 func (m *Manager) startContainer(h *host.Host, instanceName string) error {
 	name := containerName(instanceName)
+	clearContainerBootstrapMarkers(h, instanceName)
+	policy := containerRestartPolicy(m.containerBootstrapMaxRetries())
+	_, _ = h.Run(fmt.Sprintf(
+		"docker update --restart=%s %s 2>/dev/null || true",
+		hostshell.PosixSingleQuote(policy),
+		hostshell.PosixSingleQuote(name),
+	))
 	if _, err := h.Run(fmt.Sprintf("docker start %s", name)); err != nil {
 		return fmt.Errorf("starting container %s: %w", name, err)
 	}
 	return nil
+}
+
+func clearContainerBootstrapMarkers(h *host.Host, instanceName string) {
+	stateDir, err := resolveAbsoluteRunnerDir(h, instanceName)
+	if err != nil {
+		stateDir = containerStateDir(h, instanceName)
+	}
+	_, _ = h.Run(fmt.Sprintf(
+		"rm -f %s %s",
+		hostshell.PosixSingleQuote(stateDir+"/"+bootstrapFailedMarker),
+		hostshell.PosixSingleQuote(stateDir+"/"+dockerdStartFailuresFile),
+	))
+}
+
+// ContainerBootstrapFailed reports whether the runner instance gave up after repeated
+// inner-dockerd bootstrap failures (bootstrap-failed marker in the state bind-mount).
+func ContainerBootstrapFailed(h *host.Host, instanceName string) bool {
+	stateDir, err := resolveAbsoluteRunnerDir(h, instanceName)
+	if err != nil {
+		stateDir = containerStateDir(h, instanceName)
+	}
+	out, err := h.Run(fmt.Sprintf(
+		"test -f %s && echo yes || echo no",
+		hostshell.PosixSingleQuote(stateDir+"/"+bootstrapFailedMarker),
+	))
+	if err != nil {
+		return false
+	}
+	return strings.TrimSpace(out) == "yes"
 }
 
 // stopContainer stops a running runner container (docker stop).
@@ -370,10 +461,12 @@ func parseContainerStatusInspectOutput(out string) (local, image, imageRev strin
 	switch status {
 	case "running":
 		local = "running"
+	case "restarting":
+		local = "restarting"
 	case "not installed":
 		local = "not installed"
 	default:
-		// exited, created, paused, restarting, etc.
+		// exited, created, paused, etc.
 		local = "stopped"
 	}
 	if local == "not installed" {
@@ -385,6 +478,18 @@ func parseContainerStatusInspectOutput(out string) (local, image, imageRev strin
 // containerLocalStatusImageAndRevision returns local status, Config.Image, and the
 // gh-sr.image-revision label on the container's image (one SSH round-trip).
 func (m *Manager) containerLocalStatusImageAndRevision(h *host.Host, instanceName string) (string, string, string) {
+	if ContainerBootstrapFailed(h, instanceName) {
+		local, image, rev := m.containerLocalStatusFromDocker(h, instanceName)
+		if local == "not installed" {
+			return "failed", "", ""
+		}
+		return "failed", image, rev
+	}
+	local, image, rev := m.containerLocalStatusFromDocker(h, instanceName)
+	return local, image, rev
+}
+
+func (m *Manager) containerLocalStatusFromDocker(h *host.Host, instanceName string) (string, string, string) {
 	cid := hostshell.PosixSingleQuote(containerName(instanceName))
 	script := fmt.Sprintf(
 		"cid=%s\n"+
