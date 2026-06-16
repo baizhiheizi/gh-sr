@@ -18,6 +18,10 @@ func ServiceInstall(w io.Writer, cfg *config.Config, filterHost, filterRepo stri
 	}
 	return runPerHostParallel(w, cfg, runners, func(w io.Writer, h *host.Host, rc config.RunnerConfig) error {
 		hcfg := cfg.Hosts[rc.Host]
+		if rc.IsContainerMode() {
+			fmt.Fprintf(w, "Skipping autostart for %s on %s (runner_mode: container; containers use --restart unless-stopped)\n", rc.Name, rc.Host)
+			return nil
+		}
 		if system && hcfg.OS != "linux" {
 			return fmt.Errorf("--system applies only to Linux hosts (host %q is %s)", rc.Host, hcfg.OS)
 		}
@@ -51,6 +55,10 @@ func ServiceUninstall(w io.Writer, cfg *config.Config, filterHost, filterRepo st
 	}
 	return runPerHostParallel(w, cfg, runners, func(w io.Writer, h *host.Host, rc config.RunnerConfig) error {
 		hcfg := cfg.Hosts[rc.Host]
+		if rc.IsContainerMode() {
+			fmt.Fprintf(w, "Skipping autostart removal for %s on %s (runner_mode: container)\n", rc.Name, rc.Host)
+			return nil
+		}
 		if config.IsLocalAddr(hcfg.Addr) {
 			fmt.Fprintf(w, "Removing autostart for %s on %s (local)...\n", rc.Name, rc.Host)
 		} else {
