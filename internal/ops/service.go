@@ -92,7 +92,8 @@ func ServiceStatus(w io.Writer, cfg *config.Config, filterHost, filterRepo strin
 	})
 }
 
-// ServiceCleanup removes stale gh-sr autostart units whose runner directory no longer exists.
+// ServiceCleanup removes orphan runner services and directories on each host that are
+// not listed in runners.yml (typical after rename or manual config edits).
 func ServiceCleanup(w io.Writer, cfg *config.Config, filterHost string, dryRun bool) error {
 	if err := ResolveHostInfo(w, cfg); err != nil {
 		return err
@@ -105,40 +106,61 @@ func ServiceCleanup(w io.Writer, cfg *config.Config, filterHost string, dryRun b
 		return fmt.Errorf("no hosts configured")
 	}
 
-	var totalFound, totalRemoved int
+	mgr := runner.NewManager("")
+	mgr.Out = w
+
+	var orphanCount, autostartCount, dirCount int
 	for _, name := range names {
 		hcfg := cfg.Hosts[name]
 		if config.IsLocalAddr(hcfg.Addr) {
-			fmt.Fprintf(w, "Checking stale autostart on %s (local)...\n", name)
+			fmt.Fprintf(w, "Checking orphan runners on %s (local)...\n", name)
 		} else {
-			fmt.Fprintf(w, "Checking stale autostart on %s (%s)...\n", name, hcfg.Addr)
+			fmt.Fprintf(w, "Checking orphan runners on %s (%s)...\n", name, hcfg.Addr)
 		}
 		h, err := connectHostFn(name, hcfg)
 		if err != nil {
 			return fmt.Errorf("%s: connect: %w", name, err)
 		}
-		removed, found, err := autostart.CleanupStale(h, dryRun)
-		h.Close()
+
+		configured := configuredInstanceSet(cfg, name)
+		orphans, err := runner.OrphanInstances(h, configured)
 		if err != nil {
-			return fmt.Errorf("%s: %w", name, err)
+			h.Close()
+			return fmt.Errorf("%s: list orphans: %w", name, err)
 		}
-		totalFound += found
-		totalRemoved += len(removed)
-		for _, inst := range removed {
-			if dryRun {
-				fmt.Fprintf(w, "  %s: would remove stale autostart\n", inst)
-			} else {
-				fmt.Fprintf(w, "  %s: removed stale autostart\n", inst)
+
+		for _, inst := range orphans {
+			plan, err := mgr.CleanupOrphanInstance(h, inst, dryRun)
+			if err != nil {
+				h.Close()
+				return fmt.Errorf("%s: %s: %w", name, inst, err)
+			}
+			if !plan.Autostart && !plan.Directory {
+				continue
+			}
+			orphanCount++
+			if plan.Autostart {
+				autostartCount++
+			}
+			if plan.Directory {
+				dirCount++
 			}
 		}
+		h.Close()
 	}
 
 	if dryRun {
-		fmt.Fprintf(w, "\nFound %d stale autostart unit(s); re-run without --dry-run to remove.\n", totalFound)
-	} else if totalRemoved > 0 {
-		fmt.Fprintf(w, "\nRemoved %d stale autostart unit(s).\n", totalRemoved)
+		fmt.Fprintf(w, "\nFound %d orphan instance(s) (%d autostart, %d directories); re-run without --dry-run to remove.\n",
+			orphanCount, autostartCount, dirCount)
+	} else if orphanCount > 0 {
+		fmt.Fprintf(w, "\nCleaned up %d orphan instance(s) (%d autostart, %d directories).\n",
+			orphanCount, autostartCount, dirCount)
 	} else {
-		fmt.Fprintln(w, "\nNo stale autostart units found.")
+		fmt.Fprintln(w, "\nNo orphan runner services or directories found.")
 	}
 	return nil
+}
+
+func configuredInstanceSet(cfg *config.Config, hostName string) map[string]struct{} {
+	return runner.ConfiguredInstanceSet(cfg.Runners, hostName)
 }

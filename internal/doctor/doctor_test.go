@@ -219,6 +219,9 @@ func (f failIfRunExec) Run(cmd string) (string, error) {
 	if strings.Contains(cmd, `ls -1 "$HOME/.gh-sr/runners"`) {
 		return "", nil
 	}
+	if strings.Contains(cmd, `ls -1 "$HOME/.gh-sr/runners"`) {
+		return "", nil
+	}
 	if strings.Contains(cmd, "com.github.ghsr.runner.") {
 		return "", nil
 	}
