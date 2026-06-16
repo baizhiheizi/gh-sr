@@ -17,6 +17,15 @@ func TestSystemdUserUnit(t *testing.T) {
 	if !strings.Contains(u, "Restart=always") {
 		t.Fatal("missing Restart")
 	}
+	if !strings.Contains(u, "StartLimitIntervalSec=60") {
+		t.Fatal("missing StartLimitIntervalSec")
+	}
+	if !strings.Contains(u, "StartLimitBurst=5") {
+		t.Fatal("missing StartLimitBurst")
+	}
+	if !strings.Contains(u, "RestartPreventExitStatus=203") {
+		t.Fatal("missing RestartPreventExitStatus")
+	}
 }
 
 func TestSystemdSystemUnit(t *testing.T) {
@@ -24,6 +33,9 @@ func TestSystemdSystemUnit(t *testing.T) {
 	u := SystemdSystemUnit("ci-1", "/home/u/.gh-sr/runners/ci-1", "u", "u")
 	if !strings.Contains(u, "User=u") || !strings.Contains(u, "Group=u") {
 		t.Fatal("missing User/Group")
+	}
+	if !strings.Contains(u, "RestartPreventExitStatus=203") {
+		t.Fatal("missing RestartPreventExitStatus")
 	}
 }
 

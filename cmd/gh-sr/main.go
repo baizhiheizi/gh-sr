@@ -947,7 +947,21 @@ func serviceCmd() *cobra.Command {
 			return ops.ServiceStatus(cmd.OutOrStdout(), cfg, filterHost, filterRepo, args)
 		},
 	}
-	cmd.AddCommand(install, uninstall, status)
+	cleanup := &cobra.Command{
+		Use:   "cleanup",
+		Short: "Remove stale autostart units whose runner directory is missing",
+		Long:  "Finds gh-sr autostart units (systemd, launchd, or scheduled tasks) whose runner directory no longer exists — for example after a rename or manual directory removal — and removes them." + serviceLongHelp,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, err := loadConfig()
+			if err != nil {
+				return err
+			}
+			dryRun, _ := cmd.Flags().GetBool("dry-run")
+			return ops.ServiceCleanup(cmd.OutOrStdout(), cfg, filterHost, dryRun)
+		},
+	}
+	cleanup.Flags().Bool("dry-run", false, "Report stale units without removing them")
+	cmd.AddCommand(install, uninstall, status, cleanup)
 	return cmd
 }
 

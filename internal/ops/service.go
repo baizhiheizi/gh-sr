@@ -91,3 +91,54 @@ func ServiceStatus(w io.Writer, cfg *config.Config, filterHost, filterRepo strin
 		return nil
 	})
 }
+
+// ServiceCleanup removes stale gh-sr autostart units whose runner directory no longer exists.
+func ServiceCleanup(w io.Writer, cfg *config.Config, filterHost string, dryRun bool) error {
+	if err := ResolveHostInfo(w, cfg); err != nil {
+		return err
+	}
+	names := sortedHostNames(cfg, filterHost)
+	if len(names) == 0 {
+		if filterHost != "" {
+			return fmt.Errorf("unknown host %q", filterHost)
+		}
+		return fmt.Errorf("no hosts configured")
+	}
+
+	var totalFound, totalRemoved int
+	for _, name := range names {
+		hcfg := cfg.Hosts[name]
+		if config.IsLocalAddr(hcfg.Addr) {
+			fmt.Fprintf(w, "Checking stale autostart on %s (local)...\n", name)
+		} else {
+			fmt.Fprintf(w, "Checking stale autostart on %s (%s)...\n", name, hcfg.Addr)
+		}
+		h, err := connectHostFn(name, hcfg)
+		if err != nil {
+			return fmt.Errorf("%s: connect: %w", name, err)
+		}
+		removed, found, err := autostart.CleanupStale(h, dryRun)
+		h.Close()
+		if err != nil {
+			return fmt.Errorf("%s: %w", name, err)
+		}
+		totalFound += found
+		totalRemoved += len(removed)
+		for _, inst := range removed {
+			if dryRun {
+				fmt.Fprintf(w, "  %s: would remove stale autostart\n", inst)
+			} else {
+				fmt.Fprintf(w, "  %s: removed stale autostart\n", inst)
+			}
+		}
+	}
+
+	if dryRun {
+		fmt.Fprintf(w, "\nFound %d stale autostart unit(s); re-run without --dry-run to remove.\n", totalFound)
+	} else if totalRemoved > 0 {
+		fmt.Fprintf(w, "\nRemoved %d stale autostart unit(s).\n", totalRemoved)
+	} else {
+		fmt.Fprintln(w, "\nNo stale autostart units found.")
+	}
+	return nil
+}

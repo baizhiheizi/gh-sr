@@ -456,6 +456,12 @@ func (m *Manager) removeNative(h *host.Host, rc config.RunnerConfig, instanceNam
 		h.Run(uninstallSvcCmd) // Ignore errors - we're removing anyway
 	}
 
+	if kind, err := autostart.Detect(h, instanceName); err == nil && kind != autostart.KindNone {
+		if uerr := autostart.Uninstall(h, instanceName); uerr != nil {
+			fmt.Fprintf(m.out(), "  %s: warning: failed to remove autostart: %v\n", instanceName, uerr)
+		}
+	}
+
 	_ = m.stopNative(h, instanceName)
 
 	removeToken, err := m.GitHub.GetRemovalTokenScoped(rc.Scope(), rc.ScopeTarget())
@@ -512,6 +518,14 @@ func (m *Manager) statusNative(h *host.Host, instanceName string) string {
 	}
 
 	if kind, err := autostart.Detect(h, instanceName); err == nil && kind != autostart.KindNone {
+		if state, serr := autostart.ServiceActiveState(h, instanceName, kind); serr == nil {
+			switch state {
+			case "active":
+				return "running"
+			case "failed", "activating":
+				return "service error"
+			}
+		}
 		active, err := autostart.IsServiceActive(h, instanceName, kind)
 		if err == nil && active {
 			return "running"

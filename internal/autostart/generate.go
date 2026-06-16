@@ -13,6 +13,8 @@ func SystemdUserUnit(instanceSanitized, absRunnerDir string) string {
 Description=GitHub Actions runner (gh sr) %s
 After=network-online.target
 Wants=network-online.target
+StartLimitIntervalSec=60
+StartLimitBurst=5
 
 [Service]
 Type=simple
@@ -20,6 +22,7 @@ WorkingDirectory=%s
 ExecStart=%s
 Restart=always
 RestartSec=10
+RestartPreventExitStatus=203
 
 [Install]
 WantedBy=default.target
@@ -33,6 +36,8 @@ func SystemdSystemUnit(instanceSanitized, absRunnerDir, user, group string) stri
 Description=GitHub Actions runner (gh sr) %s
 After=network-online.target
 Wants=network-online.target
+StartLimitIntervalSec=60
+StartLimitBurst=5
 
 [Service]
 Type=simple
@@ -42,6 +47,7 @@ WorkingDirectory=%s
 ExecStart=%s
 Restart=always
 RestartSec=10
+RestartPreventExitStatus=203
 
 [Install]
 WantedBy=multi-user.target

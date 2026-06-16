@@ -12,6 +12,7 @@ import (
 	"sync"
 
 	"github.com/an-lee/gh-sr/internal/agentic"
+	"github.com/an-lee/gh-sr/internal/autostart"
 	"github.com/an-lee/gh-sr/internal/config"
 	"github.com/an-lee/gh-sr/internal/host"
 	"github.com/an-lee/gh-sr/internal/runner"
@@ -392,6 +393,9 @@ func runHostChecks(w io.Writer, hostName string, h *host.Host, runners []config.
 			}
 		}
 	}
+	if h.OS == "linux" || h.OS == "darwin" || h.OS == "windows" {
+		checkStaleAutostart(w, hostName, h, r)
+	}
 	checkRunnerDiskUsage(w, hostName, h, runners, r)
 }
 
@@ -599,6 +603,33 @@ func checkContainerAgenticInnerHygiene(w io.Writer, hostName string, h *host.Hos
 			}
 		}
 	}
+}
+
+func checkStaleAutostart(w io.Writer, hostName string, h *host.Host, r *Result) {
+	installed, err := autostart.ListInstalled(h)
+	if err != nil {
+		printLine(w, sevWarn, hostName, fmt.Sprintf("autostart: list installed: %v", err))
+		r.Warn++
+		return
+	}
+	var stale []string
+	for _, inst := range installed {
+		st, err := autostart.IsStale(h, inst)
+		if err != nil {
+			printLine(w, sevWarn, hostName, fmt.Sprintf("autostart: %s: %v", inst, err))
+			r.Warn++
+			continue
+		}
+		if st {
+			stale = append(stale, inst)
+		}
+	}
+	if len(stale) == 0 {
+		return
+	}
+	sort.Strings(stale)
+	printLine(w, sevWarn, hostName, fmt.Sprintf("autostart: %d stale unit(s) (%s); run: gh sr service cleanup", len(stale), strings.Join(stale, ", ")))
+	r.Warn++
 }
 
 func checkRunnerDiskUsage(w io.Writer, hostName string, h *host.Host, runners []config.RunnerConfig, r *Result) {
