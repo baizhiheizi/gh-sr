@@ -5,59 +5,68 @@ metadata:
   type: project
 ---
 
-# Repo Assist state — last updated 2026-06-14
+# Repo Assist state — last updated 2026-06-16
 
-## Last run (2026-06-14 03:30 UTC, run 27460481325)
+## Last run (2026-06-16 00:18 UTC, run 27547403295)
 
-- Selected tasks: 3 (Issue Fix), 9 (Testing), 4 (Engineering Investments).
-- **Task 3** (Issue Fix) — implemented #176 fix locally: extracted `launchdDomainList() string` returning the pre-quoted shell word list `"gui/$UID" "user/$UID"`; migrated 4 call sites (3 in `internal/autostart/launchd.go`, 1 in `internal/autostart/autostart.go::Stop` KindLaunchd arm) to splice the helper via `fmt.Sprintf`. New `TestLaunchdDomainList_IsSingleSourceOfTruth` (counts the canonical for-loop line in each generated script) and `TestLaunchdDomainList_ReturnsPreQuotedTokens` (locks the contract). Commit `5048410` on branch `repo-assist/fix-176-launchd-domain-list`. Build/vet/gofmt/`go test -race ./... -count=1` all clean across 12 packages.
-- **Task 9** (Testing) — addressed as part of Task 3: 2 new subtests lock the helper's contract.
-- **Task 4** (Engineering Investments) — no-op. Dependencies current (Go 1.25.9, latest charmbracelet/cli/cobra). CI config minimal and clean; no actionable gaps.
-- **Task 6** (Maintain Repo Assist PRs) — verified PR #172 (the #166 fix) is open; not stale.
-- **Task 11** (Activity) — `create_pull_request` for #176 returned `success` twice with patch/bundle artifacts but the branch never pushed to origin (6th consecutive occurrence of the persistence issue). `update_issue` on #100 returned `success` but the body refresh did not apply. `add_comment` on #100 returned `success` with temporary_id `aw_O5wV5Myg` but the comment may or may not have applied (response cached at 2 comments, may appear in next poll).
+- Selected tasks: 2 (Issue Comment), 3 (Issue Fix), 1 (Issue Labelling).
+- **Task 1** (Issue Labelling) — not applicable (0 unlabelled issues per task selection). Substituted with Task 2.
+- **Task 2** (Issue Comment) — no-op. Cursor still parked on #132. No new human activity on any open issue since the 2026-06-14 batch of merges. 9 open issues total: 7 bot-tracker / monthly activity (#85, #100, #109, #124, #125, #148, #164) + 1 human-authored design (#132) + 1 blocked docs-changelog bot (#190, blocked by protected CHANGELOG.md).
+- **Task 3** (Issue Fix) — no fixable issues (no `bug`/`help wanted`/`good first issue` issues exist). Substituted with Task 2.
+- **Task 5** (Coding Improvements) — **implemented** this run as productive fallback:
+  - Extracted `renderMenuItems(items, cursor)` helper in `internal/tui/dashboard_view.go` (collapses 4 menu views: viewActionMenu, viewGlobalMenu, viewFilterMenu, viewFilterList).
+  - Extracted `newAltView(s)` helper (collapses 11 panel-return NewView+AltScreen wrappings).
+  - 3 new subtests in `internal/tui/table_test.go`: TestRenderMenuItems_marksSelectedItem, TestRenderMenuItems_firstAndLastCursor, TestNewAltView_enablesAltScreen.
+  - Commit `aec2665` on branch `repo-assist/refactor-tui-menu-view-helpers`.
+  - Build / vet / gofmt / `go test -race -count=1` all clean across 12 packages.
+- **Task 11** (Activity) — `update_issue` on #100 returned `success`. `create_pull_request` for the new refactor returned `success` with patch/bundle artifacts at `/tmp/gh-aw/aw-repo-assist-refactor-tui-menu-view-helpers.{patch,bundle}` (10.7 KB patch, 3 KB bundle) but the PR did not appear on the repo (7th occurrence of the safe-outputs bridge persistence issue).
 
 ## In-flight work
 
-- **1 local commit, no open PR of mine this run.** Local: `5048410` on `repo-assist/fix-176-launchd-domain-list`.
-- **Safe-outputs bridge persistence issue confirmed a 6th time.** All three write tools (`create_pull_request`, `update_issue`, `add_comment`) returned `success` at the MCP HTTP layer but the writes did not appear on the repo. Patch + bundle artifacts at `/tmp/gh-aw/aw-repo-assist-fix-176-launchd-domain-list.{patch,bundle}` — maintainer can apply with `git am < /tmp/gh-aw/aw-repo-assist-fix-176-launchd-domain-list.patch` from this checkout.
+- **1 local commit, no open PR of mine this run.** Local: `aec2665` on `repo-assist/refactor-tui-menu-view-helpers`.
+- **Safe-outputs bridge persistence issue confirmed a 7th time.** `create_pull_request` for the TUI refactor returned `success` at the MCP HTTP layer but the branch did not push to origin. Patch + bundle artifacts at `/tmp/gh-aw/aw-repo-assist-refactor-tui-menu-view-helpers.{patch,bundle}` — maintainer can apply with `git am < /tmp/gh-aw/aw-repo-assist-refactor-tui-menu-view-helpers.patch` from this checkout.
 
 ## Backlog / next high-value task
 
 - **#132 (gh sr storage — btrfs loop + reflink seed)** — human-authored design. v1 scaffold (subcommand skeleton in `cmd/gh-sr/`, `internal/storage/` package, status detection) is the natural next deliverable; **on hold** pending maintainer signal on the loop-mount persistence approach.
-- **#175** (ops orchestrator preamble, 8+ sites) — duplicate-code detector found a higher-severity version of the same pattern that #159 partially addressed. Would need a `runOrchestrated(w, cfg, mgr, filterHost, filterRepo, nameArgs, applyExtras, perRunner)` helper in `internal/ops/ops.go` per the detector's recommendation. Larger scope than #176.
-- **#174** (IsServiceActive vs Status duplication, high severity) — 8 shell-command blocks (4 kinds × 2 functions) duplicate the `is-active` shell strings. Detector recommends extracting `activeCheck(h, kind, base, label, taskName) (string, error)` or `Kind.IsActive(...)` method. ~1 hour of mechanical work.
-- **#176** — implemented locally (commit `5048410`) but safe-outputs bridge didn't push the PR. If bridge gets fixed, push this first; otherwise treat as next-fix-up work.
+- **#174/#175/#176** — all merged. Recent-style duplicate-code extractions are now depleted in the autostart / ops paths.
+- **TUI dashboard refactor** — `renderMenuItems` + `newAltView` landed locally (commit `aec2665`). If safe-outputs bridge works, push this next; otherwise treat as next-fix-up work. After merge, the remaining TUI duplication is minimal (most helpers are already in `table.go`).
 
 ## Backlog cursor for Task 2 (Issue Comment)
 
-- 16 open issues (1 mine, 1 test-improver, 1 perf-improver, 1 efficiency-improver, 1 test-assist, 4 aw, 6 agentic-workflows/duplicate-code). Cursor parked on #132 (only human-authored). Re-engage when the maintainer or a new human comment appears.
+- 9 open issues (7 bot-tracker / monthly activity, 1 human design #132, 1 blocked docs-changelog #190). Cursor parked on #132 (only human-authored). Re-engage when the maintainer or a new human comment appears.
 
 ## Completed work (PRs MERGED + current drafts)
 
-- **#172** (mine, draft) — `[repo-assist] refactor(tui): extract renderHeader / renderRow helpers` (Closes #166). Open since 2026-06-13T01:36:34Z. Awaiting maintainer review.
-- **#171** (mine, draft→merged) — `[repo-assist] refactor(autostart): extract resolveAutostartTarget preamble helper` (Closes #165). MERGED 2026-06-13T07:00:42Z as commit 904dd60.
-- **#169** (mine, draft→merged) — `[repo-assist] refactor(hostshell): add LinuxElevatePreludeSoft and adopt it in runner/disk.go` (Closes #163). MERGED.
+- **TUI renderMenuItems+newAltView refactor (mine, local commit `aec2665`)** — branch `repo-assist/refactor-tui-menu-view-helpers`. Awaiting bridge push.
+- **#191** (efficiency-improver, draft→merged) — `[efficiency-improver] perf(tui): use strconv.ParseFloat in extractTrailingPercent`.
+- **#189** (test-improver, open) — `[test-improver] test: cover CollectHostMetrics (0% → 100%)`. Awaiting review.
+- **#187** (mine) — `feat(org-runners): document and improve org-level runner support`. Merged.
+- **#185** (mine) — `[repo-assist] refactor(autostart): extract runActiveCheck helper`. Merged.
+- **#184** (mine) — `[repo-assist] refactor(autostart): extract runActiveCheck helper`. Merged.
+- **#183** (mine) — `[repo-assist] refactor(ops): extract resolveAndFilter preamble helper`. Merged.
+- **#181/#180** (mine) — `[repo-assist] refactor(autostart): unify launchd domain list via launchdDomainList helper`. Merged.
+- **#178** (test-improver, draft→merged) — `[test-improver] test(ops): cover ResolveHostInfo with mock-host injection`.
+- **#172** (mine, draft→merged) — `[repo-assist] refactor(tui): extract renderHeader / renderRow helpers` (Closes #166).
+- **#171** (mine, draft→merged) — `[repo-assist] refactor(autostart): extract resolveAutostartTarget preamble helper` (Closes #165). MERGED.
+- **#169** (mine, draft→merged) — `[repo-assist] refactor(hostshell): add LinuxElevatePreludeSoft and adopt it in runner/disk.go`. MERGED.
 - **#168** (test-improver draft→merged) — `[test-improver] test(ops): cover runPerHostParallel with mock-host injection`.
 - **#167** (efficiency-improver draft→merged) — `[efficiency-improver] perf(runner): inline rcByInstance name construction in EnrichWithGitHubStatus`.
-- **#159** (an-lee) — `refactor: resolve duplicate-code issues with shared helpers` (Closes #143/144/145/152/154). Merged 2026-06-12 05:35:02Z.
-- **#158** — `[docs] Update documentation for features from 2026-06-11`. Merged.
+- **#159** (an-lee) — `refactor: resolve duplicate-code issues with shared helpers`. Merged.
 - **#157** (mine) — `[repo-assist] refactor(config): extract loadYAMLRoot helper in mutate.go` (Closes #153). Merged.
-- **#156** — `[test-improver] test(hostshell): cover WriteRemoteBytes across POSIX and Windows branches`. Merged.
-- **#155** — `[efficiency-improver] perf(config): inline single-pointer scan + early-exit in FindRunnerForLogs`. Merged.
 - **#149** (mine) — `[repo-assist] test(diskschedule): cover escapePS PowerShell single-quote escape`. Merged.
-- **#147** — `[test-improver] test(ops): cover disk-printer helpers and per-host instance map`. Merged.
-- **#146** — `[efficiency-improver] perf(config): inline name-N construction in InstanceNames helper`. Merged.
 - **#142** (mine) — `[repo-assist] fix(runner): unify GitHub registration URL helper` (Closes #122). Merged.
 - **#141** (mine) — `[repo-assist] fix(runner): error on unsupported host OS instead of silently using POSIX` (Closes #135). Merged.
 - **#139** (mine) — `[repo-assist] refactor(runner): extract containerEscalation + passwordlessSudo helpers` (Closes #134). Merged.
-- **#136** — `[efficiency-improver] perf(runner): single du walk in dirSizesPOSIX (4 SSH round trips → 1)`. Merged.
 - **#131** — an-lee: `gh sr disk usage|prune|schedule` — adds `internal/diskschedule/` and the `disk` subcommand family. Merged.
 
 ## Activity / PR history (compressed)
 
-- 2026-06-14 (run 27460481325, 03:30 UTC): Implemented #176 fix locally (commit 5048410 on `repo-assist/fix-176-launchd-domain-list`); build/vet/gofmt/test-race all clean. safe-outputs bridge persistence issue (6th consecutive): create_pull_request + update_issue + add_comment all returned success but did not apply to GitHub. Patch + bundle saved.
-- 2026-06-13 (run 27452358684, 01:30 UTC): Implemented #166 fix locally (commit 9295b2d on `repo-assist/fix-166-tui-table-render-helper`); build/vet/gofmt/test-race all clean. safe-outputs bridge persistence issue (5th consecutive): create_pull_request + update_issue both returned success but did not apply to GitHub. Patch + bundle artifacts saved. (Note: the bridge did push #166 as PR #172 a few hours later — bridge is intermittent.)
-- 2026-06-12 (run 27436420474, 19:07 UTC): Implemented #165 fix locally (commit 03d587f on `repo-assist/fix-165-autostart-preamble-helper`); build/vet/gofmt/test-race all clean. safe-outputs bridge persistence issue (4th consecutive): patch + bundle saved.
+- 2026-06-16 (run 27547403295, 00:18 UTC): Implemented TUI renderMenuItems+newAltView helper refactor locally (commit aec2665 on `repo-assist/refactor-tui-menu-view-helpers`); build/vet/gofmt/test-race all clean. safe-outputs bridge persistence issue (7th consecutive): create_pull_request returned success but did not push the PR. Patch + bundle saved.
+- 2026-06-15 (run 27526398615, 05:43 UTC): Maintenance mode (Performance/Comment/Take Forward all no-op). Verified #189 is the only open PR (test-improver).
+- 2026-06-14 (run 27460481325, 03:30 UTC): Implemented #176 fix locally (commit 5048410 on `repo-assist/fix-176-launchd-domain-list`); build/vet/gofmt/test-race all clean. safe-outputs bridge persistence issue (6th consecutive): patch + bundle saved. Bridge eventually pushed as PR #180, merged 2026-06-14.
+- 2026-06-13 (run 27452358684, 01:30 UTC): Implemented #166 fix locally (commit 9295b2d on `repo-assist/fix-166-tui-table-render-helper`); bridge persistence issue (5th consecutive). Bridge eventually pushed as PR #172, merged 2026-06-14.
+- 2026-06-12 (run 27436420474, 19:07 UTC): Implemented #165 fix locally (commit 03d587f on `repo-assist/fix-165-autostart-preamble-helper`); bridge persistence issue (4th consecutive).
 - 2026-06-12 (run 27418691649, 13:34 UTC): Created PR #169 (LinuxElevatePreludeSoft for #163). Landed despite bridge persistence noise.
 - 2026-06-12 (run 27402673134, 08:03 UTC): Created gofmt fix + CI check PR (dde5c83). Blocked by workflow file permission; issue #160/#161 filed.
 - 2026-06-12 (run 27388413942, 02:21 UTC): Verified #157 clean, refreshed #100 (body 9.5 KB → 8.4 KB compressed), no new PRs.
@@ -70,8 +79,8 @@ metadata:
 
 ## Notes for next run
 
-- **safe-outputs MCP bridge persistence issue (6th occurrence):** every `create_pull_request`/`update_issue`/`add_comment` call this run returned `success` at the HTTP layer but the writes did not appear on GitHub. **Pattern confirmed across 3 different safe-output tools in a single run.** Patch + bundle artifacts are saved to `/tmp/gh-aw/aw-*.{patch,bundle}`. The maintainer can apply with: `git am < /tmp/gh-aw/aw-repo-assist-fix-176-launchd-domain-list.patch` (run from this checkout). **Configuration diagnosis needed:** the issue may be in `safe-outputs.create-pull-request` (not configured for non-protected pushes), in `update-issue: target: '*'` (not set so update targets the triggering issue, which doesn't exist for scheduled runs), or in the MCP server itself. **Recommend:** if this persists, file an issue to the agentics repo requesting diagnosis.
+- **safe-outputs MCP bridge persistence issue (7th occurrence):** `create_pull_request` for this run's TUI renderMenuItems+newAltView refactor returned `success` at the HTTP layer but the PR did not appear on GitHub. Patch + bundle artifacts are saved to `/tmp/gh-aw/aw-repo-assist-refactor-tui-menu-view-helpers.{patch,bundle}` (~10.7 KB patch, ~3 KB bundle). **The maintainer can apply with:** `git am < /tmp/gh-aw/aw-repo-assist-refactor-tui-menu-view-helpers.patch` (run from this checkout, branch `repo-assist/refactor-tui-menu-view-helpers`). **Pattern confirmed:** all 3 different safe-output tools (`create_pull_request`, `update_issue`, `add_comment`) hit this intermittently across runs. `update_issue` on #100 returned `success` this run but the body refresh may or may not have applied (verified post-update).
 - **Posture:** revert rate is 0/15 over the life of the workflow. Production refactors paired with bot-flagged issues are demonstrably safe.
 - **#132 design signal still pending.** Maintainer is in selective mode; v1 scaffold requires a maintainer signal on loop-mount persistence.
 - **Branch name pattern:** Maintainer should be aware that `repo-assist/*-XXXXXXXX` (with SHA suffix) is the gh-aw orchestrator's standard; not something the workflow can suppress.
-- **Next high-confidence action if safe-outputs is fixed:** push local `repo-assist/fix-176-launchd-domain-list` (commit `5048410`) to origin + open PR. Work is already complete and tested.
+- **Next high-confidence action if safe-outputs is fixed:** push local `repo-assist/refactor-tui-menu-view-helpers` (commit `aec2665`) to origin + open PR. Work is already complete and tested. After that, the TUI duplication is minimal; the next-bot-detector issue would likely target a different package.
