@@ -7,10 +7,18 @@ metadata:
 
 # Completed Work
 
-## 2026-06-15 — TUI extractTrailingPercent ParseFloat (this run)
+## 2026-06-17 — Container status SSH consolidation (this run, no PR)
+
+Branch: `efficiency/container-status-one-shot` (commit ef6beab). **PR creation tool returned success but no PR was opened on GitHub** (3 retries; reported `incomplete` per safeoutputs policy). Commit is preserved on the local branch and can be pushed manually.
+
+New `containerLocalStatusOneShot` folds `echo $HOME` + bootstrap-failed marker test + docker inspect into a single `h.Run` script. `parseContainerStatusInspectOutput` gained `case "failed"` arm. **SSH round trips per call: 3 (Linux) / 2 (macOS) → 1 (always).** New `TestContainerLocalStatusImageAndRevision_one_ssh_round_trip` (5 sub-cases) pins the 1-call contract. New `BenchmarkContainerLocalStatusImageAndRevision` = 1,429 ns/op, 902 B/op, 6 allocs/op. GSF: energy proportionality, hardware efficiency, demand shaping.
+
+**Negative results this run**: (1) `enrichFromScopeRunners` O(N·M)→O(N+M) map fix regressed at the 20×10 bench scale (78K→89K ns/op, +83 allocs/op for the per-scope name index — the bench fixture is too small to amortize the per-scope map header cost). (2) `strings.EqualFold` short-circuit with `gr.OS != exp` guard is only ~3 ns/call — unmeasurable in the noise floor. Both reverted; logged as learnings.
+
+## 2026-06-15 — TUI extractTrailingPercent ParseFloat (merged as #191)
 
 Branch: `efficiency/tui-parsefloat-percentage-parse` (commit 8ae6038). Patch: `/tmp/gh-aw/aw-efficiency-tui-parsefloat-percentage-parse.patch`.
-PR title: `[efficiency-improver] perf(tui): use strconv.ParseFloat in extractTrailingPercent`.
+PR title: `[efficiency-improver] perf(tui): use strconv.ParseFloat in extractTrailingPercent`. **MERGED 2026-06-15T23:22:06Z as PR #191.**
 
 `BenchmarkExtractTrailingPercent` 3806→452 ns/op (-88%), 818→160 B/op (-80%), 36→6 allocs/op (-83%). `fmt.Sscanf` → `strconv.ParseFloat`. Hot path: per colored host-metrics cell per Bubble Tea View() call. First TUI-side bench.
 

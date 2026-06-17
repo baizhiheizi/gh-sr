@@ -17,8 +17,8 @@ metadata:
 | TBD | Network | Audit repeated `gh run` calls for batching | TBD |
 | LOW | Code | `Remove` parallelization (per-host) | Rare op, config-mutation concerns |
 | LOW | Code | `ValidateContainerPrereqs` parallelization | ~150ms savings; complex early-exit |
-| MEDIUM | Infra | Issue #124 — benchstat comparison comment on PRs (bench already runs on PRs; only the comparison step is missing). 2 TUI benches added this run partially fills the prerequisite. | Unblocks future detection |
-| MEDIUM | Storage | Issue #132 — btrfs loop + reflink seed for shared inner Docker cache. Reduces per-runner image pull energy by N× via dedup. Could be the biggest single-host energy win in the project. Commented on it this run. | HIGH per-host disk + pull energy |
+| MEDIUM | Infra | Issue #124 — benchstat comparison comment on PRs (bench already runs on PRs; only the comparison step is missing). 2 TUI benches added 2026-06-15 + 1 runner bench added 2026-06-17 partially fills the prerequisite. | Unblocks future detection |
+| MEDIUM | Storage | Issue #132 — btrfs loop + reflink seed for shared inner Docker cache. Reduces per-runner image pull energy by N× via dedup. Could be the biggest single-host energy win in the project. Commented on it 2026-06-15. | HIGH per-host disk + pull energy |
 
 ## Completed
 
@@ -31,4 +31,5 @@ metadata:
 - ✅ `FindRunnerForLogs_Ambiguous` 3987→150 ns/op (-96%), 66→5 allocs/op (-92%) — PR #155
 - ✅ `EnrichFromScopeRunners_Small` 33→28 allocs/op (-15%), ~50% wall-clock reduction at median — PR #167
 - ✅ `EnrichFromScopeRunners` 440→420 allocs/op (-4.5%), -3.2 KB/op — PR #167
-- ✅ `extractTrailingPercent` (TUI) 3806→452 ns/op (-88%), 818→160 B/op (-80%), 36→6 allocs/op (-83%) — this run's PR. fmt.Sscanf → strconv.ParseFloat. First TUI-side bench.
+- ✅ `extractTrailingPercent` (TUI) 3806→452 ns/op (-88%), 818→160 B/op (-80%), 36→6 allocs/op (-83%) — PR #191. fmt.Sscanf → strconv.ParseFloat. First TUI-side bench.
+- ✅ `containerLocalStatusImageAndRevision` 2-3 → 1 SSH round trip per container per `Manager.Status` tick — branch `efficiency/container-status-one-shot` (commit ef6beab). 1,429 ns/op, 902 B/op, 6 allocs/op in-process bench. **PR creation tool hiccup — no PR opened; reported incomplete**.
