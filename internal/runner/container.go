@@ -260,25 +260,38 @@ func (m *Manager) resolveContainerMTU(h *host.Host) int {
 	return DetectHostEgressMTU(h)
 }
 
-func (m *Manager) containerDockerdStartTimeout() int {
-	if m != nil && m.ContainerDockerdStartTimeout > 0 {
-		return m.ContainerDockerdStartTimeout
+// positiveIntOrDefault returns v when v > 0, else def. Centralizes the
+// "use the configured value when positive, else the hard-coded default"
+// rule shared by the container-timeout / -retry / -stagger accessors below.
+// Using a single helper avoids drift in the positivity check (e.g. the
+// previous `>= 0 && != 0` form on containerStartStaggerSeconds that was
+// logically equivalent to `> 0` but inconsistent with the other accessors).
+func positiveIntOrDefault(v, def int) int {
+	if v > 0 {
+		return v
 	}
-	return 90
+	return def
+}
+
+func (m *Manager) containerDockerdStartTimeout() int {
+	if m == nil {
+		return 90
+	}
+	return positiveIntOrDefault(m.ContainerDockerdStartTimeout, 90)
 }
 
 func (m *Manager) containerBootstrapMaxRetries() int {
-	if m != nil && m.ContainerBootstrapMaxRetries > 0 {
-		return m.ContainerBootstrapMaxRetries
+	if m == nil {
+		return 5
 	}
-	return 5
+	return positiveIntOrDefault(m.ContainerBootstrapMaxRetries, 5)
 }
 
 func (m *Manager) containerStartStaggerSeconds() int {
-	if m != nil && m.ContainerStartStaggerSeconds >= 0 && m.ContainerStartStaggerSeconds != 0 {
-		return m.ContainerStartStaggerSeconds
+	if m == nil {
+		return 3
 	}
-	return 3
+	return positiveIntOrDefault(m.ContainerStartStaggerSeconds, 3)
 }
 
 // createContainerInstance creates (but does not start) a single runner container
