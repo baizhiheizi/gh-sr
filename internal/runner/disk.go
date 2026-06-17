@@ -144,8 +144,12 @@ func ListRunnerInstanceDirs(h *host.Host) ([]string, error) {
 }
 
 func splitNonEmptyLines(s string) []string {
+	// SplitSeq avoids the upfront []string allocation that strings.Split makes
+	// for the full output of the per-host `ls -1 ~/.gh-sr/runners` (or PowerShell
+	// Get-ChildItem) command. The returned slice is what callers consume, so the
+	// caller-side allocation is unchanged; only the intermediate slice is removed.
 	var out []string
-	for _, line := range strings.Split(s, "\n") {
+	for line := range strings.SplitSeq(s, "\n") {
 		line = strings.TrimSpace(line)
 		if line != "" {
 			out = append(out, line)

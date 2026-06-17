@@ -188,7 +188,11 @@ echo "::GH_SR_METRICS_END::"
 // parseUnixMetrics extracts key=value pairs between the sentinel markers.
 func parseUnixMetrics(raw string, m *HostMetrics) error {
 	inBlock := false
-	for _, line := range strings.Split(raw, "\n") {
+	// SplitSeq avoids the upfront []string allocation that strings.Split makes
+	// for the whole multi-line script output. parseUnixMetrics runs once per
+	// host per TUI metric-refresh tick, so the saved slice lands in steady-state
+	// GC pressure on long-running dashboards.
+	for line := range strings.SplitSeq(raw, "\n") {
 		line = strings.TrimSpace(line)
 		if line == "::GH_SR_METRICS_START::" {
 			inBlock = true
