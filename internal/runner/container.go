@@ -449,15 +449,18 @@ func (m *Manager) removeContainer(h *host.Host, rc config.RunnerConfig, instance
 
 // parseContainerStatusInspectOutput parses one line of the form
 // status|configImage|digest|imageRevision (from containerLocalStatusImageAndRevision).
+// Missing fields default to "".
 func parseContainerStatusInspectOutput(out string) (local, image, imageRev string) {
 	line := strings.TrimSpace(out)
-	parts := strings.Split(line, "|")
-	for len(parts) < 4 {
-		parts = append(parts, "")
-	}
-	status := strings.TrimSpace(parts[0])
-	image = strings.TrimSpace(parts[1])
-	imageRev = strings.TrimSpace(parts[3])
+	// status|configImage|digest|imageRev — strings.Cut chain is 0-alloc vs
+	// strings.Split's 4-element slice + padding loop. The third Cut discards
+	// the digest field (we only carry status, image, imageRev through).
+	status, rest, _ := strings.Cut(line, "|")
+	image, rest, _ = strings.Cut(rest, "|")
+	_, imageRev, _ = strings.Cut(rest, "|")
+	status = strings.TrimSpace(status)
+	image = strings.TrimSpace(image)
+	imageRev = strings.TrimSpace(imageRev)
 	switch status {
 	case "running":
 		local = "running"
