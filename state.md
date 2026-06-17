@@ -7,18 +7,20 @@ metadata:
 
 # Repo Assist state — last updated 2026-06-17
 
-## Last run (2026-06-17 12:13 UTC, run 27685313566)
+## Last run (2026-06-17 17:13 UTC, run 27703792995)
 
-- Selected tasks: 8 (Performance), 10 (Take Forward), 9 (Testing).
-- **Task 8 / 9** (Performance + Testing bundled) — created draft PR locally on branch `repo-assist/perf-container-parse-status-2026-06-17`, commit `de5949f`. `parseContainerStatusInspectOutput` in `internal/runner/container.go` rewritten with a 3-call `strings.Cut` chain (was `strings.Split` + padding loop). Hot path: runs once per host per `Manager.Status()` — called on every 5s TUI refresh tick. Benchmark: 222 → 81 ns/op (~2.7x faster), 320 → 0 B/op, 5 → 0 allocs/op. Pure perf refactor — behavior preserved by 8 existing `TestParseContainerStatusInspectOutput` cases. `safe-outputs create_pull_request` returned success with patch/bundle artifacts; bridge expected to push as PR #202.
-- **Task 10** (Take Forward) — no-op. #132 v1 scaffold on hold pending maintainer signal. Backlog all merged/closed. Revert rate stays at 0/15 over the life of the workflow.
-- **Task 11** (Activity) — `update_issue` for #100 returned `success` with the refreshed body but did not apply (same pattern as the prior 6+ runs; `updated_at` still 2026-06-17T08:20:02Z). Fell back to `add_comment` (temporary_id `aw_z7qR5rYZ`) carrying the new Run History entry and the intended Suggested Actions refresh list.
+- Selected tasks: 6 (Maintain), 4 (Engineering), 8 (Performance).
+- **Task 6 (Maintain Repo Assist PRs)** — no-op. PR #199 (perf diskschedule) has all 4 checks green. PR #202 (perf container parse status) is in-flight as draft with GitGuardian green; mergeable_state "unstable" expected for a draft. PR #200 is test-improver. PR #201 is doc-updater's CHANGELOG placeholder (protected-file blocker, manual apply needed). PRs #203-#205 are efficiency-improver drafts out of Repo Assist scope.
+- **Task 4 (Engineering Investments)** — no-op. Dependencies current (Go 1.25.9, latest charmbracelet / cli / cobra). CI minimal but clean (actions/checkout@v6, actions/setup-go@v5, go 1.25.x, vet + race tests, optional bench artifact). gofmt-CI gap (PRs #160/#161) is a documented protected-file blocker, not actionable here.
+- **Task 8 (Performance Improvements)** — created draft PR locally on branch `repo-assist/perf-metrics-splitseq-2026-06-17`, commit `57c709e`. Migrated two per-tick line-iteration paths from `strings.Split` → `strings.SplitSeq` (Go 1.23+): `parseUnixMetrics` in `internal/host/metrics.go` and `splitNonEmptyLines` in `internal/runner/disk.go`. New benchmarks in `internal/host/metrics_bench_test.go` and `internal/runner/bench_test.go`. `parseUnixMetrics`: 417→328 ns/op (-21%), 224→48 B/op (-78%), 2→1 allocs. `splitNonEmptyLines`: 316→248 ns/op (-21%), 368→240 B/op (-35%), 5→4 allocs. Pure perf refactor — behavior preserved by all existing test cases. `safe-outputs create_pull_request` returned success with patch/bundle artifacts at `/tmp/gh-aw/aw-repo-assist-perf-metrics-splitseq-2026-06-17.{patch,bundle}`; bridge expected to push as the next available draft number (likely #206).
+- **Task 11 (Activity)** — `update_issue` for #100 errored (body 14223 bytes > 10KB MCP limit). Fell back to `add_comment` (temporary_id `aw_toOsZ2sB`) carrying this run's record.
 
 ## In-flight work
 
-- **PR #202 (in-flight, this run)** — `repo-assist/perf-container-parse-status-2026-06-17`, commit `de5949f`. `parseContainerStatusInspectOutput` Cut chain. Patch at `/tmp/gh-aw/aw-repo-assist-perf-container-parse-status-2026-06-17.patch`.
-- **PR #199 (in-flight, prior run, pushed)** — `repo-assist/perf-diskschedule-parse-at-time-e8806c619afb0865`, commit `5349344`. Open in PR list, awaiting review.
-- **PR #200 (Test Improver, pushed)** — `test-assist/down-orchestrator-bcb888384bc03fdb`. Open in PR list, awaiting review.
+- **PR (this run, in-flight)** — `repo-assist/perf-metrics-splitseq-2026-06-17`, commit `57c709e`. `parseUnixMetrics` + `splitNonEmptyLines` SplitSeq migration. Patch at `/tmp/gh-aw/aw-repo-assist-perf-metrics-splitseq-2026-06-17.patch`.
+- **PR #202 (in-flight, prior run, pushed)** — `repo-assist/perf-container-parse-status-2026-06-17`, commit `b02276a`. Open in PR list, awaiting review.
+- **PR #199 (in-flight, prior run, pushed)** — `repo-assist/perf-diskschedule-parse-at-time-e8806c619afb0865`, commit `5349344`. All 4 checks green; awaiting review.
+- **PR #200 (Test Improver, pushed)** — `test-assist/down-orchestrator-bcb888384bc03fdb`. All 4 checks green; awaiting review.
 - **PR #201 (doc-updater, blocked)** — docs PR placeholder, `CHANGELOG.md` protected. Manual apply required.
 
 ## Backlog / next high-value task
@@ -26,7 +28,7 @@ metadata:
 - **#132 (gh sr storage — btrfs loop + reflink seed)** — human-authored design. v1 scaffold is the natural next deliverable; **on hold** pending maintainer signal on the loop-mount persistence approach.
 - **#190 / #201 (docs PR placeholders)** — manual `CHANGELOG.md` apply by maintainer.
 - **#160 / #161 (gofmt CI check)** — manual `ci.yml` apply by maintainer.
-- **Safe-outputs MCP bridge** — `update_issue` for #100 has been failing 7+ consecutive runs at the body-persistence layer. `add_comment` is the durable fallback. PR creation (`create_pull_request`) eventually pushes on its own (intermittent; not persistent). If a new task requires `update_issue` to land, plan a follow-up run or a patch-comment artifact.
+- **Safe-outputs MCP bridge** — `update_issue` for #100 has been failing 7+ consecutive runs at the body-persistence layer. This run hit a new failure mode: 14KB body exceeded the 10KB MCP limit. `add_comment` is the durable fallback. PR creation (`create_pull_request`) eventually pushes on its own (intermittent; not persistent). If a new task requires `update_issue` to land, plan a follow-up run or a patch-comment artifact.
 
 ## Backlog cursor for Task 2 (Issue Comment)
 
@@ -34,7 +36,8 @@ metadata:
 
 ## Completed work (PRs MERGED + current drafts)
 
-- **PR #202 (this run, in-flight)** — `[repo-assist] perf(runner): strings.Cut chain in parseContainerStatusInspectOutput`. Branch `repo-assist/perf-container-parse-status-2026-06-17`, commit `de5949f`. ~2.7x faster, 0 allocs/op.
+- **PR (this run, in-flight)** — `[repo-assist] perf(host,runner): strings.SplitSeq in parseUnixMetrics and splitNonEmptyLines`. Branch `repo-assist/perf-metrics-splitseq-2026-06-17`, commit `57c709e`. ~21% faster on both functions; -78% and -35% memory respectively.
+- **PR #202 (in-flight, prior run, pushed)** — `[repo-assist] perf(runner): strings.Cut chain in parseContainerStatusInspectOutput`. Branch `repo-assist/perf-container-parse-status-2026-06-17`, commit `b02276a`. ~2.7x faster, 0 allocs/op.
 - **#199 (in-flight)** — `repo-assist/perf-diskschedule-parse-at-time-e8806c619afb0865`. ~22x faster, 0 allocs/op.
 - **#200 (in-flight, Test Improver)** — `test-assist/down-orchestrator-bcb888384bc03fdb`. Down 0% → 83.3%.
 - **#201 (in-flight, doc-updater)** — docs PR placeholder for 2026-06-17 features.
@@ -55,6 +58,7 @@ metadata:
 
 ## Activity / PR history (compressed)
 
+- 2026-06-17 (run 27703792995, 17:13 UTC): Created PR (this run) — perf metrics SplitSeq. Tasks 6/4 no-op, Task 8 created perf PR. Activity comment on #100 (`aw_toOsZ2sB`); `update_issue` errored on 14KB body > 10KB MCP limit.
 - 2026-06-17 (run 27685313566, 12:13 UTC): Created PR #202 (perf container parse, in-flight). Tasks 8/9 bundled. Tasks 10/2 no-op. Activity comment on #100 (`aw_z7qR5rYZ`); `update_issue` for body refresh returned `success` but did not apply.
 - 2026-06-16 (run 27597907360, 06:12 UTC): Created PR #194 (test diskschedule table-test). Bridge eventually pushed. 12.8% → 14.2%.
 - 2026-06-16 (run 27577906493, 00:53 UTC): No-op run. Activity comment on #100 (`aw_qTaFu2JT`).
@@ -69,10 +73,10 @@ metadata:
 
 ## Notes for next run
 
-- **#100 body refresh.** If the next `update_issue` for #100 succeeds, the body should drop the stale `Review PR: parseAtTime + systemdQuoteArg` line (merged as #194), drop the `Close issue #148` line, drop the `#194 missing` mention in the merge list, add the `Review PR #199`, `Review PR #200`, `Apply patch manually #201` lines, add `#194` to the merged list, and prepend the 2026-06-17 12:13 UTC Run History entry. The exact intended body is captured in this run's `add_comment` on #100 (`aw_z7qR5rYZ`).
-- **PR #202 manual push.** If the bridge did not push it, the patch is at `/tmp/gh-aw/aw-repo-assist-perf-container-parse-status-2026-06-17.patch` and the branch `repo-assist/perf-container-parse-status-2026-06-17` is on the local checkout with commit `de5949f`. Mirror the patch via `git am` and push to open a PR.
+- **#100 body refresh.** If the next `update_issue` for #100 succeeds, the body should drop the stale `Review PR #202 patch-manual` line (now in the PR list), drop the stale "stale-line #194" line in the older run history, add the `Review PR (this run) SplitSeq` line, and prepend the 2026-06-17 17:13 UTC Run History entry. The exact intended body is captured in this run's `add_comment` on #100 (`aw_toOsZ2sB`). NOTE: the intended body exceeds the 10KB MCP limit — `update_issue` will error; the comment is the durable record.
+- **PR (this run) manual push.** If the bridge did not push it, the patch is at `/tmp/gh-aw/aw-repo-assist-perf-metrics-splitseq-2026-06-17.patch` and the branch `repo-assist/perf-metrics-splitseq-2026-06-17` is on the local checkout with commit `57c709e`. Mirror the patch via `git am` and push to open a PR.
 - **#132 design signal still pending.** Maintainer is in selective mode; v1 scaffold requires a maintainer signal on loop-mount persistence.
-- **Safe-outputs bridge:** intermittent on `create_pull_request` (eventually pushes on its own), persistent on `update_issue` (must use `add_comment` as fallback). Continue to verify body updates with a follow-up read; do not assume `success` = applied.
-- **Posture:** revert rate is 0/15 over the life of the workflow. Recent merges (#180, #183, #184, #189, #191) all landed cleanly.
+- **Safe-outputs bridge:** intermittent on `create_pull_request` (eventually pushes on its own), persistent on `update_issue` (must use `add_comment` as fallback; the 14KB MCP limit is a new hard failure mode). Continue to verify body updates with a follow-up read; do not assume `success` = applied.
+- **Posture:** revert rate is 0/15 over the life of the workflow. Recent merges (#180, #183, #184, #189, #191, #198, #197) all landed cleanly.
 - **Next high-confidence action if a new `bug` / `help wanted` / `good first issue` issue opens:** investigate root cause and implement a minimal fix on a `repo-assist/fix-issue-N-<desc>` branch. None currently open.
-- **Hot path inventory still has headroom:** `internal/runner/disk.go:148` and `internal/host/metrics.go:191` both use `strings.Split(s, "\n")` for line iteration in the per-host output path. A `strings.SplitSeq` migration would defer allocation, but is deferred until the use case for per-line streaming (vs. random access) is clearly present.
+- **Hot path inventory still has headroom:** `internal/tui/dashboard.go:810` (`wrapLines`) uses `strings.Split(s, "\n")` but is called only on scroll/config-format events, not per tick. `internal/autostart/cleanup.go:57,80,94` and `internal/agentic/agentic.go:159,860` use `strings.Split` for one-shot CLI paths (off the hot path). `internal/doctor/doctor.go:506,604` use `strings.Split` for one-shot remediation text rendering (off the hot path). The hot-path strings.Split cleanup is complete; remaining call sites are deliberate one-shot paths.
