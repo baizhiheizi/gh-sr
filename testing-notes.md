@@ -34,12 +34,25 @@ func installMockConnectHost(t *testing.T, factories map[string]host.Executor) {
 ```
 Without mutex, `-race` flags unsynchronised writes. Without local capture, early-spawned goroutines see later test swaps.
 
+## Real `*runner.Manager` over a mock Manager (proved in PR for `Down`)
+
+When the test target is the orchestrator's use of a Manager method, prefer a real `*runner.Manager{GitHub: nil}` over a mock Manager. The Manager's methods issue shell commands via `h.Run`, which a `MockExecutor` answers — the test exercises the real production code path end-to-end.
+
+`newDownMockExecutor` wires the 4 production Stop-path branches:
+- `test -f $dir/svc.sh` → "no\n" (skip svc.sh path)
+- `test -f $HOME/.config/systemd/user/...` → "" (no user systemd unit)
+- `test -f /etc/systemd/system/...` → "" (no system systemd unit)
+- `pid_file=.runner_pid` → "not running\n" (terminal state, no signal needed)
+
+Result: `autostart.Detect` returns `KindNone` → `stopNative` takes the "no pid file" early-exit branch. All 4 `RunFn` branches are constant across the test suite; per-test customisation is unnecessary.
+
 ## Conventions
 
 - `t.Parallel()` on every subtest; `t.Helper()` on assertion helpers.
 - `t.Setenv` (not `os.Setenv`) for env-var tests.
 - Lift exact-command strings into named test constants.
 - For shell-script assertions, write a parser that reverses the escape rules (`'\''` POSIX, `''` PowerShell).
+- **Substring-count assertion** for torn-write detection: `strings.Count(out, want)` instead of `len(out)`. Catches the failure mode of a missing mutex more reliably than total length.
 
 ## Gotchas
 
@@ -55,5 +68,6 @@ Without mutex, `-race` flags unsynchronised writes. Without local capture, early
 - **`connectHostMu` queue limit**: mutex held for **entire** test duration. Beyond ~15-20 parallel tests using `installMockConnectHost`, queue exceeds CI's 60s. Drop `t.Parallel()` for new factory-swap tests.
 - **DO NOT call `installMockConnectHost` AND then `connectHostMu.Lock()` in the same test** — deadlock.
 - **Empty result ≠ nil**: `make([]T, len(...))` returns empty (non-nil) slice when no hosts match. Test `len() == 0`, not `== nil`.
+- **`mgr.Stop` for container mode** is a separate code path (calls `stopContainer`). Native-mode tests on Linux only exercise the `autostart.Detect` → `stopNative` branch. Container-mode tests would need a separate mock setup that returns valid Docker state for `docker inspect` queries.
 
 [[repo]] [[commands]] [[backlog]]

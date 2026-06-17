@@ -7,20 +7,20 @@ metadata:
 
 `an-lee/gh-sr` — Go module (`go 1.25.9`). `cmd/gh-sr/` is the CLI entry (0% tested); `internal/` is the impl.
 
-Packages and coverage (2026-06-15):
+Packages and coverage (2026-06-17):
 
-- `internal/agentic` 83.9% — agentic-workflow prereq validators
-- `internal/autostart` 17.2% — systemd/launchd/scheduled-task install
-- `internal/config` 83.6% — runners.yml parser (best-tested)
-- `internal/diskschedule` 12.8% — local schedule install for `gh sr disk prune`
-- `internal/doctor` 62.1% — health checks
+- `internal/agentic` 84.3% — agentic-workflow prereq validators
+- `internal/autostart` 36.2% — systemd/launchd/scheduled-task install
+- `internal/config` 83.9% — runners.yml parser (best-tested)
+- `internal/diskschedule` 14.2% — local schedule install for `gh sr disk prune`
+- `internal/doctor` 65.5% — health checks
 - `internal/editor` 53.8% — editor picker
 - `internal/host` 58.8% — SSH+local exec; `Executor` interface
 - `internal/hostshell` 100.0% — shell-quoting + remote-write helpers (fully covered 2026-06-11)
-- `internal/ops` 37.6% — orchestration; pure helpers + `runPerHostParallel` + `ResolveHostInfo` + `CollectHostMetrics` all 100%, orchestrators still need per-function coverage
-- `internal/runner` 37.4% — container + native lifecycle
+- `internal/ops` 41.9% — orchestration; `runPerHostParallel`, `ResolveHostInfo`, `CollectHostMetrics` all 100%; `Down` 83.3%; remaining orchestrators (Up/Restart/Update/Remove/RebuildImage/CollectStatus/Logs/CleanupOffline) still 0%
+- `internal/runner` 43.7% — container + native lifecycle
 - `internal/testutil` 88.2% — shared mocks (MockExecutor + per-call capture pattern)
-- `internal/tui` 4.9% — bubbletea TUI
+- `internal/tui` 9.7% — bubbletea TUI
 - `cmd/gh-sr` 0.0% — tested via `internal/ops` end-to-end
 
 CI: `.github/workflows/ci.yml` runs `go vet ./...` then `go test ./... -race -count=1` on `[self-hosted, linux]`.
