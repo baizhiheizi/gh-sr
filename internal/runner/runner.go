@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/an-lee/gh-sr/internal/autostart"
 	"github.com/an-lee/gh-sr/internal/config"
@@ -27,6 +28,12 @@ type Manager struct {
 	// (overriding host egress MTU auto-detection). From runners.yml
 	// container_runner_image.mtu; set by ops before container setup. 0 = auto-detect.
 	ContainerMTU int
+	// ContainerDockerdStartTimeout is seconds to wait for inner dockerd bootstrap.
+	ContainerDockerdStartTimeout int
+	// ContainerBootstrapMaxRetries is consecutive dockerd bootstrap failures before giving up.
+	ContainerBootstrapMaxRetries int
+	// ContainerStartStaggerSeconds is delay between starting container instances on one host.
+	ContainerStartStaggerSeconds int
 }
 
 func (m *Manager) out() io.Writer {
@@ -55,7 +62,7 @@ type RunnerStatus struct {
 	ContainerImageRevision string
 	// ContainerImageBuild is a short match hint: "-", "?", "ok (hexprefix)", "stale (hexprefix)".
 	ContainerImageBuild string
-	Local               string // "running", "stopped", "not installed", "service error"
+	Local               string // "running", "stopped", "not installed", "service error", "restarting", "failed"
 	Remote              string // from GitHub API: "online", "offline", ""
 	Busy                bool
 }
@@ -128,7 +135,11 @@ func (m *Manager) startAutostartWithDarwinFallback(h *host.Host, rc config.Runne
 
 func (m *Manager) Start(h *host.Host, rc config.RunnerConfig) error {
 	if rc.IsContainerMode() {
+		stagger := m.containerStartStaggerSeconds()
 		for i, name := range rc.InstanceNames() {
+			if i > 0 && stagger > 0 {
+				time.Sleep(time.Duration(i*stagger) * time.Second)
+			}
 			env := m.NewContainerEnvironment(h, rc, i, name)
 			if err := env.Start(); err != nil {
 				return err

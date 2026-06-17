@@ -65,7 +65,7 @@ func TestDockerRunArgShape(t *testing.T) {
 		"  --name " + hostshell.PosixSingleQuote(cName),
 		"  --privileged",
 		"  --shm-size=2g",
-		"  --restart unless-stopped",
+		"  --restart on-failure:5",
 		"  -v " + hostshell.PosixSingleQuote(stateDir) + ":/runner-state",
 		"  -e GH_SR_RUNNER_NAME=" + hostshell.PosixSingleQuote(instanceName),
 		"  -e GH_SR_RUNNER_TOKEN=" + hostshell.PosixSingleQuote("tok"),
@@ -73,6 +73,8 @@ func TestDockerRunArgShape(t *testing.T) {
 		"  -e GH_SR_RUNNER_LABELS=" + hostshell.PosixSingleQuote(strings.Join(labels, ",")),
 		"  -e GH_SR_RUNNER_GROUP=" + hostshell.PosixSingleQuote("Default"),
 		"  -e GH_SR_RUNNER_EPHEMERAL=" + hostshell.PosixSingleQuote(""),
+		"  -e GH_SR_DOCKERD_START_TIMEOUT=" + hostshell.PosixSingleQuote("90"),
+		"  -e GH_SR_BOOTSTRAP_MAX_RETRIES=" + hostshell.PosixSingleQuote("5"),
 		"  " + hostshell.PosixSingleQuote(imageTag),
 	}, "\n")
 
@@ -82,8 +84,8 @@ func TestDockerRunArgShape(t *testing.T) {
 	if !strings.Contains(cmd, "--shm-size=2g") {
 		t.Error("docker create command must include --shm-size=2g for browser/system tests")
 	}
-	if !strings.Contains(cmd, "--restart unless-stopped") {
-		t.Error("docker create command must include --restart unless-stopped")
+	if !strings.Contains(cmd, "--restart on-failure:") {
+		t.Error("docker create command must include --restart on-failure:N for bounded bootstrap retries")
 	}
 	if !strings.Contains(cmd, cName) {
 		t.Errorf("docker create command must include container name %q", cName)
@@ -99,6 +101,12 @@ func TestDockerRunArgShape(t *testing.T) {
 	}
 	if !strings.Contains(cmd, "GH_SR_RUNNER_URL") {
 		t.Error("docker create command must pass GH_SR_RUNNER_URL env var")
+	}
+	if !strings.Contains(cmd, "GH_SR_DOCKERD_START_TIMEOUT") {
+		t.Error("docker create command must pass GH_SR_DOCKERD_START_TIMEOUT env var")
+	}
+	if !strings.Contains(cmd, "GH_SR_BOOTSTRAP_MAX_RETRIES") {
+		t.Error("docker create command must pass GH_SR_BOOTSTRAP_MAX_RETRIES env var")
 	}
 	if !strings.Contains(cmd, "GH_SR_RUNNER_LABELS") {
 		t.Error("docker create command must pass GH_SR_RUNNER_LABELS env var")
@@ -570,6 +578,53 @@ func TestAgenticRunnerEntrypointPinsMTU(t *testing.T) {
 	}
 }
 
+func TestAgenticRunnerEntrypointDockerdBootstrapResilience(t *testing.T) {
+	t.Parallel()
+	for _, want := range []string{
+		"GH_SR_DOCKERD_START_TIMEOUT",
+		"GH_SR_BOOTSTRAP_MAX_RETRIES",
+		"DOCKERD_START_TIMEOUT",
+		"BOOTSTRAP_MAX_RETRIES",
+		"dockerd-start-failures",
+		"bootstrap-failed",
+		"exec sleep infinity",
+	} {
+		if !strings.Contains(agenticRunnerEntrypoint, want) {
+			t.Fatalf("entrypoint should implement bootstrap resilience: missing %q", want)
+		}
+	}
+	if strings.Contains(agenticRunnerEntrypoint, "seq 1 30") {
+		t.Fatal("entrypoint must not hard-code a 30s dockerd wait loop")
+	}
+}
+
+func TestContainerRestartPolicy(t *testing.T) {
+	t.Parallel()
+	if got := containerRestartPolicy(5); got != "on-failure:5" {
+		t.Fatalf("got %q", got)
+	}
+	if got := containerRestartPolicy(0); got != "on-failure:5" {
+		t.Fatalf("zero retries should default to 5, got %q", got)
+	}
+}
+
+func TestDockerdStartTimeoutDockerCreateArg(t *testing.T) {
+	t.Parallel()
+	if got := dockerdStartTimeoutDockerCreateArg(90); !strings.Contains(got, "GH_SR_DOCKERD_START_TIMEOUT='90'") {
+		t.Fatalf("got %q", got)
+	}
+	if got := dockerdStartTimeoutDockerCreateArg(0); got != "" {
+		t.Fatalf("zero should omit env, got %q", got)
+	}
+}
+
+func TestBootstrapMaxRetriesDockerCreateArg(t *testing.T) {
+	t.Parallel()
+	if got := bootstrapMaxRetriesDockerCreateArg(5); !strings.Contains(got, "GH_SR_BOOTSTRAP_MAX_RETRIES='5'") {
+		t.Fatalf("got %q", got)
+	}
+}
+
 // TestBuildAgenticRunnerImageCmdShape verifies the docker build command shape
 // produced by buildAgenticRunnerImage (calls h.Run but we inspect the structure
 // by constructing the expected command string rather than executing it).
@@ -719,7 +774,7 @@ func TestParseContainerStatusInspectOutput(t *testing.T) {
 		{"exited|gh-sr/agentic-runner:1.0.0|sha256:1|rev1", "stopped", "gh-sr/agentic-runner:1.0.0", "rev1"},
 		{"created|repo:tag|sha256:2|", "stopped", "repo:tag", ""},
 		{"paused|x:y|sha256:3|r", "stopped", "x:y", "r"},
-		{"restarting|x:y|sha256:4|r", "stopped", "x:y", "r"},
+		{"restarting|x:y|sha256:4|r", "restarting", "x:y", "r"},
 		{"not installed|||", "not installed", "", ""},
 		{"not installed|a|b|c", "not installed", "", ""},
 	}

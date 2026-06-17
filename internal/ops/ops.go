@@ -139,10 +139,16 @@ func applyContainerImageExtras(mgr *runner.Manager, cfg *config.Config) {
 	if cfg == nil {
 		mgr.ContainerImageExtraApt = nil
 		mgr.ContainerMTU = 0
+		mgr.ContainerDockerdStartTimeout = 0
+		mgr.ContainerBootstrapMaxRetries = 0
+		mgr.ContainerStartStaggerSeconds = 0
 		return
 	}
 	mgr.ContainerImageExtraApt = cfg.ContainerRunnerImageExtraAptPackages()
 	mgr.ContainerMTU = cfg.ContainerRunnerImageMTU()
+	mgr.ContainerDockerdStartTimeout = cfg.ContainerRunnerImageDockerdStartTimeout()
+	mgr.ContainerBootstrapMaxRetries = cfg.ContainerRunnerImageBootstrapMaxRetries()
+	mgr.ContainerStartStaggerSeconds = cfg.ContainerRunnerImageStartStaggerSeconds()
 }
 
 // Setup installs and configures runners, mirroring the gh sr setup command.

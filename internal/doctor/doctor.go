@@ -521,6 +521,14 @@ func checkContainerRunnerInstall(w io.Writer, hostName string, h *host.Host, run
 		cname := runner.ContainerDockerName(inst)
 		q := strconv.Quote(cname)
 
+		if runner.ContainerBootstrapFailed(h, inst) {
+			printLine(w, sevFail, hostName, fmt.Sprintf(
+				"container: instance %s (%s) — bootstrap failed (inner dockerd did not start after repeated attempts); fix the host then run: gh sr up %s (or gh sr rebuild %s)",
+				inst, runnerName, runnerName, runnerName))
+			r.Fail++
+			continue
+		}
+
 		out, err := h.Run(fmt.Sprintf(`docker inspect --format '{{.State.Status}}' %s 2>/dev/null || echo missing`, q))
 		status := strings.TrimSpace(out)
 		if err != nil || status == "missing" || status == "" {

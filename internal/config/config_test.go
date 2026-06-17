@@ -984,6 +984,57 @@ func TestConfig_ContainerRunnerImageMTU(t *testing.T) {
 	}
 }
 
+func TestConfig_ContainerRunnerImageBootstrapSettings(t *testing.T) {
+	t.Parallel()
+	if got := (&Config{}).ContainerRunnerImageDockerdStartTimeout(); got != defaultContainerDockerdStartTimeout {
+		t.Fatalf("default dockerd timeout = %d, want %d", got, defaultContainerDockerdStartTimeout)
+	}
+	if got := (&Config{ContainerRunnerImage: ContainerRunnerImageConfig{DockerdStartTimeout: 120}}).ContainerRunnerImageDockerdStartTimeout(); got != 120 {
+		t.Fatalf("dockerd timeout = %d, want 120", got)
+	}
+	if got := (&Config{}).ContainerRunnerImageBootstrapMaxRetries(); got != defaultContainerBootstrapMaxRetries {
+		t.Fatalf("default bootstrap retries = %d, want %d", got, defaultContainerBootstrapMaxRetries)
+	}
+	if got := (&Config{ContainerRunnerImage: ContainerRunnerImageConfig{StartStaggerSeconds: 5}}).ContainerRunnerImageStartStaggerSeconds(); got != 5 {
+		t.Fatalf("start stagger = %d, want 5", got)
+	}
+}
+
+func TestConfig_validateContainerRunnerImageBootstrapFields(t *testing.T) {
+	t.Parallel()
+	base := Config{
+		Hosts:   map[string]HostConfig{"h": {Addr: "local", OS: "linux", Arch: "amd64"}},
+		Runners: []RunnerConfig{{Name: "r", Repo: "o/r", Host: "h", RunnerMode: RunnerModeContainer}},
+	}
+	cases := []struct {
+		name string
+		img  ContainerRunnerImageConfig
+		ok   bool
+	}{
+		{"valid defaults", ContainerRunnerImageConfig{}, true},
+		{"valid custom", ContainerRunnerImageConfig{DockerdStartTimeout: 120, BootstrapMaxRetries: 10, StartStaggerSeconds: 5}, true},
+		{"dockerd timeout low", ContainerRunnerImageConfig{DockerdStartTimeout: 29}, false},
+		{"dockerd timeout high", ContainerRunnerImageConfig{DockerdStartTimeout: 301}, false},
+		{"bootstrap retries low", ContainerRunnerImageConfig{BootstrapMaxRetries: 0}, true},
+		{"bootstrap retries high", ContainerRunnerImageConfig{BootstrapMaxRetries: 21}, false},
+		{"stagger high", ContainerRunnerImageConfig{StartStaggerSeconds: 61}, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			cfg := base
+			cfg.ContainerRunnerImage = tc.img
+			err := cfg.Validate()
+			if tc.ok && err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if !tc.ok && err == nil {
+				t.Fatal("expected validation error")
+			}
+		})
+	}
+}
+
 func TestConfig_ContainerRunnerImageExtraAptPackages_copy(t *testing.T) {
 	t.Parallel()
 	cfg := &Config{

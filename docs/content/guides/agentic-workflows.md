@@ -126,7 +126,7 @@ gh sr rebuild my-agentic    # rebuild the image after a gh-sr upgrade and restar
 gh sr remove my-agentic     # deregister from GitHub and remove container + state
 ```
 
-Each instance runs as a Docker container named `gh-sr-<instance>` with `--restart unless-stopped`, so it auto-starts on host boot and auto-restarts between jobs. `gh sr up` health-gates startup: it reports a runner as ready only once the container is running, the inner `dockerd` responds, and the actions runner is registered (a slow first boot is a warning, not a failure).
+Each instance runs as a Docker container named `gh-sr-<instance>` with `--restart on-failure` (bounded retries) and a persisted bootstrap failure cap, so a host that cannot start inner `dockerd` does not restart forever. Containers still auto-start on host boot when they were running at shutdown. `gh sr up` clears bootstrap failure markers and staggers multi-instance starts to reduce lockstep load spikes. `gh sr up` health-gates startup: it reports a runner as ready only once the container is running, the inner `dockerd` responds, and the actions runner is registered (a slow first boot is a warning, not a failure). `gh sr status` shows `restarting` or `failed` when bootstrap is stuck.
 
 The **BUILD** column in `gh sr status` compares the image's baked layout revision with the one your current `gh sr` expects: `ok` means current, `stale` means run `gh sr rebuild`, `?` means the image predates revision labels.
 

@@ -40,6 +40,8 @@
 #   GH_SR_AWF_SUBNET    — AWF bridge subnet for the service-routing bypass (default 172.30.0.0/24)
 #   GH_SR_HOST_MTU      — host egress MTU to pin the inner/outer Docker MTU to when it is
 #                         below 1500 (reduced-MTU host networks); unset/≥1500 ⇒ Docker default
+#   GH_SR_DOCKERD_START_TIMEOUT — seconds to wait for inner dockerd (default 90)
+#   GH_SR_BOOTSTRAP_MAX_RETRIES — consecutive dockerd-start failures before giving up (default 5)
 
 set -euo pipefail
 
@@ -220,14 +222,47 @@ dockerd \
 
 DOCKERD_PID=$!
 
-# Wait until the socket is available (up to 30s).
-for i in $(seq 1 30); do
+# Wait until the socket is available (configurable; default 90s).
+DOCKERD_START_TIMEOUT="${GH_SR_DOCKERD_START_TIMEOUT:-90}"
+case "${DOCKERD_START_TIMEOUT}" in
+    '' | *[!0-9]*) DOCKERD_START_TIMEOUT=90 ;;
+    *)
+        if [ "${DOCKERD_START_TIMEOUT}" -lt 30 ]; then DOCKERD_START_TIMEOUT=30; fi
+        if [ "${DOCKERD_START_TIMEOUT}" -gt 300 ]; then DOCKERD_START_TIMEOUT=300; fi
+        ;;
+esac
+BOOTSTRAP_MAX_RETRIES="${GH_SR_BOOTSTRAP_MAX_RETRIES:-5}"
+case "${BOOTSTRAP_MAX_RETRIES}" in
+    '' | *[!0-9]*) BOOTSTRAP_MAX_RETRIES=5 ;;
+    *)
+        if [ "${BOOTSTRAP_MAX_RETRIES}" -lt 1 ]; then BOOTSTRAP_MAX_RETRIES=1; fi
+        if [ "${BOOTSTRAP_MAX_RETRIES}" -gt 20 ]; then BOOTSTRAP_MAX_RETRIES=20; fi
+        ;;
+esac
+DOCKERD_FAILURES_FILE="${RUNNER_STATE_DIR}/dockerd-start-failures"
+BOOTSTRAP_FAILED_FILE="${RUNNER_STATE_DIR}/bootstrap-failed"
+
+for i in $(seq 1 "${DOCKERD_START_TIMEOUT}"); do
     if docker info &>/dev/null 2>&1; then
         echo "[entrypoint] dockerd is up"
+        rm -f "${DOCKERD_FAILURES_FILE}"
         break
     fi
-    if [ "$i" -eq 30 ]; then
-        echo "[entrypoint] ERROR: dockerd did not start within 30 seconds" >&2
+    if [ "$i" -eq "${DOCKERD_START_TIMEOUT}" ]; then
+        _failures=0
+        if [ -f "${DOCKERD_FAILURES_FILE}" ]; then
+            _failures=$(cat "${DOCKERD_FAILURES_FILE}" 2>/dev/null || echo 0)
+            case "${_failures}" in '' | *[!0-9]*) _failures=0 ;; esac
+        fi
+        _failures=$(( _failures + 1 ))
+        echo "${_failures}" > "${DOCKERD_FAILURES_FILE}"
+        echo "[entrypoint] ERROR: dockerd did not start within ${DOCKERD_START_TIMEOUT} seconds (attempt ${_failures}/${BOOTSTRAP_MAX_RETRIES})" >&2
+        if [ "${_failures}" -ge "${BOOTSTRAP_MAX_RETRIES}" ]; then
+            date -u +"%Y-%m-%dT%H:%M:%SZ dockerd bootstrap failed after ${_failures} attempts" > "${BOOTSTRAP_FAILED_FILE}"
+            echo "[entrypoint] ERROR: bootstrap failed after ${BOOTSTRAP_MAX_RETRIES} consecutive dockerd start failures; holding container (run gh sr up to retry after fixing the host)" >&2
+            kill "${DOCKERD_PID}" 2>/dev/null || true
+            exec sleep infinity
+        fi
         exit 1
     fi
     sleep 1
