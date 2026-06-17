@@ -448,7 +448,7 @@ func (m *Manager) removeContainer(h *host.Host, rc config.RunnerConfig, instance
 }
 
 // parseContainerStatusInspectOutput parses one line of the form
-// status|configImage|digest|imageRevision (from containerLocalStatusImageAndRevision).
+// status|configImage|digest|imageRevision (from containerLocalStatusOneShot).
 func parseContainerStatusInspectOutput(out string) (local, image, imageRev string) {
 	line := strings.TrimSpace(out)
 	parts := strings.Split(line, "|")
@@ -465,6 +465,10 @@ func parseContainerStatusInspectOutput(out string) (local, image, imageRev strin
 		local = "restarting"
 	case "not installed":
 		local = "not installed"
+	case "failed":
+		// Surface "failed" verbatim — the bootstrap-failed marker was set
+		// inside the combined containerLocalStatusOneShot script.
+		local = "failed"
 	default:
 		// exited, created, paused, etc.
 		local = "stopped"
@@ -475,18 +479,57 @@ func parseContainerStatusInspectOutput(out string) (local, image, imageRev strin
 	return local, image, imageRev
 }
 
+// containerLocalStatusOneShot returns local status, Config.Image, and the
+// gh-sr.image-revision label on the container's image in a single SSH
+// round-trip. The script folds two checks that the per-tick TUI status path
+// used to issue as separate `h.Run` calls:
+//
+//  1. The bootstrap-failed marker (ContainerBootstrapFailed).
+//  2. The docker inspect (containerLocalStatusFromDocker).
+//
+// The script uses `$HOME/.gh-sr/runners/<instance>` directly so it does not
+// need the separate `echo $HOME` resolveAbsoluteRunnerDir previously did on
+// Linux. Output format matches containerLocalStatusFromDocker — the only new
+// status value is "failed" (produced when the bootstrap-failed marker exists).
+func (m *Manager) containerLocalStatusOneShot(h *host.Host, instanceName string) (string, string, string) {
+	stateDir := hostshell.PosixSingleQuote("$HOME/.gh-sr/runners/" + instanceName)
+	cid := hostshell.PosixSingleQuote(containerName(instanceName))
+	script := fmt.Sprintf(
+		"sd=%s\n"+
+			"cid=%s\n"+
+			"if [ -f \"$sd/bootstrap-failed\" ]; then override=failed; else override=; fi\n"+
+			"line=$(docker inspect --format '{{.State.Status}}|{{.Config.Image}}|{{.Image}}' \"$cid\" 2>/dev/null) || line=\"\"\n"+
+			"if [ -z \"$line\" ]; then\n"+
+			"  if [ -n \"$override\" ]; then echo \"failed|||\"; else echo \"not installed|||\"; fi\n"+
+			"else\n"+
+			"  digest=${line##*|}\n"+
+			"  rev=\"\"\n"+
+			"  if [ -n \"$digest\" ]; then\n"+
+			"    rev=$(docker image inspect \"$digest\" --format '{{index .Config.Labels \"gh-sr.image-revision\"}}' 2>/dev/null || true)\n"+
+			"  fi\n"+
+			"  if [ -n \"$override\" ]; then printf '%%s|%%s|%%s\\n' \"$override\" \"${line#*|}\" \"$rev\"\n"+
+			"  else printf '%%s|%%s\\n' \"$line\" \"$rev\"\n"+
+			"  fi\n"+
+			"fi\n",
+		stateDir,
+		cid,
+	)
+	out, err := h.Run(script)
+	if err != nil {
+		return "not installed", "", ""
+	}
+	return parseContainerStatusInspectOutput(out)
+}
+
 // containerLocalStatusImageAndRevision returns local status, Config.Image, and the
 // gh-sr.image-revision label on the container's image (one SSH round-trip).
+// The bootstrap-failed marker check and the docker inspect are folded into a
+// single shell script by containerLocalStatusOneShot — previously this issued
+// 2-3 SSH calls (echo $HOME + marker test + docker inspect) on every
+// per-instance status refresh, which is the per-tick hot path for the TUI
+// dashboard.
 func (m *Manager) containerLocalStatusImageAndRevision(h *host.Host, instanceName string) (string, string, string) {
-	if ContainerBootstrapFailed(h, instanceName) {
-		local, image, rev := m.containerLocalStatusFromDocker(h, instanceName)
-		if local == "not installed" {
-			return "failed", "", ""
-		}
-		return "failed", image, rev
-	}
-	local, image, rev := m.containerLocalStatusFromDocker(h, instanceName)
-	return local, image, rev
+	return m.containerLocalStatusOneShot(h, instanceName)
 }
 
 func (m *Manager) containerLocalStatusFromDocker(h *host.Host, instanceName string) (string, string, string) {
