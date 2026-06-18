@@ -117,3 +117,16 @@ func BenchmarkContainerLocalStatusImageAndRevision(b *testing.B) {
 		_, _, _ = m.containerLocalStatusImageAndRevision(h, "ci-1")
 	}
 }
+
+// BenchmarkSplitNonEmptyLines measures the line-splitting helper used by
+// ListRunnerInstanceDirs to parse the per-host `ls -1 ~/.gh-sr/runners` (or
+// PowerShell Get-ChildItem) output. The function is package-private; the
+// benchmark lives in the same package to keep access simple.
+func BenchmarkSplitNonEmptyLines(b *testing.B) {
+	raw := "alpha\nbeta\ngamma\n\ndelta\n   \nepsilon\n"
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = splitNonEmptyLines(raw)
+	}
+}

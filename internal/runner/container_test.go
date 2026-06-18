@@ -1109,3 +1109,87 @@ func (calledErrorErr) Error() string { return "called" }
 func assertCalledError() error {
 	return errCalled
 }
+
+// TestPositiveIntOrDefault pins the "use v when v > 0, else def" rule shared
+// by the container-timeout / -retry / -stagger accessors. Previously the third
+// accessor (containerStartStaggerSeconds) used `>= 0 && != 0` instead of `> 0`
+// — logically equivalent for ints but inconsistent with the other two and a
+// drift magnet. Centralizing the rule makes future accessors use the same
+// check by construction.
+func TestPositiveIntOrDefault(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name string
+		v    int
+		def  int
+		want int
+	}{
+		{"positive v wins", 30, 90, 30},
+		{"zero v falls back to default", 0, 90, 90},
+		{"negative v falls back to default", -3, 5, 5},
+		{"def=0 still returns v when v > 0", 7, 0, 7},
+		{"def=0 with v=0 returns 0", 0, 0, 0},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := positiveIntOrDefault(tc.v, tc.def); got != tc.want {
+				t.Errorf("positiveIntOrDefault(%d, %d) = %d, want %d", tc.v, tc.def, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestContainerConfigAccessorsDefaults verifies each accessor still returns its
+// hard-coded default when the receiver is nil or the configured value is
+// non-positive, and the configured value when it is positive. The refactor
+// preserved these contracts and made the positivity check uniform across the
+// three accessors (previously containerStartStaggerSeconds used
+// `>= 0 && != 0`, which is logically equivalent to `> 0` for ints but
+// inconsistent with the other two accessors and a drift magnet).
+func TestContainerConfigAccessorsDefaults(t *testing.T) {
+	t.Parallel()
+
+	t.Run("nil receiver — all three return their default", func(t *testing.T) {
+		t.Parallel()
+		var m *Manager
+		if got := m.containerDockerdStartTimeout(); got != 90 {
+			t.Errorf("containerDockerdStartTimeout nil = %d, want 90", got)
+		}
+		if got := m.containerBootstrapMaxRetries(); got != 5 {
+			t.Errorf("containerBootstrapMaxRetries nil = %d, want 5", got)
+		}
+		if got := m.containerStartStaggerSeconds(); got != 3 {
+			t.Errorf("containerStartStaggerSeconds nil = %d, want 3", got)
+		}
+	})
+
+	t.Run("zero / negative configured values fall back to default", func(t *testing.T) {
+		t.Parallel()
+		m := &Manager{ContainerDockerdStartTimeout: 0, ContainerBootstrapMaxRetries: -1, ContainerStartStaggerSeconds: 0}
+		if got := m.containerDockerdStartTimeout(); got != 90 {
+			t.Errorf("timeout zero = %d, want 90", got)
+		}
+		if got := m.containerBootstrapMaxRetries(); got != 5 {
+			t.Errorf("retries negative = %d, want 5", got)
+		}
+		if got := m.containerStartStaggerSeconds(); got != 3 {
+			t.Errorf("stagger zero = %d, want 3", got)
+		}
+	})
+
+	t.Run("positive configured values win", func(t *testing.T) {
+		t.Parallel()
+		m := &Manager{ContainerDockerdStartTimeout: 45, ContainerBootstrapMaxRetries: 7, ContainerStartStaggerSeconds: 10}
+		if got := m.containerDockerdStartTimeout(); got != 45 {
+			t.Errorf("timeout 45 = %d, want 45", got)
+		}
+		if got := m.containerBootstrapMaxRetries(); got != 7 {
+			t.Errorf("retries 7 = %d, want 7", got)
+		}
+		if got := m.containerStartStaggerSeconds(); got != 10 {
+			t.Errorf("stagger 10 = %d, want 10", got)
+		}
+	})
+}

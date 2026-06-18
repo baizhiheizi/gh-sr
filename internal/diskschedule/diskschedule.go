@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 
 	"github.com/an-lee/gh-sr/internal/autostart"
@@ -154,14 +155,14 @@ func Status() (ScheduleKind, string, error) {
 
 func parseAtTime(at string) (hour, minute int, err error) {
 	at = strings.TrimSpace(at)
-	parts := strings.Split(at, ":")
-	if len(parts) != 2 {
+	hourStr, minuteStr, ok := strings.Cut(at, ":")
+	if !ok {
 		return 0, 0, fmt.Errorf("invalid time %q (expected HH:MM)", at)
 	}
-	if _, err = fmt.Sscanf(parts[0], "%d", &hour); err != nil || hour < 0 || hour > 23 {
+	if hour, err = strconv.Atoi(hourStr); err != nil || hour < 0 || hour > 23 {
 		return 0, 0, fmt.Errorf("invalid hour in %q", at)
 	}
-	if _, err = fmt.Sscanf(parts[1], "%d", &minute); err != nil || minute < 0 || minute > 59 {
+	if minute, err = strconv.Atoi(minuteStr); err != nil || minute < 0 || minute > 59 {
 		return 0, 0, fmt.Errorf("invalid minute in %q", at)
 	}
 	return hour, minute, nil
