@@ -914,6 +914,62 @@ func TestResolveAbsoluteRunnerDir(t *testing.T) {
 	}
 }
 
+// TestResolveStateDirOrFallback pins the best-effort resolve-or-fallback helper:
+// it returns the absolute path when the SSH resolve succeeds, and the
+// shell-variable "$HOME/..." form when the resolve fails (so the shell can
+// expand it on the subsequent h.Run call).
+func TestResolveStateDirOrFallback(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name   string
+		os     string
+		mockFn func(cmd string) (string, error)
+		want   string
+	}{
+		{
+			name: "linux resolve succeeds returns absolute",
+			os:   "linux",
+			mockFn: func(cmd string) (string, error) {
+				if cmd == "echo $HOME" {
+					return "/home/u", nil
+				}
+				return "", nil
+			},
+			want: "/home/u/.gh-sr/runners/ci-1",
+		},
+		{
+			name: "linux resolve fails falls back to $HOME literal",
+			os:   "linux",
+			mockFn: func(cmd string) (string, error) {
+				return "", assertCalledError()
+			},
+			want: "$HOME/.gh-sr/runners/ci-1",
+		},
+		{
+			name: "windows path returns as-is without SSH resolve",
+			os:   "windows",
+			mockFn: func(cmd string) (string, error) {
+				// Windows path uses $env:USERPROFILE, so no Run call should fire.
+				return "", assertCalledError()
+			},
+			want: `$env:USERPROFILE\.gh-sr\runners\ci-1`,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			h := host.NewHost("test", config.HostConfig{OS: tc.os, Arch: "amd64", Addr: "local"})
+			mock := &testutil.MockExecutor{RunFn: tc.mockFn}
+			h.SetConn(mock)
+
+			got := resolveStateDirOrFallback(h, "ci-1")
+			if got != tc.want {
+				t.Errorf("resolveStateDirOrFallback = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestContainerRunnerPresent(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
