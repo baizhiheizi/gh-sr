@@ -5,25 +5,18 @@ metadata:
   type: project
 ---
 
-## Run #27675407379 (2026-06-17)
+## Run #27743420099 (2026-06-18)
 
-- **Branch:** `test-assist/down-orchestrator`; commit `c3b0f62`
-- **PR:** draft via `create_pull_request`; patch at `/tmp/gh-aw/aw-test-assist-down-orchestrator.patch` (~15 KB)
-- **Coverage:** `internal/ops` **41.1% → 41.9%** (+0.8 pp); `Down` **0% → 83.3%**
-- **New file:** `internal/ops/down_test.go` (422 lines, 10 tests, all `t.Parallel()`)
+- **Branch:** `test-assist/restart-orchestrator`; commit `600dcda`
+- **PR:** **NOT CREATED** — safeoutputs `create_pull_request` returned success but the bridge did not push the branch (no git credentials locally either). Patch preserved at `/tmp/gh-aw/aw-test-assist-restart-orchestrator.patch` (~25 KB, 705 lines). Maintainer must `git apply` + push.
+- **Coverage:** `internal/ops` **41.9% → 42.8%** (+0.9 pp); `Restart` **0% → 85.7%**
+- **New file:** `internal/ops/restart_test.go` (673 lines, 12 contract tests)
 - **Status:** build ✅, vet ✅, race ✅, full suite ✅, gofmt ✅.
 
-**Pinned contracts:** EmptyRunners (no-match filter short-circuits), SingleRunner, MultipleRunnersSameHost (SSH amortisation), MultiHostConcurrent, FilterByHost, FilterByNameArgs, NilWriter toleration, StopErrorPropagates, StopErrorOnOneHostDoesNotPoisonAnother (host isolation under error), WriterSerialisedAcrossHosts (substring-count check for torn-write detection).
+**Pattern (reusable for Up/Update):** `newRestartMockExecutor` is the **dual-path** successor to `newDownMockExecutor`. Both share svc.sh + autostart probes (always "no"/empty → KindNone); disambiguate Stop vs Start by substring (`rm -f` only in Stop; `nohup ./run.sh` only in Start). Use `Ephemeral: true` to skip `autostart.Install`.
 
-**Pattern:** Reuses `installMockConnectHost` from PR #168 + a real `*runner.Manager{GitHub: nil}` (since `mgr.Stop` is the test target, not the mock). Native-mode `Stop` path drives `autostart.Detect` → `stopNative` via a `MockExecutor` that returns `not running` for the pid-file probe and empty for the systemd-detect probes.
+**PR-creation gotcha (NEW):** When the local working copy has no git credentials, `safeoutputs create_pull_request` may return success without the PR landing. Verify via `mcp__github__list_pull_requests` (sort=created) after each call; if missing, surface to maintainer via Monthly Activity issue + preserve patch file.
 
-**Next:** `internal/ops` orchestrators: `Up` / `Restart` / `Update` / `Remove` / `CollectStatus` / `Logs` / `CleanupOffline` — all still 0%. `Restart` is the next-best target: it composes `Stop` + `Start` and exercises the "ignore first error" pattern. `Up` adds `EnsureSetup` to the chain.
-
-## Prior runs (one-line each)
-
-- 2026-06-15: CollectHostMetrics 0%→100%; ops 33.4%→37.6% (+4.2 pp); **PR #189 merged 2026-06-15T06:04:18Z**
-- 2026-06-14: ResolveHostInfo 0%→100%; ops 24.2%→33.4% (+9.2 pp); **PR #178 merged 2026-06-14T12:01:38Z**
-- 2026-06-12: runPerHostParallel 0%→100%; ops 19.6%→24.2% (+4.6 pp); **PR #168 merged 2026-06-12T23:00:16Z**
-- 2026-06-11: hostshell WriteRemoteBytes 0%→100%; **PR #156 merged 2026-06-12T02:51:50Z**
+**Next:** `internal/ops` orchestrators still at 0%: `Up` / `Update` / `Remove` / `CollectStatus` / `Logs` / `CleanupOffline`.
 
 [[backlog]] [[run-history]]

@@ -1,4 +1,4 @@
-- [Repo](repo.md) — what `an-lee/gh-sr` is, where things live
+- [Repo](repo.md) — what `baizhiheizi/gh-sr` is, where things live
 - [Build/test/coverage commands](commands.md) — validated commands
 - [Testing notes](testing-notes.md) — repo-specific test patterns, mocks, gotchas
 - [Testing backlog](backlog.md) — prioritized testing opportunities for next runs
