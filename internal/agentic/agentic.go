@@ -358,12 +358,15 @@ func ValidateContainerPrereqs(h *host.Host) []PrereqFailure {
 			Name:     "docker-cli",
 			Severity: SeverityError,
 			Message:  "docker CLI not found on PATH; required to manage runner containers",
-			Remediation: `Install Docker on the host:
+			Remediation: `On Linux, gh sr setup installs Docker automatically when possible (requires root SSH or passwordless sudo).
+After a fresh install, run gh sr setup again so a new SSH session picks up docker group membership.
 
-  sudo apt-get update && sudo apt-get install -y docker.io
+Or install manually on the host:
+
+  curl -fsSL https://get.docker.com | sudo sh
   sudo systemctl enable --now docker
   sudo usermod -aG docker $USER
-  # Log out and back in for group membership to take effect`,
+  # Then re-run: gh sr setup`,
 			DocRef: "agentic-workflows.md §8b",
 		})
 		return failures

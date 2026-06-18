@@ -1,6 +1,10 @@
 package runner
 
 import (
+	"encoding/json"
+	"errors"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -1192,4 +1196,90 @@ func TestContainerConfigAccessorsDefaults(t *testing.T) {
 			t.Errorf("stagger 10 = %d, want 10", got)
 		}
 	})
+}
+
+func TestSetupContainer_ensureDockerBeforeImageBuild(t *testing.T) {
+	t.Parallel()
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/repos/actions/runner/releases/latest" {
+			http.NotFound(w, r)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(releaseResponse{TagName: "v2.330.0"})
+	}))
+	defer ts.Close()
+
+	var calls []string
+	mock := &testutil.MockExecutor{RunFn: func(cmd string) (string, error) {
+		calls = append(calls, cmd)
+		switch {
+		case strings.Contains(cmd, "docker --version"):
+			return "yes", nil
+		case strings.Contains(cmd, "docker info"):
+			return "ok", nil
+		case strings.Contains(cmd, "docker image inspect"):
+			return "yes", nil
+		case strings.Contains(cmd, "docker inspect --format='{{.Name}}'"):
+			return "yes", nil
+		default:
+			return "", nil
+		}
+	}}
+	h := host.NewHost("h", config.HostConfig{Addr: "runner@vps", OS: "linux", Arch: "amd64"})
+	h.SetConn(mock)
+	m := &Manager{GitHub: NewGitHubClientWithHTTP("pat", ts.Client(), ts.URL)}
+	rc := config.RunnerConfig{
+		Name:       "aw-runner",
+		Repo:       "o/r",
+		Host:       "h",
+		Profile:    "agentic",
+		RunnerMode: config.RunnerModeContainer,
+	}
+
+	if err := m.setupContainer(h, rc); err != nil {
+		t.Fatalf("setupContainer: %v", err)
+	}
+
+	versionIdx, inspectIdx := -1, -1
+	for i, c := range calls {
+		if versionIdx == -1 && strings.Contains(c, "docker --version") {
+			versionIdx = i
+		}
+		if inspectIdx == -1 && strings.Contains(c, "docker image inspect") {
+			inspectIdx = i
+		}
+	}
+	if versionIdx < 0 || inspectIdx < 0 || versionIdx > inspectIdx {
+		t.Fatalf("expected docker --version before docker image inspect; versionIdx=%d inspectIdx=%d calls=%d", versionIdx, inspectIdx, len(calls))
+	}
+}
+
+func TestSetupContainer_propagatesDockerGroupPending(t *testing.T) {
+	t.Parallel()
+	mock := &testutil.MockExecutor{RunFn: func(cmd string) (string, error) {
+		if strings.Contains(cmd, "docker --version") {
+			return "no", nil
+		}
+		return "", nil
+	}}
+	h := host.NewHost("h", config.HostConfig{Addr: "runner@vps", OS: "linux", Arch: "amd64"})
+	h.SetConn(mock)
+	m := &Manager{GitHub: NewGitHubClient("pat")}
+	rc := config.RunnerConfig{
+		Name:       "aw-runner",
+		Repo:       "o/r",
+		Host:       "h",
+		Profile:    "agentic",
+		RunnerMode: config.RunnerModeContainer,
+	}
+
+	err := m.setupContainer(h, rc)
+	if !errors.Is(err, ErrDockerGroupPending) {
+		t.Fatalf("expected ErrDockerGroupPending, got %v", err)
+	}
+	for _, c := range mock.Calls {
+		if strings.Contains(c, "docker image inspect") || strings.Contains(c, "docker build") {
+			t.Fatalf("should not build image when group pending: %q", c)
+		}
+	}
 }

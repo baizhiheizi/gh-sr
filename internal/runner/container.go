@@ -3,6 +3,7 @@ package runner
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"slices"
 	"strconv"
@@ -147,6 +148,13 @@ func containerRunnerPresent(h *host.Host, instanceName string) bool {
 func (m *Manager) setupContainer(h *host.Host, rc config.RunnerConfig) error {
 	if h.OS != "linux" {
 		return fmt.Errorf("runner_mode: container is only supported on Linux hosts")
+	}
+
+	if err := EnsureHostDocker(h, m.out(), rc.Name); err != nil {
+		if errors.Is(err, ErrDockerGroupPending) {
+			return err
+		}
+		return fmt.Errorf("%s: ensuring host Docker: %w", rc.Name, err)
 	}
 
 	// Resolve runner version for image build-arg.

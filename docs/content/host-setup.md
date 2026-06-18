@@ -187,7 +187,7 @@ Run **`gh sr doctor`** (optionally with `--host` / `--repo`) to confirm connecti
 
 For the full explanation of non-interactive SSH, the `gh sr: remote Linux commands need root…` error, `NOPASSWD`, and verification commands, see [Linux SSH user and privileges](#linux-ssh-user-and-privileges) above.
 
-- **Container mode (`runner_mode: container` / `profile: agentic`):** Requires Docker on the host and `--privileged` container support. Install Docker yourself and ensure the SSH user can run `docker` (for example membership in the `docker` group). If Docker is missing, `gh sr setup` may invoke Docker's install script, which requires **root** or **passwordless sudo** (`sudo -n`) over SSH (see the section linked above).
+- **Container mode (`runner_mode: container` / `profile: agentic`):** Requires Docker on the host and `--privileged` container support. If Docker is missing, **`gh sr setup` installs it automatically** via [get.docker.com](https://get.docker.com) (requires **root** or **passwordless sudo** over SSH — see [Linux SSH user and privileges](#linux-ssh-user-and-privileges)). After a fresh install, gh sr adds the SSH user to the **`docker`** group and asks you to **run setup again**; the second invocation opens a new SSH session where `docker` works without sudo. Pre-installing Docker yourself still works and skips the two-run flow.
 - **Native mode (default):** Ensure `curl` and `tar` are on `PATH`. `gh sr setup` may still invoke GitHub's `installdependencies.sh` with **`sudo -n`** when the SSH user is not root and passwordless sudo is available.
 
 Run **`gh sr doctor`** after the host is prepared.
