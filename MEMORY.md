@@ -1,1 +1,1 @@
-- [Perf Improver state 2026-06](notes.md) — last run 2026-06-17 23:28 UTC, 10th consecutive maintenance run, no new PR, issue #85 body 8.6 KB (compressed older runs to one-liners)
+- [Perf Improver state 2026-06](notes.md) — last run 2026-06-18 22:30 UTC, 11th consecutive maintenance run, no new PR, PR #212/#213 will subsume my planned Manager.Status hoist
