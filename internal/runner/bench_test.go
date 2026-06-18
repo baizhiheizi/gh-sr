@@ -5,6 +5,8 @@ import (
 	"testing"
 
 	"github.com/an-lee/gh-sr/internal/config"
+	"github.com/an-lee/gh-sr/internal/host"
+	"github.com/an-lee/gh-sr/internal/testutil"
 )
 
 // makeEnrichCfg builds a synthetic config + scopeRunners fixture for benchmarking
@@ -95,6 +97,25 @@ func makeEnrichStatuses(cfg *config.Config) []RunnerStatus {
 		}
 	}
 	return out
+}
+
+// BenchmarkContainerLocalStatusImageAndRevision measures the in-process cost
+// of the combined container status script. The test (not the benchmark) is
+// the authoritative energy measurement: SSH round trips per call drop from
+// 2-3 (echo $HOME + bootstrap-failed marker + docker inspect) to exactly 1.
+// This benchmark captures the per-call CPU/alloc cost of formatting the
+// combined shell script and parsing its output, so regressions in the script
+// builder or the parser surface here.
+func BenchmarkContainerLocalStatusImageAndRevision(b *testing.B) {
+	h := host.NewHost("test", config.HostConfig{OS: "linux", Arch: "amd64", Addr: "local"})
+	mock := &testutil.MockExecutor{Output: "running|gh-sr/agentic-runner:2.320.0|sha256:abc|deadbeef"}
+	h.SetConn(mock)
+	m := &Manager{}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, _, _ = m.containerLocalStatusImageAndRevision(h, "ci-1")
+	}
 }
 
 // BenchmarkSplitNonEmptyLines measures the line-splitting helper used by

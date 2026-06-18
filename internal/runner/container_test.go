@@ -777,12 +777,57 @@ func TestParseContainerStatusInspectOutput(t *testing.T) {
 		{"restarting|x:y|sha256:4|r", "restarting", "x:y", "r"},
 		{"not installed|||", "not installed", "", ""},
 		{"not installed|a|b|c", "not installed", "", ""},
+		{"failed|gh-sr/agentic-runner:2.320.0|sha256:abc|deadbeef", "failed", "gh-sr/agentic-runner:2.320.0", "deadbeef"},
+		{"failed|||", "failed", "", ""},
 	}
 	for _, tc := range cases {
 		gotLocal, gotImage, gotRev := parseContainerStatusInspectOutput(tc.line)
 		if gotLocal != tc.wantLocal || gotImage != tc.wantImage || gotRev != tc.wantImageRev {
 			t.Errorf("line %q → (%q,%q,%q), want (%q,%q,%q)", tc.line, gotLocal, gotImage, gotRev, tc.wantLocal, tc.wantImage, tc.wantImageRev)
 		}
+	}
+}
+
+// TestContainerLocalStatusImageAndRevision_one_ssh_round_trip pins the
+// per-tick energy contract: the container status path used to issue 2-3 SSH
+// calls per container per Manager.Status tick (echo $HOME + bootstrap-failed
+// marker test + docker inspect). The combined containerLocalStatusOneShot
+// script folds them into a single h.Run, which on a long-running TUI session
+// compounds into one fewer SSH round trip per container per refresh tick.
+func TestContainerLocalStatusImageAndRevision_one_ssh_round_trip(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name      string
+		mockOut   string
+		wantLocal string
+		wantImage string
+		wantRev   string
+	}{
+		{"running_healthy", "running|gh-sr/agentic-runner:2.320.0|sha256:abc|deadbeef", "running", "gh-sr/agentic-runner:2.320.0", "deadbeef"},
+		{"bootstrap_failed_container_present", "failed|gh-sr/agentic-runner:2.320.0|sha256:abc|deadbeef", "failed", "gh-sr/agentic-runner:2.320.0", "deadbeef"},
+		{"bootstrap_failed_container_absent", "failed|||", "failed", "", ""},
+		{"not_installed", "not installed|||", "not installed", "", ""},
+		{"restarting", "restarting|gh-sr/agentic-runner:2.320.0|sha256:abc|deadbeef", "restarting", "gh-sr/agentic-runner:2.320.0", "deadbeef"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			h := host.NewHost("test", config.HostConfig{OS: "linux", Arch: "amd64", Addr: "local"})
+			mock := &testutil.MockExecutor{Output: tc.mockOut}
+			h.SetConn(mock)
+
+			m := &Manager{}
+			gotLocal, gotImage, gotRev := m.containerLocalStatusImageAndRevision(h, "ci-1")
+			if gotLocal != tc.wantLocal || gotImage != tc.wantImage || gotRev != tc.wantRev {
+				t.Errorf("(%q,%q,%q), want (%q,%q,%q)", gotLocal, gotImage, gotRev, tc.wantLocal, tc.wantImage, tc.wantRev)
+			}
+			// The energy contract: exactly one SSH round trip per status call,
+			// regardless of bootstrap-failed state. The pre-refactor path made
+			// 2-3 calls (echo $HOME + marker test + docker inspect).
+			if got := len(mock.Calls); got != 1 {
+				t.Errorf("SSH round trips = %d, want 1 (calls: %v)", got, mock.Calls)
+			}
+		})
 	}
 }
 
