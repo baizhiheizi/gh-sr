@@ -219,29 +219,33 @@ cat "/sys/class/net/$iface/mtu" 2>/dev/null`)
 	return n
 }
 
-// mtuDockerCreateArg returns the `-e GH_SR_HOST_MTU=<n>` line (indented, with a trailing
-// line-continuation backslash) for the `docker create` command when mtu is a sub-1500
-// value worth pinning, or "" otherwise. The MTU is only ever lowered: 1500 is Docker's
-// default (no-op) and values outside [576, 1500) are ignored.
-func mtuDockerCreateArg(mtu int) string {
-	if mtu < 576 || mtu >= 1500 {
+// dockerCreateEnvLineIf returns the indented `  -e NAME='value' \\\n` continuation
+// line for a `docker create` command when emit is true, else "". Centralises the
+// optional-int-env-var pattern shared by the MTU / dockerd start-timeout /
+// bootstrap-retry helpers below; callers pass their own validity predicate so a
+// narrow range (MTU's [576, 1500)) and a positivity check (timeout / retries) can
+// share the formatting.
+func dockerCreateEnvLineIf(name string, value int, emit bool) string {
+	if !emit {
 		return ""
 	}
-	return "  -e GH_SR_HOST_MTU=" + hostshell.PosixSingleQuote(strconv.Itoa(mtu)) + " \\\n"
+	return "  -e " + name + "=" + hostshell.PosixSingleQuote(strconv.Itoa(value)) + " \\\n"
+}
+
+// mtuDockerCreateArg returns the `-e GH_SR_HOST_MTU=<n>` line for the `docker create`
+// command when mtu is a sub-1500 value worth pinning, or "" otherwise. The MTU is only
+// ever lowered: 1500 is Docker's default (no-op) and values outside [576, 1500) are
+// ignored.
+func mtuDockerCreateArg(mtu int) string {
+	return dockerCreateEnvLineIf("GH_SR_HOST_MTU", mtu, mtu >= 576 && mtu < 1500)
 }
 
 func dockerdStartTimeoutDockerCreateArg(seconds int) string {
-	if seconds <= 0 {
-		return ""
-	}
-	return "  -e GH_SR_DOCKERD_START_TIMEOUT=" + hostshell.PosixSingleQuote(strconv.Itoa(seconds)) + " \\\n"
+	return dockerCreateEnvLineIf("GH_SR_DOCKERD_START_TIMEOUT", seconds, seconds > 0)
 }
 
 func bootstrapMaxRetriesDockerCreateArg(maxRetries int) string {
-	if maxRetries <= 0 {
-		return ""
-	}
-	return "  -e GH_SR_BOOTSTRAP_MAX_RETRIES=" + hostshell.PosixSingleQuote(strconv.Itoa(maxRetries)) + " \\\n"
+	return dockerCreateEnvLineIf("GH_SR_BOOTSTRAP_MAX_RETRIES", maxRetries, maxRetries > 0)
 }
 
 func containerRestartPolicy(maxRetries int) string {

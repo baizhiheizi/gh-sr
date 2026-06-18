@@ -616,12 +616,41 @@ func TestDockerdStartTimeoutDockerCreateArg(t *testing.T) {
 	if got := dockerdStartTimeoutDockerCreateArg(0); got != "" {
 		t.Fatalf("zero should omit env, got %q", got)
 	}
+	if got := dockerdStartTimeoutDockerCreateArg(-5); got != "" {
+		t.Fatalf("negative should omit env, got %q", got)
+	}
 }
 
 func TestBootstrapMaxRetriesDockerCreateArg(t *testing.T) {
 	t.Parallel()
 	if got := bootstrapMaxRetriesDockerCreateArg(5); !strings.Contains(got, "GH_SR_BOOTSTRAP_MAX_RETRIES='5'") {
 		t.Fatalf("got %q", got)
+	}
+	if got := bootstrapMaxRetriesDockerCreateArg(0); got != "" {
+		t.Fatalf("zero should omit env, got %q", got)
+	}
+}
+
+func TestDockerCreateEnvLineIf(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name  string
+		value int
+		emit  bool
+		want  string
+	}{
+		{"GH_SR_HOST_MTU", 1460, true, "  -e GH_SR_HOST_MTU='1460' \\\n"},
+		{"GH_SR_HOST_MTU", 1460, false, ""},                         // emit=false suppresses formatting
+		{"GH_SR_HOST_MTU", 0, true, "  -e GH_SR_HOST_MTU='0' \\\n"}, // value=0 is still emitted when caller explicitly opts in
+		{"GH_SR_HOST_MTU", -1, true, "  -e GH_SR_HOST_MTU='-1' \\\n"},
+		{"GH_SR_DOCKERD_START_TIMEOUT", 90, true, "  -e GH_SR_DOCKERD_START_TIMEOUT='90' \\\n"},
+		{"GH_SR_BOOTSTRAP_MAX_RETRIES", 5, true, "  -e GH_SR_BOOTSTRAP_MAX_RETRIES='5' \\\n"},
+	}
+	for _, tc := range cases {
+		got := dockerCreateEnvLineIf(tc.name, tc.value, tc.emit)
+		if got != tc.want {
+			t.Errorf("dockerCreateEnvLineIf(%q, %d, %v) = %q, want %q", tc.name, tc.value, tc.emit, got, tc.want)
+		}
 	}
 }
 
