@@ -118,6 +118,43 @@ func BenchmarkContainerLocalStatusImageAndRevision(b *testing.B) {
 	}
 }
 
+// BenchmarkManager_Status measures the per-RunnerConfig alloc cost of the
+// inner work of Manager.Status (mode + repo + labels + name construction),
+// with the container SSH round trip replaced by a mock that returns a
+// well-formed response. This isolates the Go-side work the optimization
+// targets — hoisting mode, repo, and labels-join out of the per-instance
+// loop. The hot path is `internal/ops/ops.go` refreshAllOnce, which calls
+// Manager.Status once per host per 5s tick; for a 5-host × 10-instance
+// config that's 50 inner iterations per tick.
+func BenchmarkManager_Status(b *testing.B) {
+	h := host.NewHost("h", config.HostConfig{OS: "linux", Arch: "amd64", Addr: "local"})
+	// Mock the container status script (single h.Run call) with a running
+	// container response — covers both the bootstrap-failed marker and the
+	// docker inspect branches.
+	mock := &testutil.MockExecutor{
+		Output: "running|gh-sr/agentic-runner:2.320.0|sha256:abc|deadbeef",
+	}
+	h.SetConn(mock)
+	m := NewManager("dev")
+	rc := config.RunnerConfig{
+		Name:       "ci",
+		Repo:       "o/r",
+		Host:       "h",
+		Count:      10,
+		Labels:     []string{"self-hosted", "Linux", "X64"},
+		Profile:    "agentic",
+		RunnerMode: "container",
+	}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, err := m.Status(h, rc)
+		if err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
 // BenchmarkSplitNonEmptyLines measures the line-splitting helper used by
 // ListRunnerInstanceDirs to parse the per-host `ls -1 ~/.gh-sr/runners` (or
 // PowerShell Get-ChildItem) output. The function is package-private; the
