@@ -517,12 +517,12 @@ func parseContainerStatusInspectOutput(out string) (local, image, imageRev strin
 // used to issue as separate `h.Run` calls:
 //
 //  1. The bootstrap-failed marker (ContainerBootstrapFailed).
-//  2. The docker inspect (containerLocalStatusFromDocker).
+//  2. The docker inspect of the container.
 //
 // The script uses `$HOME/.gh-sr/runners/<instance>` directly so it does not
 // need the separate `echo $HOME` resolveAbsoluteRunnerDir previously did on
-// Linux. Output format matches containerLocalStatusFromDocker — the only new
-// status value is "failed" (produced when the bootstrap-failed marker exists).
+// Linux. The only new status value beyond "not installed" / parsed docker
+// state is "failed" (produced when the bootstrap-failed marker exists).
 func (m *Manager) containerLocalStatusOneShot(h *host.Host, instanceName string) (string, string, string) {
 	stateDir := hostshell.PosixSingleQuote("$HOME/.gh-sr/runners/" + instanceName)
 	cid := hostshell.PosixSingleQuote(containerName(instanceName))
@@ -562,30 +562,6 @@ func (m *Manager) containerLocalStatusOneShot(h *host.Host, instanceName string)
 // dashboard.
 func (m *Manager) containerLocalStatusImageAndRevision(h *host.Host, instanceName string) (string, string, string) {
 	return m.containerLocalStatusOneShot(h, instanceName)
-}
-
-func (m *Manager) containerLocalStatusFromDocker(h *host.Host, instanceName string) (string, string, string) {
-	cid := hostshell.PosixSingleQuote(containerName(instanceName))
-	script := fmt.Sprintf(
-		"cid=%s\n"+
-			"line=$(docker inspect --format '{{.State.Status}}|{{.Config.Image}}|{{.Image}}' \"$cid\" 2>/dev/null) || line=\"\"\n"+
-			"if [ -z \"$line\" ]; then\n"+
-			"  echo 'not installed|||'\n"+
-			"else\n"+
-			"  digest=${line##*|}\n"+
-			"  rev=\"\"\n"+
-			"  if [ -n \"$digest\" ]; then\n"+
-			"    rev=$(docker image inspect \"$digest\" --format '{{index .Config.Labels \"gh-sr.image-revision\"}}' 2>/dev/null || true)\n"+
-			"  fi\n"+
-			"  printf '%%s|%%s\\n' \"$line\" \"$rev\"\n"+
-			"fi\n",
-		cid,
-	)
-	out, err := h.Run(script)
-	if err != nil {
-		return "not installed", "", ""
-	}
-	return parseContainerStatusInspectOutput(out)
 }
 
 // logsContainer returns recent log lines from a runner container.
