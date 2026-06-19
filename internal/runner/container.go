@@ -129,6 +129,19 @@ func resolveAbsoluteRunnerDir(h *host.Host, instanceName string) (string, error)
 	return home + dir[len("$HOME"):], nil
 }
 
+// resolveStateDirOrFallback returns the absolute runner state directory for
+// best-effort host-side paths where an unresolved "$HOME/..." literal is still
+// safe (the shell expands $HOME on the subsequent h.Run call). Use this when
+// the path is being passed into a `rm -f` / `test -f` shell command — for
+// `docker create -v`, use resolveAbsoluteRunnerDir instead, since Docker does
+// not perform shell expansion.
+func resolveStateDirOrFallback(h *host.Host, instanceName string) string {
+	if dir, err := resolveAbsoluteRunnerDir(h, instanceName); err == nil {
+		return dir
+	}
+	return containerStateDir(h, instanceName)
+}
+
 // containerRunnerPresent returns true when the Docker container for the instance exists
 // (regardless of whether it is running or stopped).
 func containerRunnerPresent(h *host.Host, instanceName string) bool {
@@ -402,10 +415,7 @@ func (m *Manager) startContainer(h *host.Host, instanceName string) error {
 }
 
 func clearContainerBootstrapMarkers(h *host.Host, instanceName string) {
-	stateDir, err := resolveAbsoluteRunnerDir(h, instanceName)
-	if err != nil {
-		stateDir = containerStateDir(h, instanceName)
-	}
+	stateDir := resolveStateDirOrFallback(h, instanceName)
 	_, _ = h.Run(fmt.Sprintf(
 		"rm -f %s %s",
 		hostshell.PosixSingleQuote(stateDir+"/"+bootstrapFailedMarker),
@@ -416,10 +426,7 @@ func clearContainerBootstrapMarkers(h *host.Host, instanceName string) {
 // ContainerBootstrapFailed reports whether the runner instance gave up after repeated
 // inner-dockerd bootstrap failures (bootstrap-failed marker in the state bind-mount).
 func ContainerBootstrapFailed(h *host.Host, instanceName string) bool {
-	stateDir, err := resolveAbsoluteRunnerDir(h, instanceName)
-	if err != nil {
-		stateDir = containerStateDir(h, instanceName)
-	}
+	stateDir := resolveStateDirOrFallback(h, instanceName)
 	out, err := h.Run(fmt.Sprintf(
 		"test -f %s && echo yes || echo no",
 		hostshell.PosixSingleQuote(stateDir+"/"+bootstrapFailedMarker),
@@ -459,12 +466,9 @@ func (m *Manager) removeContainer(h *host.Host, rc config.RunnerConfig, instance
 		return fmt.Errorf("removing container %s: %w", cName, err)
 	}
 
-	// Remove state directory.
-	stateDir, resolveErr := resolveAbsoluteRunnerDir(h, instanceName)
-	if resolveErr != nil {
-		// Fall back to unresolved path; rm -rf in the shell will still expand $HOME.
-		stateDir = containerStateDir(h, instanceName)
-	}
+	// Remove state directory. Fall back to the unresolved $HOME form if the SSH
+	// resolve fails — rm -rf in the shell will still expand $HOME.
+	stateDir := resolveStateDirOrFallback(h, instanceName)
 	if _, err := h.Run(fmt.Sprintf("rm -rf %s", hostshell.PosixSingleQuote(stateDir))); err != nil {
 		fmt.Fprintf(m.out(), "  %s: warning: failed to remove state dir %s: %v\n", instanceName, stateDir, err)
 	}
