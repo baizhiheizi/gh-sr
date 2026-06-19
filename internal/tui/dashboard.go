@@ -80,9 +80,9 @@ type dashboardModel struct {
 	filterHostChoices []string
 	filterRepoChoices []string
 
-	hostMetrics     []host.HostMetrics
-	hostMetricsCur  int
-	metricsLoading  bool
+	hostMetrics    []host.HostMetrics
+	hostMetricsCur int
+	metricsLoading bool
 }
 
 type statusRefreshedMsg struct {
@@ -338,7 +338,7 @@ func (m *dashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tickMsg:
 		if m.busy || m.panel != panelMain {
-			return m, tickEvery(5*time.Second)
+			return m, tickEvery(5 * time.Second)
 		}
 		return m, tea.Batch(m.refreshCmd(), tickEvery(5*time.Second))
 

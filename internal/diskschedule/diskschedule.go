@@ -24,10 +24,10 @@ const (
 type ScheduleKind string
 
 const (
-	KindNone          ScheduleKind = ""
-	KindSystemdUser   ScheduleKind = "systemd-user-timer"
-	KindLaunchd       ScheduleKind = "launchd"
-	KindWindowsTask   ScheduleKind = "windows-task"
+	KindNone        ScheduleKind = ""
+	KindSystemdUser ScheduleKind = "systemd-user-timer"
+	KindLaunchd     ScheduleKind = "launchd"
+	KindWindowsTask ScheduleKind = "windows-task"
 )
 
 // InstallOpts configures local schedule installation.
