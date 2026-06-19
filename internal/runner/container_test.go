@@ -1,6 +1,10 @@
 package runner
 
 import (
+	"encoding/json"
+	"errors"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -616,12 +620,41 @@ func TestDockerdStartTimeoutDockerCreateArg(t *testing.T) {
 	if got := dockerdStartTimeoutDockerCreateArg(0); got != "" {
 		t.Fatalf("zero should omit env, got %q", got)
 	}
+	if got := dockerdStartTimeoutDockerCreateArg(-5); got != "" {
+		t.Fatalf("negative should omit env, got %q", got)
+	}
 }
 
 func TestBootstrapMaxRetriesDockerCreateArg(t *testing.T) {
 	t.Parallel()
 	if got := bootstrapMaxRetriesDockerCreateArg(5); !strings.Contains(got, "GH_SR_BOOTSTRAP_MAX_RETRIES='5'") {
 		t.Fatalf("got %q", got)
+	}
+	if got := bootstrapMaxRetriesDockerCreateArg(0); got != "" {
+		t.Fatalf("zero should omit env, got %q", got)
+	}
+}
+
+func TestDockerCreateEnvLineIf(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name  string
+		value int
+		emit  bool
+		want  string
+	}{
+		{"GH_SR_HOST_MTU", 1460, true, "  -e GH_SR_HOST_MTU='1460' \\\n"},
+		{"GH_SR_HOST_MTU", 1460, false, ""},                         // emit=false suppresses formatting
+		{"GH_SR_HOST_MTU", 0, true, "  -e GH_SR_HOST_MTU='0' \\\n"}, // value=0 is still emitted when caller explicitly opts in
+		{"GH_SR_HOST_MTU", -1, true, "  -e GH_SR_HOST_MTU='-1' \\\n"},
+		{"GH_SR_DOCKERD_START_TIMEOUT", 90, true, "  -e GH_SR_DOCKERD_START_TIMEOUT='90' \\\n"},
+		{"GH_SR_BOOTSTRAP_MAX_RETRIES", 5, true, "  -e GH_SR_BOOTSTRAP_MAX_RETRIES='5' \\\n"},
+	}
+	for _, tc := range cases {
+		got := dockerCreateEnvLineIf(tc.name, tc.value, tc.emit)
+		if got != tc.want {
+			t.Errorf("dockerCreateEnvLineIf(%q, %d, %v) = %q, want %q", tc.name, tc.value, tc.emit, got, tc.want)
+		}
 	}
 }
 
@@ -1248,4 +1281,90 @@ func TestContainerConfigAccessorsDefaults(t *testing.T) {
 			t.Errorf("stagger 10 = %d, want 10", got)
 		}
 	})
+}
+
+func TestSetupContainer_ensureDockerBeforeImageBuild(t *testing.T) {
+	t.Parallel()
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/repos/actions/runner/releases/latest" {
+			http.NotFound(w, r)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(releaseResponse{TagName: "v2.330.0"})
+	}))
+	defer ts.Close()
+
+	var calls []string
+	mock := &testutil.MockExecutor{RunFn: func(cmd string) (string, error) {
+		calls = append(calls, cmd)
+		switch {
+		case strings.Contains(cmd, "docker --version"):
+			return "yes", nil
+		case strings.Contains(cmd, "docker info"):
+			return "ok", nil
+		case strings.Contains(cmd, "docker image inspect"):
+			return "yes", nil
+		case strings.Contains(cmd, "docker inspect --format='{{.Name}}'"):
+			return "yes", nil
+		default:
+			return "", nil
+		}
+	}}
+	h := host.NewHost("h", config.HostConfig{Addr: "runner@vps", OS: "linux", Arch: "amd64"})
+	h.SetConn(mock)
+	m := &Manager{GitHub: NewGitHubClientWithHTTP("pat", ts.Client(), ts.URL)}
+	rc := config.RunnerConfig{
+		Name:       "aw-runner",
+		Repo:       "o/r",
+		Host:       "h",
+		Profile:    "agentic",
+		RunnerMode: config.RunnerModeContainer,
+	}
+
+	if err := m.setupContainer(h, rc); err != nil {
+		t.Fatalf("setupContainer: %v", err)
+	}
+
+	versionIdx, inspectIdx := -1, -1
+	for i, c := range calls {
+		if versionIdx == -1 && strings.Contains(c, "docker --version") {
+			versionIdx = i
+		}
+		if inspectIdx == -1 && strings.Contains(c, "docker image inspect") {
+			inspectIdx = i
+		}
+	}
+	if versionIdx < 0 || inspectIdx < 0 || versionIdx > inspectIdx {
+		t.Fatalf("expected docker --version before docker image inspect; versionIdx=%d inspectIdx=%d calls=%d", versionIdx, inspectIdx, len(calls))
+	}
+}
+
+func TestSetupContainer_propagatesDockerGroupPending(t *testing.T) {
+	t.Parallel()
+	mock := &testutil.MockExecutor{RunFn: func(cmd string) (string, error) {
+		if strings.Contains(cmd, "docker --version") {
+			return "no", nil
+		}
+		return "", nil
+	}}
+	h := host.NewHost("h", config.HostConfig{Addr: "runner@vps", OS: "linux", Arch: "amd64"})
+	h.SetConn(mock)
+	m := &Manager{GitHub: NewGitHubClient("pat")}
+	rc := config.RunnerConfig{
+		Name:       "aw-runner",
+		Repo:       "o/r",
+		Host:       "h",
+		Profile:    "agentic",
+		RunnerMode: config.RunnerModeContainer,
+	}
+
+	err := m.setupContainer(h, rc)
+	if !errors.Is(err, ErrDockerGroupPending) {
+		t.Fatalf("expected ErrDockerGroupPending, got %v", err)
+	}
+	for _, c := range mock.Calls {
+		if strings.Contains(c, "docker image inspect") || strings.Contains(c, "docker build") {
+			t.Fatalf("should not build image when group pending: %q", c)
+		}
+	}
 }

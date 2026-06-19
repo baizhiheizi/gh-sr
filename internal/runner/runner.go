@@ -267,19 +267,32 @@ func (m *Manager) Remove(h *host.Host, rc config.RunnerConfig) error {
 }
 
 func (m *Manager) Status(h *host.Host, rc config.RunnerConfig) ([]RunnerStatus, error) {
-	var statuses []RunnerStatus
+	// Hoist loop-invariant values: EffectiveRunnerMode, DisplayTarget, and the
+	// labels join all return the same result for every instance of a given
+	// RunnerConfig (effectiveLabelsCore ignores the instance index). Computing
+	// them once outside the loop saves N-1 effectiveLabelsCore slice builds and
+	// N-1 strings.Join calls per Status() invocation; for a Count=10 RunnerConfig
+	// that is 9 wasted slice headers + 9 wasted join strings on every per-tick
+	// refresh.
+	mode := rc.EffectiveRunnerMode()
+	repo := rc.DisplayTarget()
+	labels := strings.Join(rc.EffectiveLabelsForInstance(h.OS, h.Arch, 0), ", ")
+	host := rc.Host
+	isContainer := rc.IsContainerMode()
 
-	for i, name := range rc.InstanceNames() {
-		mode := rc.EffectiveRunnerMode()
+	names := rc.InstanceNames()
+	statuses := make([]RunnerStatus, 0, len(names))
+
+	for _, name := range names {
 		s := RunnerStatus{
 			Instance: name,
-			Host:     rc.Host,
-			Repo:     rc.DisplayTarget(),
-			Labels:   strings.Join(rc.EffectiveLabelsForInstance(h.OS, h.Arch, i), ", "),
+			Host:     host,
+			Repo:     repo,
+			Labels:   labels,
 			Mode:     mode,
 		}
 
-		if rc.IsContainerMode() {
+		if isContainer {
 			s.Local, s.ContainerImage, s.ContainerImageRevision = m.containerLocalStatusImageAndRevision(h, name)
 			expected := ContainerImageLayoutRevision(m.GhSrVersion, m.containerImageExtraApt())
 			s.ContainerImageBuild = formatContainerImageBuild(s.Local, expected, s.ContainerImageRevision)
