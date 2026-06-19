@@ -58,10 +58,33 @@ func ensureDockerDaemonAccess(h *host.Host, w io.Writer, runnerName string) erro
 	}
 
 	if _, denied := dockerInfoStatus(h); denied {
-		return permissionDeniedError(h)
+		return ensureDockerGroupAccess(h, w, runnerName)
 	}
 
 	return fmt.Errorf("docker daemon not reachable; try on the host: sudo systemctl start docker")
+}
+
+// ensureDockerGroupAccess adds the SSH user to the docker group when they cannot
+// access the socket, then returns ErrDockerGroupPending for a setup re-run.
+func ensureDockerGroupAccess(h *host.Host, w io.Writer, runnerName string) error {
+	isRoot, _ := h.Run(`sh -c '[ "$(id -u)" -eq 0 ] && echo yes || echo no'`)
+	if strings.TrimSpace(isRoot) == "yes" {
+		return fmt.Errorf("docker CLI is installed but docker info failed as root; check that the Docker daemon is running")
+	}
+
+	sshUser := h.SSHUser()
+	if sshUser == "" {
+		return permissionDeniedError(h)
+	}
+
+	usermod := sudoPrelude() + fmt.Sprintf("\n$SUDO usermod -aG docker %s\n", hostshell.PosixSingleQuote(sshUser))
+	if _, err := h.Run(usermod); err != nil {
+		return permissionDeniedError(h)
+	}
+
+	fmt.Fprintf(w, "  Added %s to the docker group.\n", sshUser)
+	fmt.Fprintln(w, "  "+dockerGroupPendingMessage(runnerName))
+	return ErrDockerGroupPending
 }
 
 func installHostDocker(h *host.Host, w io.Writer, runnerName string) error {

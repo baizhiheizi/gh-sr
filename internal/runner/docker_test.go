@@ -136,6 +136,41 @@ func TestEnsureHostDocker_daemonStartWhenCLIPresent(t *testing.T) {
 	}
 }
 
+func TestEnsureHostDocker_permissionDeniedAutoUsermod(t *testing.T) {
+	t.Parallel()
+	var usermodCalled bool
+	mock := &testutil.MockExecutor{RunFn: func(cmd string) (string, error) {
+		switch {
+		case strings.Contains(cmd, "docker --version"):
+			return "yes", nil
+		case strings.Contains(cmd, "docker info"):
+			return "permission denied while trying to connect to the Docker daemon socket", nil
+		case strings.Contains(cmd, "usermod"):
+			usermodCalled = true
+			return "", nil
+		case strings.Contains(cmd, "id -u"):
+			return "no", nil
+		default:
+			return "", nil
+		}
+	}}
+	h := linuxDockerHost(t, "runner@vps")
+	h.SetConn(mock)
+
+	err := EnsureHostDocker(h, io.Discard, "aw-runner")
+	if !errors.Is(err, ErrDockerGroupPending) {
+		t.Fatalf("expected ErrDockerGroupPending after usermod, got %v", err)
+	}
+	if !usermodCalled {
+		t.Fatal("expected usermod when permission denied")
+	}
+	for _, c := range mock.Calls {
+		if strings.Contains(c, "get.docker.com") {
+			t.Fatalf("should not reinstall on permission denied: %q", c)
+		}
+	}
+}
+
 func TestEnsureHostDocker_permissionDeniedNoReinstall(t *testing.T) {
 	t.Parallel()
 	mock := &testutil.MockExecutor{RunFn: func(cmd string) (string, error) {
@@ -144,6 +179,8 @@ func TestEnsureHostDocker_permissionDeniedNoReinstall(t *testing.T) {
 			return "yes", nil
 		case strings.Contains(cmd, "docker info"):
 			return "permission denied while trying to connect to the Docker daemon socket", nil
+		case strings.Contains(cmd, "usermod"):
+			return "", errors.New("sudo: a password is required")
 		default:
 			return "", nil
 		}
@@ -153,7 +190,7 @@ func TestEnsureHostDocker_permissionDeniedNoReinstall(t *testing.T) {
 
 	err := EnsureHostDocker(h, io.Discard, "aw-runner")
 	if err == nil || errors.Is(err, ErrDockerGroupPending) {
-		t.Fatalf("expected permission error, got %v", err)
+		t.Fatalf("expected permission error when usermod fails, got %v", err)
 	}
 	if !strings.Contains(err.Error(), "usermod") {
 		t.Fatalf("expected docker group guidance, got %v", err)
