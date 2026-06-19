@@ -54,13 +54,13 @@ type ContainerRunnerImageConfig struct {
 
 const (
 	defaultContainerDockerdStartTimeout = 90
-	defaultContainerBootstrapMaxRetries   = 5
-	defaultContainerStartStaggerSeconds   = 3
-	minContainerDockerdStartTimeout       = 30
-	maxContainerDockerdStartTimeout       = 300
-	minContainerBootstrapMaxRetries       = 1
-	maxContainerBootstrapMaxRetries       = 20
-	maxContainerStartStaggerSeconds       = 60
+	defaultContainerBootstrapMaxRetries = 5
+	defaultContainerStartStaggerSeconds = 3
+	minContainerDockerdStartTimeout     = 30
+	maxContainerDockerdStartTimeout     = 300
+	minContainerBootstrapMaxRetries     = 1
+	maxContainerBootstrapMaxRetries     = 20
+	maxContainerStartStaggerSeconds     = 60
 )
 
 const (

@@ -14,10 +14,10 @@ func TestPartitionRebuildTargets(t *testing.T) {
 	container := config.RunnerConfig{Name: "c", Host: "h1", Repo: "o/r", RunnerMode: config.RunnerModeContainer}
 
 	tests := []struct {
-		name            string
-		in              []config.RunnerConfig
-		wantContainer   []string
-		wantSkipped     []string
+		name          string
+		in            []config.RunnerConfig
+		wantContainer []string
+		wantSkipped   []string
 	}{
 		{
 			name:          "empty",
