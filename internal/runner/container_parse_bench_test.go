@@ -3,7 +3,7 @@ package runner
 import "testing"
 
 // parseContainerStatusInspectOutputInputs mirrors the inspect-output lines
-// containerLocalStatusFromDocker emits in production. parseContainerStatusInspectOutput
+// containerLocalStatusOneShot emits in production. parseContainerStatusInspectOutput
 // is called once per host per Status() call, which itself runs on every TUI
 // refresh tick (5s by default), so for a 10-host panel this function runs
 // ~10x/refresh and is in the per-keypress render hot path indirectly.
