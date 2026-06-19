@@ -7,7 +7,7 @@ metadata:
 
 `baizhiheizi/gh-sr` — Go module (`go 1.25.9`). `cmd/gh-sr/` is the CLI entry (0% tested); `internal/` is the impl.
 
-Packages and coverage (2026-06-18):
+Packages and coverage (2026-06-19):
 
 - `internal/agentic` 84.3% — agentic-workflow prereq validators
 - `internal/autostart` 36.2% — systemd/launchd/scheduled-task install
@@ -17,8 +17,8 @@ Packages and coverage (2026-06-18):
 - `internal/editor` 53.8% — editor picker
 - `internal/host` 58.8% — SSH+local exec; `Executor` interface
 - `internal/hostshell` 100.0% — shell-quoting + remote-write helpers (fully covered 2026-06-11)
-- `internal/ops` 42.8% — orchestration; `runPerHostParallel`, `ResolveHostInfo`, `CollectHostMetrics` all 100%; `Down` 83.3%; `Restart` 85.7%; remaining orchestrators (Up/Update/Remove/RebuildImage/CollectStatus/Logs/CleanupOffline) still 0%
-- `internal/runner` 43.7% — container + native lifecycle
+- `internal/ops` 44.0% — orchestration; `runPerHostParallel`, `ResolveHostInfo`, `CollectHostMetrics` all 100%; `Down` 83.3%; `Restart` 85.7%; `Up` 77.8% (2026-06-19); remaining orchestrators (Update/Remove/RebuildImage/CollectStatus/Logs/CleanupOffline) still 0%
+- `internal/runner` 49.3% — container + native lifecycle
 - `internal/testutil` 88.2% — shared mocks (MockExecutor + per-call capture pattern)
 - `internal/tui` 9.7% — bubbletea TUI
 - `cmd/gh-sr` 0.0% — tested via `internal/ops` end-to-end

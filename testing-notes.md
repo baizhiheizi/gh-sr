@@ -21,6 +21,8 @@ When the test target is the orchestrator's use of a Manager method, prefer a rea
 
 `newRestartMockExecutor()` adds Start-path branches: `test -d ... run.sh` → "yes"; `nohup ./run.sh` → "started PID 12345"; `sleep 5 ...` → "ok". Disambiguate Stop vs Start by substring (`rm -f` only in Stop; `nohup` only in Start). Use `Ephemeral: true` to skip `autostart.Install`.
 
+`newUpMockExecutor()` (2026-06-19) — wires EnsureSetup's `NativeRunnerConfigPresent` (`test -d DIR && test -f DIR/run.sh && test -f DIR/.runner && echo yes` → "yes" so EnsureSetup short-circuits) plus Start's nohup launch + sleep 5. The `test -d ... run.sh` substring matches BOTH EnsureSetup's probe and `startNativeOnce`'s pre-launch probe — they use the same underlying `NativeRunnerConfigPresent`. So for N runners, count >= 3 (not == 3) for EnsureSetup probes. Use `nohup ./run.sh` count for the unambiguous Start-launch assertion.
+
 ## Gotchas
 
 - `t.Setenv` (not `os.Setenv`) for env-var tests.

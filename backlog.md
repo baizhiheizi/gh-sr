@@ -7,12 +7,12 @@ metadata:
 
 ## High value (next runs)
 
-### 1. `internal/ops` user-facing orchestrators (now 42.8%)
-- `runPerHostParallel`, `ResolveHostInfo`, `CollectHostMetrics` all 100%; `Down` 83.3%; `Restart` 85.7%.
-- Still at 0%: `Up`, `Update`, `Remove`, `RebuildImage`, `CollectStatus`, `Logs`, `CleanupOffline`. All route through `connectHostFn` and are mechanically testable via `installMockConnectHost`.
-- `Up` adds `EnsureSetup` to the chain.
-- `Update` composes Remove + Setup + Start; needs `*runner.Manager{GitHub: nil}` for Remove.
+### 1. `internal/ops` user-facing orchestrators (now 44.0%)
+- `runPerHostParallel`, `ResolveHostInfo`, `CollectHostMetrics` all 100%; `Down` 83.3%; `Restart` 85.7%; **`Up` 77.8%** (2026-06-19).
+- Still at 0%: `Update`, `Remove`, `RebuildImage`, `CollectStatus`, `Logs`, `CleanupOffline`. All route through `connectHostFn` and are mechanically testable via `installMockConnectHost`.
+- `Update` is the natural next target — composes Remove + Setup + Start; needs `*runner.Manager{GitHub: nil}` for Remove.
 - `Remove` needs `partitionRebuildTargets` (covered) + `removeHost`.
+- `Up` 22.2% gap is the container-mode branch (too Docker-coupled without a new abstraction).
 
 ### 2. `internal/diskschedule` — Detect/Install/Uninstall/Status (0%)
 - `escapePS`, `parseAtTime`, `systemdQuoteArg`, `xmlEscapePlist` covered. Need `exec.Command` injection refactor for the rest.
@@ -43,8 +43,9 @@ metadata:
 
 ## Completed (do not re-do)
 
-- 2026-06-18: Restart 0%→85.7%; ops 41.9%→42.8% (+0.9 pp). **Patch not landed (PR creation failed silently).**
-- 2026-06-17: Down 0%→83.3%; ops 41.1%→41.9% (+0.8 pp); **PR #200**.
+- 2026-06-19: Up 0%→77.8%; ops 42.8%→44.0% (+1.2 pp). **Patch preserved at `/tmp/gh-aw/aw-test-assist-up-orchestrator.patch`** (bridge failed; same as Restart).
+- 2026-06-18: Restart 0%→85.7%; ops 41.9%→42.8% (+0.9 pp). **Squashed into main via ff8d9cd (2026-06-19)**.
+- 2026-06-17: Down 0%→83.3%; ops 41.1%→41.9% (+0.8 pp). **Squashed into main via ff8d9cd (2026-06-19)**.
 - 2026-06-15: CollectHostMetrics 0%→100%; ops 33.4%→37.6% (+4.2 pp); **PR #189 merged**.
 - 2026-06-14: ResolveHostInfo 0%→100%; ops 24.2%→33.4% (+9.2 pp); **PR #178 merged**.
 - 2026-06-12: runPerHostParallel 0%→100%; ops 19.6%→24.2% (+4.6 pp); **PR #168 merged**.
