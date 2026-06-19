@@ -267,18 +267,27 @@ func (m *Manager) Remove(h *host.Host, rc config.RunnerConfig) error {
 }
 
 func (m *Manager) Status(h *host.Host, rc config.RunnerConfig) ([]RunnerStatus, error) {
-	// Hoist loop-invariant values: EffectiveRunnerMode, DisplayTarget, and the
-	// labels join all return the same result for every instance of a given
-	// RunnerConfig (effectiveLabelsCore ignores the instance index). Computing
-	// them once outside the loop saves N-1 effectiveLabelsCore slice builds and
-	// N-1 strings.Join calls per Status() invocation; for a Count=10 RunnerConfig
-	// that is 9 wasted slice headers + 9 wasted join strings on every per-tick
-	// refresh.
+	// Hoist loop-invariant values: EffectiveRunnerMode, DisplayTarget, the
+	// labels join, and the container-image layout revision all return the same
+	// result for every instance of a given RunnerConfig (effectiveLabelsCore
+	// ignores the instance index; ContainerImageLayoutRevision only depends on
+	// m.GhSrVersion + m.containerImageExtraApt, which are static during one
+	// Status() call). Computing them once outside the loop saves N-1
+	// effectiveLabelsCore slice builds, N-1 strings.Join calls, and N-1
+	// ContainerImageLayoutRevision invocations per Status() invocation; for a
+	// Count=10 RunnerConfig that is 9 wasted slice headers + 9 wasted join
+	// strings + 9 wasted sha256-hashes-of-the-embedded-container-image (~30µs
+	// and 150KB per call) on every per-tick refresh.
 	mode := rc.EffectiveRunnerMode()
 	repo := rc.DisplayTarget()
 	labels := strings.Join(rc.EffectiveLabelsForInstance(h.OS, h.Arch, 0), ", ")
 	host := rc.Host
 	isContainer := rc.IsContainerMode()
+
+	var expectedLayoutRev string
+	if isContainer {
+		expectedLayoutRev = ContainerImageLayoutRevision(m.GhSrVersion, m.containerImageExtraApt())
+	}
 
 	names := rc.InstanceNames()
 	statuses := make([]RunnerStatus, 0, len(names))
@@ -294,8 +303,7 @@ func (m *Manager) Status(h *host.Host, rc config.RunnerConfig) ([]RunnerStatus, 
 
 		if isContainer {
 			s.Local, s.ContainerImage, s.ContainerImageRevision = m.containerLocalStatusImageAndRevision(h, name)
-			expected := ContainerImageLayoutRevision(m.GhSrVersion, m.containerImageExtraApt())
-			s.ContainerImageBuild = formatContainerImageBuild(s.Local, expected, s.ContainerImageRevision)
+			s.ContainerImageBuild = formatContainerImageBuild(s.Local, expectedLayoutRev, s.ContainerImageRevision)
 		} else {
 			s.Local = m.statusNative(h, name)
 			s.ContainerImageBuild = nativeRunnerVersion(h, name)
