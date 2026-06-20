@@ -195,15 +195,28 @@ func MeasureDiskUsage(h *host.Host, hostName, instance string, rc *config.Runner
 	return entry
 }
 
+// dirSizesResult bundles the four size buckets dirSizes collects on the remote
+// host so it can flow through runOnHostOS's generic dispatch (the helper
+// returns a single value, and dirSizes needs to ship four int64s back).
+type dirSizesResult struct {
+	total, work, temp, dockerData int64
+}
+
 func dirSizes(h *host.Host, instance string) (total, work, temp, dockerData int64, err error) {
-	switch h.OS {
-	case "windows":
-		return dirSizesWindows(h, instance)
-	case "linux", "darwin":
-		return dirSizesPOSIX(h, instance)
-	default:
-		return 0, 0, 0, 0, fmt.Errorf("unsupported host OS %q", h.OS)
+	res, err := runOnHostOS(h,
+		func() (dirSizesResult, error) {
+			t, w, te, dk, ierr := dirSizesWindows(h, instance)
+			return dirSizesResult{t, w, te, dk}, ierr
+		},
+		func() (dirSizesResult, error) {
+			t, w, te, dk, ierr := dirSizesPOSIX(h, instance)
+			return dirSizesResult{t, w, te, dk}, ierr
+		},
+	)
+	if err != nil {
+		return 0, 0, 0, 0, err
 	}
+	return res.total, res.work, res.temp, res.dockerData, nil
 }
 
 // buildDirSizesPOSIXScript returns the shell script that `dirSizesPOSIX`
@@ -371,10 +384,10 @@ func containerPruneMode(rc *config.RunnerConfig) bool {
 }
 
 func clearWorkTemp(h *host.Host, instance string, containerMode bool) error {
-	switch h.OS {
-	case "windows":
-		dirExpr := h.RunnerDirPS(instance)
-		ps := fmt.Sprintf(`
+	_, err := runOnHostOS(h,
+		func() (struct{}, error) {
+			dirExpr := h.RunnerDirPS(instance)
+			ps := fmt.Sprintf(`
 foreach ($sub in @('_work','_temp')) {
   $p = Join-Path (%s) $sub
   if (Test-Path -LiteralPath $p) {
@@ -382,14 +395,15 @@ foreach ($sub in @('_work','_temp')) {
   }
 }
 `, dirExpr)
-		_, err := h.RunShell(ps)
-		return err
-	case "linux", "darwin":
-		_, err := h.Run(clearWorkTempPOSIX(instance, containerMode))
-		return err
-	default:
-		return fmt.Errorf("unsupported host OS %q", h.OS)
-	}
+			_, ierr := h.RunShell(ps)
+			return struct{}{}, ierr
+		},
+		func() (struct{}, error) {
+			_, ierr := h.Run(clearWorkTempPOSIX(instance, containerMode))
+			return struct{}{}, ierr
+		},
+	)
+	return err
 }
 
 // clearWorkTempPOSIX removes job scratch under _work and _temp. CI jobs often leave
@@ -438,18 +452,19 @@ done
 }
 
 func removeDirTree(h *host.Host, instance string) error {
-	switch h.OS {
-	case "windows":
-		dirExpr := h.RunnerDirPS(instance)
-		ps := fmt.Sprintf(`if (Test-Path -LiteralPath (%s)) { Remove-Item -LiteralPath (%s) -Recurse -Force }`, dirExpr, dirExpr)
-		_, err := h.RunShell(ps)
-		return err
-	case "linux", "darwin":
-		_, err := h.Run(removeDirTreePOSIX(instance))
-		return err
-	default:
-		return fmt.Errorf("unsupported host OS %q", h.OS)
-	}
+	_, err := runOnHostOS(h,
+		func() (struct{}, error) {
+			dirExpr := h.RunnerDirPS(instance)
+			ps := fmt.Sprintf(`if (Test-Path -LiteralPath (%s)) { Remove-Item -LiteralPath (%s) -Recurse -Force }`, dirExpr, dirExpr)
+			_, ierr := h.RunShell(ps)
+			return struct{}{}, ierr
+		},
+		func() (struct{}, error) {
+			_, ierr := h.Run(removeDirTreePOSIX(instance))
+			return struct{}{}, ierr
+		},
+	)
+	return err
 }
 
 func removeDirTreePOSIX(instance string) string {

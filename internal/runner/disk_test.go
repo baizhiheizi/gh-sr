@@ -65,6 +65,40 @@ func TestMeasureDiskUsage_agenticMode(t *testing.T) {
 	}
 }
 
+// TestDiskDispatchers_unsupportedHostOS locks in the runOnHostOS fallback for
+// the three dispatchers in disk.go (#229): when h.OS is neither "windows" nor
+// "linux"/"darwin", dirSizes / clearWorkTemp / removeDirTree must all return
+// the "unsupported host OS" error and never invoke the remote host. The
+// refactor that moved the three hand-rolled switches onto runOnHostOS would be
+// a regression if it dropped the error.
+func TestDiskDispatchers_unsupportedHostOS(t *testing.T) {
+	t.Parallel()
+	mock := &testutil.MockExecutor{}
+	h := diskMockHost("freebsd", mock)
+
+	if _, _, _, _, err := dirSizes(h, "ci-1"); err == nil {
+		t.Fatal("dirSizes: expected unsupported-host-OS error, got nil")
+	}
+	if err := clearWorkTemp(h, "ci-1", false); err == nil {
+		t.Fatal("clearWorkTemp: expected unsupported-host-OS error, got nil")
+	}
+	if err := removeDirTree(h, "ci-1"); err == nil {
+		t.Fatal("removeDirTree: expected unsupported-host-OS error, got nil")
+	}
+	if len(mock.Calls) != 0 {
+		t.Fatalf("unsupported OS must not invoke the host, got %d call(s)", len(mock.Calls))
+	}
+	for _, err := range []error{
+		func() error { _, _, _, _, e := dirSizes(h, "ci-1"); return e }(),
+		clearWorkTemp(h, "ci-1", false),
+		removeDirTree(h, "ci-1"),
+	} {
+		if !strings.Contains(err.Error(), "freebsd") {
+			t.Fatalf("error should mention the offending OS, got: %v", err)
+		}
+	}
+}
+
 func TestPOSIXScripts_includeSetE(t *testing.T) {
 	t.Parallel()
 	for name, script := range map[string]string{
