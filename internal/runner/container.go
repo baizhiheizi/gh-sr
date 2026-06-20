@@ -170,28 +170,19 @@ func (m *Manager) setupContainer(h *host.Host, rc config.RunnerConfig) error {
 		return fmt.Errorf("%s: ensuring host Docker: %w", rc.Name, err)
 	}
 
-	// Resolve runner version for image build-arg.
-	version, err := m.GitHub.GetLatestRunnerVersion()
+	// Resolve runner version, host arch, and image tag.
+	version, arch, imageTag, err := m.resolveRunnerImageInputs(h)
 	if err != nil {
-		return fmt.Errorf("resolving runner version: %w", err)
+		return err
 	}
-
-	arch := archForGitHub(h.Arch)
-
-	imageTag := ContainerRunnerImageTag(version, m.containerImageExtraApt())
 
 	fmt.Fprintf(m.out(), "  %s: checking container runner image %s...\n", rc.Name, imageTag)
 
-	imageExists, err := containerImageExists(h, imageTag)
+	built, err := m.buildRunnerImageIfMissing(h, imageTag, version, arch)
 	if err != nil {
-		return fmt.Errorf("checking image: %w", err)
+		return err
 	}
-
-	if !imageExists {
-		fmt.Fprintf(m.out(), "  %s: building container runner image (this may take several minutes)...\n", rc.Name)
-		if err := buildAgenticRunnerImage(h, imageTag, version, arch, m.GhSrVersion, m.containerImageExtraApt()); err != nil {
-			return fmt.Errorf("building container runner image: %w", err)
-		}
+	if built {
 		fmt.Fprintf(m.out(), "  %s: image built: %s\n", rc.Name, imageTag)
 	} else {
 		fmt.Fprintf(m.out(), "  %s: image already up to date\n", rc.Name)
@@ -593,13 +584,11 @@ func (m *Manager) rebuildContainerImage(h *host.Host, rc config.RunnerConfig) er
 		_, _ = h.Run(fmt.Sprintf("docker rm -f %s 2>/dev/null || true", cName))
 	}
 
-	// Resolve runner version and image tag before rmi/build.
-	version, err := m.GitHub.GetLatestRunnerVersion()
+	// Resolve runner version, host arch, and image tag.
+	version, arch, imageTag, err := m.resolveRunnerImageInputs(h)
 	if err != nil {
-		return fmt.Errorf("resolving runner version: %w", err)
+		return err
 	}
-	arch := archForGitHub(h.Arch)
-	imageTag := ContainerRunnerImageTag(version, m.containerImageExtraApt())
 
 	// Remove only this tag so we force a fresh build. Do not `docker rmi` every
 	// gh-sr/agentic-runner image on the host: other runners' containers may still
@@ -649,6 +638,44 @@ func containerImageExists(h *host.Host, imageTag string) (bool, error) {
 		return false, nil
 	}
 	return strings.TrimSpace(out) == "yes", nil
+}
+
+// resolveRunnerImageInputs resolves the runner version, host arch, and image tag
+// for the container runner image. It collapses the version→arch→tag preamble that
+// was previously duplicated verbatim across setupContainer / rebuildContainerImage
+// / ContainerEnvironment.Provision (closes the triplication flagged by #228).
+// The GitHubClient caches the version response so repeat calls are cheap.
+func (m *Manager) resolveRunnerImageInputs(h *host.Host) (version, arch, imageTag string, err error) {
+	version, err = m.GitHub.GetLatestRunnerVersion()
+	if err != nil {
+		return "", "", "", fmt.Errorf("resolving runner version: %w", err)
+	}
+	arch = archForGitHub(h.Arch)
+	imageTag = ContainerRunnerImageTag(version, m.containerImageExtraApt())
+	return version, arch, imageTag, nil
+}
+
+// buildRunnerImageIfMissing checks whether the container runner image with the
+// given tag already exists on h, and builds it via buildAgenticRunnerImage if not.
+// Returns built=true when the image was freshly built, built=false when it was
+// already present. Used by setupContainer and ContainerEnvironment.Provision.
+// rebuildContainerImage intentionally skips the existence check and calls
+// buildAgenticRunnerImage directly so the rebuild path always produces a fresh
+// image. Error wrapping matches the historical call-site messages
+// ("checking image: %w" / "building container runner image: %w") so user-visible
+// error output is unchanged.
+func (m *Manager) buildRunnerImageIfMissing(h *host.Host, imageTag, version, arch string) (built bool, err error) {
+	exists, err := containerImageExists(h, imageTag)
+	if err != nil {
+		return false, fmt.Errorf("checking image: %w", err)
+	}
+	if exists {
+		return false, nil
+	}
+	if err := buildAgenticRunnerImage(h, imageTag, version, arch, m.GhSrVersion, m.containerImageExtraApt()); err != nil {
+		return false, fmt.Errorf("building container runner image: %w", err)
+	}
+	return true, nil
 }
 
 // embedTextForRemoteWrite normalizes CRLF to LF and escapes heredoc delimiters before
