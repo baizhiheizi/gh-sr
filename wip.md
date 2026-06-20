@@ -5,20 +5,20 @@ metadata:
   type: project
 ---
 
-## Run #27814296911 (2026-06-19)
+## Run #27863360393 (2026-06-20)
 
-- **Branch:** `test-assist/up-orchestrator`; commit `c2719e5`
-- **PR:** **NOT CREATED** — safeoutputs `create_pull_request` returned success but the bridge did not push the branch (no git credentials locally either, same as Restart run). Patch preserved at `/tmp/gh-aw/aw-test-assist-up-orchestrator.patch` (~25 KB, 680 lines). Bundle at `/tmp/gh-aw/aw-test-assist-up-orchestrator.bundle` (~6 KB). Maintainer must apply via `git am` + push, or fetch from bundle.
-- **Coverage:** `internal/ops` **42.8% → 44.0%** (+1.2 pp); `Up` **0% → 77.8%**
-- **New file:** `internal/ops/up_test.go` (631 lines, 12 contract tests)
+- **Branch:** `test-assist/logs-orchestrator`; commit `d0bca1c`
+- **PR:** **NOT CREATED** — safeoutputs `create_pull_request` returned success but the bridge did not push the branch (no git credentials locally; recurring issue, same as the 2026-06-19 Up run and 2026-06-18 Restart run). Patch preserved at `/tmp/gh-aw/aw-test-assist-logs-orchestrator.patch` (~14 KB, 406 lines). Bundle at `/tmp/gh-aw/aw-test-assist-logs-orchestrator.bundle` (~4 KB). Maintainer must apply via `git am` + push, or fetch from bundle.
+- **Coverage:** `internal/ops` **50.2% → 52.3%** (+2.1 pp); `Logs` **0% → 92.9%**
+- **New file:** `internal/ops/logs_test.go` (362 lines, 12 contract tests)
 - **Status:** build ✅, vet ✅, race ✅, full suite ✅, gofmt ✅.
 
-**Pattern (reusable for Update/CollectStatus):** `newUpMockExecutor()` — successor to `newDownMockExecutor()` and `newRestartMockExecutor()`. Wires BOTH EnsureSetup's `NativeRunnerConfigPresent` (`test -d DIR && test -f DIR/run.sh && test -f DIR/.runner` → "yes") and Start's nohup launch + sleep 5 stale-check. Disambiguation note: `test -d ... run.sh` substring matches BOTH EnsureSetup's probe AND `startNativeOnce`'s pre-launch probe (same underlying `NativeRunnerConfigPresent`); for N runners, count `>= N` (not `== N`) for EnsureSetup probes. Use `nohup ./run.sh` count for unambiguous Start-launch assertion.
+**Pattern (reusable for Remove/Update):** `newLogsMockExecutor(logOutput)` — pinned by substring `tail -50` + `/runner.log` (unique signature, no other orchestrator invokes tail). Unlike Down/Restart/Up mock executors, Logs does not need `autostart.Detect` probes, so the mock is a single-branch switch — minimal surface area.
 
-**Restart PR follow-up (2026-06-19):** The 2026-06-18 Restart patch (`600dcda`, branch `test-assist/restart-orchestrator`) landed via squash into commit ff8d9cd (alongside the `resolveStateDirOrFallback` refactor). The Restart and Down PRs are no longer pending — both are now part of main.
+**Why Logs was the right choice over Update/Remove:** `Logs` is the only remaining 0%-covered orchestrator that does NOT require a `*runner.GitHubClient` (its call chain is `mgr.Logs` → `logsNative` → `h.Run(tail)`). `Remove`/`Update` need `m.GitHub.GetRemovalTokenScoped`, so they require either a `httptest.Server`-backed client or a mock at the `m.GitHub` field level. Tackle those in a follow-up run once the new GitHub-mock pattern is established.
 
-**PR-creation gotcha (recurring):** When the local working copy has no git credentials, `safeoutputs create_pull_request` may return success without the PR landing. Verify via `mcp__github__list_pull_requests` (sort=created) after each call; if missing, surface to maintainer via Monthly Activity issue + preserve patch/bundle files. Hit on the 2026-06-18 Restart run AND this run (Up).
+**Pattern for `Remove`/`Update` follow-up:** Use `runner.NewGitHubClientWithHTTP("test", ts.Client(), ts.URL)` with an `httptest.Server` returning `{"token":"remtok"}` for the `/repos/<owner>/<repo>/actions/runners/remove-token` POST. Then `mgr := &runner.Manager{GitHub: g}` exercises `removeNative` end-to-end without panicking on the nil client.
 
-**Next:** `internal/ops` orchestrators still at 0%: `Update` / `Remove` / `RebuildImage` / `CollectStatus` / `Logs` / `CleanupOffline`. `Update` is the most natural next target — composes Remove + Setup + Start, same pattern as Restart's Stop + Start.
+**Next:** `internal/ops` orchestrators still at 0%: `Update` / `Remove` / `RebuildImage` / `CollectStatus` / `CleanupOffline`. `Remove` is the next natural target — it composes `mgr.Remove` + `config.RemoveRunner`, and `Remove`'s mock-executor wiring is a strict superset of `Down`'s (`pid_file → "not running"` + the autostart probes) plus a new `rm -rf <dir>` branch for `removeNativeDirectory`.
 
 [[backlog]] [[run-history]]

@@ -23,6 +23,8 @@ When the test target is the orchestrator's use of a Manager method, prefer a rea
 
 `newUpMockExecutor()` (2026-06-19) — wires EnsureSetup's `NativeRunnerConfigPresent` (`test -d DIR && test -f DIR/run.sh && test -f DIR/.runner && echo yes` → "yes" so EnsureSetup short-circuits) plus Start's nohup launch + sleep 5. The `test -d ... run.sh` substring matches BOTH EnsureSetup's probe and `startNativeOnce`'s pre-launch probe — they use the same underlying `NativeRunnerConfigPresent`. So for N runners, count >= 3 (not == 3) for EnsureSetup probes. Use `nohup ./run.sh` count for the unambiguous Start-launch assertion.
 
+`newLogsMockExecutor(logOutput)` (2026-06-20) — single-branch mock. Pinned by `tail -50` + `/runner.log` substring. `logsNative`'s command is unique (no other orchestrator in this package invokes `tail`), so the signature is safe. Accepts the `logOutput` as a parameter so each test can supply its expected content (or `"no logs found\n"` for the fallback branch).
+
 ## Gotchas
 
 - `t.Setenv` (not `os.Setenv`) for env-var tests.

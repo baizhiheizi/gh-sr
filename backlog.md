@@ -10,9 +10,10 @@ metadata:
 ### 1. `internal/ops` user-facing orchestrators (now 44.0%)
 - `runPerHostParallel`, `ResolveHostInfo`, `CollectHostMetrics` all 100%; `Down` 83.3%; `Restart` 85.7%; **`Up` 77.8%** (2026-06-19).
 - Still at 0%: `Update`, `Remove`, `RebuildImage`, `CollectStatus`, `Logs`, `CleanupOffline`. All route through `connectHostFn` and are mechanically testable via `installMockConnectHost`.
-- `Update` is the natural next target — composes Remove + Setup + Start; needs `*runner.Manager{GitHub: nil}` for Remove.
-- `Remove` needs `partitionRebuildTargets` (covered) + `removeHost`.
+- `Update` is the natural next target after `Remove` — composes Remove + Setup + Start; needs `*runner.Manager{GitHub: client}` (httptest-backed) for Remove.
+- `Remove` is the next natural target — `partitionRebuildTargets` already covered. Needs `httptest.Server`-backed `*runner.GitHubClient` (the `GitHub: nil` manager used by Up/Down/Restart/Logs panics in `removeNative`'s `m.GitHub.GetRemovalTokenScoped` call).
 - `Up` 22.2% gap is the container-mode branch (too Docker-coupled without a new abstraction).
+- `Logs` 7.1% gap is the `ResolveHostInfo` error branch (already covered indirectly by `CollectStatus` suite).
 
 ### 2. `internal/diskschedule` — Detect/Install/Uninstall/Status (0%)
 - `escapePS`, `parseAtTime`, `systemdQuoteArg`, `xmlEscapePlist` covered. Need `exec.Command` injection refactor for the rest.
@@ -43,7 +44,8 @@ metadata:
 
 ## Completed (do not re-do)
 
-- 2026-06-19: Up 0%→77.8%; ops 42.8%→44.0% (+1.2 pp). **Patch preserved at `/tmp/gh-aw/aw-test-assist-up-orchestrator.patch`** (bridge failed; same as Restart).
+- 2026-06-20: Logs 0%→92.9%; ops 50.2%→52.3% (+2.1 pp). **Patch preserved at `/tmp/gh-aw/aw-test-assist-logs-orchestrator.patch`** (bridge failed; same as Up).
+- 2026-06-19: Up 0%→77.8%; ops 42.8%→44.0% (+1.2 pp). **Patch preserved at `/tmp/gh-aw/aw-test-assist-up-orchestrator.patch`** (bridge failed; same as Restart). Squashed into main via ff8d9cd.
 - 2026-06-18: Restart 0%→85.7%; ops 41.9%→42.8% (+0.9 pp). **Squashed into main via ff8d9cd (2026-06-19)**.
 - 2026-06-17: Down 0%→83.3%; ops 41.1%→41.9% (+0.8 pp). **Squashed into main via ff8d9cd (2026-06-19)**.
 - 2026-06-15: CollectHostMetrics 0%→100%; ops 33.4%→37.6% (+4.2 pp); **PR #189 merged**.
