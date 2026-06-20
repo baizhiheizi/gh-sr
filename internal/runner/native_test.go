@@ -6,6 +6,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/an-lee/gh-sr/internal/config"
 	"github.com/an-lee/gh-sr/internal/host"
@@ -128,6 +129,78 @@ func Test_staleRegistrationMsg(t *testing.T) {
 	}
 }
 
+func Test_staleRegistrationScript_bothOSShapesContainMessage(t *testing.T) {
+	t.Parallel()
+	// The unifier preserves the property the duplicate-code detector flagged as a
+	// three-edit blast radius: every OS shape must search runner.log for the same
+	// staleRegistrationMsg substring, so a future detection-rule change has a single
+	// source of truth (the constant) rather than two parallel text snippets.
+	cases := []struct {
+		os string
+	}{
+		{"windows"},
+		{"linux"},
+		{"darwin"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.os, func(t *testing.T) {
+			t.Parallel()
+			h := host.NewHost("h-"+tc.os, config.HostConfig{Addr: "u@h", OS: tc.os, Arch: "amd64"})
+			script := staleRegistrationScript(h, "ci-1")
+			if !strings.Contains(script, staleRegistrationMsg) {
+				t.Errorf("%s: staleRegistrationScript must reference staleRegistrationMsg %q: %q",
+					tc.os, staleRegistrationMsg, script)
+			}
+		})
+	}
+}
+
+func Test_staleRegistrationScript_windowsUsesPowerShellPrimitives(t *testing.T) {
+	t.Parallel()
+	h := host.NewHost("win", config.HostConfig{Addr: "u@h", OS: "windows", Arch: "amd64"})
+	script := staleRegistrationScript(h, "ci-1")
+	if !strings.Contains(script, "$runnerDir = ") {
+		t.Errorf("windows snippet should declare $runnerDir: %q", script)
+	}
+	if !strings.Contains(script, "Start-Sleep") {
+		t.Errorf("windows snippet should warm up via Start-Sleep: %q", script)
+	}
+	if !strings.Contains(script, "Select-String") {
+		t.Errorf("windows snippet should grep via Select-String: %q", script)
+	}
+	if !strings.Contains(script, "Write-Host 'stale'") {
+		t.Errorf("windows snippet should write 'stale' on match: %q", script)
+	}
+}
+
+func Test_staleRegistrationScript_posixUsesPOSIXPrimitives(t *testing.T) {
+	t.Parallel()
+	h := host.NewHost("lin", config.HostConfig{Addr: "u@h", OS: "linux", Arch: "amd64"})
+	script := staleRegistrationScript(h, "ci-1")
+	if !strings.Contains(script, "sleep ") {
+		t.Errorf("posix snippet should warm up via sleep: %q", script)
+	}
+	if !strings.Contains(script, "kill -0") {
+		t.Errorf("posix snippet should liveness-check via kill -0: %q", script)
+	}
+	if !strings.Contains(script, "grep -q") {
+		t.Errorf("posix snippet should grep via grep -q: %q", script)
+	}
+	if !strings.Contains(script, "echo stale") {
+		t.Errorf("posix snippet should echo 'stale' on match: %q", script)
+	}
+}
+
+func Test_staleRegistrationWarmup_isFiveSeconds(t *testing.T) {
+	t.Parallel()
+	// Pinned so a future tuning change is deliberate. The probe sleeps this long
+	// before checking runner.log; shorter risks false-positive "ok", longer slows
+	// every fresh start by the difference.
+	if staleRegistrationWarmup != 5*time.Second {
+		t.Errorf("staleRegistrationWarmup = %v, want 5s", staleRegistrationWarmup)
+	}
+}
+
 func Test_windowsRunnerDirAssignment(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
@@ -178,10 +251,13 @@ func Test_windowsDeleteRunnerConfig_removesCredentialFiles(t *testing.T) {
 	}
 }
 
-func Test_windowsCheckStaleRegistration_containsPatternAndSleep(t *testing.T) {
+func Test_staleRegistrationScript_windowsShapePreservesLegacyContract(t *testing.T) {
 	t.Parallel()
+	// This test replaces the prior Test_windowsCheckStaleRegistration_containsPatternAndSleep:
+	// the Windows branch of staleRegistrationScript is the same shape, so the contract
+	// (Start-Sleep + Select-String grep for staleRegistrationMsg) must still hold.
 	h := host.NewHost("win", config.HostConfig{Addr: "u@h", OS: "windows", Arch: "amd64"})
-	script := windowsCheckStaleRegistration(h, "x-1")
+	script := staleRegistrationScript(h, "x-1")
 	if !strings.Contains(script, "Start-Sleep") {
 		t.Fatalf("should wait before checking: %q", script)
 	}
