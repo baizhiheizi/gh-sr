@@ -5,20 +5,22 @@ metadata:
   type: project
 ---
 
-## Run #27863360393 (2026-06-20)
+## Run #27897086810 (2026-06-21)
 
-- **Branch:** `test-assist/logs-orchestrator`; commit `d0bca1c`
-- **PR:** **NOT CREATED** — safeoutputs `create_pull_request` returned success but the bridge did not push the branch (no git credentials locally; recurring issue, same as the 2026-06-19 Up run and 2026-06-18 Restart run). Patch preserved at `/tmp/gh-aw/aw-test-assist-logs-orchestrator.patch` (~14 KB, 406 lines). Bundle at `/tmp/gh-aw/aw-test-assist-logs-orchestrator.bundle` (~4 KB). Maintainer must apply via `git am` + push, or fetch from bundle.
-- **Coverage:** `internal/ops` **50.2% → 52.3%** (+2.1 pp); `Logs` **0% → 92.9%**
-- **New file:** `internal/ops/logs_test.go` (362 lines, 12 contract tests)
+- **Branch:** `test-assist/remove-orchestrator`; commit `3521f2b`
+- **PR:** **NOT CREATED** — safeoutputs bridge failed (recurring). Patch at `/tmp/gh-aw/aw-test-assist-remove-orchestrator.patch` (~22 KB, 633 lines). Bundle at `/tmp/gh-aw/aw-test-assist-remove-orchestrator.bundle` (~5 KB). Maintainer: `git am` + push.
+- **Coverage:** `internal/ops` 52.3% → 54.6% (+2.3 pp); `Remove` 0% → 94.1%; `removeHost` 0% → 100%.
+- **New file:** `internal/ops/remove_test.go` (593 lines, 12 contract tests)
 - **Status:** build ✅, vet ✅, race ✅, full suite ✅, gofmt ✅.
 
-**Pattern (reusable for Remove/Update):** `newLogsMockExecutor(logOutput)` — pinned by substring `tail -50` + `/runner.log` (unique signature, no other orchestrator invokes tail). Unlike Down/Restart/Up mock executors, Logs does not need `autostart.Detect` probes, so the mock is a single-branch switch — minimal surface area.
+**Pattern (reusable):** httptest.Server-backed `*runner.GitHubClient` via `runner.NewGitHubClientWithHTTP("pat", ts.Client(), ts.URL)`.
 
-**Why Logs was the right choice over Update/Remove:** `Logs` is the only remaining 0%-covered orchestrator that does NOT require a `*runner.GitHubClient` (its call chain is `mgr.Logs` → `logsNative` → `h.Run(tail)`). `Remove`/`Update` need `m.GitHub.GetRemovalTokenScoped`, so they require either a `httptest.Server`-backed client or a mock at the `m.GitHub` field level. Tackle those in a follow-up run once the new GitHub-mock pattern is established.
+**New helpers:** `newRemovalTokenHTTPServer(t, token)`, `newRemovalTokenHTTPErrServer(t)`, `newRemoveMockExecutor()`, `writeRunnersYAML(t, content)`, `runnersYAMLFor(host, runner)`.
 
-**Pattern for `Remove`/`Update` follow-up:** Use `runner.NewGitHubClientWithHTTP("test", ts.Client(), ts.URL)` with an `httptest.Server` returning `{"token":"remtok"}` for the `/repos/<owner>/<repo>/actions/runners/remove-token` POST. Then `mgr := &runner.Manager{GitHub: g}` exercises `removeNative` end-to-end without panicking on the nil client.
+**Known contract pin:** removing the only runner fails post-write validation. Intentional (config requires ≥1 runner).
 
-**Next:** `internal/ops` orchestrators still at 0%: `Update` / `Remove` / `RebuildImage` / `CollectStatus` / `CleanupOffline`. `Remove` is the next natural target — it composes `mgr.Remove` + `config.RemoveRunner`, and `Remove`'s mock-executor wiring is a strict superset of `Down`'s (`pid_file → "not running"` + the autostart probes) plus a new `rm -rf <dir>` branch for `removeNativeDirectory`.
+**Bug (out of scope):** `Remove` and `Update` panic on nil `w`. TUI callers pass `io.Discard`. Suggested fix: `writeBanner(w, ...)` helper.
+
+**Next:** `Update` (Remove+Setup+Start), `RebuildImage`, `CollectStatus`, `CleanupOffline`. Or fix the nil-writer bug.
 
 [[backlog]] [[run-history]]
