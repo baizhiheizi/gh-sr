@@ -1,6 +1,7 @@
 package doctor
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -11,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/an-lee/gh-sr/internal/agentic"
 	"github.com/an-lee/gh-sr/internal/config"
 	"github.com/an-lee/gh-sr/internal/host"
 	"github.com/an-lee/gh-sr/internal/runner"
@@ -489,5 +491,130 @@ func TestCheckRunnerDiskUsage_warnsOrphanOverThreshold(t *testing.T) {
 	}
 	if r.Warn != 1 {
 		t.Fatalf("expected 1 warn, got %+v", r)
+	}
+}
+
+func TestPrintAgenticFailures_SeverityError(t *testing.T) {
+	t.Parallel()
+	var buf bytes.Buffer
+	r := Result{}
+	printAgenticFailures(&buf, "h1", &r, sevWarn, "container: ", []agentic.PrereqFailure{
+		{Message: "docker down", Severity: agentic.SeverityError},
+	})
+	if !strings.Contains(buf.String(), "FAIL  [h1          ] container: docker down") {
+		t.Fatalf("missing FAIL line, got:\n%s", buf.String())
+	}
+	if r.Fail != 1 || r.Warn != 0 {
+		t.Fatalf("counters: got %+v, want Fail=1 Warn=0", r)
+	}
+}
+
+func TestPrintAgenticFailures_SeverityWarning(t *testing.T) {
+	t.Parallel()
+	var buf bytes.Buffer
+	r := Result{}
+	printAgenticFailures(&buf, "h1", &r, sevFail, "container: ", []agentic.PrereqFailure{
+		{Message: "slow", Severity: agentic.SeverityWarning},
+	})
+	if !strings.Contains(buf.String(), "WARN  [h1          ] container: slow") {
+		t.Fatalf("missing WARN line, got:\n%s", buf.String())
+	}
+	if r.Fail != 0 || r.Warn != 1 {
+		t.Fatalf("counters: got %+v, want Fail=0 Warn=1", r)
+	}
+}
+
+func TestPrintAgenticFailures_DefaultSevFail(t *testing.T) {
+	t.Parallel()
+	var buf bytes.Buffer
+	r := Result{}
+	printAgenticFailures(&buf, "h1", &r, sevFail, "container: ", []agentic.PrereqFailure{
+		{Message: "unknown", Severity: "info"},
+	})
+	if !strings.Contains(buf.String(), "FAIL  [h1          ] container: unknown") {
+		t.Fatalf("expected FAIL line, got:\n%s", buf.String())
+	}
+	if r.Fail != 1 || r.Warn != 0 {
+		t.Fatalf("counters: got %+v, want Fail=1 Warn=0", r)
+	}
+}
+
+func TestPrintAgenticFailures_DefaultSevWarn(t *testing.T) {
+	t.Parallel()
+	var buf bytes.Buffer
+	r := Result{}
+	printAgenticFailures(&buf, "h1", &r, sevWarn, "container(agent): ", []agentic.PrereqFailure{
+		{Message: "unknown", Severity: "info"},
+	})
+	if !strings.Contains(buf.String(), "WARN  [h1          ] container(agent): unknown") {
+		t.Fatalf("expected WARN line, got:\n%s", buf.String())
+	}
+	if r.Fail != 0 || r.Warn != 1 {
+		t.Fatalf("counters: got %+v, want Fail=0 Warn=1", r)
+	}
+}
+
+func TestPrintAgenticFailures_RemediationAndDocRef(t *testing.T) {
+	t.Parallel()
+	var buf bytes.Buffer
+	r := Result{}
+	printAgenticFailures(&buf, "h1", &r, sevFail, "container: ", []agentic.PrereqFailure{
+		{
+			Message:     "out of disk",
+			Severity:    agentic.SeverityError,
+			Remediation: "rm -rf /tmp/junk\nsudo systemctl restart docker",
+			DocRef:      "ops.md §7",
+		},
+	})
+	out := buf.String()
+	for _, want := range []string{
+		"FAIL  [h1          ] container: out of disk",
+		"       rm -rf /tmp/junk",
+		"       sudo systemctl restart docker",
+		"       See: ops.md §7",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q in output:\n%s", want, out)
+		}
+	}
+	if r.Fail != 1 || r.Warn != 0 {
+		t.Fatalf("counters: got %+v, want Fail=1 Warn=0", r)
+	}
+}
+
+func TestPrintAgenticFailures_EmptySlice(t *testing.T) {
+	t.Parallel()
+	var buf bytes.Buffer
+	r := Result{}
+	printAgenticFailures(&buf, "h1", &r, sevFail, "container: ", nil)
+	if buf.Len() != 0 {
+		t.Fatalf("expected no output for empty failures, got:\n%s", buf.String())
+	}
+	if r.Fail != 0 || r.Warn != 0 {
+		t.Fatalf("counters: got %+v, want zero", r)
+	}
+}
+
+func TestPrintAgenticFailures_MixedSeverities(t *testing.T) {
+	t.Parallel()
+	var buf bytes.Buffer
+	r := Result{}
+	printAgenticFailures(&buf, "h1", &r, sevFail, "container(agent): ", []agentic.PrereqFailure{
+		{Message: "err", Severity: agentic.SeverityError},
+		{Message: "warn", Severity: agentic.SeverityWarning},
+		{Message: "info", Severity: "info"},
+	})
+	out := buf.String()
+	for _, want := range []string{
+		"FAIL  [h1          ] container(agent): err",
+		"WARN  [h1          ] container(agent): warn",
+		"FAIL  [h1          ] container(agent): info", // defaultSev=sevFail
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q in output:\n%s", want, out)
+		}
+	}
+	if r.Fail != 2 || r.Warn != 1 {
+		t.Fatalf("counters: got %+v, want Fail=2 Warn=1", r)
 	}
 }

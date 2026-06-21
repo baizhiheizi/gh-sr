@@ -482,6 +482,41 @@ func hasContainerAgenticRunners(runners []config.RunnerConfig) bool {
 	return false
 }
 
+// printAgenticFailures renders a slice of agentic failures against the doctor
+// output, classifying each by severity and emitting remediation lines + doc-ref.
+// defaultSev governs the severity for any failure whose Severity is neither
+// SeverityError nor SeverityWarning (call sites use it to bias toward
+// fail-by-default for host-prereqs vs. warn-by-default for inner-hygiene).
+// Each failure increments either r.Fail or r.Warn as it is rendered.
+func printAgenticFailures(w io.Writer, hostName string, r *Result, defaultSev, prefix string, failures []agentic.PrereqFailure) {
+	for _, f := range failures {
+		sev := defaultSev
+		switch f.Severity {
+		case agentic.SeverityError:
+			sev = sevFail
+			r.Fail++
+		case agentic.SeverityWarning:
+			sev = sevWarn
+			r.Warn++
+		default:
+			if defaultSev == sevWarn {
+				r.Warn++
+			} else {
+				r.Fail++
+			}
+		}
+		printLine(w, sev, hostName, prefix+f.Message)
+		if f.Remediation != "" {
+			for _, line := range strings.Split(f.Remediation, "\n") {
+				fmt.Fprintf(w, "       %s\n", line)
+			}
+		}
+		if f.DocRef != "" {
+			fmt.Fprintf(w, "       See: %s\n", f.DocRef)
+		}
+	}
+}
+
 // checkContainerHostPrereqs checks host requirements for runner_mode: container (DinD).
 // The inner dockerd, dnsmasq, and iptables live inside the runner image; only the
 // outer Docker daemon and --privileged support are checked here.
@@ -493,24 +528,7 @@ func checkContainerHostPrereqs(w io.Writer, hostName string, h *host.Host, r *Re
 		return
 	}
 
-	for _, f := range failures {
-		sev := sevFail
-		if f.Severity == agentic.SeverityWarning {
-			sev = sevWarn
-			r.Warn++
-		} else {
-			r.Fail++
-		}
-		printLine(w, sev, hostName, "container: "+f.Message)
-		if f.Remediation != "" {
-			for _, line := range strings.Split(f.Remediation, "\n") {
-				fmt.Fprintf(w, "       %s\n", line)
-			}
-		}
-		if f.DocRef != "" {
-			fmt.Fprintf(w, "       See: %s\n", f.DocRef)
-		}
-	}
+	printAgenticFailures(w, hostName, r, sevFail, "container: ", failures)
 }
 
 // checkContainerRunnerInstall verifies each DinD runner container exists on the host,
@@ -591,24 +609,7 @@ func checkContainerAgenticInnerHygiene(w io.Writer, hostName string, h *host.Hos
 			printLine(w, sevOK, hostName, fmt.Sprintf("container(agent): awf installed, inner Docker clean, host.docker.internal reachable, resolv.conf pinned to dnsmasq, and AWF service-routing bypass present (%s)", cname))
 			continue
 		}
-		for _, f := range failures {
-			sev := sevWarn
-			if f.Severity == agentic.SeverityError {
-				sev = sevFail
-				r.Fail++
-			} else {
-				r.Warn++
-			}
-			printLine(w, sev, hostName, "container(agent): "+f.Message)
-			if f.Remediation != "" {
-				for _, line := range strings.Split(f.Remediation, "\n") {
-					fmt.Fprintf(w, "       %s\n", line)
-				}
-			}
-			if f.DocRef != "" {
-				fmt.Fprintf(w, "       See: %s\n", f.DocRef)
-			}
-		}
+		printAgenticFailures(w, hostName, r, sevWarn, "container(agent): ", failures)
 	}
 }
 
