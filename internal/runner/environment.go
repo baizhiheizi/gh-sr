@@ -70,19 +70,12 @@ func (e *ContainerEnvironment) Provision() error {
 	if containerRunnerPresent(e.h, e.instance) {
 		return nil
 	}
-	version, err := e.mgr.GitHub.GetLatestRunnerVersion()
+	version, arch, imageTag, err := e.mgr.resolveRunnerImageInputs(e.h)
 	if err != nil {
-		return fmt.Errorf("resolving runner version: %w", err)
+		return err
 	}
-	imageTag := ContainerRunnerImageTag(version, e.mgr.containerImageExtraApt())
-	exists, err := containerImageExists(e.h, imageTag)
-	if err != nil {
-		return fmt.Errorf("checking image: %w", err)
-	}
-	if !exists {
-		if err := buildAgenticRunnerImage(e.h, imageTag, version, archForGitHub(e.h.Arch), e.mgr.GhSrVersion, e.mgr.containerImageExtraApt()); err != nil {
-			return fmt.Errorf("building container runner image: %w", err)
-		}
+	if _, err := e.mgr.buildRunnerImageIfMissing(e.h, imageTag, version, arch, nil); err != nil {
+		return err
 	}
 	return e.mgr.createContainerInstance(e.h, e.rc, e.instanceIndex, e.instance, imageTag)
 }

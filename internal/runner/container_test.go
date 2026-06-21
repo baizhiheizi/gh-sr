@@ -1,6 +1,7 @@
 package runner
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -1339,6 +1340,67 @@ func TestSetupContainer_ensureDockerBeforeImageBuild(t *testing.T) {
 	}
 }
 
+// TestSetupContainer_emitsBuildProgressMessageWhenImageMissing pins the
+// user-visible progress line that setupContainer must emit BEFORE a multi-minute
+// Docker build when the image is absent: "building container runner image (this
+// may take several minutes)...". Regression guard for the resolveRunnerImageInputs
+// / buildRunnerImageIfMissing refactor (#228), which had to preserve this heads-up
+// via the helper's onBuild hook rather than dropping it.
+func TestSetupContainer_emitsBuildProgressMessageWhenImageMissing(t *testing.T) {
+	t.Parallel()
+	ts := httptest.NewServer(releaseHandler("v2.330.0"))
+	defer ts.Close()
+
+	var out bytes.Buffer
+	mock := &testutil.MockExecutor{RunFn: func(cmd string) (string, error) {
+		switch {
+		case strings.Contains(cmd, "docker --version"):
+			return "yes", nil
+		case strings.Contains(cmd, "docker info"):
+			return "ok", nil
+		case strings.Contains(cmd, "docker image inspect"):
+			return "no", nil // image missing → build path
+		case strings.Contains(cmd, "docker build"):
+			return "", nil
+		case strings.Contains(cmd, "docker inspect --format='{{.Name}}'"):
+			return "yes", nil
+		default:
+			return "", nil
+		}
+	}}
+	h := host.NewHost("h", config.HostConfig{Addr: "runner@vps", OS: "linux", Arch: "amd64"})
+	h.SetConn(mock)
+	m := &Manager{
+		GitHub: NewGitHubClientWithHTTP("pat", ts.Client(), ts.URL),
+		Out:    &out,
+	}
+	rc := config.RunnerConfig{
+		Name:       "aw-runner",
+		Repo:       "o/r",
+		Host:       "h",
+		Profile:    "agentic",
+		RunnerMode: config.RunnerModeContainer,
+	}
+
+	if err := m.setupContainer(h, rc); err != nil {
+		t.Fatalf("setupContainer: %v", err)
+	}
+
+	got := out.String()
+	if !strings.Contains(got, "building container runner image (this may take several minutes)") {
+		t.Errorf("expected build progress heads-up in output; got:\n%s", got)
+	}
+	if !strings.Contains(got, "image built:") {
+		t.Errorf("expected 'image built:' line in output; got:\n%s", got)
+	}
+	// Progress line must precede the completion line.
+	progressIdx := strings.Index(got, "building container runner image (this may take several minutes)")
+	builtIdx := strings.Index(got, "image built:")
+	if progressIdx < 0 || builtIdx < 0 || progressIdx > builtIdx {
+		t.Errorf("expected progress line before 'image built:'; progressIdx=%d builtIdx=%d", progressIdx, builtIdx)
+	}
+}
+
 func TestSetupContainer_propagatesDockerGroupPending(t *testing.T) {
 	t.Parallel()
 	mock := &testutil.MockExecutor{RunFn: func(cmd string) (string, error) {
@@ -1366,5 +1428,204 @@ func TestSetupContainer_propagatesDockerGroupPending(t *testing.T) {
 		if strings.Contains(c, "docker image inspect") || strings.Contains(c, "docker build") {
 			t.Fatalf("should not build image when group pending: %q", c)
 		}
+	}
+}
+
+// releaseHandler builds an httptest handler that responds to /repos/actions/runner/releases/latest
+// with the given tag. Centralized so resolveRunnerImageInputs and rebuild-related tests
+// share the same fixture.
+func releaseHandler(tag string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/repos/actions/runner/releases/latest" {
+			http.NotFound(w, r)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(releaseResponse{TagName: tag})
+	}
+}
+
+// TestManager_resolveRunnerImageInputs verifies the resolved (version, arch, imageTag)
+// triple: version comes from GitHub, arch from archForGitHub(h.Arch), imageTag from
+// ContainerRunnerImageTag(version, extraApt). This is the triplicated preamble that
+// #228 flagged across setupContainer / rebuildContainerImage / Provision.
+func TestManager_resolveRunnerImageInputs(t *testing.T) {
+	t.Parallel()
+	ts := httptest.NewServer(releaseHandler("v2.330.0"))
+	defer ts.Close()
+
+	mock := &testutil.MockExecutor{RunFn: func(cmd string) (string, error) {
+		if strings.Contains(cmd, "docker image inspect") {
+			return "yes", nil // image present so buildRunnerImageIfMissing is short-circuited
+		}
+		return "", nil
+	}}
+	h := host.NewHost("h", config.HostConfig{Addr: "runner@vps", OS: "linux", Arch: "amd64"})
+	h.SetConn(mock)
+	m := &Manager{
+		GitHub:                 NewGitHubClientWithHTTP("pat", ts.Client(), ts.URL),
+		GhSrVersion:            "1.2.3",
+		ContainerImageExtraApt: []string{"sqlite3", "ffmpeg"},
+	}
+
+	version, arch, imageTag, err := m.resolveRunnerImageInputs(h)
+	if err != nil {
+		t.Fatalf("resolveRunnerImageInputs: %v", err)
+	}
+	if version != "2.330.0" {
+		t.Errorf("version: got %q, want %q", version, "2.330.0")
+	}
+	if arch != archForGitHub("amd64") {
+		t.Errorf("arch: got %q, want %q", arch, archForGitHub("amd64"))
+	}
+	wantTag := ContainerRunnerImageTag("2.330.0", []string{"sqlite3", "ffmpeg"})
+	if imageTag != wantTag {
+		t.Errorf("imageTag: got %q, want %q", imageTag, wantTag)
+	}
+
+	// arm64 arch path.
+	h2 := host.NewHost("h", config.HostConfig{Addr: "runner@vps", OS: "linux", Arch: "arm64"})
+	h2.SetConn(mock)
+	_, arch2, _, err := m.resolveRunnerImageInputs(h2)
+	if err != nil {
+		t.Fatalf("resolveRunnerImageInputs(arm64): %v", err)
+	}
+	if arch2 != archForGitHub("arm64") {
+		t.Errorf("arch(arm64): got %q, want %q", arch2, archForGitHub("arm64"))
+	}
+}
+
+// TestManager_resolveRunnerImageInputs_propagatesVersionError verifies the helper
+// wraps a GitHub release-fetch failure as "resolving runner version: %w" — matching
+// the historical call-site error so user-visible output is unchanged.
+func TestManager_resolveRunnerImageInputs_propagatesVersionError(t *testing.T) {
+	t.Parallel()
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.NotFound(w, r)
+	}))
+	defer ts.Close()
+	h := host.NewHost("h", config.HostConfig{Addr: "runner@vps", OS: "linux", Arch: "amd64"})
+	h.SetConn(&testutil.MockExecutor{})
+	m := &Manager{GitHub: NewGitHubClientWithHTTP("pat", ts.Client(), ts.URL)}
+
+	_, _, _, err := m.resolveRunnerImageInputs(h)
+	if err == nil {
+		t.Fatal("expected error from GitHub 404, got nil")
+	}
+	if !strings.Contains(err.Error(), "resolving runner version:") {
+		t.Errorf("error should wrap with %q, got: %v", "resolving runner version:", err)
+	}
+}
+
+// TestManager_buildRunnerImageIfMissing_alreadyPresent returns built=false and does
+// not invoke the docker build path.
+func TestManager_buildRunnerImageIfMissing_alreadyPresent(t *testing.T) {
+	t.Parallel()
+	ts := httptest.NewServer(releaseHandler("v2.330.0"))
+	defer ts.Close()
+
+	mock := &testutil.MockExecutor{RunFn: func(cmd string) (string, error) {
+		if strings.Contains(cmd, "docker image inspect") {
+			return "yes", nil
+		}
+		if strings.Contains(cmd, "docker build") {
+			t.Errorf("build should not be called when image exists, got: %q", cmd)
+		}
+		return "", nil
+	}}
+	h := host.NewHost("h", config.HostConfig{Addr: "runner@vps", OS: "linux", Arch: "amd64"})
+	h.SetConn(mock)
+	m := &Manager{
+		GitHub:      NewGitHubClientWithHTTP("pat", ts.Client(), ts.URL),
+		GhSrVersion: "1.2.3",
+	}
+
+	built, err := m.buildRunnerImageIfMissing(h, "gh-sr/agentic-runner:v2.330.0-base", "2.330.0", "x64", func() {
+		t.Errorf("onBuild must not fire when image already exists")
+	})
+	if err != nil {
+		t.Fatalf("buildRunnerImageIfMissing: %v", err)
+	}
+	if built {
+		t.Errorf("built = true, want false (image already present)")
+	}
+}
+
+// TestManager_buildRunnerImageIfMissing_buildsWhenMissing returns built=true after
+// invoking the docker build path.
+func TestManager_buildRunnerImageIfMissing_buildsWhenMissing(t *testing.T) {
+	t.Parallel()
+	ts := httptest.NewServer(releaseHandler("v2.330.0"))
+	defer ts.Close()
+
+	sawBuild := false
+	onBuildBeforeBuild := false // onBuild must fire before the docker build command
+	mock := &testutil.MockExecutor{RunFn: func(cmd string) (string, error) {
+		switch {
+		case strings.Contains(cmd, "docker image inspect"):
+			return "no", nil
+		case strings.Contains(cmd, "docker build"):
+			sawBuild = true
+			return "", nil
+		}
+		return "", nil
+	}}
+	h := host.NewHost("h", config.HostConfig{Addr: "runner@vps", OS: "linux", Arch: "amd64"})
+	h.SetConn(mock)
+	m := &Manager{
+		GitHub:      NewGitHubClientWithHTTP("pat", ts.Client(), ts.URL),
+		GhSrVersion: "1.2.3",
+	}
+
+	built, err := m.buildRunnerImageIfMissing(h, "gh-sr/agentic-runner:v2.330.0-base", "2.330.0", "x64", func() {
+		onBuildBeforeBuild = !sawBuild // true only if no build command ran yet
+	})
+	if err != nil {
+		t.Fatalf("buildRunnerImageIfMissing: %v", err)
+	}
+	if !built {
+		t.Errorf("built = false, want true (image missing → build invoked)")
+	}
+	if !sawBuild {
+		t.Errorf("docker build was never invoked")
+	}
+	if !onBuildBeforeBuild {
+		t.Errorf("onBuild did not fire before the docker build command")
+	}
+}
+
+// TestManager_buildRunnerImageIfMissing_buildErrorWrapsMessage verifies the docker
+// build failure is wrapped as "building container runner image: %w" — matching the
+// historical call-site message so user-visible error output is unchanged.
+func TestManager_buildRunnerImageIfMissing_buildErrorWrapsMessage(t *testing.T) {
+	t.Parallel()
+	sentinel := errors.New("docker build failed")
+	mock := &testutil.MockExecutor{RunFn: func(cmd string) (string, error) {
+		switch {
+		case strings.Contains(cmd, "docker image inspect"):
+			return "no", nil // image missing → we proceed to build
+		case strings.Contains(cmd, "docker build"):
+			return "", sentinel
+		}
+		return "", nil
+	}}
+	h := host.NewHost("h", config.HostConfig{Addr: "runner@vps", OS: "linux", Arch: "amd64"})
+	h.SetConn(mock)
+	m := &Manager{
+		GitHub:      NewGitHubClient("pat"),
+		GhSrVersion: "1.2.3",
+	}
+
+	built, err := m.buildRunnerImageIfMissing(h, "gh-sr/agentic-runner:2.330.0-base", "2.330.0", "x64", nil)
+	if err == nil {
+		t.Fatal("expected error from docker build failure, got nil")
+	}
+	if built {
+		t.Errorf("built = true on error, want false")
+	}
+	if !strings.Contains(err.Error(), "building container runner image:") {
+		t.Errorf("error should wrap with %q, got: %v", "building container runner image:", err)
+	}
+	if !errors.Is(err, sentinel) {
+		t.Errorf("error should wrap sentinel via %%w, got: %v", err)
 	}
 }
