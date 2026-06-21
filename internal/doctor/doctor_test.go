@@ -33,42 +33,63 @@ func TestExitCode(t *testing.T) {
 	}
 }
 
-func TestUniqueRepos(t *testing.T) {
+func TestUniqueStringsBy(t *testing.T) {
 	t.Parallel()
-	runners := []config.RunnerConfig{
-		{Repo: "z/z", Host: "a"},
-		{Repo: "a/b", Host: "a"},
-		{Repo: "a/b", Host: "b"},
-	}
-	got := uniqueRepos(runners)
-	want := []string{"a/b", "z/z"}
-	if len(got) != len(want) {
-		t.Fatalf("len %d, want %d", len(got), len(want))
-	}
-	for i := range want {
-		if got[i] != want[i] {
+	t.Run("ReposKeyed", func(t *testing.T) {
+		t.Parallel()
+		runners := []config.RunnerConfig{
+			{Repo: "z/z", Host: "a"},
+			{Repo: "a/b", Host: "a"},
+			{Repo: "a/b", Host: "b"},
+		}
+		got := uniqueStringsBy(runners, func(rc config.RunnerConfig) string { return rc.Repo })
+		want := []string{"a/b", "z/z"}
+		if len(got) != len(want) {
+			t.Fatalf("len %d, want %d", len(got), len(want))
+		}
+		for i := range want {
+			if got[i] != want[i] {
+				t.Fatalf("got %v, want %v", got, want)
+			}
+		}
+	})
+	t.Run("HostNamesKeyedSorted", func(t *testing.T) {
+		t.Parallel()
+		runners := []config.RunnerConfig{
+			{Host: "beta", Repo: "o/r"},
+			{Host: "alpha", Repo: "o/r"},
+			{Host: "beta", Repo: "o/r2"},
+		}
+		got := uniqueStringsBy(runners, func(rc config.RunnerConfig) string { return rc.Host })
+		want := []string{"alpha", "beta"}
+		if len(got) != len(want) {
+			t.Fatalf("got %v", got)
+		}
+		for i := range want {
+			if got[i] != want[i] {
+				t.Fatalf("got %v, want %v", got, want)
+			}
+		}
+	})
+	t.Run("SkipsEmptyKey", func(t *testing.T) {
+		t.Parallel()
+		// Verify the asymmetry fix: empty host names (and empty repos/orgs)
+		// are now skipped uniformly across all three call sites.
+		runners := []config.RunnerConfig{
+			{Host: "alpha", Repo: "o/r"},
+			{Host: "", Repo: "o/r"},
+			{Host: "alpha", Repo: ""},
+		}
+		got := uniqueStringsBy(runners, func(rc config.RunnerConfig) string { return rc.Host })
+		want := []string{"alpha"}
+		if len(got) != len(want) || got[0] != want[0] {
 			t.Fatalf("got %v, want %v", got, want)
 		}
-	}
-}
-
-func TestUniqueHostNames(t *testing.T) {
-	t.Parallel()
-	runners := []config.RunnerConfig{
-		{Host: "beta", Repo: "o/r"},
-		{Host: "alpha", Repo: "o/r"},
-		{Host: "beta", Repo: "o/r2"},
-	}
-	got := uniqueHostNames(runners)
-	want := []string{"alpha", "beta"}
-	if len(got) != len(want) {
-		t.Fatalf("got %v", got)
-	}
-	for i := range want {
-		if got[i] != want[i] {
-			t.Fatalf("got %v, want %v", got, want)
+		gotRepos := uniqueStringsBy(runners, func(rc config.RunnerConfig) string { return rc.Repo })
+		if len(gotRepos) != 1 || gotRepos[0] != "o/r" {
+			t.Fatalf("repos: got %v, want [o/r]", gotRepos)
 		}
-	}
+	})
 }
 
 func TestEnsureDoctorHostOS_LocalFillsRuntimeGOOS(t *testing.T) {
@@ -82,73 +103,107 @@ func TestEnsureDoctorHostOS_LocalFillsRuntimeGOOS(t *testing.T) {
 	}
 }
 
-func TestNativeInstallTargetsForHost(t *testing.T) {
+func TestInstallTargetsForHost(t *testing.T) {
 	t.Parallel()
-	runners := []config.RunnerConfig{
-		{Name: "a", Host: "h1", Repo: "o/r", Count: 2},
-		{Name: "b", Host: "h2", Repo: "o/r", Count: 1},
-	}
-	got := nativeInstallTargetsForHost(runners, "h1")
-	want := [][2]string{{"a-1", "a"}, {"a-2", "a"}}
-	if len(got) != len(want) {
-		t.Fatalf("len %d, want %d: %#v", len(got), len(want), got)
-	}
-	for i := range want {
-		if got[i][0] != want[i][0] || got[i][1] != want[i][1] {
-			t.Fatalf("idx %d: got %#v want %#v", i, got[i], want[i])
+	native := func(rc *config.RunnerConfig) bool { return !rc.IsContainerMode() }
+	container := func(rc *config.RunnerConfig) bool { return rc.IsContainerMode() }
+	agentic := func(rc *config.RunnerConfig) bool { return rc.IsAgentic() }
+
+	t.Run("NativeMode", func(t *testing.T) {
+		t.Parallel()
+		runners := []config.RunnerConfig{
+			{Name: "a", Host: "h1", Repo: "o/r", Count: 2},
+			{Name: "b", Host: "h2", Repo: "o/r", Count: 1},
 		}
-	}
-	if len(nativeInstallTargetsForHost(runners, "h2")) != 1 {
-		t.Fatalf("h2 should have one target")
-	}
-
-	mixed := []config.RunnerConfig{
-		{Name: "native", Host: "hx", Repo: "o/r", Count: 1},
-		{Name: "din", Host: "hx", Repo: "o/r", Count: 1, RunnerMode: config.RunnerModeContainer},
-	}
-	gotN := nativeInstallTargetsForHost(mixed, "hx")
-	if len(gotN) != 1 || gotN[0][0] != "native-1" {
-		t.Fatalf("native targets should exclude container mode: %#v", gotN)
-	}
-}
-
-func TestContainerInstallTargetsForHost(t *testing.T) {
-	t.Parallel()
-	runners := []config.RunnerConfig{
-		{Name: "n", Host: "h1", Repo: "o/r", Count: 1},
-		{Name: "c", Host: "h1", Repo: "o/r", Count: 2, RunnerMode: config.RunnerModeContainer},
-	}
-	got := containerInstallTargetsForHost(runners, "h1")
-	want := [][2]string{{"c-1", "c"}, {"c-2", "c"}}
-	if len(got) != len(want) {
-		t.Fatalf("len %d want %d: %#v", len(got), len(want), got)
-	}
-	for i := range want {
-		if got[i][0] != want[i][0] || got[i][1] != want[i][1] {
-			t.Fatalf("idx %d: got %#v want %#v", i, got[i], want[i])
+		got := installTargetsForHost(runners, "h1", native)
+		want := [][2]string{{"a-1", "a"}, {"a-2", "a"}}
+		if len(got) != len(want) {
+			t.Fatalf("len %d, want %d: %#v", len(got), len(want), got)
 		}
-	}
-}
+		for i := range want {
+			if got[i][0] != want[i][0] || got[i][1] != want[i][1] {
+				t.Fatalf("idx %d: got %#v want %#v", i, got[i], want[i])
+			}
+		}
+		if len(installTargetsForHost(runners, "h2", native)) != 1 {
+			t.Fatalf("h2 should have one target")
+		}
 
-func TestContainerAgenticInstallTargetsForHost(t *testing.T) {
-	t.Parallel()
-	runners := []config.RunnerConfig{
-		{Name: "ci", Host: "h1", Repo: "o/r", Count: 1, RunnerMode: config.RunnerModeContainer},
-		{Name: "ag", Host: "h1", Repo: "o/r", Count: 1, RunnerMode: config.RunnerModeContainer, Profile: "agentic"},
-	}
-	got := containerAgenticInstallTargetsForHost(runners, "h1")
-	if len(got) != 1 || got[0][0] != "ag-1" || got[0][1] != "ag" {
-		t.Fatalf("want single agentic container instance, got %#v", got)
-	}
+		mixed := []config.RunnerConfig{
+			{Name: "native", Host: "hx", Repo: "o/r", Count: 1},
+			{Name: "din", Host: "hx", Repo: "o/r", Count: 1, RunnerMode: config.RunnerModeContainer},
+		}
+		gotN := installTargetsForHost(mixed, "hx", native)
+		if len(gotN) != 1 || gotN[0][0] != "native-1" {
+			t.Fatalf("native targets should exclude container mode: %#v", gotN)
+		}
+	})
 
-	// profile: agentic alone implies container mode (no explicit runner_mode).
-	implicit := []config.RunnerConfig{
-		{Name: "aw", Host: "h1", Repo: "o/r", Count: 1, Profile: "agentic"},
-	}
-	gotImplicit := containerAgenticInstallTargetsForHost(implicit, "h1")
-	if len(gotImplicit) != 1 || gotImplicit[0][0] != "aw-1" {
-		t.Fatalf("profile: agentic should resolve to container agentic target, got %#v", gotImplicit)
-	}
+	t.Run("ContainerMode", func(t *testing.T) {
+		t.Parallel()
+		runners := []config.RunnerConfig{
+			{Name: "n", Host: "h1", Repo: "o/r", Count: 1},
+			{Name: "c", Host: "h1", Repo: "o/r", Count: 2, RunnerMode: config.RunnerModeContainer},
+		}
+		got := installTargetsForHost(runners, "h1", container)
+		want := [][2]string{{"c-1", "c"}, {"c-2", "c"}}
+		if len(got) != len(want) {
+			t.Fatalf("len %d want %d: %#v", len(got), len(want), got)
+		}
+		for i := range want {
+			if got[i][0] != want[i][0] || got[i][1] != want[i][1] {
+				t.Fatalf("idx %d: got %#v want %#v", i, got[i], want[i])
+			}
+		}
+	})
+
+	t.Run("Agentic", func(t *testing.T) {
+		t.Parallel()
+		runners := []config.RunnerConfig{
+			{Name: "ci", Host: "h1", Repo: "o/r", Count: 1, RunnerMode: config.RunnerModeContainer},
+			{Name: "ag", Host: "h1", Repo: "o/r", Count: 1, RunnerMode: config.RunnerModeContainer, Profile: "agentic"},
+		}
+		got := installTargetsForHost(runners, "h1", agentic)
+		if len(got) != 1 || got[0][0] != "ag-1" || got[0][1] != "ag" {
+			t.Fatalf("want single agentic container instance, got %#v", got)
+		}
+
+		// profile: agentic alone implies container mode (no explicit runner_mode).
+		implicit := []config.RunnerConfig{
+			{Name: "aw", Host: "h1", Repo: "o/r", Count: 1, Profile: "agentic"},
+		}
+		gotImplicit := installTargetsForHost(implicit, "h1", agentic)
+		if len(gotImplicit) != 1 || gotImplicit[0][0] != "aw-1" {
+			t.Fatalf("profile: agentic should resolve to container agentic target, got %#v", gotImplicit)
+		}
+	})
+
+	t.Run("PredicateReceivesPointer", func(t *testing.T) {
+		t.Parallel()
+		// Pins the predicate signature: callers receive a pointer so they can
+		// safely call pointer-receiver methods on RunnerConfig.
+		var got *config.RunnerConfig
+		runners := []config.RunnerConfig{
+			{Name: "a", Host: "h1", Repo: "o/r", Count: 1},
+		}
+		installTargetsForHost(runners, "h1", func(rc *config.RunnerConfig) bool {
+			got = rc
+			return true
+		})
+		if got == nil || got.Name != "a" {
+			t.Fatalf("predicate should receive a pointer to the runner, got %#v", got)
+		}
+	})
+
+	t.Run("EmptyHostReturnsNil", func(t *testing.T) {
+		t.Parallel()
+		runners := []config.RunnerConfig{
+			{Name: "a", Host: "h1", Repo: "o/r", Count: 1},
+		}
+		if got := installTargetsForHost(runners, "h2", native); len(got) != 0 {
+			t.Fatalf("host mismatch should return empty slice, got %#v", got)
+		}
+	})
 }
 
 func TestRunnersForHost(t *testing.T) {

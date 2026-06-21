@@ -108,8 +108,8 @@ func Run(w io.Writer, cfgPath, envPath string, cfg *config.Config, cfgErr error,
 		printLine(w, sevFail, "github", "skipped: no GitHub token (run `gh auth login`)")
 		r.Fail++
 	} else {
-		repos := uniqueRepos(runners)
-		orgs := uniqueOrgs(runners)
+		repos := uniqueStringsBy(runners, func(rc config.RunnerConfig) string { return rc.Repo })
+		orgs := uniqueStringsBy(runners, func(rc config.RunnerConfig) string { return rc.Org })
 
 		type apiResult struct {
 			sev string
@@ -160,7 +160,7 @@ func Run(w io.Writer, cfgPath, envPath string, cfg *config.Config, cfgErr error,
 	}
 
 	fmt.Fprintln(w, "\n=== Hosts ===")
-	hostOrder := uniqueHostNames(runners)
+	hostOrder := uniqueStringsBy(runners, func(rc config.RunnerConfig) string { return rc.Host })
 
 	type hostResult struct {
 		buf bytes.Buffer
@@ -244,31 +244,21 @@ func ensureDoctorHostOS(h *host.Host, addr string) error {
 	return nil
 }
 
-func uniqueRepos(runners []config.RunnerConfig) []string {
+// uniqueStringsBy returns a sorted, deduplicated list of the strings produced
+// by applying key to each runner. Empty keys are skipped so callers don't
+// need a guard for the absent-Repo / absent-Org case.
+func uniqueStringsBy(runners []config.RunnerConfig, key func(config.RunnerConfig) string) []string {
 	seen := make(map[string]struct{})
 	for _, rc := range runners {
-		if rc.Repo != "" {
-			seen[rc.Repo] = struct{}{}
+		k := key(rc)
+		if k == "" {
+			continue
 		}
+		seen[k] = struct{}{}
 	}
 	out := make([]string, 0, len(seen))
-	for repo := range seen {
-		out = append(out, repo)
-	}
-	sort.Strings(out)
-	return out
-}
-
-func uniqueOrgs(runners []config.RunnerConfig) []string {
-	seen := make(map[string]struct{})
-	for _, rc := range runners {
-		if rc.Org != "" {
-			seen[rc.Org] = struct{}{}
-		}
-	}
-	out := make([]string, 0, len(seen))
-	for org := range seen {
-		out = append(out, org)
+	for v := range seen {
+		out = append(out, v)
 	}
 	sort.Strings(out)
 	return out
@@ -288,52 +278,15 @@ func formatOrgAPIError(org string, err error) string {
 	return msg
 }
 
-func uniqueHostNames(runners []config.RunnerConfig) []string {
-	seen := make(map[string]struct{})
-	for _, rc := range runners {
-		seen[rc.Host] = struct{}{}
-	}
-	out := make([]string, 0, len(seen))
-	for name := range seen {
-		out = append(out, name)
-	}
-	sort.Strings(out)
-	return out
-}
-
-// nativeInstallTargetsForHost lists (instanceName, runnerConfigName) for native-mode runners on hostName.
-func nativeInstallTargetsForHost(runners []config.RunnerConfig, hostName string) [][2]string {
+// installTargetsForHost lists (instanceName, runnerConfigName) pairs for
+// runners on hostName that satisfy predicate. The predicate is the single
+// place the caller expresses mode/profile policy (native vs container vs
+// container+agentic vs any future bucket).
+func installTargetsForHost(runners []config.RunnerConfig, hostName string, predicate func(*config.RunnerConfig) bool) [][2]string {
 	var out [][2]string
-	for _, rc := range runners {
-		if rc.Host != hostName || rc.IsContainerMode() {
-			continue
-		}
-		for _, inst := range rc.InstanceNames() {
-			out = append(out, [2]string{inst, rc.Name})
-		}
-	}
-	return out
-}
-
-// containerInstallTargetsForHost lists (instanceName, runnerConfigName) for container-mode runners on hostName.
-func containerInstallTargetsForHost(runners []config.RunnerConfig, hostName string) [][2]string {
-	var out [][2]string
-	for _, rc := range runners {
-		if rc.Host != hostName || !rc.IsContainerMode() {
-			continue
-		}
-		for _, inst := range rc.InstanceNames() {
-			out = append(out, [2]string{inst, rc.Name})
-		}
-	}
-	return out
-}
-
-// containerAgenticInstallTargetsForHost lists container-mode instances that use profile: agentic.
-func containerAgenticInstallTargetsForHost(runners []config.RunnerConfig, hostName string) [][2]string {
-	var out [][2]string
-	for _, rc := range runners {
-		if rc.Host != hostName || !rc.IsContainerMode() || !rc.IsAgentic() {
+	for i := range runners {
+		rc := &runners[i]
+		if rc.Host != hostName || !predicate(rc) {
 			continue
 		}
 		for _, inst := range rc.InstanceNames() {
@@ -399,7 +352,7 @@ func runHostChecks(w io.Writer, hostName string, h *host.Host, runners []config.
 }
 
 func checkNativeRunnerInstall(w io.Writer, hostName string, h *host.Host, runners []config.RunnerConfig, r *Result) {
-	for _, pair := range nativeInstallTargetsForHost(runners, hostName) {
+	for _, pair := range installTargetsForHost(runners, hostName, func(rc *config.RunnerConfig) bool { return !rc.IsContainerMode() }) {
 		inst, runnerName := pair[0], pair[1]
 		dir := h.RunnerDir(inst)
 		ok, err := runner.NativeRunnerConfigPresent(h, inst)
@@ -516,7 +469,7 @@ func checkContainerHostPrereqs(w io.Writer, hostName string, h *host.Host, r *Re
 // checkContainerRunnerInstall verifies each DinD runner container exists on the host,
 // is running (warn otherwise), inner dockerd responds, and .runner is present inside the image path.
 func checkContainerRunnerInstall(w io.Writer, hostName string, h *host.Host, runners []config.RunnerConfig, r *Result) {
-	for _, pair := range containerInstallTargetsForHost(runners, hostName) {
+	for _, pair := range installTargetsForHost(runners, hostName, func(rc *config.RunnerConfig) bool { return rc.IsContainerMode() }) {
 		inst, runnerName := pair[0], pair[1]
 		cname := runner.ContainerDockerName(inst)
 		q := strconv.Quote(cname)
@@ -561,7 +514,7 @@ func checkContainerRunnerInstall(w io.Writer, hostName string, h *host.Host, run
 
 // checkContainerAgenticInnerHygiene runs AWF orphan and network checks against the inner Docker in each running DinD agentic runner.
 func checkContainerAgenticInnerHygiene(w io.Writer, hostName string, h *host.Host, runners []config.RunnerConfig, r *Result) {
-	targets := containerAgenticInstallTargetsForHost(runners, hostName)
+	targets := installTargetsForHost(runners, hostName, func(rc *config.RunnerConfig) bool { return rc.IsAgentic() })
 	if len(targets) == 0 {
 		return
 	}
