@@ -1,0 +1,27 @@
+{
+  "cli_version": "dev",
+  "checkpoint_id": "ad0476e16eba",
+  "strategy": "manual-commit",
+  "branch": "repo-assist/improve-image-preamble-2026-06-20-9d8af7664b89b51a",
+  "checkpoints_count": 0,
+  "files_touched": [
+    "internal/runner/container.go",
+    "internal/runner/container_test.go",
+    "internal/runner/environment.go"
+  ],
+  "sessions": [
+    {
+      "metadata": "/ad/0476e16eba/0/metadata.json",
+      "transcript": "/ad/0476e16eba/0/full.jsonl",
+      "content_hash": "/ad/0476e16eba/0/content_hash.txt",
+      "prompt": "/ad/0476e16eba/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 68560,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 2950976,
+    "output_tokens": 16301,
+    "api_call_count": 41
+  }
+}

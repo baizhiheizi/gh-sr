@@ -1,0 +1,1 @@
+/review review all open PRs one by one, leave your review comments. Then fix any issues you find then merge them. Or close it if it's stale.
