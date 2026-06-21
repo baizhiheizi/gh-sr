@@ -3,6 +3,7 @@ package runner
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/an-lee/gh-sr/internal/autostart"
 	"github.com/an-lee/gh-sr/internal/config"
@@ -130,6 +131,49 @@ func windowsNativeConfigScript(h *host.Host, rc config.RunnerConfig, instanceNam
 // server-side registration has been deleted (auto-pruned after inactivity).
 const staleRegistrationMsg = "runner registration has been deleted from the server"
 
+// staleRegistrationWarmup is the time the post-start probe waits for the runner
+// process to either stay alive (healthy) or exit, before it greps runner.log for the
+// stale-registration message. Centralised so a future tuning change is one line, not
+// a search-and-replace across the Windows and POSIX probe snippets.
+const staleRegistrationWarmup = 5 * time.Second
+
+// staleRegistrationScript returns a single-line shell snippet (PowerShell on Windows,
+// POSIX sh on Linux/macOS) that waits staleRegistrationWarmup, then reports whether
+// the runner's registration has been auto-pruned on the GitHub side. The snippet
+// writes "stale" to stdout if the runner process exited AND runner.log contains
+// staleRegistrationMsg, otherwise "ok". Callers compare stdout to "stale" to decide
+// whether to re-configure.
+//
+// Co-locating both OS shapes in one helper means a future change to the detection
+// rule (different sleep, different log-line pattern, different "alive" check) is one
+// edit instead of a two-edit hazard across OSes.
+func staleRegistrationScript(h *host.Host, instanceName string) string {
+	if h.OS == "windows" {
+		return fmt.Sprintf(
+			"%s; $pidFile = Join-Path $runnerDir '.runner_pid'; "+
+				"$logFile = Join-Path $runnerDir 'runner.log'; "+
+				"Start-Sleep -Seconds %d; "+
+				"$pid = Get-Content $pidFile -EA SilentlyContinue; "+
+				"$alive = $false; if ($pid) { try { Get-Process -Id $pid -EA Stop | Out-Null; $alive = $true } catch {} }; "+
+				"if ($alive) { Write-Host 'ok' } "+
+				"elseif ((Test-Path $logFile) -and (Select-String -Path $logFile -Pattern %s -Quiet)) { Write-Host 'stale' } "+
+				"else { Write-Host 'ok' }",
+			windowsRunnerDirAssignment(h, instanceName),
+			int(staleRegistrationWarmup.Seconds()),
+			hostshell.PowerShellSingleQuote(staleRegistrationMsg),
+		)
+	}
+	dir := h.RunnerDir(instanceName)
+	return fmt.Sprintf(
+		`sleep %d && cd %s && pid=$(cat .runner_pid 2>/dev/null) && `+
+			`if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then echo ok; `+
+			`elif grep -q %q runner.log 2>/dev/null; then echo stale; `+
+			`else echo ok; fi`,
+		int(staleRegistrationWarmup.Seconds()),
+		dir, staleRegistrationMsg,
+	)
+}
+
 func windowsNativeStartScript(h *host.Host, instanceName string) string {
 	// Win32-OpenSSH tears down the session job on disconnect, killing Start-Process children.
 	// Win32_Process.Create starts outside that job so the listener survives after gh sr closes SSH.
@@ -150,24 +194,6 @@ func windowsNativeStartScript(h *host.Host, instanceName string) string {
 		`Write-Host ('started PID ' + $cim.ProcessId)`,
 	}
 	return strings.Join(parts, "")
-}
-
-// windowsCheckStaleRegistration returns a PowerShell snippet that waits briefly for the
-// runner process to either stay alive (healthy) or exit, then checks runner.log for the
-// stale-registration message. It writes "stale" to stdout if detected, "ok" otherwise.
-func windowsCheckStaleRegistration(h *host.Host, instanceName string) string {
-	return fmt.Sprintf(
-		"%s; $pidFile = Join-Path $runnerDir '.runner_pid'; "+
-			"$logFile = Join-Path $runnerDir 'runner.log'; "+
-			"Start-Sleep -Seconds 5; "+
-			"$pid = Get-Content $pidFile -EA SilentlyContinue; "+
-			"$alive = $false; if ($pid) { try { Get-Process -Id $pid -EA Stop | Out-Null; $alive = $true } catch {} }; "+
-			"if ($alive) { Write-Host 'ok' } "+
-			"elseif ((Test-Path $logFile) -and (Select-String -Path $logFile -Pattern %s -Quiet)) { Write-Host 'stale' } "+
-			"else { Write-Host 'ok' }",
-		windowsRunnerDirAssignment(h, instanceName),
-		hostshell.PowerShellSingleQuote(staleRegistrationMsg),
-	)
 }
 
 // windowsDeleteRunnerConfig removes the .runner file so setupNative will re-configure.
@@ -352,7 +378,7 @@ func (m *Manager) startNativeOnce(h *host.Host, rc config.RunnerConfig, instance
 
 		if retryOnStale {
 			fmt.Fprintf(m.out(), "  %s: waiting for runner to initialize...\n", instanceName)
-			checkOut, _ := h.RunShell(windowsCheckStaleRegistration(h, instanceName))
+			checkOut, _ := h.RunShell(staleRegistrationScript(h, instanceName))
 			if strings.TrimSpace(checkOut) == "stale" {
 				return m.handleStaleRegistration(h, rc, instanceName)
 			}
@@ -375,14 +401,7 @@ func (m *Manager) startNativeOnce(h *host.Host, rc config.RunnerConfig, instance
 
 	if retryOnStale {
 		fmt.Fprintf(m.out(), "  %s: waiting for runner to initialize...\n", instanceName)
-		checkCmd := fmt.Sprintf(
-			`sleep 5 && cd %s && pid=$(cat .runner_pid 2>/dev/null) && `+
-				`if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then echo ok; `+
-				`elif grep -q %q runner.log 2>/dev/null; then echo stale; `+
-				`else echo ok; fi`,
-			dir, staleRegistrationMsg,
-		)
-		checkOut, _ := h.Run(checkCmd)
+		checkOut, _ := h.Run(staleRegistrationScript(h, instanceName))
 		if strings.TrimSpace(checkOut) == "stale" {
 			return m.handleStaleRegistration(h, rc, instanceName)
 		}
