@@ -25,11 +25,7 @@ func ServiceInstall(w io.Writer, cfg *config.Config, filterHost, filterRepo stri
 		if system && hcfg.OS != "linux" {
 			return fmt.Errorf("--system applies only to Linux hosts (host %q is %s)", rc.Host, hcfg.OS)
 		}
-		if config.IsLocalAddr(hcfg.Addr) {
-			fmt.Fprintf(w, "Autostart for %s on %s (local)...\n", rc.Name, rc.Host)
-		} else {
-			fmt.Fprintf(w, "Autostart for %s on %s (%s)...\n", rc.Name, rc.Host, hcfg.Addr)
-		}
+		writeHostBanner(w, fmt.Sprintf("Autostart for %s on %s", rc.Name, rc.Host), hcfg.Addr)
 		for _, inst := range rc.InstanceNames() {
 			ok, err := runner.NativeRunnerConfigPresent(h, inst)
 			if err != nil {
@@ -59,11 +55,7 @@ func ServiceUninstall(w io.Writer, cfg *config.Config, filterHost, filterRepo st
 			fmt.Fprintf(w, "Skipping autostart removal for %s on %s (runner_mode: container)\n", rc.Name, rc.Host)
 			return nil
 		}
-		if config.IsLocalAddr(hcfg.Addr) {
-			fmt.Fprintf(w, "Removing autostart for %s on %s (local)...\n", rc.Name, rc.Host)
-		} else {
-			fmt.Fprintf(w, "Removing autostart for %s on %s (%s)...\n", rc.Name, rc.Host, hcfg.Addr)
-		}
+		writeHostBanner(w, fmt.Sprintf("Removing autostart for %s on %s", rc.Name, rc.Host), hcfg.Addr)
 		for _, inst := range rc.InstanceNames() {
 			kind, err := autostart.Detect(h, inst)
 			if err != nil {
@@ -120,11 +112,7 @@ func ServiceCleanup(w io.Writer, cfg *config.Config, filterHost string, dryRun b
 	var orphanCount, autostartCount, dirCount int
 	for _, name := range names {
 		hcfg := cfg.Hosts[name]
-		if config.IsLocalAddr(hcfg.Addr) {
-			fmt.Fprintf(w, "Checking orphan runners on %s (local)...\n", name)
-		} else {
-			fmt.Fprintf(w, "Checking orphan runners on %s (%s)...\n", name, hcfg.Addr)
-		}
+		writeHostBanner(w, "Checking orphan runners on "+name, hcfg.Addr)
 		h, err := connectHostFn(name, hcfg)
 		if err != nil {
 			return fmt.Errorf("%s: connect: %w", name, err)

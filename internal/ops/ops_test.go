@@ -2,12 +2,64 @@ package ops
 
 import (
 	"bytes"
+	"fmt"
+	"strings"
 	"sync"
 	"testing"
 
 	"github.com/an-lee/gh-sr/internal/config"
 	"github.com/an-lee/gh-sr/internal/runner"
 )
+
+func TestWriteHostBanner(t *testing.T) {
+	t.Parallel()
+
+	t.Run("local address renders (local) suffix", func(t *testing.T) {
+		t.Parallel()
+		var buf bytes.Buffer
+		writeHostBanner(&buf, "Setting up on h1", "local")
+		if got, want := buf.String(), "Setting up on h1 (local)...\n"; got != want {
+			t.Errorf("got %q, want %q", got, want)
+		}
+	})
+
+	t.Run("remote address renders (<addr>) suffix", func(t *testing.T) {
+		t.Parallel()
+		var buf bytes.Buffer
+		writeHostBanner(&buf, "Setting up on h1", "runner@box.example")
+		if got, want := buf.String(), "Setting up on h1 (runner@box.example)...\n"; got != want {
+			t.Errorf("got %q, want %q", got, want)
+		}
+	})
+
+	t.Run("Local address (case-insensitive) renders (local) suffix", func(t *testing.T) {
+		t.Parallel()
+		var buf bytes.Buffer
+		writeHostBanner(&buf, "Autostart for ci on h1", "Local")
+		if !strings.Contains(buf.String(), "(local)") {
+			t.Errorf("expected (local) suffix, got %q", buf.String())
+		}
+	})
+
+	t.Run("prefix with verb+args renders uniformly", func(t *testing.T) {
+		t.Parallel()
+		// Mirrors the "Removing %s from %s" call site shape.
+		var buf bytes.Buffer
+		writeHostBanner(&buf, fmt.Sprintf("Removing %s from %s", "ci", "h1"), "runner@box.example")
+		if got, want := buf.String(), "Removing ci from h1 (runner@box.example)...\n"; got != want {
+			t.Errorf("got %q, want %q", got, want)
+		}
+	})
+
+	t.Run("empty prefix still emits the suffix", func(t *testing.T) {
+		t.Parallel()
+		var buf bytes.Buffer
+		writeHostBanner(&buf, "", "local")
+		if got, want := buf.String(), " (local)...\n"; got != want {
+			t.Errorf("got %q, want %q", got, want)
+		}
+	})
+}
 
 func TestGroupRunnersByHost(t *testing.T) {
 	t.Parallel()

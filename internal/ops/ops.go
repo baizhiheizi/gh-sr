@@ -38,6 +38,18 @@ func (lw *lockedWriter) Write(p []byte) (int, error) {
 	return lw.w.Write(p)
 }
 
+// writeHostBanner writes "<prefix> (local)..." or "<prefix> (<addr>)..." to w.
+// Callers compose `prefix` with whatever verb/object they need (e.g.
+// "Setting up on h1" or "Autostart for ci on h1"); the helper handles the
+// local-vs-SSH suffix so the wording stays uniform across orchestrators.
+func writeHostBanner(w io.Writer, prefix, addr string) {
+	if config.IsLocalAddr(addr) {
+		fmt.Fprintf(w, "%s (local)...\n", prefix)
+	} else {
+		fmt.Fprintf(w, "%s (%s)...\n", prefix, addr)
+	}
+}
+
 // hostGroup bundles runners that share the same host, preserving the order
 // in which they were discovered. Callers use this to issue a single SSH
 // connection per host and process that host's runners sequentially on it.
@@ -166,11 +178,7 @@ func Setup(w io.Writer, cfg *config.Config, mgr *runner.Manager, filterHost, fil
 		hostsDone[rc.Host] = true
 		hcfg := cfg.Hosts[rc.Host]
 
-		if config.IsLocalAddr(hcfg.Addr) {
-			fmt.Fprintf(w, "Setting up on %s (local)...\n", rc.Host)
-		} else {
-			fmt.Fprintf(w, "Setting up on %s (%s)...\n", rc.Host, hcfg.Addr)
-		}
+		writeHostBanner(w, "Setting up on "+rc.Host, hcfg.Addr)
 		if err := setupHost(w, cfg, mgr, rc); err != nil {
 			return err
 		}
@@ -323,11 +331,7 @@ func Remove(w io.Writer, cfg *config.Config, mgr *runner.Manager, filterHost, fi
 
 	for _, rc := range runners {
 		hcfg := cfg.Hosts[rc.Host]
-		if config.IsLocalAddr(hcfg.Addr) {
-			fmt.Fprintf(w, "Removing %s from %s (local)...\n", rc.Name, rc.Host)
-		} else {
-			fmt.Fprintf(w, "Removing %s from %s (%s)...\n", rc.Name, rc.Host, hcfg.Addr)
-		}
+		writeHostBanner(w, fmt.Sprintf("Removing %s from %s", rc.Name, rc.Host), hcfg.Addr)
 		if err := removeHost(w, cfg, mgr, cfgPath, rc); err != nil {
 			return err
 		}
