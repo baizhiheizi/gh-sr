@@ -74,7 +74,7 @@ func (e *ContainerEnvironment) Provision() error {
 	if err != nil {
 		return err
 	}
-	if _, err := e.mgr.buildRunnerImageIfMissing(e.h, imageTag, version, arch); err != nil {
+	if _, err := e.mgr.buildRunnerImageIfMissing(e.h, imageTag, version, arch, nil); err != nil {
 		return err
 	}
 	return e.mgr.createContainerInstance(e.h, e.rc, e.instanceIndex, e.instance, imageTag)

@@ -178,7 +178,9 @@ func (m *Manager) setupContainer(h *host.Host, rc config.RunnerConfig) error {
 
 	fmt.Fprintf(m.out(), "  %s: checking container runner image %s...\n", rc.Name, imageTag)
 
-	built, err := m.buildRunnerImageIfMissing(h, imageTag, version, arch)
+	built, err := m.buildRunnerImageIfMissing(h, imageTag, version, arch, func() {
+		fmt.Fprintf(m.out(), "  %s: building container runner image (this may take several minutes)...\n", rc.Name)
+	})
 	if err != nil {
 		return err
 	}
@@ -664,13 +666,22 @@ func (m *Manager) resolveRunnerImageInputs(h *host.Host) (version, arch, imageTa
 // image. Error wrapping matches the historical call-site messages
 // ("checking image: %w" / "building container runner image: %w") so user-visible
 // error output is unchanged.
-func (m *Manager) buildRunnerImageIfMissing(h *host.Host, imageTag, version, arch string) (built bool, err error) {
+//
+// onBuild, when non-nil, is invoked immediately before buildAgenticRunnerImage
+// runs, so the caller can emit its own progress line (e.g. setupContainer's
+// "building container runner image (this may take several minutes)..." heads-up
+// for a multi-minute build). Provision passes nil to stay silent, matching its
+// historical behavior.
+func (m *Manager) buildRunnerImageIfMissing(h *host.Host, imageTag, version, arch string, onBuild func()) (built bool, err error) {
 	exists, err := containerImageExists(h, imageTag)
 	if err != nil {
 		return false, fmt.Errorf("checking image: %w", err)
 	}
 	if exists {
 		return false, nil
+	}
+	if onBuild != nil {
+		onBuild()
 	}
 	if err := buildAgenticRunnerImage(h, imageTag, version, arch, m.GhSrVersion, m.containerImageExtraApt()); err != nil {
 		return false, fmt.Errorf("building container runner image: %w", err)

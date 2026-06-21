@@ -1,6 +1,7 @@
 package runner
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -1339,6 +1340,67 @@ func TestSetupContainer_ensureDockerBeforeImageBuild(t *testing.T) {
 	}
 }
 
+// TestSetupContainer_emitsBuildProgressMessageWhenImageMissing pins the
+// user-visible progress line that setupContainer must emit BEFORE a multi-minute
+// Docker build when the image is absent: "building container runner image (this
+// may take several minutes)...". Regression guard for the resolveRunnerImageInputs
+// / buildRunnerImageIfMissing refactor (#228), which had to preserve this heads-up
+// via the helper's onBuild hook rather than dropping it.
+func TestSetupContainer_emitsBuildProgressMessageWhenImageMissing(t *testing.T) {
+	t.Parallel()
+	ts := httptest.NewServer(releaseHandler("v2.330.0"))
+	defer ts.Close()
+
+	var out bytes.Buffer
+	mock := &testutil.MockExecutor{RunFn: func(cmd string) (string, error) {
+		switch {
+		case strings.Contains(cmd, "docker --version"):
+			return "yes", nil
+		case strings.Contains(cmd, "docker info"):
+			return "ok", nil
+		case strings.Contains(cmd, "docker image inspect"):
+			return "no", nil // image missing → build path
+		case strings.Contains(cmd, "docker build"):
+			return "", nil
+		case strings.Contains(cmd, "docker inspect --format='{{.Name}}'"):
+			return "yes", nil
+		default:
+			return "", nil
+		}
+	}}
+	h := host.NewHost("h", config.HostConfig{Addr: "runner@vps", OS: "linux", Arch: "amd64"})
+	h.SetConn(mock)
+	m := &Manager{
+		GitHub: NewGitHubClientWithHTTP("pat", ts.Client(), ts.URL),
+		Out:    &out,
+	}
+	rc := config.RunnerConfig{
+		Name:       "aw-runner",
+		Repo:       "o/r",
+		Host:       "h",
+		Profile:    "agentic",
+		RunnerMode: config.RunnerModeContainer,
+	}
+
+	if err := m.setupContainer(h, rc); err != nil {
+		t.Fatalf("setupContainer: %v", err)
+	}
+
+	got := out.String()
+	if !strings.Contains(got, "building container runner image (this may take several minutes)") {
+		t.Errorf("expected build progress heads-up in output; got:\n%s", got)
+	}
+	if !strings.Contains(got, "image built:") {
+		t.Errorf("expected 'image built:' line in output; got:\n%s", got)
+	}
+	// Progress line must precede the completion line.
+	progressIdx := strings.Index(got, "building container runner image (this may take several minutes)")
+	builtIdx := strings.Index(got, "image built:")
+	if progressIdx < 0 || builtIdx < 0 || progressIdx > builtIdx {
+		t.Errorf("expected progress line before 'image built:'; progressIdx=%d builtIdx=%d", progressIdx, builtIdx)
+	}
+}
+
 func TestSetupContainer_propagatesDockerGroupPending(t *testing.T) {
 	t.Parallel()
 	mock := &testutil.MockExecutor{RunFn: func(cmd string) (string, error) {
@@ -1477,7 +1539,9 @@ func TestManager_buildRunnerImageIfMissing_alreadyPresent(t *testing.T) {
 		GhSrVersion: "1.2.3",
 	}
 
-	built, err := m.buildRunnerImageIfMissing(h, "gh-sr/agentic-runner:v2.330.0-base", "2.330.0", "x64")
+	built, err := m.buildRunnerImageIfMissing(h, "gh-sr/agentic-runner:v2.330.0-base", "2.330.0", "x64", func() {
+		t.Errorf("onBuild must not fire when image already exists")
+	})
 	if err != nil {
 		t.Fatalf("buildRunnerImageIfMissing: %v", err)
 	}
@@ -1494,6 +1558,7 @@ func TestManager_buildRunnerImageIfMissing_buildsWhenMissing(t *testing.T) {
 	defer ts.Close()
 
 	sawBuild := false
+	onBuildBeforeBuild := false // onBuild must fire before the docker build command
 	mock := &testutil.MockExecutor{RunFn: func(cmd string) (string, error) {
 		switch {
 		case strings.Contains(cmd, "docker image inspect"):
@@ -1511,7 +1576,9 @@ func TestManager_buildRunnerImageIfMissing_buildsWhenMissing(t *testing.T) {
 		GhSrVersion: "1.2.3",
 	}
 
-	built, err := m.buildRunnerImageIfMissing(h, "gh-sr/agentic-runner:v2.330.0-base", "2.330.0", "x64")
+	built, err := m.buildRunnerImageIfMissing(h, "gh-sr/agentic-runner:v2.330.0-base", "2.330.0", "x64", func() {
+		onBuildBeforeBuild = !sawBuild // true only if no build command ran yet
+	})
 	if err != nil {
 		t.Fatalf("buildRunnerImageIfMissing: %v", err)
 	}
@@ -1520,6 +1587,9 @@ func TestManager_buildRunnerImageIfMissing_buildsWhenMissing(t *testing.T) {
 	}
 	if !sawBuild {
 		t.Errorf("docker build was never invoked")
+	}
+	if !onBuildBeforeBuild {
+		t.Errorf("onBuild did not fire before the docker build command")
 	}
 }
 
@@ -1545,7 +1615,7 @@ func TestManager_buildRunnerImageIfMissing_buildErrorWrapsMessage(t *testing.T) 
 		GhSrVersion: "1.2.3",
 	}
 
-	built, err := m.buildRunnerImageIfMissing(h, "gh-sr/agentic-runner:2.330.0-base", "2.330.0", "x64")
+	built, err := m.buildRunnerImageIfMissing(h, "gh-sr/agentic-runner:2.330.0-base", "2.330.0", "x64", nil)
 	if err == nil {
 		t.Fatal("expected error from docker build failure, got nil")
 	}
