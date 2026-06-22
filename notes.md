@@ -1,30 +1,29 @@
 ---
 name: perf-improver-state-2026-06
-description: Persistent state for Perf Improver agent on baizhiheizi/gh-sr — last run 2026-06-21 21:43 UTC (13th consecutive maintenance run; no new PR)
+description: Persistent state for Perf Improver agent on baizhiheizi/gh-sr — last run 2026-06-22 22:16 UTC (14th consecutive maintenance run; no new PR)
 metadata:
   type: project
 ---
 
 # Perf Improver State (baizhiheizi/gh-sr)
 
-**Last run:** 2026-06-21 21:43 UTC (run 27918277428)
-**Run link:** https://github.com/baizhiheizi/gh-sr/actions/runs/27918277428
+**Last run:** 2026-06-22 22:16 UTC (run 27987568742)
+**Run link:** https://github.com/baizhiheizi/gh-sr/actions/runs/27987568742
 
 ## Repository Status
-**Maintenance mode confirmed (13th consecutive run).** All major performance optimizations merged. PR #212/#213 (`Manager.Status` loop-invariant hoist) confirmed merged — full `BenchmarkManager_Status` Count=10 326,748→50,605 ns/op (-85%), 1,516,216→161,493 B/op (-89%), 167→84 allocs/op (-50%). My backlog is now completely closed; the only remaining items (#22 `Remove` parallelization blocked by config mutation, #23 `ValidateContainerPrereqs` parallelization complex due to early-exit) are blocked or low-value. Efficiency Improver has expanded the pin-benchmark infrastructure (5 pin benchmarks across 3 packages) and offered to draft the benchstat-comparison workflow that #124 asked about.
+**Maintenance mode confirmed (14th consecutive run).** All major performance optimizations merged. PR #212/#213 (`Manager.Status` loop-invariant hoist) confirmed merged — full `BenchmarkManager_Status` Count=10 326,748→50,605 ns/op (-85%), 1,516,216→161,493 B/op (-89%), 167→84 allocs/op (-50%). My backlog is now completely closed; the only remaining items (#22 `Remove` parallelization blocked by config mutation, #23 `ValidateContainerPrereqs` parallelization complex due to early-exit) are blocked or low-value. Efficiency Improver has expanded the pin-benchmark infrastructure (5 pin benchmarks across 3 packages) and offered to draft the benchstat-comparison workflow that #124 asked about.
 
 ## This Run's Work
 - Re-validated commands: `go build ./...` ✅, `go vet ./...` ✅, `go test ./... -race -count=1` ✅ (12/12 packages pass)
-- Did NOT re-run benchmarks this run — 13th consecutive run with no code change; benchmarks unchanged since 2026-06-17 08:35 (PR #123/#128/#146/#155/#167 wins all still hold)
-- Reviewed open PRs since 2026-06-20 21:42 (3 new open PRs):
-  - PR #244 (Repo Assist: collapse doctor `printAgenticFailures` for #236)
-  - PR #242 (Test Improver: cover `Remove` orchestrator 0%→94.1%)
-  - PR #240 (Repo Assist: collapse local-vs-SSH banner via `writeHostBanner` for #237)
-  - All refactor/test, no new perf hot spots unique to my backlog
-- Checked #124: no new human comments since 2026-06-14 `/repo-assist` slash command; anti-spam: not re-engaging
-- ⏸ No new PR this run: maintenance mode (13th consecutive run); PR #212/#213 has now closed my last hot spot; no remaining unique high-impact targets
-- Updated Monthly Activity issue #85: prepended 2026-06-21 21:43 UTC entry; backlog item 21 (`Manager.Status` hoist) ✅ merged
-- Local repo HEAD `775c939` matches GH main
+- Did NOT re-run benchmarks this run — 14th consecutive run with no code change; benchmarks unchanged since 2026-06-17 08:35 (PR #123/#128/#146/#155/#167 wins all still hold)
+- Reviewed open PRs since 2026-06-21 21:43 (1 new open PR):
+  - PR #245 (Repo Assist: test coverage for CleanupOffline + Setup/Update/RebuildImage orchestrators 0%→62.1% pkg) — test-only, no new perf hot spots
+- Reviewed merged commits since 2026-06-21 21:43 (7 new merges):
+  - #244 (printAgenticFailures doctor refactor), #242 (Remove orchestrator tests), #240 (writeHostBanner ops refactor), #239 (uniqueStringsBy + installTargetsForHost doctor refactor), #235 (staleRegistrationScript runner refactor), #234 (resolveRunnerImageInputs + buildRunnerImageIfMissing runner refactor + onBuild fix), #233 (Logs orchestrator tests) — all refactor/test, no new perf hot spots unique to my backlog
+- Checked #124: no new human comments since 2026-06-14 `/repo-assist` slash command; Efficiency Improver 2026-06-19 11:44 follow-up unchanged; anti-spam: not re-engaging
+- ⏸ No new PR this run: maintenance mode (14th consecutive run); PR #212/#213 has now closed my last hot spot; no remaining unique high-impact targets
+- Updated Monthly Activity issue #85: prepended 2026-06-22 22:16 UTC entry (run 14); backlog item 21 (`Manager.Status` hoist) ✅ merged
+- Local repo HEAD `f7d0682` matches GH main
 
 ## Validated Commands
 - `go build ./...` ✅
@@ -50,7 +49,7 @@ metadata:
 - PR #212/#213 (`[efficiency-improver]`, external): `Manager.Status` loop-invariant hoist (full BenchmarkManager_Status 326,748→50,605 ns/op, -85%)
 
 ## Open Performance Issues
-- #85 — `[perf-improver] Monthly Activity 2026-06` (updated this run; prepended 2026-06-21 21:43 entry, confirmed backlog item 21 merged)
+- #85 — `[perf-improver] Monthly Activity 2026-06` (updated this run; prepended 2026-06-22 22:16 entry)
 - #124 — `[efficiency-improver] Add benchmark regression detection to CI` (no new maintainer response since 2026-06-14; Efficiency Improver offered to draft benchstat-comparison workflow 2026-06-19 11:44 UTC)
 
 ## Next Run Tasks
