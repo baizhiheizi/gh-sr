@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"strings"
+
 	"github.com/an-lee/gh-sr/internal/runner"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -37,26 +39,26 @@ func runnerStatusCells(s runner.RunnerStatus) []string {
 // widths[i]+2 (matching the per-cell padding in renderRow) so header and body
 // columns align visually.
 func renderHeader(headers []string, widths []int) string {
-	var line string
+	var b strings.Builder
 	for i, h := range headers {
-		line += headerStyle.Width(widths[i] + 2).Render(h)
+		b.WriteString(headerStyle.Width(widths[i] + 2).Render(h))
 	}
-	return line
+	return b.String()
 }
 
 // renderRow builds one styled row line. colorize(col, cell) may return the
 // cell unchanged or a styled string; if nil, cells are rendered as-is.
 // Padding matches renderHeader (widths[j]+2).
 func renderRow(cells []string, widths []int, colorize func(col int, cell string) string) string {
-	var line string
+	var b strings.Builder
 	for j, cell := range cells {
 		styled := cell
 		if colorize != nil {
 			styled = colorize(j, cell)
 		}
-		line += cellStyle.Width(widths[j] + 2).Render(styled)
+		b.WriteString(cellStyle.Width(widths[j] + 2).Render(styled))
 	}
-	return line
+	return b.String()
 }
 
 // renderHighlightedRow builds a styled row with the cursor-row background
@@ -65,16 +67,16 @@ func renderRow(cells []string, widths []int, colorize func(col int, cell string)
 // wrapper) to match the original viewMain behavior. colorize behaves as in
 // renderRow.
 func renderHighlightedRow(cells []string, widths []int, colorize func(col int, cell string) string) string {
-	var line string
+	var b strings.Builder
 	for j, cell := range cells {
 		styled := cell
 		if colorize != nil {
 			styled = colorize(j, cell)
 		}
-		line += cellStyle.
+		b.WriteString(cellStyle.
 			Width(widths[j] + 2).
 			Background(lipgloss.Color("8")).
-			Render(styled)
+			Render(styled))
 	}
-	return line
+	return b.String()
 }
