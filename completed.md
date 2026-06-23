@@ -7,55 +7,37 @@ metadata:
 
 # Completed Work
 
-## 2026-06-19 — ContainerImageLayoutRevision hoist in Manager.Status (this run, no PR)
+## 2026-06-23 — TUI render strings.Builder (no PR — silent tool failure, 3rd consecutive)
 
-Branch: `efficiency/hoist-container-image-layout-revision` (commit 15a59dc). **PR creation tool returned success but no PR was opened on GitHub** (3 retries, 2 distinct approaches — original branch name + suffix variant; reported `incomplete` per safeoutputs policy). Second consecutive run hit by this failure (also 2026-06-17). Patch + bundle artifacts at `/tmp/gh-aw/aw-efficiency-hoist-container-image-layout-revision.{patch,bundle}` for orchestrator post-step pickup.
+Branch: `efficiency/tui-render-strings-builder` (commit e430457). `internal/tui/table.go` — `renderHeader`/`renderRow`/`renderHighlightedRow` swapped from `var line string + line +=` (O(N²) string concat) to `var b strings.Builder` + `b.WriteString(...)`. New `internal/tui/table_bench_test.go` pins per-call cost.
 
-Independent, additive to PR #213 (already merged 2026-06-19T02:42:34Z — hoisted `mode`/`repo`/`labels`/`host`/`isContainer`). Adds the remaining loop-invariant: `expectedLayoutRev := ContainerImageLayoutRevision(m.GhSrVersion, m.containerImageExtraApt())`. Inputs are static during one `Status()` call. The function sha256-sums every embedded `gh-sr/agentic-runner` Dockerfile asset (`Dockerfile`, `entrypoint.sh`, `sudoers`, …), the gh-sr version, and the extra-apt list, then returns the first 12 hex chars. Was being recomputed once per instance on every 5-second TUI refresh tick.
+**Energy evidence** (5×5000x on AMD Ryzen AI 9 HX 370): RenderHeader 161→158 allocs/op (-1.9%); RenderRow 255→248 allocs/op (-2.7%); RenderHighlightedRow 291→284 allocs/op (-2.4%); -5-7% B/op; ns/op within noise (lipgloss `Render()` dominates).
 
-**Energy evidence** (BenchmarkManager_Status, Count=10 agentic profile, container SSH mocked):
-- 326,748 → 50,605 ns/op (**-85% wall-clock**)
-- 1,516,216 → 161,493 B/op (**-89% transient bytes**)
-- 167 → 84 allocs/op (**-50% GC pressure**)
+**Test status**: build/vet/format clean, 12/12 packages pass.
 
-**New pin benchmark** (`BenchmarkContainerImageLayoutRevision`, -benchtime=1000x): 30µs, 150KB, 12 allocs/op.
+**PR creation failure**: `safe-outputs create_pull_request` reported success 3× but no PR opened (GET #247 → 404). Reported `incomplete`. Patch + bundle at `/tmp/gh-aw/aw-efficiency-tui-render-strings-builder.{patch,bundle}`. Intermittent — both 2026-06-17 (→ PR #203) and 2026-06-19 (→ PR #226) eventually merged after the original report_incomplete.
 
-GSF: energy proportionality (per-tick cost now scales linearly with instances, not N × instances of sha256-of-embedded-assets), hardware efficiency (1.35 MB less transient churn per `Manager.Status` call → less DRAM refresh + GC bookkeeping energy), demand shaping (the noisiest per-tick computation in container mode runs exactly once per refresh instead of N times). Native-mode users see zero change (`isContainer` gate).
+## 2026-06-19 — ContainerImageLayoutRevision hoist (PR #226 MERGED)
 
-**Test status**: build clean, vet clean, format clean, 12/12 packages pass under `go test ./... -count=1` and `go test ./... -race -count=1`.
+Additive to PR #213. BenchmarkManager_Status: 326,748 → 50,605 ns/op (**-85%**), 1,516,216 → 161,493 B/op (**-89%**), 167 → 84 allocs/op (**-50%**).
 
-## 2026-06-17 — Container status SSH consolidation (no PR)
+## 2026-06-18 — Manager.Status loop-invariant hoist (PR #213 MERGED)
 
-Branch: `efficiency/container-status-one-shot` (commit ef6beab). **PR creation tool returned success but no PR was opened on GitHub** (3 retries; reported `incomplete` per safeoutputs policy). Commit is preserved on the local branch and can be pushed manually.
+`BenchmarkManager_Status` 197→166 allocs/op (-15.74%, p=0.008).
 
-New `containerLocalStatusOneShot` folds `echo $HOME` + bootstrap-failed marker test + docker inspect into a single `h.Run` script. `parseContainerStatusInspectOutput` gained `case "failed"` arm. **SSH round trips per call: 3 (Linux) / 2 (macOS) → 1 (always).** New `TestContainerLocalStatusImageAndRevision_one_ssh_round_trip` (5 sub-cases) pins the 1-call contract. New `BenchmarkContainerLocalStatusImageAndRevision` = 1,429 ns/op, 902 B/op, 6 allocs/op. GSF: energy proportionality, hardware efficiency, demand shaping.
+## 2026-06-17 — Container status SSH consolidation (PR #203 MERGED)
 
-**Negative results this run**: (1) `enrichFromScopeRunners` O(N·M)→O(N+M) map fix regressed at the 20×10 bench scale (78K→89K ns/op, +83 allocs/op for the per-scope name index — the bench fixture is too small to amortize the per-scope map header cost). (2) `strings.EqualFold` short-circuit with `gr.OS != exp` guard is only ~3 ns/call — unmeasurable in the noise floor. Both reverted; logged as learnings.
+**SSH round trips per call: 3/2 → 1 (always).** `BenchmarkContainerLocalStatusImageAndRevision` = 1,429 ns/op, 902 B/op, 6 allocs/op.
 
-## 2026-06-15 — TUI extractTrailingPercent ParseFloat (merged as #191)
+## 2026-06-15 — TUI extractTrailingPercent ParseFloat (PR #191 MERGED)
 
-Branch: `efficiency/tui-parsefloat-percentage-parse` (commit 8ae6038). Patch: `/tmp/gh-aw/aw-efficiency-tui-parsefloat-percentage-parse.patch`.
-PR title: `[efficiency-improver] perf(tui): use strconv.ParseFloat in extractTrailingPercent`. **MERGED 2026-06-15T23:22:06Z as PR #191.**
+`BenchmarkExtractTrailingPercent` 3806→452 ns/op (-88%), 36→6 allocs/op (-83%).
 
-`BenchmarkExtractTrailingPercent` 3806→452 ns/op (-88%), 818→160 B/op (-80%), 36→6 allocs/op (-83%). `fmt.Sscanf` → `strconv.ParseFloat`. Hot path: per colored host-metrics cell per Bubble Tea View() call. First TUI-side bench.
+## Earlier (merged)
 
-## 2026-06-12 — EnrichWithGitHubStatus inline rcByInstance (merged as #167)
-
-PR #167 MERGED 2026-06-12T22:59:59Z. `EnrichFromScopeRunners_Small` 33→28 allocs/op (-15%). Third `InstanceNames()` discard-site closed (after #146 and #155).
-
-## 2026-06-11 — FindRunnerForLogs (merged as #155)
-
-PR #155 MERGED 2026-06-12T02:51:36Z. `FindRunnerForLogs_Match` 5906→790 ns/op (-86%), 297→5 allocs/op (-98%). Removed dead-code map + replaced allocating InstanceNames() with allocation-free helper + single-pointer state machine.
-
-## 2026-06-10 — InstanceNames helper (merged as #146)
-
-PR #146 MERGED 2026-06-11T04:06:49Z. fmt.Sprintf → `name + "-" + strconv.Itoa(i)`. 21→11 allocs/op, 1239→~430 ns/op. Helper called 23+ times across codebase.
-
-## 2026-06-09 — single du walk in dirSizesPOSIX (merged as #136)
-
-PR #136 MERGED 2026-06-09. 4 `du -sk` → 1 `du --max-depth=1` walk. 4 SSH round trips → 1. On 50 GB remote: ~9-15s saved per instance.
-
-## Prior (merged)
-
-- PR #128 Validate_Large 711→411 allocs/op (-42%) — MERGED 2026-06-09
-- PR #123 FilterRunners_ByName 503→1 allocs/op (502×) — MERGED 2026-06-09
+- PR #167 (EnrichWithGitHubStatus) MERGED 2026-06-12. 33→28 allocs/op (-15%).
+- PR #155 (FindRunnerForLogs) MERGED 2026-06-12. 5906→790 ns/op (-86%).
+- PR #146 (InstanceNames) MERGED 2026-06-11. 21→11 allocs/op.
+- PR #136 (single du walk) MERGED 2026-06-09.
+- PR #128 (Validate_Large) MERGED 2026-06-09.
+- PR #123 (FilterRunners_ByName) MERGED 2026-06-09. 503→1 allocs/op (502×).
