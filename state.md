@@ -5,21 +5,24 @@ metadata:
   type: project
 ---
 
-# Repo Assist state — last updated 2026-06-21 ~16:30 UTC
+# Repo Assist state — last updated 2026-06-23 ~15:59 UTC
 
-## Last run (2026-06-21 ~16:30 UTC, run 27916163915)
+## Last run (2026-06-23 ~15:59 UTC, run 28037507600)
 
-- Selected tasks: 5 (Coding Improvements), 10 (Take Repo Forward), 4 (Engineering Investments).
-- **Task 5** — branch `repo-assist/improve-issue-236-agentic-failures-helper`, commit `0fc1eb7`: added `printAgenticFailures(w io.Writer, hostName string, r *Result, defaultSev, prefix string, failures []agentic.PrereqFailure)` in `internal/doctor/doctor.go`. Helper owns severity classification (`SeverityError → sevFail + r.Fail++`, `SeverityWarning → sevWarn + r.Warn++`, anything else uses `defaultSev` and increments the matching counter), `printLine` rendering, multi-line remediation splitting, and DocRef rendering. Replaced 2× 18-line inline blocks in `checkContainerHostPrereqs` (`defaultSev=sevFail`, prefix `"container: "`) and `checkContainerAgenticInnerHygiene` (`defaultSev=sevWarn`, prefix `"container(agent): "`). `internal/doctor/doctor.go` 35-line net reduction; both call sites collapse to a single line. 7 new sub-tests (`SeverityError`, `SeverityWarning`, `DefaultSevFail`, `DefaultSevWarn`, `RemediationAndDocRef`, `EmptySlice`, `MixedSeverities`). Internal/doctor coverage 67.0% → 68.3%. Closes #236. Bridge-pending PR.
-- **Task 10** — `add_comment` on #243 (`aw_zZSRJbZ7`): flagged #243 as a re-detection of the same 5 sites already addressed by PR #240 (closes #237). Detector re-fired against `775c939` today and surfaced an identical pattern with the same locations; suggested closing as superseded.
-- **Task 4** — no-op. All valuable engineering investments are already in flight as fallback-review issues #241 (gofmt CI check) and #225 (deps bump) — both blocked by the protected-files list. No additional non-protected work identified this run.
-- **Task 11** — `update_issue` on #100 succeeded (10 KB limit; truncated the oldest 2026-06-19 run entry to fit the new entry). Refreshed Suggested Actions: promoted #237 → PR #240 (open, draft), added PR #242 (test-improver Remove orchestrator), added bridge-pending entry for #236, added "Apply patch manually" lines for #225 and #241 (replace bridge-pending entries), added "Close issue" entry for #243 (re-detection), kept "Define goal" for #132. Future Work: removed #236 (now done); refreshed the next-duplicate-code cleanup note to point at the open PRs.
-- **Verified:** `go build ./...` OK, `go vet ./...` OK, `go test ./... -race -count=1` OK (12/12 packages), `go test -race ./internal/doctor/...` OK (7 new sub-tests + all existing tests), `gofmt -l .` clean.
+- Selected tasks: 3 (Issue Fix), 5 (Coding Improvements), 1 (Issue Labelling — fallback to Task 2).
+- **Task 3** — substituted (no `bug` / `help wanted` / `good first issue` issues exist this run; #132 is on hold per memory).
+- **Task 5** — branch `repo-assist/improve-agentic-failure-collector`, commit `f4511e6`: added unexported `failureCollector` helper in `internal/agentic/agentic.go` with `append` / `spawn` / `wait` methods. Replaced 3 × 8-line `var (failures, mu, wg)` + `appendFailure := func(...){ mu.Lock(); failures = append(...); mu.Unlock() }` blocks across `ValidatePrereqs` / `ValidateAWFHygiene` / `ValidateAWFHygieneInner`. Replaced 12 `wg.Add(N); go func(){ defer wg.Done(); ... }()` bookends with `collector.spawn(func(){ ... })`. Replaced 3 `wg.Wait(); return failures` trailers with `return collector.wait()`. Method named `spawn` (not `go`) because `go` is a reserved word in Go (Go parser rejects method names that match reserved keywords). 5 new sub-tests in `failure_collector_test.go`: `EmptyReturnsNil`, `AppendAndWait`, `SpawnRunsClosure`, `ConcurrentAppendPreservesSubmissionOrder` (200 goroutines held back by a release gate so they all enter the critical section at once), `WaitBlocksUntilAllGoroutinesFinish`. Net −10 lines; eliminates 24 lines of identical boilerplate. Bridge-pending PR (was previously #236's pattern).
+- **Task 1/2** — substituted. 0 unlabelled issues this run (Task 1 fallback); no new human activity on any open issue that warrants a fresh comment (Task 2 fallback).
+- **Task 11** — `update_issue` on #100 (12.1 KB body initially rejected; trimmed to fit 10 KB limit). Promoted the new failureCollector refactor into Suggested Actions as a bridge-pending branch entry. Refreshed Notes to add PR #245 + PR #246 bridge-merges between runs. Added a Future Work note flagging the next-high-confidence follow-up: `checkAndWarn(name, docRef, mkMsg, mkRemediation)` for the `ValidateContainerMTU` / `ValidateContainerNodeNPM` / `ValidateContainerAWF` / `ValidateContainerInnerNetwork` / `ValidateContainerInnerResolv` / `ValidateContainerAWFServiceRouting` family (6 functions, ~30 lines of near-identical `if h.OS != "linux" { return nil }` + `if _, err := h.Run(checkCommand(...)); err != nil { return []PrereqFailure{{...}} } return nil` blocks).
+- **Verified:** `go build ./...` OK, `go vet ./...` OK, `go test ./... -race -count=1` OK (12/12 packages), `gofmt -l .` clean.
 
 ## In-flight work
 
+- **Branch `repo-assist/improve-agentic-failure-collector`** — 1 commit (`f4511e6`): failureCollector refactor + 5 sub-tests. Bridge pending. Patch at `/tmp/gh-aw/aw-repo-assist-improve-agentic-failure-collector.patch` (14 106 bytes).
 - **Branch `repo-assist/improve-issue-236-agentic-failures-helper`** — 1 commit (refactor + 7 sub-tests). Bridge pending. Patch at `/tmp/gh-aw/aw-repo-assist-improve-issue-236-agentic-failures-helper.patch` (10 176 bytes).
-- **PR #240 (DRAFT 2026-06-21)** — `[repo-assist] refactor(ops): collapse local-vs-SSH banner via writeHostBanner` (closes #237). Bridge-pending branch landed as PR.
+- **PR #246 (DRAFT 2026-06-23)** — `[repo-assist] refactor(doctor): collapse native shell-check idiom via checkShellOK helper`. Bridge-merged this run.
+- **PR #245 (DRAFT 2026-06-22)** — `[repo-assist] test(ops): cover CleanupOffline + Setup/Update/RebuildImage orchestrators (0% → 62.1% pkg)`. Bridge-merged this run.
+- **PR #240 (DRAFT 2026-06-21)** — `[repo-assist] refactor(ops): collapse local-vs-SSH banner via writeHostBanner` (closes #237).
 - **PR #239 (DRAFT 2026-06-20)** — `[repo-assist] refactor(doctor): collapse uniqueX + installTargetsXForHost via generic helpers` (closes #238).
 - **PR #235 (DRAFT 2026-06-20)** — `[repo-assist] refactor(runner): collapse stale-registration probe` (closes #230).
 - **PR #234 (DRAFT 2026-06-20)** — `[repo-assist] refactor(runner): collapse image-build preamble` (closes #228).
@@ -31,16 +34,20 @@ metadata:
 
 ## Backlog / next high-value task
 
-- The remaining duplicate-code findings against `775c939` are all addressed by open PRs (#228 → #234, #230 → #235, #236 → bridge-pending, #237 → #240, #238 → #239). The detector is firing periodically against the same commit; future re-detections should be evaluated against in-flight refactors before starting new work.
+- The remaining duplicate-code findings against `775c939` are all addressed by open PRs (#228 → #234, #230 → #235, #236 → bridge-pending, #237 → #240, #238 → #239).
+- **Next high-confidence refactor** — `checkAndWarn` helper in `internal/agentic/agentic.go` for the `ValidateContainer*` family (6 functions, ~30 lines of `if h.OS != "linux" { return nil }` + check-and-warn pattern). Flagged in #100 Future Work this run.
 - **#132 (gh sr storage)** — on hold pending maintainer signal on loop-mount persistence.
 
 ## Backlog cursor for Task 2 (Issue Comment)
 
-- 16 open issues (1 human = #132, 15 bot-generated including #225, #230, #236, #237, #238, #241, #243, plus monthly rollups #85/#100/#109/#124/#125/#214/#148/#208). 0 unlabelled.
+- 12 open issues (1 human = #132, 11 bot-generated including #225, #230, #236, #237, #238, #241, #243, plus monthly rollups #85/#100/#109/#124/#125/#214/#148/#208). 0 unlabelled.
 
 ## Completed work (recent PRs)
 
+- **Branch `repo-assist/improve-agentic-failure-collector`** — failureCollector refactor. Bridge-pending.
 - **Branch `repo-assist/improve-issue-236-agentic-failures-helper`** — printAgenticFailures refactor (closes #236). Bridge-pending.
+- **PR #246 (DRAFT 2026-06-23)** — checkShellOK refactor. 1 helper + 2 call sites.
+- **PR #245 (DRAFT 2026-06-22)** — CleanupOffline + Setup/Update/RebuildImage orchestrator coverage.
 - **PR #240 (DRAFT 2026-06-21)** — writeHostBanner refactor (closes #237). 1 helper + 5 call sites.
 - **PR #239 (DRAFT 2026-06-20)** — doctor filter-collect refactor (closes #238).
 - **PR #235 (DRAFT 2026-06-20)** — stale-registration probe refactor (closes #230).
@@ -57,21 +64,24 @@ metadata:
 
 ## Activity / PR history (compressed)
 
-- 2026-06-21 (run 27916163915, ~16:30 UTC): Tasks 5/10/4 — printAgenticFailures refactor (closes #236) + comment on #243 (re-detection of #237 pattern).
+- 2026-06-23 (run 28037507600, ~15:59 UTC): Tasks 3/5/1 — failureCollector refactor (bridge-pending).
+- 2026-06-23 (run 28018815293, ~10:27 UTC): Tasks 8/2/5 — checkShellOK refactor (PR #246) + TUI strings.Builder held back.
+- 2026-06-22 (run 27932993839, ~07:30 UTC): Tasks 9/3/2 — ops orchestrator coverage tests (PR #245).
+- 2026-06-21 (run 27916163915, ~16:30 UTC): Tasks 5/10/4 — printAgenticFailures refactor (closes #236) + comment on #243.
 - 2026-06-21 (run 27894682067, ~14:30 UTC): Tasks 5/4/2 — banner helper (closes #237) + gofmt CI check + comment on #237.
-- 2026-06-20 (run 27882401019, ~16:30 UTC): Tasks 2/3/5 — doctor.go filter-collect refactor (closes #238). 2 helpers replace 6.
+- 2026-06-20 (run 27882401019, ~16:30 UTC): Tasks 2/3/5 — doctor.go filter-collect refactor (closes #238).
 - 2026-06-20 (run 27874659199, ~11:30 UTC): Tasks 4/2/3 — stale-registration probe refactor (closes #230). PR #235.
 - 2026-06-20 (run 27867528048, ~09:30 UTC): Tasks 2/3/8 — image-build preamble refactor (closes #228). PR #234.
 - 2026-06-19 (run 27846567496, ~22:30 UTC): Tasks 5/3/9 — disk.go dispatcher refactor (closes #229) + ops service tests. PR #232.
 
 ## Notes for next run
 
-- **PR creation bridge latency: 30 min – 5h observed.** Pattern: `create_pull_request` returns `success` with patch/bundle artifacts; bridge pushes branch + opens PR afterwards. Confirmed for #232 (merged 2026-06-20), #240 (open draft), #239, #235, #234, #233, #183, #180, #172, #171.
+- **PR creation bridge latency: 30 min – 5h observed.** Pattern: `create_pull_request` returns `success` with patch/bundle artifacts; bridge pushes branch + opens PR afterwards. Confirmed for #232 (merged 2026-06-20), #245, #246, #240 (open draft), #239, #235, #234, #233, #183, #180, #172, #171.
 - **#241 (gofmt CI check)** — fallback-review issue, maintainer needs to apply the patch from run 27894682067 manually.
 - **#243 (re-detection)** — same 5 sites as #237. Recommended "Close issue" in the suggested-actions list.
-- **Posture:** revert rate is 0/18+ over the life of the workflow. Recent merges (#211, #215, #220, #221, #222, #223, #224, #226, #232) all landed cleanly.
+- **Posture:** revert rate is 0/19+ over the life of the workflow. Recent merges (#211, #215, #220, #221, #222, #223, #224, #226, #232) all landed cleanly.
 - **Next high-confidence action if a new `bug` / `help wanted` / `good first issue` issue opens:** investigate and implement a minimal fix. None currently open.
-- **Repo state:** 16 open issues (1 human = #132, 15 bot-generated). 0 unlabelled. 6 open Repo Assist PRs (#233/#234/#235/#239/#240/#242) + 1 test-improver PR + 1 bridge-pending branch (#236) + 2 fallback-review issues (#225, #241).
+- **Repo state:** 12 open issues (1 human = #132, 11 bot-generated). 0 unlabelled. 8 open Repo Assist PRs (#233/#234/#235/#239/#240/#242/#245/#246) + 2 test-improver PRs + 2 bridge-pending branches (#236, failureCollector) + 2 fallback-review issues (#225, #241).
 
 ## Verified knowledge
 
@@ -86,7 +96,8 @@ metadata:
 - `uniqueStringsBy(runners, key)` is the canonical dedupe+sort helper in `internal/doctor/doctor.go`. Empty keys are skipped uniformly.
 - `installTargetsForHost(runners, hostName, predicate)` is the canonical host-filter+instance-flatten helper in `internal/doctor/doctor.go`. Predicate signature `func(*config.RunnerConfig) bool` so callers can use any pointer-receiver method.
 - `writeHostBanner(w, prefix, addr)` is the canonical local-vs-SSH banner helper in `internal/ops/ops.go`. `prefix` is everything up to the suffix; the helper handles the `IsLocalAddr` toggle between `(local)` and `(<addr>)`. Callers compose the prefix with whatever verb/object they need.
-- `printAgenticFailures(w, hostName, r, defaultSev, prefix, failures)` is the canonical agentic-failure renderer in `internal/doctor/doctor.go` (added this run). `defaultSev` (sevFail or sevWarn) governs the severity for any failure whose Severity is neither `SeverityError` nor `SeverityWarning`. Both doctor check sites (`checkContainerHostPrereqs` and `checkContainerAgenticInnerHygiene`) now use it.
+- `printAgenticFailures(w, hostName, r, defaultSev, prefix, failures)` is the canonical agentic-failure renderer in `internal/doctor/doctor.go`. `defaultSev` (sevFail or sevWarn) governs the severity for any failure whose Severity is neither `SeverityError` nor `SeverityWarning`.
+- `failureCollector` (added this run) is the canonical thread-safe accumulator + WaitGroup helper in `internal/agentic/agentic.go`. Methods: `append(f)` (mutex-guarded), `spawn(fn)` (Add+Go+Done), `wait()` (block-and-return-slice). Method named `spawn` rather than `go` because **`go` is a reserved keyword in Go and the parser rejects method names that match reserved keywords** — `c.go(func(){...})` is a syntax error, not a method call. Use `c.spawn(func(){...})` instead.
 - `.github/workflows/ci.yml` is on the protected-files list — modifications route through the fallback-review issue path; bridge push may not open the PR automatically.
 - `update_issue` body limit is 10 KB. Long Run History entries must be truncated before each monthly refresh.
 - The duplicate-code detector fires periodically against `main` (currently `775c939`). Each new finding should be cross-checked against in-flight PRs before starting work — #243 today re-surfaced the same 5 sites #237 covers; recommended "Close issue".
