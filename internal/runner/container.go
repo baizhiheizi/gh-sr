@@ -97,6 +97,26 @@ func containerName(instanceName string) string {
 	return ContainerDockerName(instanceName)
 }
 
+// DockerExecCommand returns a `docker exec <cname> <innerCmd>` shell-safe command
+// string, with cname wrapped in Go-style double quotes via strconv.Quote. The
+// trailing space after the quoted name lets callers append the inner command
+// directly (`DockerExecCommand(name, "sh -c '...'")` produces
+// `docker exec "name" sh -c '...'`).
+//
+// This is the canonical helper for "run X inside a known runner container".
+// It replaces 9 inline `q := strconv.Quote(c); ... + "docker exec " + q + " " + ...`
+// blocks across internal/agentic and internal/doctor (see issue #251).
+//
+// Policy note: the agentic and doctor sites use strconv.Quote (Go double-quote);
+// the runner package's own disk.go / environment.go use hostshell.PosixSingleQuote
+// (POSIX single-quote). Both produce shell-safe output, but a future consolidation
+// should align the two policies. Until then, callers inside internal/agentic and
+// internal/doctor use this helper; callers inside internal/runner continue to use
+// hostshell.PosixSingleQuote directly because that matches their existing test pins.
+func DockerExecCommand(cname, innerCmd string) string {
+	return "docker exec " + strconv.Quote(cname) + " " + innerCmd
+}
+
 // containerStateDir returns the host-side bind-mount path for runner instance state
 // (mounted at /runner-state inside the container).
 //

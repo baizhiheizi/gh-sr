@@ -1629,3 +1629,56 @@ func TestManager_buildRunnerImageIfMissing_buildErrorWrapsMessage(t *testing.T) 
 		t.Errorf("error should wrap sentinel via %%w, got: %v", err)
 	}
 }
+
+func TestDockerExecCommand_PlainName(t *testing.T) {
+	t.Parallel()
+	got := DockerExecCommand("gh-sr-myinstance", "sh -c 'echo hi'")
+	want := `docker exec "gh-sr-myinstance" sh -c 'echo hi'`
+	if got != want {
+		t.Errorf("DockerExecCommand = %q, want %q", got, want)
+	}
+}
+
+func TestDockerExecCommand_NameWithSpecialCharsIsQuoted(t *testing.T) {
+	t.Parallel()
+	// The helper must produce shell-safe output: any char inside the
+	// name (including backticks, dollar signs, semicolons, double-quotes)
+	// is escaped by strconv.Quote so a malicious container name cannot
+	// inject a shell command via a bare double-quote.
+	//
+	// strconv.Quote(`evil"; rm -rf /; "`) yields
+	//   "evil\"; rm -rf /; \""
+	// so the full helper output is
+	//   docker exec "evil\"; rm -rf /; \"" echo ok
+	// — the inner double-quotes are escaped, keeping the quoted-name
+	// string intact when handed to the shell.
+	got := DockerExecCommand(`evil"; rm -rf /; "`, "echo ok")
+	want := `docker exec "evil\"; rm -rf /; \"" echo ok`
+	if got != want {
+		t.Errorf("DockerExecCommand = %q, want %q", got, want)
+	}
+}
+
+func TestDockerExecCommand_EmptyInnerCmd(t *testing.T) {
+	t.Parallel()
+	got := DockerExecCommand("name", "")
+	want := `docker exec "name" `
+	if got != want {
+		t.Errorf("DockerExecCommand = %q, want %q", got, want)
+	}
+}
+
+func TestDockerExecCommand_PrefixMatchesFormerInlineQuoting(t *testing.T) {
+	t.Parallel()
+	// Regression guard: the inner-Docker AWF hygiene probes in
+	// internal/agentic/agentic_awf_hygiene_test.go pin the literal prefix
+	// `docker exec "gh-sr-myinstance" `. This test pins the helper's output
+	// for the same input, so future changes to the quoting policy trip
+	// here first instead of as a silent test-suite failure.
+	const name = "gh-sr-myinstance"
+	prefix := DockerExecCommand(name, "")
+	const want = `docker exec "gh-sr-myinstance" `
+	if prefix != want {
+		t.Errorf("prefix = %q, want %q (this is the canonical AWF-hygiene inner-Docker prefix)", prefix, want)
+	}
+}

@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"github.com/an-lee/gh-sr/internal/host"
+	"github.com/an-lee/gh-sr/internal/runner"
 )
 
 // PrereqFailure represents a single prerequisite check that failed.
@@ -499,8 +500,7 @@ func ValidateAWFHygieneInner(h *host.Host, outerContainer string) []PrereqFailur
 		return nil
 	}
 
-	q := strconv.Quote(outerContainer)
-	pfx := "docker exec " + q + " "
+	pfx := runner.DockerExecCommand(outerContainer, "")
 
 	var (
 		failures []PrereqFailure
@@ -774,14 +774,13 @@ For a temporary live-container unblock only:
 }
 
 func containerInnerNetworkCheckCommand(outerContainer string) string {
-	q := strconv.Quote(outerContainer)
 	// Require the PRODUCTION baked-DNS path: a plain default-bridge child container must
 	// resolve host.docker.internal to a non-loopback address purely via the image-baked
 	// daemon DNS (daemon.json `dns` -> bundled dnsmasq). This is exactly what AWF agent
 	// containers rely on to reach the MCP gateway. The shim no longer injects --add-host,
 	// so we must NOT accept an --add-host fallback here — doing so would mask broken baked
 	// DNS and let a runner pass health checks while real MCP traffic fails.
-	return `docker exec ` + q + ` sh -c 'set -eu
+	return runner.DockerExecCommand(outerContainer, `sh -c 'set -eu
 ok=0
 for i in 1 2 3 4 5; do
   ip=$(docker run --rm alpine getent hosts host.docker.internal 2>/dev/null | awk "{print \$1; exit}")
@@ -791,19 +790,17 @@ for i in 1 2 3 4 5; do
   esac
   sleep 1
 done
-[ "$ok" -eq 1 ]'`
+[ "$ok" -eq 1 ]'`)
 }
 
 func containerNodeNPMCheckCommand(outerContainer string) string {
-	q := strconv.Quote(outerContainer)
-	return `docker exec ` + q + ` sh -lc 'command -v node >/dev/null && command -v npm >/dev/null'`
+	return runner.DockerExecCommand(outerContainer, `sh -lc 'command -v node >/dev/null && command -v npm >/dev/null'`)
 }
 
 func containerAWFCheckCommand(outerContainer string) string {
-	q := strconv.Quote(outerContainer)
-	return `docker exec ` + q + ` sh -lc 'set -eu
+	return runner.DockerExecCommand(outerContainer, `sh -lc 'set -eu
 command -v awf >/dev/null
-sudo -n -E awf --version >/dev/null'`
+sudo -n -E awf --version >/dev/null'`)
 }
 
 // containerMTUCheckCommand exits non-zero when any of the runner container's Docker
@@ -811,13 +808,12 @@ sudo -n -E awf --version >/dev/null'`
 // signature of a stale image built before MTU pinning. A missing interface file reads
 // as 0, so it never triggers a false positive.
 func containerMTUCheckCommand(outerContainer string, hostEgressMTU int) string {
-	q := strconv.Quote(outerContainer)
 	mtu := strconv.Itoa(hostEgressMTU)
-	return `docker exec ` + q + ` sh -c 'host=` + mtu + `
+	return runner.DockerExecCommand(outerContainer, `sh -c 'host=`+mtu+`
 for ifc in eth0 docker0; do
   m=$(cat /sys/class/net/$ifc/mtu 2>/dev/null || echo 0)
   [ "$m" -le "$host" ] || exit 1
-done'`
+done'`)
 }
 
 // containerInnerResolvCheckCommand verifies the runner container's /etc/resolv.conf
@@ -825,11 +821,10 @@ done'`
 // 10.200.0.1 but entrypoint.sh's collision-avoidance may pick another candidate, so we
 // resolve it live (falling back to 10.200.0.1) rather than hardcoding it.
 func containerInnerResolvCheckCommand(outerContainer string) string {
-	q := strconv.Quote(outerContainer)
-	return `docker exec ` + q + ` sh -c 'set -eu
+	return runner.DockerExecCommand(outerContainer, `sh -c 'set -eu
 gw=$(ip -4 -o addr show docker0 2>/dev/null | awk "{print \$4}" | cut -d/ -f1 | head -n1)
 [ -n "$gw" ] || gw=10.200.0.1
-grep -Eq "^nameserver[[:space:]]+$gw([[:space:]]|$)" /etc/resolv.conf'`
+grep -Eq "^nameserver[[:space:]]+$gw([[:space:]]|$)" /etc/resolv.conf'`)
 }
 
 // containerAWFServiceRoutingCheckCommand verifies the runner container has the
@@ -837,8 +832,7 @@ grep -Eq "^nameserver[[:space:]]+$gw([[:space:]]|$)" /etc/resolv.conf'`
 // from inner dockerd's DOCKER chain DNAT. iptables -S normalises rule output,
 // so an exact-line match is reliable.
 func containerAWFServiceRoutingCheckCommand(outerContainer string) string {
-	q := strconv.Quote(outerContainer)
-	return `docker exec ` + q + ` sh -c 'iptables -t nat -S PREROUTING 2>/dev/null | grep -Fq -e "-A PREROUTING -s 172.30.0.0/24 -m addrtype --dst-type LOCAL -j RETURN"'`
+	return runner.DockerExecCommand(outerContainer, `sh -c 'iptables -t nat -S PREROUTING 2>/dev/null | grep -Fq -e "-A PREROUTING -s 172.30.0.0/24 -m addrtype --dst-type LOCAL -j RETURN"'`)
 }
 
 // HasBlockingFailures returns true if any failure has severity "error".
