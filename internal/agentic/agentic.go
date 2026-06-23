@@ -48,26 +48,16 @@ func ValidatePrereqs(h *host.Host) []PrereqFailure {
 		}}
 	}
 
-	var (
-		failures []PrereqFailure
-		mu       sync.Mutex
-		wg       sync.WaitGroup
-	)
+	var collector failureCollector
 
 	hostDockerInternalOK := make(chan bool, 1)
 
-	appendFailure := func(f PrereqFailure) {
-		mu.Lock()
-		failures = append(failures, f)
-		mu.Unlock()
-	}
+	appendFailure := collector.append
 
 	// ── Independent checks (all run in parallel) ──────────────────────────────
 
 	// docker --version
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	collector.spawn(func() {
 		out, err := h.Run(`docker --version 2>/dev/null`)
 		if err != nil || !strings.Contains(out, "Docker version") {
 			appendFailure(PrereqFailure{
@@ -114,12 +104,10 @@ Ensure the runner user is in the docker group:
 				DocRef: "agentic-workflows.md §4c",
 			})
 		}
-	}()
+	})
 
 	// iptables availability
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	collector.spawn(func() {
 		out, err := h.Run(`command -v iptables >/dev/null 2>&1 && echo ok || echo missing`)
 		if err != nil || strings.TrimSpace(out) != "ok" {
 			appendFailure(PrereqFailure{
@@ -132,12 +120,10 @@ Ensure the runner user is in the docker group:
 				DocRef: "agentic-workflows.md §5",
 			})
 		}
-	}()
+	})
 
 	// RUNNER_TEMP check
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	collector.spawn(func() {
 		out, err := h.Run(`
 FOUND_BAD=0
 for ENV_FILE in $(find "$HOME/.gh-sr/runners" -maxdepth 2 -name ".env" 2>/dev/null); do
@@ -185,12 +171,10 @@ done
 				}
 			}
 		}
-	}()
+	})
 
 	// id -u → sudo iptables (dependent chain: only if non-root)
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	collector.spawn(func() {
 		uidOut, err := h.Run(`id -u`)
 		if err == nil && strings.TrimSpace(uidOut) != "0" {
 			out, err := h.Run(`sudo -n iptables -L DOCKER-USER >/dev/null 2>&1 && echo ok || echo no`)
@@ -210,12 +194,10 @@ done
 				})
 			}
 		}
-	}()
+	})
 
 	// host.docker.internal DNS check (default bridge)
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	collector.spawn(func() {
 		out, err := h.Run(`docker run --rm alpine sh -c "getent hosts host.docker.internal 2>/dev/null" 2>/dev/null`)
 		out = strings.TrimSpace(out)
 		if err != nil || out == "" || out == "failed" {
@@ -268,12 +250,10 @@ Fix by running on the host:
 			return
 		}
 		hostDockerInternalOK <- true
-	}()
+	})
 
 	// host-network DNS check (depends on host-docker-internal passing)
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	collector.spawn(func() {
 		if ok := <-hostDockerInternalOK; !ok {
 			return
 		}
@@ -295,12 +275,10 @@ Map host.docker.internal to the docker0 bridge gateway; see agentic-workflows.md
 				DocRef: "agentic-workflows.md §4b",
 			})
 		}
-	}()
+	})
 
 	// external DNS check
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	collector.spawn(func() {
 		out, err := h.Run(`docker run --rm alpine sh -c "nslookup github.com >/dev/null 2>&1 && echo ok || echo failed" 2>/dev/null`)
 		if err != nil || strings.TrimSpace(out) != "ok" {
 			appendFailure(PrereqFailure{
@@ -323,10 +301,9 @@ If missing, update the config and restart:
 				DocRef: "agentic-workflows.md §4b",
 			})
 		}
-	}()
+	})
 
-	wg.Wait()
-	return failures
+	return collector.wait()
 }
 
 // ValidateContainerPrereqs checks host prerequisites for runner_mode: container (DinD).
@@ -419,23 +396,12 @@ func ValidateAWFHygiene(h *host.Host) []PrereqFailure {
 		return nil
 	}
 
-	var (
-		failures []PrereqFailure
-		mu       sync.Mutex
-		wg       sync.WaitGroup
-	)
+	var collector failureCollector
 
-	appendFailure := func(f PrereqFailure) {
-		mu.Lock()
-		failures = append(failures, f)
-		mu.Unlock()
-	}
-
-	wg.Add(3)
+	appendFailure := collector.append
 
 	// Orphan awf-* containers (AWF agent sandbox containers left by crashed jobs)
-	go func() {
-		defer wg.Done()
+	collector.spawn(func() {
 		out, _ := h.Run(`docker ps -a --filter "name=awf-" --filter "name=gh-aw" --format '{{.Names}}' 2>/dev/null | head -20`)
 		if strings.TrimSpace(out) != "" {
 			appendFailure(PrereqFailure{
@@ -449,11 +415,10 @@ func ValidateAWFHygiene(h *host.Host) []PrereqFailure {
 				DocRef: "agentic-workflows.md §12",
 			})
 		}
-	}()
+	})
 
 	// Stale DOCKER-USER iptables rules referencing removed containers
-	go func() {
-		defer wg.Done()
+	collector.spawn(func() {
 		out, _ := h.Run(`sudo -n iptables -L DOCKER-USER --line-numbers -n 2>/dev/null | grep -i "awf\|gh-aw" | head -20`)
 		if strings.TrimSpace(out) != "" {
 			appendFailure(PrereqFailure{
@@ -466,11 +431,10 @@ func ValidateAWFHygiene(h *host.Host) []PrereqFailure {
 				DocRef: "agentic-workflows.md §12",
 			})
 		}
-	}()
+	})
 
 	// Orphan gh-aw-mcpg-* containers (MCP gateway containers)
-	go func() {
-		defer wg.Done()
+	collector.spawn(func() {
 		out, _ := h.Run(`docker ps -a --filter "name=gh-aw-mcpg-" --format '{{.Names}}' 2>/dev/null | head -20`)
 		if strings.TrimSpace(out) != "" {
 			appendFailure(PrereqFailure{
@@ -483,10 +447,9 @@ func ValidateAWFHygiene(h *host.Host) []PrereqFailure {
 				DocRef: "agentic-workflows.md §12",
 			})
 		}
-	}()
+	})
 
-	wg.Wait()
-	return failures
+	return collector.wait()
 }
 
 // ValidateAWFHygieneInner runs the same orphan/stale checks as ValidateAWFHygiene
@@ -502,22 +465,11 @@ func ValidateAWFHygieneInner(h *host.Host, outerContainer string) []PrereqFailur
 	q := strconv.Quote(outerContainer)
 	pfx := "docker exec " + q + " "
 
-	var (
-		failures []PrereqFailure
-		mu       sync.Mutex
-		wg       sync.WaitGroup
-	)
+	var collector failureCollector
 
-	appendFailure := func(f PrereqFailure) {
-		mu.Lock()
-		failures = append(failures, f)
-		mu.Unlock()
-	}
+	appendFailure := collector.append
 
-	wg.Add(3)
-
-	go func() {
-		defer wg.Done()
+	collector.spawn(func() {
 		out, _ := h.Run(pfx + `docker ps -a --filter "name=awf-" --filter "name=gh-aw" --format '{{.Names}}' 2>/dev/null | head -20`)
 		if strings.TrimSpace(out) != "" {
 			appendFailure(PrereqFailure{
@@ -532,10 +484,9 @@ func ValidateAWFHygieneInner(h *host.Host, outerContainer string) []PrereqFailur
 				DocRef: "agentic-workflows.md §12",
 			})
 		}
-	}()
+	})
 
-	go func() {
-		defer wg.Done()
+	collector.spawn(func() {
 		out, _ := h.Run(pfx + `iptables -L DOCKER-USER --line-numbers -n 2>/dev/null | grep -i "awf\|gh-aw" | head -20`)
 		if strings.TrimSpace(out) != "" {
 			appendFailure(PrereqFailure{
@@ -548,10 +499,9 @@ func ValidateAWFHygieneInner(h *host.Host, outerContainer string) []PrereqFailur
 				DocRef: "agentic-workflows.md §12",
 			})
 		}
-	}()
+	})
 
-	go func() {
-		defer wg.Done()
+	collector.spawn(func() {
 		out, _ := h.Run(pfx + `docker ps -a --filter "name=gh-aw-mcpg-" --format '{{.Names}}' 2>/dev/null | head -20`)
 		if strings.TrimSpace(out) != "" {
 			appendFailure(PrereqFailure{
@@ -565,10 +515,9 @@ func ValidateAWFHygieneInner(h *host.Host, outerContainer string) []PrereqFailur
 				DocRef: "agentic-workflows.md §12",
 			})
 		}
-	}()
+	})
 
-	wg.Wait()
-	return failures
+	return collector.wait()
 }
 
 // ValidateContainerInnerNetwork checks the network paths gh-aw depends on inside
@@ -839,6 +788,47 @@ grep -Eq "^nameserver[[:space:]]+$gw([[:space:]]|$)" /etc/resolv.conf'`
 func containerAWFServiceRoutingCheckCommand(outerContainer string) string {
 	q := strconv.Quote(outerContainer)
 	return `docker exec ` + q + ` sh -c 'iptables -t nat -S PREROUTING 2>/dev/null | grep -Fq -e "-A PREROUTING -s 172.30.0.0/24 -m addrtype --dst-type LOCAL -j RETURN"'`
+}
+
+// failureCollector accumulates PrereqFailure entries from concurrent goroutines
+// and waits for them to finish. Use it inside any Validate* function that fans
+// its checks out across independent goroutines: declare `var c failureCollector`,
+// spawn each check via `c.spawn(func(){ ... })`, then return `c.wait()`.
+//
+// The three Validate* funcs in this file (ValidatePrereqs, ValidateAWFHygiene,
+// ValidateAWFHygieneInner) all need exactly this pattern — a mutex-guarded
+// failures slice plus a WaitGroup — so the boilerplate lives here instead of
+// being copied. The helper is private because no caller outside this package
+// should reach for the failure-append primitives directly; failures are a
+// return-value contract, not an exposed accumulator.
+type failureCollector struct {
+	mu       sync.Mutex
+	wg       sync.WaitGroup
+	failures []PrereqFailure
+}
+
+// append records f in submission order under a mutex so concurrent goroutines
+// can safely share one collector. Safe for use from inside a c.spawn closure.
+func (c *failureCollector) append(f PrereqFailure) {
+	c.mu.Lock()
+	c.failures = append(c.failures, f)
+	c.mu.Unlock()
+}
+
+// go spawns fn in a tracked goroutine. Pair with c.wait() to join.
+func (c *failureCollector) spawn(fn func()) {
+	c.wg.Add(1)
+	go func() {
+		defer c.wg.Done()
+		fn()
+	}()
+}
+
+// wait blocks until every goroutine spawned via c.go has returned and returns
+// the accumulated failures in submission order.
+func (c *failureCollector) wait() []PrereqFailure {
+	c.wg.Wait()
+	return c.failures
 }
 
 // HasBlockingFailures returns true if any failure has severity "error".
