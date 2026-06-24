@@ -598,12 +598,17 @@ func (m *Manager) rebuildContainerImage(h *host.Host, rc config.RunnerConfig) er
 	}
 
 	// Stop and remove containers (keep state dirs so .runner persists).
+	// Chain `docker stop` and `docker rm -f` in one shell so each instance costs
+	// a single SSH round-trip instead of two (saves N round-trips for an
+	// N-instance rebuild).
 	for _, name := range rc.InstanceNames() {
 		cName := containerName(name)
 		fmt.Fprintf(m.out(), "  %s: stopping container...\n", name)
-		_, _ = h.Run(fmt.Sprintf("docker stop %s 2>/dev/null || true", cName))
 		fmt.Fprintf(m.out(), "  %s: removing container...\n", name)
-		_, _ = h.Run(fmt.Sprintf("docker rm -f %s 2>/dev/null || true", cName))
+		_, _ = h.Run(fmt.Sprintf(
+			"docker stop %s 2>/dev/null; docker rm -f %s 2>/dev/null || true",
+			cName, cName,
+		))
 	}
 
 	// Resolve runner version, host arch, and image tag.
