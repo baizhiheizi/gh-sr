@@ -473,11 +473,16 @@ func (m *Manager) removeContainer(h *host.Host, rc config.RunnerConfig, instance
 		))
 	}
 
-	// Stop then remove the container.
-	_, _ = h.Run(fmt.Sprintf("docker stop %s 2>/dev/null || true", cName))
-	if _, err := h.Run(fmt.Sprintf("docker rm -f %s 2>/dev/null || true", cName)); err != nil {
-		return fmt.Errorf("removing container %s: %w", cName, err)
-	}
+	// Stop and remove the container in one shell so each instance costs a
+	// single SSH round-trip instead of two (saves N round-trips for an
+	// N-instance `gh sr down` / `Remove`). Mirrors the same chain in
+	// rebuildContainerImage; `|| true` after rm preserves the previous
+	// best-effort semantics — host-level failures (SSH error) still bubble
+	// up via h.Run.
+	_, _ = h.Run(fmt.Sprintf(
+		"docker stop %s 2>/dev/null; docker rm -f %s 2>/dev/null || true",
+		cName, cName,
+	))
 
 	// Remove state directory. Fall back to the unresolved $HOME form if the SSH
 	// resolve fails — rm -rf in the shell will still expand $HOME.
