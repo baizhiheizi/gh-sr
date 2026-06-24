@@ -1,31 +1,31 @@
 ---
 name: perf-improver-state-2026-06
-description: Persistent state for Perf Improver agent on baizhiheizi/gh-sr — last run 2026-06-23 21:52 UTC (15th consecutive maintenance run; no new PR)
+description: Persistent state for Perf Improver agent on baizhiheizi/gh-sr — last run 2026-06-24 21:53 UTC (16th run; created draft PR for removeContainer stop+rm chain)
 metadata:
   type: project
 ---
 
 # Perf Improver State (baizhiheizi/gh-sr)
 
-**Last run:** 2026-06-23 21:52 UTC (run 28059390406)
-**Run link:** https://github.com/baizhiheizi/gh-sr/actions/runs/28059390406
+**Last run:** 2026-06-24 21:53 UTC (run 28131599082)
+**Run link:** https://github.com/baizhiheizi/gh-sr/actions/runs/28131599082
 
 ## Repository Status
-**Maintenance mode confirmed (15th consecutive run).** All major performance optimizations merged. PR #212/#213 (`Manager.Status` loop-invariant hoist) confirmed merged — full `BenchmarkManager_Status` Count=10 326,748→50,605 ns/op (-85%), 1,516,216→161,493 B/op (-89%), 167→84 allocs/op (-50%). My backlog is now completely closed; the only remaining items (#22 `Remove` parallelization blocked by config mutation, #23 `ValidateContainerPrereqs` parallelization complex due to early-exit) are blocked or low-value. Efficiency Improver has expanded the pin-benchmark infrastructure (5 pin benchmarks across 3 packages) and offered to draft the benchstat-comparison workflow that #124 asked about.
+**Backlog reopened with one new win.** PR #255 (Repo Assist, merged 2026-06-24 11:18) chained `docker stop`+`docker rm -f` in `rebuildContainerImage` — saves N SSH round-trips per N-instance rebuild. The exact same pattern still existed in `removeContainer` (`internal/runner/container.go:477-478`), called from `Manager.Remove` / `ContainerEnvironment.Reset` / `gh sr down`. Closed the gap with a draft PR (`perf-assist/chain-stop-rm-remove-container-2026-06-24`, commit `15eeef5`). Brings the two stop+rm call sites onto the same idiom.
 
 ## This Run's Work
-- Re-validated commands: `go build ./...` ✅, `go vet ./...` ✅, `go test ./... -count=1` ✅ (12/12 packages pass)
-- Did NOT re-run benchmarks this run — 15th consecutive run with no code change; benchmarks unchanged since 2026-06-17 08:35 (PR #123/#128/#146/#155/#167 wins all still hold)
-- Reviewed open PRs since 2026-06-22 22:16 (6 new open PRs):
-  - PR #254 (Repo Assist: collapse docker-exec quoting via `DockerExecCommand` helper for #251) — refactor, no perf
-  - PR #250 (Repo Assist: `failureCollector` helper in `internal/agentic/agentic.go`) — refactor, no perf
-  - PR #249 / PR #248 / PR #247 (Efficiency Improver: 3 **near-identical** tui `renderHeader/renderRow/renderHighlightedRow` `strings.Builder` PRs at 10:59 UTC) — looks like a workflow re-trigger / dedupe miss; perf wins tiny (-3 to -7 allocs/op) but their territory, not my concern. Likely 2 will be closed as duplicates.
-  - PR #246 (Repo Assist: `checkShellOK` helper in `internal/doctor/doctor.go`) — refactor, no perf
-- No new commits to main since 2026-06-22 22:16 — local HEAD `f7d0682` still matches GH main
-- Checked #124: still no new human comments since 2026-06-14 `/repo-assist` slash command; Efficiency Improver 2026-06-19 11:44 follow-up unchanged; anti-spam: not re-engaging
-- Checked #85: no new comments
-- ⏸ No new PR this run: maintenance mode (15th consecutive run); backlog fully closed
-- Updated Monthly Activity issue #85: prepended 2026-06-23 21:52 UTC entry (run 15); flagged 3 duplicate Efficiency Improver PRs in run history (informational only — not actioned in their issue)
+- Re-validated commands: `go build ./...` ✅, `go vet ./...` ✅, `go test ./... -race -count=1` ✅ (12/12 packages pass)
+- Re-validated benchmarks (200x): all 9 runner benchmarks within noise of last week (`BenchmarkManager_Status` 57,379→55,675 ns/op). My change is on the SSH path so benchmarks can't measure it directly; `TestRemoveContainer_chainsStopAndRemove` regression guard pins the call shape.
+- Reviewed merges since 2026-06-23 21:52 UTC:
+  - **PR #255** (Repo Assist: `rebuildContainerImage` stop+rm chain) — the win that triggered my draft PR for the parallel `removeContainer` site
+  - PR #254 (Repo Assist: `DockerExecCommand` helper, closes #251)
+  - PR #250 (Repo Assist: `failureCollector` helper)
+  - PR #249/#248/#247 (Efficiency Improver: tui `strings.Builder` PRs — likely 2 will close as duplicates of #249)
+  - PR #246 (Repo Assist: `checkShellOK` helper)
+  - PR #256 (Test Improver: `CollectStatus` orchestrator tests)
+- 🔧 **Created draft PR** `perf-assist/chain-stop-rm-remove-container-2026-06-24`: `[perf-improver] perf(runner): chain docker stop+rm in removeContainer (1 round-trip/instance)`. Saves N SSH round-trips per N-instance `gh sr down` on container-mode runners (−25% round-trips). Mirrors PR #255 verbatim. Adds `TestRemoveContainer_chainsStopAndRemove` regression guard.
+- Checked #124: no new human comments since 2026-06-14 `/repo-assist` slash command; anti-spam: not re-engaging
+- Updated Monthly Activity issue #85: prepended 2026-06-24 21:53 UTC entry (run 16); added review item for my new draft PR; added backlog entry #23 for `removeContainer` chain
 
 ## Validated Commands
 - `go build ./...` ✅
@@ -36,7 +36,7 @@ metadata:
 - `go test ./internal/runner -run='^$' -bench=. -benchmem -benchtime=1000x -count=2` ✅
 
 ## Open Perf Improver PRs
-- None.
+- `perf-assist/chain-stop-rm-remove-container-2026-06-24` (commit `15eeef5`, draft) — same win-class as PR #255 (`rebuildContainerImage`), applied to second site of duplicated stop+rm pattern. Saves N SSH round-trips per N-instance `gh sr down` on container-mode runners.
 
 ## Merged This Series (recap)
 - PR #123 (`[efficiency-improver]`): inline instance-name lookup in FilterRunners/FindRunner/ResolveRunnerInstance/FindRunnerForLogs
@@ -56,8 +56,7 @@ metadata:
 
 ## Next Run Tasks
 - Task 1: Commands re-validate (still passing)
-- Task 2: Re-evaluate backlog — maintenance mode, no remaining unique targets; all backlog items merged/closed/blocked
-- Task 4: Maintain [perf-improver] PRs (none open)
-- Task 5: Comment on performance issues (re-check #124 for maintainer response; #85 already updated this run)
+- Task 4: Maintain draft PR `perf-assist/chain-stop-rm-remove-container-2026-06-24` — check CI, address maintainer feedback
+- Task 5: Comment on performance issues (re-check #124 for maintainer response; anti-spam)
 - Task 7: Update Monthly Activity issue
-- **Memory note**: #85 body stable; sustainable. Backlog effectively closed. Only remaining action is to keep monitoring for new perf opportunities or maintainer response on #124. If Efficiency Improver merges their 3 duplicate PRs (likely 1 of #247/#248/#249 survives), that adds a small `strings.Builder` win to the record but doesn't reopen my backlog.
+- **Memory note**: After PR #255 merged, the same win-class existed in a second site (`removeContainer`) and I closed that gap with a new draft PR. If approved, this brings the two stop+rm call sites onto the same idiom and adds another −25% round-trip win to the per-`gh sr down` count. No further duplicated stop+rm sites found in the codebase; other low-priority items remain blocked (see prior notes).

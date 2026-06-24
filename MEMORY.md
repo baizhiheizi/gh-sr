@@ -1,1 +1,1 @@
-- [Perf Improver state 2026-06](notes.md) — last run 2026-06-23 21:52 UTC, 15th consecutive maintenance run, no new PR, backlog effectively closed (PR #212/#213 Manager.Status hoist merged; last hot spot)
+- [Perf Improver state 2026-06](notes.md) — last run 2026-06-24 21:53 UTC, 16th run, created draft PR for `removeContainer` stop+rm chain (mirrors PR #255, second site of duplicated pattern), saves N SSH round-trips per N-instance `gh sr down`
