@@ -818,7 +818,7 @@ func (c *failureCollector) spawn(fn func()) {
 	}()
 }
 
-// wait blocks until every goroutine spawned via c.go has returned and returns
+// wait blocks until every goroutine spawned via c.spawn has returned and returns
 // the accumulated failures in submission order.
 func (c *failureCollector) wait() []PrereqFailure {
 	c.wg.Wait()
