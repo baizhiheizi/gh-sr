@@ -1,16 +1,16 @@
 ---
-name: run-2026-06-24-28109264564
-description: Run history entry for Repo Assist run 28109264564 (selected tasks 2/9/10)
+name: run-2026-06-24-28127022038
+description: Run history entry for Repo Assist run 28127022038 (selected tasks 2/10/3)
 metadata:
   type: project
 ---
 
-# Run 28109264564 — 2026-06-24
+# Run 28127022038 — 2026-06-24 ~17:00 UTC
 
 ## Selected tasks
-- Task 2 (Issue Comments) — no new comments; candidate issues are bot-managed detectors or part of active design threads already covered
-- Task 9 (Testing Improvements) — branch `repo-assist/test-detect-isstale-tables-2026-06-24`, commit `4e10085`. Detect 31%→91%, IsStale 45%→91%. PR bridge-pending.
-- Task 10 (Take Repo Forward) — branch `repo-assist/refactor-awfhygiene-253-2026-06-24`, commit `4edfeca`. Closes #253. PR bridge-pending.
+- Task 2 (Issue Comments) — no new comments; candidates are either on hold (#132 design thread), covered by prior comments, or about to be closed by this run's PR
+- Task 10 (Take Repo Forward) — branch `repo-assist/refactor-docker-group-add-issue-261-2026-06-24`, commit `ed87ae1`. Closes #261. PR bridge-pending.
+- Task 3 (Issue Fix) — same work as Task 10; #261 was the highest-confidence fixable issue this cycle
 
 ## Verified
 - `go build ./...` OK
@@ -19,9 +19,9 @@ metadata:
 - `gofmt -l .` clean
 
 ## Bridge-pending PRs awaiting human push
-- `repo-assist/test-detect-isstale-tables-2026-06-24` (Task 9)
-- `repo-assist/refactor-awfhygiene-253-2026-06-24` (Task 10, closes #253)
-- `repo-assist/perf-rebuild-batch-stop-remove-2026-06-24` (Task 8, prior run)
+- `repo-assist/refactor-docker-group-add-issue-261-2026-06-24` (Task 10/3, this run, closes #261)
+- `repo-assist/test-detect-isstale-tables-2026-06-24` (Task 9, prior run — actually opened as PR #258)
+- `repo-assist/refactor-awfhygiene-253-2026-06-24` (Task 10, prior run — actually opened as PR #259)
 - #225 deps patch (bridge-pending)
 - #241 gofmt CI patch (bridge-pending)
 
@@ -30,11 +30,15 @@ metadata:
 - #148 (Detection Runs) — auto-managed, no comment
 - #208 (Duplicate Code Detector Group) — auto-managed
 - #214 (No-Op Runs) — auto-managed
+- #260 (ValidateContainer* 6-site boilerplate in agentic.go) — fresh, ~72→~30 lines payoff
+- #262 (ops.go orchestrator template across Up/Down/Restart/RebuildImage/Update) — fresh, needs applyContainerImageExtras asymmetry analysis first
 
 ## Open non-Repo-Assist PRs
-- None active (PR #257 was created 2026-06-24 with `mergeable_state: dirty` — needs human review)
+- None active
 
 ## Notes for next run
-- All open issues that have a Repo Assist comment already are also auto-managed (bot-generated detectors). The remaining candidates for substantive comments are #132 (btrfs design) and any future human-driven issues.
-- The Duplicate-Code-Detector pattern from #252 + #253 + #251 (DockerExecCommand) shows the highest-value forward-progress lane is "extract helper from two near-duplicate sites"; check `internal/{doctor,runner,agentic,autostart,ops}` for the next candidate pair on each run.
+- 3 PRs opened today: #257 (DinD readiness), #258 (autostart tests), #259 (AWF hygiene). All bridge-pending or awaiting maintainer review.
+- PR #255 (perf-rebuild-batch-stop-remove) landed 2026-06-24 ~11:18 UTC.
+- The duplicate-code detector fired today with 3 new findings (#260, #261, #262); #261 handled this run. The pattern of "extract helper from N near-duplicate sites" continues to be the highest-value forward-progress lane.
 - Maintainer did not check off any items from the monthly summary since the last update — backlog remains intact.
+- Next candidate per the pattern: #260 (ValidateContainer* 6-site boilerplate) — larger payoff than #262, similar shape to the #253 refactor that just landed.
