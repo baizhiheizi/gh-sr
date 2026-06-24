@@ -7,40 +7,29 @@ metadata:
 
 ## High value (next runs)
 
-### 1. `internal/ops` user-facing orchestrators (now 54.6%)
-- `runPerHostParallel`, `ResolveHostInfo`, `CollectHostMetrics`, `removeHost` all 100%; **`Remove` 94.1%**; `Down` 83.3%; `Restart` 85.7%; `Up` 77.8% (2026-06-21).
-- Still at 0%: `Update`, `RebuildImage`, `CollectStatus`, `CleanupOffline`. `Logs` also at 0% (prior branch never landed).
-- `Update` is the next natural target — composes `Remove + Setup + Start`; the `httptest.Server`-backed `*runner.GitHubClient` pattern is now proven.
-- `CollectStatus` / `CleanupOffline` are GitHub-heavy. Same httptest pattern + new mock for the runners-list JSON.
-- `Up` 22.2% gap is the container-mode branch (too Docker-coupled without a new abstraction).
-- **Bug uncovered (out of scope):** `Remove` and `Update` panic on nil `w` (no `io.Discard` default). TUI callers all pass `io.Discard` so not user-visible. Suggested fix: small `writeBanner(w, ...)` helper.
+### 1. `internal/ops` user-facing orchestrators (now 68.2%)
+- `CleanupOffline`, `runPerHostParallel`, `ResolveHostInfo`, `CollectHostMetrics`, `removeHost` all 100%; `Remove` 93.3%; `Logs` 92.9%; `CollectStatus` 90.5%; `Restart` 85.7%; `Down` 83.3%; `ServiceStatus` 80.0%; `Up` 77.8%; `ServiceUninstall` 75.0%; `RebuildImage` 69.2%; `ServiceCleanup` 67.5%; `Setup` 56.2%; `Update` 53.8% (2026-06-24).
+- Still at 0%: `ConnectHost`, `setupHost`, `CollectDiskUsage`, `PruneDisk`.
+- `Setup` 56.2% is the next natural target (~44% gap = per-host setupHost branch).
+- `Update` 53.8% gap; orchestrator composes Remove + Setup + Start.
+- **Bug (out of scope):** `CollectStatus` panics on nil `mgr.GitHub`. Same family as nil-`w` panic in `Remove`/`Update`.
 
-### 2. `internal/diskschedule` — Detect/Install/Uninstall/Status (0%)
-- `escapePS`, `parseAtTime`, `systemdQuoteArg`, `xmlEscapePlist` covered. Need `exec.Command` injection refactor.
+### 2. `internal/diskschedule` (14.2%) — `Detect`/`Install`/`Uninstall`/`Status` 0%
+- Needs `exec.Command` injection refactor.
 
-### 3. `internal/ops/service.go` — `ServiceInstall` (30.4%), `ServiceUninstall`/`ServiceStatus` (0%)
-- Same `installMockConnectHost` seam; one PR per function.
-
-## Medium value
-
-### 4. `internal/runner/container.go` (43.7%) — large lifecycle, real Docker work
-### 5. `internal/runner/native.go` — 21 untested fns, mostly Docker exec wrappers
-
-## Low value (defer)
-
-### 6. `internal/tui/*` (9.7%) — UI rendering
-### 7. `cmd/gh-sr/*` (0%) — tested via `internal/ops`
-### 8. `internal/autostart` (36.2%) — side-effect install helpers
+### 3. `internal/ops/service.go` partial — `ServiceCleanup` (67.5%), `ServiceUninstall` (75%)
 
 ## Patterns proved (reusable)
 
 - **Package-level factory var + per-call capture**: `var connectHostFn = ConnectHost` + `connect := connectHostFn` at function entry.
 - **`installMockConnectHost(t, map[string]host.Executor)`**: builds `*host.Host` with `host.SetConn` pre-wired to a mock executor.
 - **Real `*runner.Manager{GitHub: g}` over a mock Manager** — `g` from `httptest.NewServer` answering the GitHub API.
-- **Substring-count assertion over length**: torn-write detection on concurrent output.
+- **`barrierMockExecutor`**: signals on Run + blocks on barrier — proves goroutines actually run in parallel.
+- **`newStatusNativeRunningMock()`**: substring-matched `kill -0` → `running`.
 
 ## Completed (do not re-do)
 
+- 2026-06-24: CollectStatus 0%→90.5%; ops 62.1%→68.2% (+6.1 pp). Patch at `/tmp/gh-aw/aw-test-assist-collect-status-orchestrator.patch` (bridge failed).
 - 2026-06-21: Remove 0%→94.1%; ops 52.3%→54.6% (+2.3 pp). Patch at `/tmp/gh-aw/aw-test-assist-remove-orchestrator.patch` (bridge failed).
 - 2026-06-20: Logs 0%→92.9%; ops 50.2%→52.3% (+2.1 pp). Patch at `/tmp/gh-aw/aw-test-assist-logs-orchestrator.patch` (bridge failed).
 - 2026-06-19: Up 0%→77.8%; ops 42.8%→44.0% (+1.2 pp). Squashed via ff8d9cd.
