@@ -1,7 +1,9 @@
 package runner
 
 import (
+	"bytes"
 	"errors"
+	"fmt"
 	"io"
 	"strings"
 	"testing"
@@ -209,5 +211,147 @@ func TestDockerGroupPendingMessage(t *testing.T) {
 	}
 	if got := dockerGroupPendingMessage(""); got != "Re-run: gh sr setup" {
 		t.Fatalf("got %q", got)
+	}
+}
+
+func TestAddSSHTUserToDockerGroup_retryPathAddsAndAnnounces(t *testing.T) {
+	t.Parallel()
+	var usermodCalled bool
+	mock := &testutil.MockExecutor{RunFn: func(cmd string) (string, error) {
+		if strings.Contains(cmd, "usermod") {
+			usermodCalled = true
+			return "", nil
+		}
+		return "", nil
+	}}
+	h := linuxDockerHost(t, "runner@vps")
+	h.SetConn(mock)
+
+	var buf bytes.Buffer
+	err := addSSHTUserToDockerGroup(h, &buf, "aw-runner",
+		"  Added ", "to",
+		func(string, error) error { return errors.New("should not be called") },
+	)
+	if !errors.Is(err, ErrDockerGroupPending) {
+		t.Fatalf("expected ErrDockerGroupPending, got %v", err)
+	}
+	if !usermodCalled {
+		t.Fatal("expected usermod to be called")
+	}
+	got := buf.String()
+	if !strings.Contains(got, "  Added runner to the docker group.") {
+		t.Fatalf("announcement line missing in: %q", got)
+	}
+	if !strings.Contains(got, "Re-run: gh sr setup aw-runner") {
+		t.Fatalf("pending message missing in: %q", got)
+	}
+}
+
+func TestAddSSHTUserToDockerGroup_freshInstallPathAddsAndAnnounces(t *testing.T) {
+	t.Parallel()
+	var usermodCalled bool
+	mock := &testutil.MockExecutor{RunFn: func(cmd string) (string, error) {
+		if strings.Contains(cmd, "usermod") {
+			usermodCalled = true
+			return "", nil
+		}
+		return "", nil
+	}}
+	h := linuxDockerHost(t, "runner@vps")
+	h.SetConn(mock)
+
+	var buf bytes.Buffer
+	err := addSSHTUserToDockerGroup(h, &buf, "aw-runner",
+		"  Docker installed and ", "added to",
+		func(string, error) error { return errors.New("should not be called") },
+	)
+	if !errors.Is(err, ErrDockerGroupPending) {
+		t.Fatalf("expected ErrDockerGroupPending, got %v", err)
+	}
+	if !usermodCalled {
+		t.Fatal("expected usermod to be called")
+	}
+	got := buf.String()
+	if !strings.Contains(got, "  Docker installed and runner added to the docker group.") {
+		t.Fatalf("announcement line missing in: %q", got)
+	}
+}
+
+func TestAddSSHTUserToDockerGroup_emptyUserCallsErrCallback(t *testing.T) {
+	t.Parallel()
+	var usermodCalled bool
+	sentinelCalled := false
+	mock := &testutil.MockExecutor{RunFn: func(cmd string) (string, error) {
+		if strings.Contains(cmd, "usermod") {
+			usermodCalled = true
+			return "", nil
+		}
+		return "", nil
+	}}
+	// Empty ssh user: linuxDockerHost uses addr "h" (no '@'); SSHUser parses
+	// the user@host format and returns "" when no '@' is present.
+	h := linuxDockerHost(t, "noatsignhost")
+	h.SetConn(mock)
+
+	var buf bytes.Buffer
+	err := addSSHTUserToDockerGroup(h, &buf, "aw-runner",
+		"  Added ", "to",
+		func(user string, e error) error {
+			sentinelCalled = true
+			if user != "" {
+				t.Fatalf("expected empty sshUser, got %q", user)
+			}
+			if e == nil {
+				t.Fatal("expected sentinel error")
+			}
+			return e
+		},
+	)
+	if err == nil {
+		t.Fatal("expected error from errOnUsermodFail")
+	}
+	if !strings.Contains(err.Error(), "ssh user is empty") {
+		t.Fatalf("expected sentinel-bearing error, got %v", err)
+	}
+	if !sentinelCalled {
+		t.Fatal("expected errOnUsermodFail to be called for empty sshUser")
+	}
+	if usermodCalled {
+		t.Fatal("usermod must not be called when sshUser is empty")
+	}
+	if buf.Len() != 0 {
+		t.Fatalf("expected no output, got %q", buf.String())
+	}
+}
+
+func TestAddSSHTUserToDockerGroup_usermodFailurePropagatesWrappedError(t *testing.T) {
+	t.Parallel()
+	mock := &testutil.MockExecutor{RunFn: func(cmd string) (string, error) {
+		if strings.Contains(cmd, "usermod") {
+			return "", errors.New("sudo: a password is required")
+		}
+		return "", nil
+	}}
+	h := linuxDockerHost(t, "runner@vps")
+	h.SetConn(mock)
+
+	var buf bytes.Buffer
+	err := addSSHTUserToDockerGroup(h, &buf, "aw-runner",
+		"  Docker installed and ", "added to",
+		func(sshUser string, e error) error {
+			return fmt.Errorf("adding %s to docker group: %w", sshUser, e)
+		},
+	)
+	if err == nil || errors.Is(err, ErrDockerGroupPending) {
+		t.Fatalf("expected wrapped error, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "adding runner to docker group") {
+		t.Fatalf("expected wrapping to include sshUser, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "password is required") {
+		t.Fatalf("expected underlying error to wrap, got %v", err)
+	}
+	if buf.Len() != 0 {
+		t.Fatalf("expected no output on failure, got %q", buf.String())
 	}
 }
