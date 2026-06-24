@@ -370,26 +370,37 @@ func checkNativeRunnerInstall(w io.Writer, hostName string, h *host.Host, runner
 	}
 }
 
+// checkShellOK runs cmd on h and reports whether trimmed stdout equals want.
+// On success it prints okMsg with sevOK; on failure it prints failMsg with
+// sevFail (including the underlying err in parentheses), increments r.Fail,
+// and returns false. Used by checkNative to collapse the repeated
+// run+trim+check idiom across the linux and darwin branches.
+func checkShellOK(w io.Writer, hostName string, h *host.Host, r *Result, cmd, want, okMsg, failMsg string) bool {
+	out, err := h.Run(cmd)
+	out = strings.TrimSpace(out)
+	if err != nil || out != want {
+		printLine(w, sevFail, hostName, fmt.Sprintf("%s (%v)", failMsg, err))
+		r.Fail++
+		return false
+	}
+	printLine(w, sevOK, hostName, okMsg)
+	return true
+}
+
 func checkNative(w io.Writer, hostName string, h *host.Host, r *Result) {
 	switch h.OS {
 	case "linux":
-		out, err := h.Run(`if command -v curl >/dev/null 2>&1 && command -v tar >/dev/null 2>&1; then echo ok; else echo missing; fi`)
-		out = strings.TrimSpace(out)
-		if err != nil || out != "ok" {
-			printLine(w, sevFail, hostName, fmt.Sprintf("native: need curl and tar on PATH (%v)", err))
-			r.Fail++
-			return
-		}
-		printLine(w, sevOK, hostName, "native: curl and tar present")
+		checkShellOK(w, hostName, h, r,
+			`if command -v curl >/dev/null 2>&1 && command -v tar >/dev/null 2>&1; then echo ok; else echo missing; fi`,
+			"ok",
+			"native: curl and tar present",
+			"native: need curl and tar on PATH")
 	case "darwin":
-		out, err := h.Run(`command -v curl >/dev/null 2>&1 && echo ok || echo missing`)
-		out = strings.TrimSpace(out)
-		if err != nil || out != "ok" {
-			printLine(w, sevFail, hostName, fmt.Sprintf("native: need curl (%v)", err))
-			r.Fail++
-			return
-		}
-		printLine(w, sevOK, hostName, "native: curl present")
+		checkShellOK(w, hostName, h, r,
+			`command -v curl >/dev/null 2>&1 && echo ok || echo missing`,
+			"ok",
+			"native: curl present",
+			"native: need curl")
 	case "windows":
 		out, err := h.RunShell(`$PSVersionTable.PSVersion.ToString()`)
 		out = strings.TrimSpace(out)

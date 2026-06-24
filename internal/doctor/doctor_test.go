@@ -3,6 +3,7 @@ package doctor
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -671,5 +672,89 @@ func TestPrintAgenticFailures_MixedSeverities(t *testing.T) {
 	}
 	if r.Fail != 2 || r.Warn != 1 {
 		t.Fatalf("counters: got %+v, want Fail=2 Warn=1", r)
+	}
+}
+
+// TestCheckShellOK_OkBranch verifies checkShellOK returns true, prints the
+// OK line, and leaves r.Fail untouched when trimmed stdout matches want.
+func TestCheckShellOK_OkBranch(t *testing.T) {
+	t.Parallel()
+	h := host.NewHost("h1", config.HostConfig{OS: "linux", Addr: "local"})
+	h.SetConn(&testutil.MockExecutor{
+		RunFn: func(cmd string) (string, error) { return "ok\n", nil },
+	})
+	var buf bytes.Buffer
+	r := Result{}
+	if !checkShellOK(&buf, "h1", h, &r, "true", "ok", "ready", "not ready") {
+		t.Fatal("checkShellOK should return true on matching stdout")
+	}
+	if r.Fail != 0 {
+		t.Fatalf("r.Fail should stay 0 on OK, got %d", r.Fail)
+	}
+	if !strings.Contains(buf.String(), "ready") || strings.Contains(buf.String(), "not ready") {
+		t.Fatalf("OK output should contain okMsg and not failMsg, got: %q", buf.String())
+	}
+}
+
+// TestCheckShellOK_Mismatch verifies checkShellOK returns false, prints the
+// FAIL line with err suffix, and increments r.Fail when trimmed stdout != want.
+func TestCheckShellOK_Mismatch(t *testing.T) {
+	t.Parallel()
+	h := host.NewHost("h1", config.HostConfig{OS: "linux", Addr: "local"})
+	h.SetConn(&testutil.MockExecutor{
+		RunFn: func(cmd string) (string, error) { return "missing\n", nil },
+	})
+	var buf bytes.Buffer
+	r := Result{}
+	if checkShellOK(&buf, "h1", h, &r, "true", "ok", "ready", "not ready") {
+		t.Fatal("checkShellOK should return false on non-matching stdout")
+	}
+	if r.Fail != 1 {
+		t.Fatalf("r.Fail should increment to 1, got %d", r.Fail)
+	}
+	if !strings.Contains(buf.String(), "not ready") {
+		t.Fatalf("FAIL output should contain failMsg, got: %q", buf.String())
+	}
+}
+
+// TestCheckShellOK_RunError verifies checkShellOK treats a non-nil err from
+// h.Run as a failure even when stdout happens to match want (defensive: err
+// is a stronger signal than stdout in some failure modes, e.g. SSH closed).
+func TestCheckShellOK_RunError(t *testing.T) {
+	t.Parallel()
+	h := host.NewHost("h1", config.HostConfig{OS: "linux", Addr: "local"})
+	h.SetConn(&testutil.MockExecutor{
+		RunFn:  func(cmd string) (string, error) { return "ok", errors.New("ssh: handshake timeout") },
+		RunErr: nil,
+	})
+	var buf bytes.Buffer
+	r := Result{}
+	if checkShellOK(&buf, "h1", h, &r, "true", "ok", "ready", "not ready") {
+		t.Fatal("checkShellOK should return false when h.Run returns an error")
+	}
+	if r.Fail != 1 {
+		t.Fatalf("r.Fail should increment to 1, got %d", r.Fail)
+	}
+	if !strings.Contains(buf.String(), "ssh: handshake timeout") {
+		t.Fatalf("FAIL output should include underlying err, got: %q", buf.String())
+	}
+}
+
+// TestCheckShellOK_TrimsWhitespace verifies checkShellOK trims trailing
+// newlines from h.Run output before comparing to want, matching the previous
+// inline behavior at the linux/darwin call sites in checkNative.
+func TestCheckShellOK_TrimsWhitespace(t *testing.T) {
+	t.Parallel()
+	h := host.NewHost("h1", config.HostConfig{OS: "linux", Addr: "local"})
+	h.SetConn(&testutil.MockExecutor{
+		RunFn: func(cmd string) (string, error) { return "  ok  \n", nil },
+	})
+	var buf bytes.Buffer
+	r := Result{}
+	if !checkShellOK(&buf, "h1", h, &r, "true", "ok", "ready", "not ready") {
+		t.Fatal("checkShellOK should tolerate leading/trailing whitespace")
+	}
+	if r.Fail != 0 {
+		t.Fatalf("r.Fail should stay 0 after trim, got %d", r.Fail)
 	}
 }
