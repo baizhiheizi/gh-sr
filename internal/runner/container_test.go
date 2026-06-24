@@ -1682,3 +1682,65 @@ func TestDockerExecCommand_PrefixMatchesFormerInlineQuoting(t *testing.T) {
 		t.Errorf("prefix = %q, want %q (this is the canonical AWF-hygiene inner-Docker prefix)", prefix, want)
 	}
 }
+
+// TestRebuildContainerImage_chainsStopAndRemovePerInstance pins the perf
+// shape of the per-instance teardown in rebuildContainerImage: each
+// instance's `docker stop` and `docker rm -f` must run in a single
+// h.Run call (chained in one shell) instead of as two separate round-trips.
+// Saves N SSH round-trips for an N-instance rebuild. The mock deliberately
+// fails the GitHub release lookup so the function returns immediately after
+// the teardown loop, leaving only the captured stop+rm calls to inspect.
+func TestRebuildContainerImage_chainsStopAndRemovePerInstance(t *testing.T) {
+	t.Parallel()
+	// GitHub server returns 500 so resolveRunnerImageInputs errors out
+	// after the teardown loop runs.
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "boom", http.StatusInternalServerError)
+	}))
+	defer ts.Close()
+
+	var calls []string
+	mock := &testutil.MockExecutor{RunFn: func(cmd string) (string, error) {
+		calls = append(calls, cmd)
+		return "", nil
+	}}
+	h := host.NewHost("h", config.HostConfig{Addr: "runner@vps", OS: "linux", Arch: "amd64"})
+	h.SetConn(mock)
+	m := &Manager{
+		GitHub:      NewGitHubClientWithHTTP("pat", ts.Client(), ts.URL),
+		GhSrVersion: "1.2.3",
+	}
+	rc := config.RunnerConfig{
+		Name:       "aw-runner",
+		Repo:       "o/r",
+		Host:       "h",
+		Profile:    "agentic",
+		RunnerMode: config.RunnerModeContainer,
+		Count:      3,
+	}
+
+	// We expect rebuildContainerImage to return the GitHub-fetch error,
+	// but only after the teardown loop has captured all N chained calls.
+	_ = m.rebuildContainerImage(h, rc)
+
+	// Count chained stop+rm calls and bare stop/rm calls.
+	chained := 0
+	bareStop := 0
+	bareRm := 0
+	for _, c := range calls {
+		switch {
+		case strings.Contains(c, "docker stop") && strings.Contains(c, "docker rm -f"):
+			chained++
+		case strings.Contains(c, "docker stop "):
+			bareStop++
+		case strings.Contains(c, "docker rm -f"):
+			bareRm++
+		}
+	}
+	if chained != rc.Count {
+		t.Errorf("chained stop+rm calls = %d, want %d (one per instance); calls=%v", chained, rc.Count, calls)
+	}
+	if bareStop != 0 || bareRm != 0 {
+		t.Errorf("expected no separate stop/rm calls; got bareStop=%d bareRm=%d; calls=%v", bareStop, bareRm, calls)
+	}
+}
