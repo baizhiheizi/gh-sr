@@ -56,6 +56,68 @@ func TestIsStaleLinux(t *testing.T) {
 	}
 }
 
+func TestIsStale(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name string
+		os   string
+		mock *testutil.MockExecutor
+		want bool
+		err  bool
+	}{
+		{
+			name: "linux dir missing",
+			os:   "linux",
+			mock: &testutil.MockExecutor{Output: "yes\n"},
+			want: true,
+		},
+		{
+			name: "linux dir present with run.sh",
+			os:   "linux",
+			mock: &testutil.MockExecutor{Output: "no\n"},
+			want: false,
+		},
+		{
+			name: "windows task dir and run.cmd present",
+			os:   "windows",
+			mock: &testutil.MockExecutor{Output: "no\n"},
+			want: false,
+		},
+		{
+			name: "windows task dir missing",
+			os:   "windows",
+			mock: &testutil.MockExecutor{Output: "yes\n"},
+			want: true,
+		},
+		{
+			name: "linux command error propagates",
+			os:   "linux",
+			mock: &testutil.MockExecutor{RunErr: errCalled},
+			want: false,
+			err:  true,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			h := newMockHost("test", config.HostConfig{OS: tc.os}, tc.mock)
+			got, err := IsStale(h, "ci-1")
+			if tc.err {
+				if err == nil {
+					t.Errorf("expected error, got stale=%v", got)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got != tc.want {
+				t.Errorf("IsStale = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestCleanupStaleDryRun(t *testing.T) {
 	t.Parallel()
 	mock := &testutil.MockExecutor{
