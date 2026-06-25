@@ -207,8 +207,9 @@ func TestContainerEscalation_quotesContainerAndCommand(t *testing.T) {
 	if !strings.Contains(script, "docker start") {
 		t.Fatal("expected docker start fallback")
 	}
-	if !strings.Contains(script, "'gh-sr-rune-1'") {
-		t.Fatalf("expected single-quoted container name, got: %s", script)
+	// QuoteContainerName wraps the name in Go-style double quotes via strconv.Quote.
+	if !strings.Contains(script, `"gh-sr-rune-1"`) {
+		t.Fatalf("expected double-quoted container name, got: %s", script)
 	}
 	if !strings.Contains(script, "sh -c") {
 		t.Fatal("expected shell wrapper for the inner command")
@@ -221,9 +222,9 @@ func TestContainerEscalation_quotesContainerAndCommand(t *testing.T) {
 func TestContainerEscalation_handlesSpacesInName(t *testing.T) {
 	t.Parallel()
 	script := containerEscalation("weird name", `echo hi`)
-	// hostshell.PosixSingleQuote wraps spaces in single quotes.
-	if !strings.Contains(script, "'weird name'") {
-		t.Fatalf("expected single-quoted container name with spaces, got: %s", script)
+	// QuoteContainerName wraps spaces in Go-style double quotes via strconv.Quote.
+	if !strings.Contains(script, `"weird name"`) {
+		t.Fatalf("expected double-quoted container name with spaces, got: %s", script)
 	}
 }
 

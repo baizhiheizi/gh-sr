@@ -1683,6 +1683,42 @@ func TestDockerExecCommand_PrefixMatchesFormerInlineQuoting(t *testing.T) {
 	}
 }
 
+func TestQuoteContainerName_PlainName(t *testing.T) {
+	t.Parallel()
+	if got, want := QuoteContainerName("gh-sr-myinstance"), `"gh-sr-myinstance"`; got != want {
+		t.Errorf("QuoteContainerName = %q, want %q", got, want)
+	}
+}
+
+func TestQuoteContainerName_NameWithSpecialCharsIsQuoted(t *testing.T) {
+	t.Parallel()
+	// Mirrors TestDockerExecCommand_NameWithSpecialCharsIsQuoted: a malicious
+	// container name must not be able to inject shell via a bare double-quote.
+	got := QuoteContainerName(`evil"; rm -rf /; "`)
+	want := `"evil\"; rm -rf /; \""`
+	if got != want {
+		t.Errorf("QuoteContainerName = %q, want %q", got, want)
+	}
+}
+
+func TestQuoteContainerName_EmptyName(t *testing.T) {
+	t.Parallel()
+	if got, want := QuoteContainerName(""), `""`; got != want {
+		t.Errorf("QuoteContainerName(\"\") = %q, want %q", got, want)
+	}
+}
+
+func TestQuoteContainerName_SpacesAndPunctuation(t *testing.T) {
+	t.Parallel()
+	// Spaces and other shell-significant chars must end up inside the
+	// double-quoted envelope so the value is preserved as a single shell arg.
+	got := QuoteContainerName("weird name")
+	want := `"weird name"`
+	if got != want {
+		t.Errorf("QuoteContainerName = %q, want %q", got, want)
+	}
+}
+
 // TestRebuildContainerImage_chainsStopAndRemovePerInstance pins the perf
 // shape of the per-instance teardown in rebuildContainerImage: each
 // instance's `docker stop` and `docker rm -f` must run in a single
