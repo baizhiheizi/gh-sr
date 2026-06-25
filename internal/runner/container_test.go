@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -1739,6 +1740,72 @@ func TestRebuildContainerImage_chainsStopAndRemovePerInstance(t *testing.T) {
 	}
 	if chained != rc.Count {
 		t.Errorf("chained stop+rm calls = %d, want %d (one per instance); calls=%v", chained, rc.Count, calls)
+	}
+	if bareStop != 0 || bareRm != 0 {
+		t.Errorf("expected no separate stop/rm calls; got bareStop=%d bareRm=%d; calls=%v", bareStop, bareRm, calls)
+	}
+}
+
+// TestRemoveContainer_chainsStopAndRemove pins the perf shape of the
+// per-instance teardown in removeContainer: `docker stop` and `docker rm -f`
+// must run in a single h.Run call (chained in one shell) instead of as two
+// separate SSH round-trips. Saves N round-trips for an N-instance
+// `gh sr down` / `Remove` (the orchestrator loops over InstanceNames()).
+// The mock deliberately fails the GitHub removal-token lookup so the
+// `docker exec ... config.sh remove` deregister step is skipped, leaving
+// only the chained stop+rm + the final state-dir rm -rf to inspect.
+func TestRemoveContainer_chainsStopAndRemove(t *testing.T) {
+	t.Parallel()
+	// GitHub server returns 500 so GetRemovalTokenScoped errors out and
+	// the docker-exec deregister step is skipped (best-effort).
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "boom", http.StatusInternalServerError)
+	}))
+	defer ts.Close()
+
+	var calls []string
+	mock := &testutil.MockExecutor{RunFn: func(cmd string) (string, error) {
+		calls = append(calls, cmd)
+		return "", nil
+	}}
+	h := host.NewHost("h", config.HostConfig{Addr: "runner@vps", OS: "linux", Arch: "amd64"})
+	h.SetConn(mock)
+	m := &Manager{
+		GitHub:      NewGitHubClientWithHTTP("pat", ts.Client(), ts.URL),
+		GhSrVersion: "1.2.3",
+		Out:         io.Discard,
+	}
+	rc := config.RunnerConfig{
+		Name:       "aw-runner",
+		Repo:       "o/r",
+		Host:       "h",
+		Profile:    "agentic",
+		RunnerMode: config.RunnerModeContainer,
+		Count:      3,
+	}
+
+	// Call removeContainer for a single instance so the assertion is
+	// exactly "1 chained call + 1 state-dir rm -rf", independent of rc.Count.
+	if err := m.removeContainer(h, rc, "aw-runner-1"); err != nil {
+		t.Fatalf("removeContainer: unexpected error: %v", err)
+	}
+
+	// Count chained stop+rm calls, bare stop calls, and bare rm calls.
+	chained := 0
+	bareStop := 0
+	bareRm := 0
+	for _, c := range calls {
+		switch {
+		case strings.Contains(c, "docker stop") && strings.Contains(c, "docker rm -f"):
+			chained++
+		case strings.Contains(c, "docker stop "):
+			bareStop++
+		case strings.Contains(c, "docker rm -f"):
+			bareRm++
+		}
+	}
+	if chained != 1 {
+		t.Errorf("chained stop+rm calls = %d, want 1 (single SSH round-trip); calls=%v", chained, calls)
 	}
 	if bareStop != 0 || bareRm != 0 {
 		t.Errorf("expected no separate stop/rm calls; got bareStop=%d bareRm=%d; calls=%v", bareStop, bareRm, calls)
