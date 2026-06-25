@@ -1,47 +1,35 @@
 ---
-name: run-2026-06-25-28147522118
-description: Run history entry for Repo Assist run 28147522118 (selected tasks 5/2/3)
+name: run-2026-06-25-28161948236
+description: Run history entry for Repo Assist run 28161948236 (selected tasks 4, 9, 3)
 metadata:
   type: project
 ---
 
-# Run 28147522118 — 2026-06-25
+# Run 28161948236 — 2026-06-25
 
 ## Selected tasks
-- Task 5 (Coding Improvements) — branch `repo-assist/improve-quote-container-name-2026-06-25`, commit `e7dcbb7`: extracted `runner.QuoteContainerName(cname)` helper using `strconv.Quote`. Replaces 5 inline `hostshell.PosixSingleQuote`/`strconv.Quote` call sites across `internal/runner/disk.go`, `internal/runner/environment.go`, and `internal/doctor/doctor.go`. `DockerExecCommand` now routes through `QuoteContainerName` internally. PR bridge-pending.
-- Task 2 (Issue Comments) — 1 new comment on #262. Posted design notes on the `orchestrate` helper signature (3 options) and asked for maintainer signal on `applyContainerImageExtras` asymmetry + `RebuildImage`'s `partitionRebuildTargets` placement before drafting the PR.
-- Task 3 (Issue Fix) — branch `repo-assist/refactor-validatecontainer-issue-260-2026-06-25`, commit `cca95ec`: extracted `runContainerCheck(h, spec)` helper + `containerCheckSpec` struct. All six `ValidateContainer*` wrappers collapse from ~22 lines to single calls. `ValidateContainerMTU` keeps its `hostEgressMTU` numeric guard at the wrapper level. Closes #260. PR bridge-pending.
+- Task 4 (Engineering Investments) — no action. Most actionable candidates (deps bump #225, gofmt CI #241) are bridge-pending patches. Live detector finding #262 needs maintainer signal first. No clearly beneficial change identifiable.
+- Task 9 (Testing Improvements) — no action. Coverage already strong (ops 68.2%, runner 54.3%, agentic 81.0%); Test Improver actively working on Test Improver backlog. Low-coverage areas (tui 9.7%, diskschedule 14.2%) are UI/infrastructure with limited incremental test value.
+- Task 3 (Issue Fix) — fell back to Task 2 (Issue Comment). No comment-worthy issues. #262 has prior Repo Assist design notes from previous run still awaiting maintainer response; other open candidates are auto-managed detectors or on hold.
+- Task 11 (Monthly Activity Summary) — updated #100 with no-action run entry, removed #243 (already closed), removed bridge-pending items for #265/#266 (both merged), added #257 dirty/rebase item.
 
 ## Verified
 - `go build ./...` OK
-- `go vet ./...` OK
-- `go test ./... -race -count=1` OK (12/12 packages)
+- `go test ./...` OK (12/12 packages)
 - `gofmt -l .` clean
-- `internal/agentic` coverage 82.7% (unchanged)
-- `internal/runner` coverage unchanged
 
-## Bridge-pending PRs awaiting human push
-- `repo-assist/refactor-validatecontainer-issue-260-2026-06-25` (Task 3, this run, closes #260)
-- `repo-assist/improve-quote-container-name-2026-06-25` (Task 5, this run)
-- `repo-assist/refactor-docker-group-add-issue-261-2026-06-24` (Task 10/3 prior run — opened as PR #263)
-- `repo-assist/test-detect-isstale-tables-2026-06-24` (prior run — opened as PR #258)
-- `repo-assist/refactor-awfhygiene-253-2026-06-24` (prior run — opened as PR #259)
-- #225 deps patch (bridge-pending, protected files)
-- #241 gofmt CI patch (bridge-pending, protected files)
+## State changes
+- PR #257 (DinD readiness probe, branch `repo-assist/refactor-dind-readiness-probe-issue-252-add8bb4c3add185c`) is now `mergeable_state: dirty` after #263/#264/#265/#266 landed on main. Would need rebase to land.
+- Detector findings closed since previous run: #243 (closed 2026-06-23 as `not_planned`).
+- Detector findings active: #262 (orchestrate helper, awaiting maintainer signal).
+- Merges since last run: #266, #265, #264, #263, #259, #258 (all in last 2 days).
 
-## Open issues worth future attention
-- #132 (btrfs storage design) — on hold pending maintainer signal on loop-mount persistence
-- #148 (Detection Runs) — auto-managed, no comment
-- #208 (Duplicate Code Detector Group) — auto-managed
-- #214 (No-Op Runs) — auto-managed
-- #262 (ops.go orchestrator template) — comment posted this run, awaiting maintainer signal on helper signature
-
-## Open non-Repo-Assist PRs
-- None active
+## Open PRs awaiting maintainer attention
+- #257 (dirty), #258 (autostart tests), #259 (AWF hygiene)
 
 ## Notes for next run
-- 2 PRs opened today: validatecontainer-issue-260 (Task 3) + quote-container-name (Task 5). Both bridge-pending.
-- Comment on #262 awaits maintainer signal. Once given, the PR is straightforward: ~50 lines of orchestration collapse to one ~10-line helper plus 5 spec constructions.
-- The duplicate-code detector fired again with 3 new findings (#260, #261, #262); both #260 and #261 handled across the last two runs. #262 remains for next cycle.
-- Maintainer did not check off any items from the monthly summary since the last update — backlog remains intact.
-- Next candidate per the pattern: #262 (when maintainer signals).
+- 4 PRs landed on 2026-06-25 alone (#263, #264, #265, #266) — strong merge cadence.
+- No-action verdict is honest and correct this run. Do not force work that doesn't add value.
+- Next candidate per the pattern: still #262 once maintainer signals.
+- If new detector findings surface on `main` (likely daily), they should take priority over #262 follow-up.
+- Test Improver's bridge-pending patches are the next coverage gap to watch; don't duplicate their work.
