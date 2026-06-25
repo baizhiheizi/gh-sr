@@ -156,6 +156,110 @@ func TestIsServiceActive(t *testing.T) {
 	}
 }
 
+func TestDetect(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name string
+		os   string
+		mock *testutil.MockExecutor
+		want Kind
+		err  bool
+	}{
+		{
+			name: "linux user unit present",
+			os:   "linux",
+			mock: &testutil.MockExecutor{
+				RunFn: func(cmd string) (string, error) {
+					if strings.Contains(cmd, ".config/systemd/user/") {
+						return "user\n", nil
+					}
+					return "", nil
+				},
+			},
+			want: KindSystemdUser,
+		},
+		{
+			name: "linux system unit present (user absent)",
+			os:   "linux",
+			mock: &testutil.MockExecutor{
+				RunFn: func(cmd string) (string, error) {
+					if strings.Contains(cmd, ".config/systemd/user/") {
+						return "\n", nil
+					}
+					if strings.Contains(cmd, "/etc/systemd/system/") {
+						return "system\n", nil
+					}
+					return "", nil
+				},
+			},
+			want: KindSystemdSystem,
+		},
+		{
+			name: "linux neither installed",
+			os:   "linux",
+			mock: &testutil.MockExecutor{Output: "\n"},
+			want: KindNone,
+		},
+		{
+			name: "darwin launchd plist present",
+			os:   "darwin",
+			mock: &testutil.MockExecutor{
+				RunFn: func(cmd string) (string, error) {
+					if strings.Contains(cmd, "LaunchAgents/") {
+						return "yes\n", nil
+					}
+					return "", nil
+				},
+			},
+			want: KindLaunchd,
+		},
+		{
+			name: "darwin launchd plist absent",
+			os:   "darwin",
+			mock: &testutil.MockExecutor{Output: "\n"},
+			want: KindNone,
+		},
+		{
+			name: "windows scheduled task present",
+			os:   "windows",
+			mock: &testutil.MockExecutor{Output: "yes\n"},
+			want: KindWindowsTask,
+		},
+		{
+			name: "windows scheduled task absent",
+			os:   "windows",
+			mock: &testutil.MockExecutor{Output: "no\n"},
+			want: KindNone,
+		},
+		{
+			name: "unsupported OS returns error",
+			os:   "freebsd",
+			mock: &testutil.MockExecutor{},
+			want: KindNone,
+			err:  true,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			h := newMockHost("test", config.HostConfig{OS: tc.os}, tc.mock)
+			got, err := Detect(h, "ci-1")
+			if tc.err {
+				if err == nil {
+					t.Errorf("expected error, got kind=%q", got)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got != tc.want {
+				t.Errorf("Detect = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestIsServiceActive_errors(t *testing.T) {
 	t.Parallel()
 	t.Run("systemd-user command fails", func(t *testing.T) {
