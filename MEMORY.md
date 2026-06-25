@@ -1,1 +1,1 @@
-- [Perf Improver state 2026-06](notes.md) — last run 2026-06-24 21:53 UTC, 16th run, created draft PR for `removeContainer` stop+rm chain (mirrors PR #255, second site of duplicated pattern), saves N SSH round-trips per N-instance `gh sr down`
+- [Perf Improver state 2026-06](notes.md) — last run 2026-06-25 21:55 UTC, 17th run, PR #264 MERGED 09:02 by an-lee, created draft PR for `EnsureHostDocker` dockerInfoStatus consolidation (reuse `(ok, permissionDenied)` tuple from one SSH call), saves 1-2 SSH round-trips per `gh sr setup`
