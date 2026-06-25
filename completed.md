@@ -7,34 +7,28 @@ metadata:
 
 # Completed Work
 
-## 2026-06-23 — TUI render strings.Builder (no PR — silent tool failure, 3rd consecutive)
+## 2026-06-25 — TUI metrics strconv.FormatFloat (no PR — silent tool failure, 3rd consecutive)
 
-Branch: `efficiency/tui-render-strings-builder` (commit e430457). `internal/tui/table.go` — `renderHeader`/`renderRow`/`renderHighlightedRow` swapped from `var line string + line +=` (O(N²) string concat) to `var b strings.Builder` + `b.WriteString(...)`. New `internal/tui/table_bench_test.go` pins per-call cost.
+Branch: `efficiency/metrics-strconv-formatfloat-2026-06-25` (commit 09ca658). `metricsRow` (3 cells) + `LoadStr` + `FormatHostMetrics` (header + cells) swapped from `fmt.Sprintf` to `strconv.FormatFloat` + `strings.Builder`. New `appendHostCell` helper inlines the column padding/separator. New tests `TestLoadStr` + `TestFormatHostMetrics`.
 
-**Energy evidence** (5×5000x on AMD Ryzen AI 9 HX 370): RenderHeader 161→158 allocs/op (-1.9%); RenderRow 255→248 allocs/op (-2.7%); RenderHighlightedRow 291→284 allocs/op (-2.4%); -5-7% B/op; ns/op within noise (lipgloss `Render()` dominates).
+**Energy evidence** (5×10000x on AMD Ryzen AI 9 HX 370):
+- `BenchmarkMetricsRow`: ~1968→~1500 ns/op (**-24%**), 472→456 B/op (-3.4%), **20→16 allocs/op (-20%)**.
+- `BenchmarkFormatHostMetrics` (new): ~2627 ns/op, 1856 B/op, 35 allocs/op.
 
-**Test status**: build/vet/format clean, 12/12 packages pass.
+**Test status**: build/vet/format/race clean, 12/12 packages pass.
 
-**PR creation failure**: `safe-outputs create_pull_request` reported success 3× but no PR opened (GET #247 → 404). Reported `incomplete`. Patch + bundle at `/tmp/gh-aw/aw-efficiency-tui-render-strings-builder.{patch,bundle}`. Intermittent — both 2026-06-17 (→ PR #203) and 2026-06-19 (→ PR #226) eventually merged after the original report_incomplete.
+**PR creation failure**: `safe-outputs create_pull_request` reported success 3× but no PR opened. Patch + bundle at `/tmp/gh-aw/aw-efficiency-metrics-strconv-formatfloat-2026-06-25.{patch,bundle}`. Recurring intermittent failure.
 
-## 2026-06-19 — ContainerImageLayoutRevision hoist (PR #226 MERGED)
+## 2026-06-24 — TUI render strings.Builder (PR #249 MERGED)
 
-Additive to PR #213. BenchmarkManager_Status: 326,748 → 50,605 ns/op (**-85%**), 1,516,216 → 161,493 B/op (**-89%**), 167 → 84 allocs/op (**-50%**).
-
-## 2026-06-18 — Manager.Status loop-invariant hoist (PR #213 MERGED)
-
-`BenchmarkManager_Status` 197→166 allocs/op (-15.74%, p=0.008).
-
-## 2026-06-17 — Container status SSH consolidation (PR #203 MERGED)
-
-**SSH round trips per call: 3/2 → 1 (always).** `BenchmarkContainerLocalStatusImageAndRevision` = 1,429 ns/op, 902 B/op, 6 allocs/op.
-
-## 2026-06-15 — TUI extractTrailingPercent ParseFloat (PR #191 MERGED)
-
-`BenchmarkExtractTrailingPercent` 3806→452 ns/op (-88%), 36→6 allocs/op (-83%).
+Branch: `efficiency/tui-render-strings-builder`. `renderHeader`/`renderRow`/`renderHighlightedRow` swapped from `var line string + line +=` to `var b strings.Builder`. **Energy**: allocs 161/255/291→158/248/284 (-2-3%); B/op -5-7%. **PR history**: 3× silent failure → eventually merged as PR #249 on 2026-06-24T02:01:58Z.
 
 ## Earlier (merged)
 
+- PR #226 (ContainerImageLayoutRevision hoist) MERGED 2026-06-19. 326,748→50,605 ns/op (-85%), 167→84 allocs/op (-50%).
+- PR #213 (Manager.Status loop-invariant hoist) MERGED 2026-06-19. 197→166 allocs/op (-15.74%, p=0.008).
+- PR #203 (container status SSH consolidation) MERGED 2026-06-18. 3/2 → 1 SSH round trip.
+- PR #191 (TUI extractTrailingPercent ParseFloat) MERGED 2026-06-15. 3806→452 ns/op (-88%).
 - PR #167 (EnrichWithGitHubStatus) MERGED 2026-06-12. 33→28 allocs/op (-15%).
 - PR #155 (FindRunnerForLogs) MERGED 2026-06-12. 5906→790 ns/op (-86%).
 - PR #146 (InstanceNames) MERGED 2026-06-11. 21→11 allocs/op.
