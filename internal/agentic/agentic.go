@@ -388,6 +388,121 @@ Or install manually on the host:
 	return failures
 }
 
+// awfHygieneCheck describes one AWF/gh-aw hygiene probe shared between
+// ValidateAWFHygiene (host-level) and ValidateAWFHygieneInner (inner Docker
+// inside a DinD runner). The two callers pass a prefix (empty for the host,
+// `docker exec "X" ` for inner) and a Name suffix (empty for the host,
+// `-inner` for inner) so the helper renders the correct failure shape.
+type awfHygieneCheck struct {
+	// Name is the base failure name; the helper appends `nameSuffix` (typically
+	// empty or "-inner").
+	Name string
+	// Cmd is the probe shell command WITHOUT any prefix. The helper prepends
+	// `pfx` so the same definition works for host-level and inner-Docker.
+	Cmd string
+	// Message is the fully-rendered PrereqFailure.Message for this variant.
+	// The caller pre-formats any per-variant wording (e.g. outer container name).
+	Message string
+	// Remediation is the fully-rendered PrereqFailure.Remediation for this
+	// variant. Same pre-format rule as Message.
+	Remediation string
+}
+
+// runAWFHygieneChecks fans the supplied checks out across goroutines using the
+// shared failureCollector. Each probe runs h.Run(pfx + check.Cmd) and, on
+// non-empty TrimSpace output, appends a PrereqFailure with the suffix-applied
+// name and the pre-rendered Message/Remediation/DocRef.
+func runAWFHygieneChecks(h *host.Host, pfx, nameSuffix string, checks []awfHygieneCheck) []PrereqFailure {
+	var collector failureCollector
+	appendFailure := collector.append
+	for _, c := range checks {
+		c := c
+		collector.spawn(func() {
+			out, _ := h.Run(pfx + c.Cmd)
+			if strings.TrimSpace(out) == "" {
+				return
+			}
+			appendFailure(PrereqFailure{
+				Name:        c.Name + nameSuffix,
+				Severity:    SeverityWarning,
+				Message:     c.Message,
+				Remediation: c.Remediation,
+				DocRef:      "agentic-workflows.md §12",
+			})
+		})
+	}
+	return collector.wait()
+}
+
+// awfHostHygieneChecks returns the host-level AWF hygiene check definitions.
+// All probes run on the host's Docker daemon and produce host-level remediation.
+func awfHostHygieneChecks() []awfHygieneCheck {
+	return []awfHygieneCheck{
+		{
+			Name:    "awf-orphan-containers",
+			Cmd:     `docker ps -a --filter "name=awf-" --filter "name=gh-aw" --format '{{.Names}}' 2>/dev/null | head -20`,
+			Message: "orphan gh-aw/awf containers found from previously crashed jobs",
+			Remediation: `Clean up orphan containers to free resources and avoid port conflicts:
+
+  docker ps -a --filter "name=awf-" --format '{{.ID}}' | xargs -r docker rm -f
+  docker ps -a --filter "name=gh-aw" --format '{{.ID}}' | xargs -r docker rm -f`,
+		},
+		{
+			Name:    "stale-docker-user-rules",
+			Cmd:     `sudo -n iptables -L DOCKER-USER --line-numbers -n 2>/dev/null | grep -i "awf\|gh-aw" | head -20`,
+			Message: "stale DOCKER-USER iptables rules referencing gh-aw/awf containers",
+			Remediation: `Flush stale AWF egress rules (only safe to do when no agentic jobs are running):
+
+  sudo iptables -F DOCKER-USER`,
+		},
+		{
+			Name:    "mcpg-orphan-containers",
+			Cmd:     `docker ps -a --filter "name=gh-aw-mcpg-" --format '{{.Names}}' 2>/dev/null | head -20`,
+			Message: "orphan gh-aw-mcpg-* containers found from previously crashed jobs",
+			Remediation: `Clean up orphan MCP gateway containers:
+
+  docker ps -a --filter "name=gh-aw-mcpg-" --format '{{.ID}}' | xargs -r docker rm -f`,
+		},
+	}
+}
+
+// awfInnerHygieneChecks returns the inner-Docker (DinD runner) AWF hygiene
+// check definitions. Each remediation is pre-formatted with the outer
+// container name so the operator running `gh sr doctor` knows which runner
+// to ssh into. Probes drop the host-side `sudo -n` because the DinD inner
+// daemon runs as root.
+func awfInnerHygieneChecks(outerContainer string) []awfHygieneCheck {
+	return []awfHygieneCheck{
+		{
+			Name:    "awf-orphan-containers",
+			Cmd:     `docker ps -a --filter "name=awf-" --filter "name=gh-aw" --format '{{.Names}}' 2>/dev/null | head -20`,
+			Message: fmt.Sprintf("orphan gh-aw/awf containers in inner Docker (runner container %s)", outerContainer),
+			Remediation: fmt.Sprintf(`Clean up inside the runner container (outer name %s):
+
+  docker exec -it %s bash
+  docker ps -a --filter "name=awf-" --format '{{.ID}}' | xargs -r docker rm -f
+  docker ps -a --filter "name=gh-aw" --format '{{.ID}}' | xargs -r docker rm -f`, outerContainer, outerContainer),
+		},
+		{
+			Name:    "stale-docker-user-rules",
+			Cmd:     `iptables -L DOCKER-USER --line-numbers -n 2>/dev/null | grep -i "awf\|gh-aw" | head -20`,
+			Message: fmt.Sprintf("stale DOCKER-USER iptables rules in inner netns (runner container %s)", outerContainer),
+			Remediation: fmt.Sprintf(`Flush inner AWF egress rules when no agentic job is using this runner:
+
+  docker exec %s iptables -F DOCKER-USER`, outerContainer),
+		},
+		{
+			Name:    "mcpg-orphan-containers",
+			Cmd:     `docker ps -a --filter "name=gh-aw-mcpg-" --format '{{.Names}}' 2>/dev/null | head -20`,
+			Message: fmt.Sprintf("orphan gh-aw-mcpg-* containers in inner Docker (runner container %s)", outerContainer),
+			Remediation: fmt.Sprintf(`Clean up inside the runner container:
+
+  docker exec -it %s bash
+  docker ps -a --filter "name=gh-aw-mcpg-" --format '{{.ID}}' | xargs -r docker rm -f`, outerContainer),
+		},
+	}
+}
+
 // ValidateAWFHygiene checks for leftover AWF/gh-aw Docker artefacts from crashed jobs.
 // These are not blocking failures, only warnings.
 //
@@ -396,61 +511,7 @@ func ValidateAWFHygiene(h *host.Host) []PrereqFailure {
 	if h.OS != "linux" {
 		return nil
 	}
-
-	var collector failureCollector
-
-	appendFailure := collector.append
-
-	// Orphan awf-* containers (AWF agent sandbox containers left by crashed jobs)
-	collector.spawn(func() {
-		out, _ := h.Run(`docker ps -a --filter "name=awf-" --filter "name=gh-aw" --format '{{.Names}}' 2>/dev/null | head -20`)
-		if strings.TrimSpace(out) != "" {
-			appendFailure(PrereqFailure{
-				Name:     "awf-orphan-containers",
-				Severity: SeverityWarning,
-				Message:  "orphan gh-aw/awf containers found from previously crashed jobs",
-				Remediation: `Clean up orphan containers to free resources and avoid port conflicts:
-
-  docker ps -a --filter "name=awf-" --format '{{.ID}}' | xargs -r docker rm -f
-  docker ps -a --filter "name=gh-aw" --format '{{.ID}}' | xargs -r docker rm -f`,
-				DocRef: "agentic-workflows.md §12",
-			})
-		}
-	})
-
-	// Stale DOCKER-USER iptables rules referencing removed containers
-	collector.spawn(func() {
-		out, _ := h.Run(`sudo -n iptables -L DOCKER-USER --line-numbers -n 2>/dev/null | grep -i "awf\|gh-aw" | head -20`)
-		if strings.TrimSpace(out) != "" {
-			appendFailure(PrereqFailure{
-				Name:     "stale-docker-user-rules",
-				Severity: SeverityWarning,
-				Message:  "stale DOCKER-USER iptables rules referencing gh-aw/awf containers",
-				Remediation: `Flush stale AWF egress rules (only safe to do when no agentic jobs are running):
-
-  sudo iptables -F DOCKER-USER`,
-				DocRef: "agentic-workflows.md §12",
-			})
-		}
-	})
-
-	// Orphan gh-aw-mcpg-* containers (MCP gateway containers)
-	collector.spawn(func() {
-		out, _ := h.Run(`docker ps -a --filter "name=gh-aw-mcpg-" --format '{{.Names}}' 2>/dev/null | head -20`)
-		if strings.TrimSpace(out) != "" {
-			appendFailure(PrereqFailure{
-				Name:     "mcpg-orphan-containers",
-				Severity: SeverityWarning,
-				Message:  "orphan gh-aw-mcpg-* containers found from previously crashed jobs",
-				Remediation: `Clean up orphan MCP gateway containers:
-
-  docker ps -a --filter "name=gh-aw-mcpg-" --format '{{.ID}}' | xargs -r docker rm -f`,
-				DocRef: "agentic-workflows.md §12",
-			})
-		}
-	})
-
-	return collector.wait()
+	return runAWFHygieneChecks(h, "", "", awfHostHygieneChecks())
 }
 
 // ValidateAWFHygieneInner runs the same orphan/stale checks as ValidateAWFHygiene
@@ -462,62 +523,8 @@ func ValidateAWFHygieneInner(h *host.Host, outerContainer string) []PrereqFailur
 	if h.OS != "linux" {
 		return nil
 	}
-
 	pfx := runner.DockerExecCommand(outerContainer, "")
-
-	var collector failureCollector
-
-	appendFailure := collector.append
-
-	collector.spawn(func() {
-		out, _ := h.Run(pfx + `docker ps -a --filter "name=awf-" --filter "name=gh-aw" --format '{{.Names}}' 2>/dev/null | head -20`)
-		if strings.TrimSpace(out) != "" {
-			appendFailure(PrereqFailure{
-				Name:     "awf-orphan-containers-inner",
-				Severity: SeverityWarning,
-				Message:  fmt.Sprintf("orphan gh-aw/awf containers in inner Docker (runner container %s)", outerContainer),
-				Remediation: fmt.Sprintf(`Clean up inside the runner container (outer name %s):
-
-  docker exec -it %s bash
-  docker ps -a --filter "name=awf-" --format '{{.ID}}' | xargs -r docker rm -f
-  docker ps -a --filter "name=gh-aw" --format '{{.ID}}' | xargs -r docker rm -f`, outerContainer, outerContainer),
-				DocRef: "agentic-workflows.md §12",
-			})
-		}
-	})
-
-	collector.spawn(func() {
-		out, _ := h.Run(pfx + `iptables -L DOCKER-USER --line-numbers -n 2>/dev/null | grep -i "awf\|gh-aw" | head -20`)
-		if strings.TrimSpace(out) != "" {
-			appendFailure(PrereqFailure{
-				Name:     "stale-docker-user-rules-inner",
-				Severity: SeverityWarning,
-				Message:  fmt.Sprintf("stale DOCKER-USER iptables rules in inner netns (runner container %s)", outerContainer),
-				Remediation: fmt.Sprintf(`Flush inner AWF egress rules when no agentic job is using this runner:
-
-  docker exec %s iptables -F DOCKER-USER`, outerContainer),
-				DocRef: "agentic-workflows.md §12",
-			})
-		}
-	})
-
-	collector.spawn(func() {
-		out, _ := h.Run(pfx + `docker ps -a --filter "name=gh-aw-mcpg-" --format '{{.Names}}' 2>/dev/null | head -20`)
-		if strings.TrimSpace(out) != "" {
-			appendFailure(PrereqFailure{
-				Name:     "mcpg-orphan-containers-inner",
-				Severity: SeverityWarning,
-				Message:  fmt.Sprintf("orphan gh-aw-mcpg-* containers in inner Docker (runner container %s)", outerContainer),
-				Remediation: fmt.Sprintf(`Clean up inside the runner container:
-
-  docker exec -it %s bash
-  docker ps -a --filter "name=gh-aw-mcpg-" --format '{{.ID}}' | xargs -r docker rm -f`, outerContainer),
-				DocRef: "agentic-workflows.md §12",
-			})
-		}
-	})
-
-	return collector.wait()
+	return runAWFHygieneChecks(h, pfx, "-inner", awfInnerHygieneChecks(outerContainer))
 }
 
 // ValidateContainerInnerNetwork checks the network paths gh-aw depends on inside
