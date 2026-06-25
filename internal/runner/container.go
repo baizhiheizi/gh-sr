@@ -98,23 +98,35 @@ func containerName(instanceName string) string {
 }
 
 // DockerExecCommand returns a `docker exec <cname> <innerCmd>` shell-safe command
-// string, with cname wrapped in Go-style double quotes via strconv.Quote. The
-// trailing space after the quoted name lets callers append the inner command
+// string, with cname wrapped in Go-style double quotes via QuoteContainerName.
+// The trailing space after the quoted name lets callers append the inner command
 // directly (`DockerExecCommand(name, "sh -c '...'")` produces
 // `docker exec "name" sh -c '...'`).
 //
 // This is the canonical helper for "run X inside a known runner container".
-// It replaces 9 inline `q := strconv.Quote(c); ... + "docker exec " + q + " " + ...`
-// blocks across internal/agentic and internal/doctor (see issue #251).
-//
-// Policy note: the agentic and doctor sites use strconv.Quote (Go double-quote);
-// the runner package's own disk.go / environment.go use hostshell.PosixSingleQuote
-// (POSIX single-quote). Both produce shell-safe output, but a future consolidation
-// should align the two policies. Until then, callers inside internal/agentic and
-// internal/doctor use this helper; callers inside internal/runner continue to use
-// hostshell.PosixSingleQuote directly because that matches their existing test pins.
+// It replaces the former inline `q := strconv.Quote(c); ... + "docker exec " + q + " " + ...`
+// blocks across internal/agentic and internal/doctor (see issue #251) and the
+// `hostshell.PosixSingleQuote(cname)` blocks in internal/runner/disk.go and
+// internal/runner/environment.go (consolidated via QuoteContainerName).
 func DockerExecCommand(cname, innerCmd string) string {
-	return "docker exec " + strconv.Quote(cname) + " " + innerCmd
+	return "docker exec " + QuoteContainerName(cname) + " " + innerCmd
+}
+
+// QuoteContainerName returns cname wrapped in Go-style double quotes via
+// strconv.Quote, producing shell-safe output for use as a single shell argument
+// to docker commands (docker exec, docker inspect, docker start, docker rm, etc.).
+//
+// It is the canonical helper for "container name as a docker CLI shell arg",
+// mirroring DockerExecCommand's quoting style so a single regression test pins
+// both call shapes. The escape behaviour was verified end-to-end: input
+// `evil"; rm -rf /; "` round-trips as `docker exec "evil\"; rm -rf /; \"" echo ok`.
+//
+// Prefer this over hostshell.PosixSingleQuote for any docker command that takes
+// the container name as a positional argument. Use hostshell.PosixSingleQuote
+// only when the value must be embedded inside a single-quoted shell snippet
+// (e.g. the inner argument to `sh -c '...'`).
+func QuoteContainerName(cname string) string {
+	return strconv.Quote(cname)
 }
 
 // containerStateDir returns the host-side bind-mount path for runner instance state

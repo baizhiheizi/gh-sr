@@ -83,7 +83,7 @@ func posixScriptHeader(instance string) string {
 // started, the snippet is a no-op; the surrounding script must still degrade
 // gracefully when the inner command never runs.
 func containerEscalation(containerName, shellCmd string) string {
-	q := hostshell.PosixSingleQuote(containerName)
+	q := QuoteContainerName(containerName)
 	return fmt.Sprintf(`
 if command -v docker >/dev/null 2>&1; then
   if ! docker inspect --format='{{.State.Running}}' %s 2>/dev/null | grep -q true; then
@@ -492,7 +492,7 @@ fi
 }
 
 func pruneInnerDockerCache(h *host.Host, containerName string) error {
-	q := hostshell.PosixSingleQuote(containerName)
+	q := QuoteContainerName(containerName)
 	check, err := h.Run(fmt.Sprintf("docker exec %s docker info >/dev/null 2>&1 && echo ok || echo no", q))
 	if err != nil || strings.TrimSpace(check) != "ok" {
 		return fmt.Errorf("inner dockerd not responding in %s; skipped cache prune", containerName)
