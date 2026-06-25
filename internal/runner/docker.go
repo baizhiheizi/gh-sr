@@ -72,19 +72,10 @@ func ensureDockerGroupAccess(h *host.Host, w io.Writer, runnerName string) error
 		return fmt.Errorf("docker CLI is installed but docker info failed as root; check that the Docker daemon is running")
 	}
 
-	sshUser := h.SSHUser()
-	if sshUser == "" {
-		return permissionDeniedError(h)
-	}
-
-	usermod := sudoPrelude() + fmt.Sprintf("\n$SUDO usermod -aG docker %s\n", hostshell.PosixSingleQuote(sshUser))
-	if _, err := h.Run(usermod); err != nil {
-		return permissionDeniedError(h)
-	}
-
-	fmt.Fprintf(w, "  Added %s to the docker group.\n", sshUser)
-	fmt.Fprintln(w, "  "+dockerGroupPendingMessage(runnerName))
-	return ErrDockerGroupPending
+	return addSSHTUserToDockerGroup(h, w, runnerName,
+		"  Added ", "to",
+		func(string, error) error { return permissionDeniedError(h) },
+	)
 }
 
 func installHostDocker(h *host.Host, w io.Writer, runnerName string) error {
@@ -107,21 +98,17 @@ func installHostDocker(h *host.Host, w io.Writer, runnerName string) error {
 		return nil
 	}
 
-	sshUser := h.SSHUser()
-	if sshUser != "" {
-		usermod := sudoPrelude() + fmt.Sprintf("\n$SUDO usermod -aG docker %s\n", hostshell.PosixSingleQuote(sshUser))
-		if _, err := h.Run(usermod); err != nil {
+	if h.SSHUser() == "" {
+		fmt.Fprintln(w, "  Docker installed.")
+		fmt.Fprintln(w, "  "+dockerGroupPendingMessage(runnerName))
+		return ErrDockerGroupPending
+	}
+	return addSSHTUserToDockerGroup(h, w, runnerName,
+		"  Docker installed and ", "added to",
+		func(sshUser string, err error) error {
 			return fmt.Errorf("adding %s to docker group: %w", sshUser, err)
-		}
-	}
-
-	fmt.Fprint(w, "  Docker installed")
-	if sshUser != "" {
-		fmt.Fprintf(w, " and %s added to the docker group", sshUser)
-	}
-	fmt.Fprintln(w, ".")
-	fmt.Fprintln(w, "  "+dockerGroupPendingMessage(runnerName))
-	return ErrDockerGroupPending
+		},
+	)
 }
 
 func dockerGroupPendingMessage(runnerName string) string {
@@ -129,6 +116,48 @@ func dockerGroupPendingMessage(runnerName string) string {
 		return fmt.Sprintf("Re-run: gh sr setup %s", runnerName)
 	}
 	return "Re-run: gh sr setup"
+}
+
+// addSSHTUserToDockerGroup runs `usermod -aG docker <sshUser>` on the host,
+// prints the standard "<lead><user> <verb> the docker group." announcement,
+// appends the pending-re-run message, and returns ErrDockerGroupPending.
+//
+// This is the canonical docker-group-add helper extracted from
+// `ensureDockerGroupAccess` (the post-install permission-denied retry path)
+// and the non-root tail of `installHostDocker` (the fresh-install path).
+// The two sites previously duplicated the `sudoPrelude() + usermod` snippet,
+// the announcement print, and the pending-message + ErrDockerGroupPending
+// return. The duplication had already drifted — the empty-sshUser branch
+// returned permissionDeniedError on the retry path and silently skipped on
+// the fresh-install path; the usermod-failure error was wrapped differently.
+//
+// `lead` and `verb` together form the announcement prefix before "<user>":
+//   - retry path: "  Added ", "to"  → "  Added runner to the docker group."
+//   - fresh-install path: "  Docker installed and ", "added to"
+//     → "  Docker installed and runner added to the docker group."
+//
+// `errOnUsermodFail` formats the error returned when sshUser is empty or
+// when usermod fails. The retry path passes permissionDeniedError; the
+// fresh-install path wraps with "adding %s to docker group: %w". sshUser is
+// passed to the callback so the fresh-install path can include it in the
+// wrapping error.
+//
+// The empty-sshUser case is treated as a usermod failure (errOnUsermodFail
+// is called with an empty sshUser and an "ssh user is empty" sentinel).
+// The fresh-install path's silent-skip behaviour is preserved by the caller
+// checking `h.SSHUser() == ""` before calling this helper.
+func addSSHTUserToDockerGroup(h *host.Host, w io.Writer, runnerName, lead, verb string, errOnUsermodFail func(sshUser string, err error) error) error {
+	sshUser := h.SSHUser()
+	if sshUser == "" {
+		return errOnUsermodFail("", errors.New("ssh user is empty"))
+	}
+	usermod := sudoPrelude() + fmt.Sprintf("\n$SUDO usermod -aG docker %s\n", hostshell.PosixSingleQuote(sshUser))
+	if _, err := h.Run(usermod); err != nil {
+		return errOnUsermodFail(sshUser, err)
+	}
+	fmt.Fprintf(w, "%s%s %s the docker group.\n", lead, sshUser, verb)
+	fmt.Fprintln(w, "  "+dockerGroupPendingMessage(runnerName))
+	return ErrDockerGroupPending
 }
 
 func ensureCurlForDockerScript() string {
