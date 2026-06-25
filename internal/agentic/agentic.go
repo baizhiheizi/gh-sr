@@ -525,16 +525,11 @@ func ValidateAWFHygieneInner(h *host.Host, outerContainer string) []PrereqFailur
 // agent/AWF child containers use the default bridge and reach the gateway via
 // host.docker.internal.
 func ValidateContainerInnerNetwork(h *host.Host, outerContainer, runnerName string) []PrereqFailure {
-	if h.OS != "linux" {
-		return nil
-	}
-
-	if _, err := h.Run(containerInnerNetworkCheckCommand(outerContainer)); err != nil {
-		return []PrereqFailure{{
-			Name:     "container-inner-host-docker-internal",
-			Severity: SeverityWarning,
-			Message:  fmt.Sprintf("host.docker.internal does not resolve to a usable non-loopback address inside runner container %s (baked dnsmasq/daemon.json DNS)", outerContainer),
-			Remediation: fmt.Sprintf(`Inspect the runner container's inner Docker DNS and restart/rebuild it if stale:
+	return runContainerCheck(h, containerCheckSpec{
+		name:     "container-inner-host-docker-internal",
+		checkCmd: containerInnerNetworkCheckCommand(outerContainer),
+		message:  fmt.Sprintf("host.docker.internal does not resolve to a usable non-loopback address inside runner container %s (baked dnsmasq/daemon.json DNS)", outerContainer),
+		remediation: fmt.Sprintf(`Inspect the runner container's inner Docker DNS and restart/rebuild it if stale:
 
   docker exec -it %s bash
   getent hosts host.docker.internal
@@ -545,10 +540,8 @@ func ValidateContainerInnerNetwork(h *host.Host, outerContainer, runnerName stri
 If add-host resolution is empty or loopback, restart the runner container. If it persists, run:
 
   gh sr rebuild %s`, outerContainer, runnerName),
-			DocRef: "agentic-workflows.md §11a",
-		}}
-	}
-	return nil
+		docRef: "agentic-workflows.md §11a",
+	})
 }
 
 // ValidateContainerInnerResolv checks that the runner container's /etc/resolv.conf
@@ -565,16 +558,11 @@ If add-host resolution is empty or loopback, restart the runner container. If it
 // agent reports "MCP server(s) failed to launch". This check surfaces that latent
 // misconfiguration before a job hits it.
 func ValidateContainerInnerResolv(h *host.Host, outerContainer, runnerName string) []PrereqFailure {
-	if h.OS != "linux" {
-		return nil
-	}
-
-	if _, err := h.Run(containerInnerResolvCheckCommand(outerContainer)); err != nil {
-		return []PrereqFailure{{
-			Name:     "container-inner-resolv",
-			Severity: SeverityWarning,
-			Message:  fmt.Sprintf("runner container %s /etc/resolv.conf is not pinned to the bundled dnsmasq (inner bridge gateway); the gh-aw agent sandbox can inherit the host resolver and intermittently fail MCP launch (host.docker.internal force-proxied into Squid)", outerContainer),
-			Remediation: fmt.Sprintf(`Rebuild the runner image so entrypoint.sh repoints resolv.conf at the bundled dnsmasq:
+	return runContainerCheck(h, containerCheckSpec{
+		name:     "container-inner-resolv",
+		checkCmd: containerInnerResolvCheckCommand(outerContainer),
+		message:  fmt.Sprintf("runner container %s /etc/resolv.conf is not pinned to the bundled dnsmasq (inner bridge gateway); the gh-aw agent sandbox can inherit the host resolver and intermittently fail MCP launch (host.docker.internal force-proxied into Squid)", outerContainer),
+		remediation: fmt.Sprintf(`Rebuild the runner image so entrypoint.sh repoints resolv.conf at the bundled dnsmasq:
 
   gh sr rebuild %s
 
@@ -582,10 +570,8 @@ Verify after restart (expect a single nameserver equal to the inner docker0 gate
 
   docker exec %s cat /etc/resolv.conf
   docker exec %s ip -4 -o addr show docker0`, runnerName, outerContainer, outerContainer),
-			DocRef: "agentic-workflows.md §11a",
-		}}
-	}
-	return nil
+		docRef: "agentic-workflows.md §11a",
+	})
 }
 
 // ValidateContainerAWFServiceRouting checks that the runner container has the
@@ -607,16 +593,11 @@ Verify after restart (expect a single nameserver equal to the inner docker0 gate
 // Traffic from awf-net to any local IP of the runner container then skips DNAT
 // and is delivered to the userland docker-proxy, which forwards to the service.
 func ValidateContainerAWFServiceRouting(h *host.Host, outerContainer, runnerName string) []PrereqFailure {
-	if h.OS != "linux" {
-		return nil
-	}
-
-	if _, err := h.Run(containerAWFServiceRoutingCheckCommand(outerContainer)); err != nil {
-		return []PrereqFailure{{
-			Name:     "container-awf-service-routing",
-			Severity: SeverityWarning,
-			Message:  fmt.Sprintf("AWF service-routing bypass not installed in runner container %s; agentic workflows that use `services:` (postgres, redis, etc.) will see `Connection refused` on host.docker.internal", outerContainer),
-			Remediation: fmt.Sprintf(`Rebuild the runner image (entrypoint.sh installs the bypass at startup):
+	return runContainerCheck(h, containerCheckSpec{
+		name:     "container-awf-service-routing",
+		checkCmd: containerAWFServiceRoutingCheckCommand(outerContainer),
+		message:  fmt.Sprintf("AWF service-routing bypass not installed in runner container %s; agentic workflows that use `services:` (postgres, redis, etc.) will see `Connection refused` on host.docker.internal", outerContainer),
+		remediation: fmt.Sprintf(`Rebuild the runner image (entrypoint.sh installs the bypass at startup):
 
   gh sr rebuild %s
 
@@ -627,10 +608,8 @@ Or apply the rule live without restart (lasts until docker daemon restart):
 Verify:
 
   docker exec %s iptables -t nat -S PREROUTING | head -3`, runnerName, outerContainer, outerContainer),
-			DocRef: "agentic-workflows.md §11b",
-		}}
-	}
-	return nil
+		docRef: "agentic-workflows.md §11b",
+	})
 }
 
 // ValidateContainerMTU warns when the runner container's egress interface (eth0) or the
@@ -647,16 +626,11 @@ func ValidateContainerMTU(h *host.Host, outerContainer, runnerName string, hostE
 	if hostEgressMTU <= 0 || hostEgressMTU >= 1500 {
 		return nil
 	}
-	if h == nil || h.OS != "linux" {
-		return nil
-	}
-
-	if _, err := h.Run(containerMTUCheckCommand(outerContainer, hostEgressMTU)); err != nil {
-		return []PrereqFailure{{
-			Name:     "container-mtu",
-			Severity: SeverityWarning,
-			Message:  fmt.Sprintf("runner container %s has a Docker interface MTU larger than the host egress MTU (%d); large-packet TLS handshakes (e.g. actions/setup-go) can fail with \"Client network socket disconnected before secure TLS connection was established\"", outerContainer, hostEgressMTU),
-			Remediation: fmt.Sprintf(`Rebuild the runner so it pins the inner/outer Docker MTU to the host egress MTU:
+	return runContainerCheck(h, containerCheckSpec{
+		name:     "container-mtu",
+		checkCmd: containerMTUCheckCommand(outerContainer, hostEgressMTU),
+		message:  fmt.Sprintf("runner container %s has a Docker interface MTU larger than the host egress MTU (%d); large-packet TLS handshakes (e.g. actions/setup-go) can fail with \"Client network socket disconnected before secure TLS connection was established\"", outerContainer, hostEgressMTU),
+		remediation: fmt.Sprintf(`Rebuild the runner so it pins the inner/outer Docker MTU to the host egress MTU:
 
   gh sr rebuild %s
 
@@ -669,57 +643,41 @@ If the host's real path MTU is below its NIC MTU (a tunnel the NIC is unaware of
 
   container_runner_image:
     mtu: %d`, runnerName, hostEgressMTU, outerContainer, outerContainer, hostEgressMTU),
-			DocRef: "agentic-workflows.md §11c",
-		}}
-	}
-	return nil
+		docRef: "agentic-workflows.md §11c",
+	})
 }
 
 // ValidateContainerNodeNPM checks that node and npm are on PATH inside the runner
 // container. gh-aw activation setup installs @actions/artifact via npm when daily AI
 // credits guardrails are enabled (safe-output-artifact-client), before actions/setup-node runs.
 func ValidateContainerNodeNPM(h *host.Host, outerContainer, runnerName string) []PrereqFailure {
-	if h.OS != "linux" {
-		return nil
-	}
-
-	if _, err := h.Run(containerNodeNPMCheckCommand(outerContainer)); err != nil {
-		return []PrereqFailure{{
-			Name:     "container-node-npm",
-			Severity: SeverityWarning,
-			Message:  fmt.Sprintf("node LTS/npm are not on PATH inside runner container %s", outerContainer),
-			Remediation: fmt.Sprintf(`Rebuild the runner image so it includes Node.js LTS:
+	return runContainerCheck(h, containerCheckSpec{
+		name:     "container-node-npm",
+		checkCmd: containerNodeNPMCheckCommand(outerContainer),
+		message:  fmt.Sprintf("node LTS/npm are not on PATH inside runner container %s", outerContainer),
+		remediation: fmt.Sprintf(`Rebuild the runner image so it includes Node.js LTS:
 
   gh sr rebuild %s`, runnerName),
-			DocRef: "agentic-workflows.md §8",
-		}}
-	}
-	return nil
+		docRef: "agentic-workflows.md §8",
+	})
 }
 
 // ValidateContainerAWF checks that the gh-aw firewall CLI is available exactly
 // the way compiled workflows invoke it.
 func ValidateContainerAWF(h *host.Host, outerContainer, runnerName string) []PrereqFailure {
-	if h.OS != "linux" {
-		return nil
-	}
-
-	if _, err := h.Run(containerAWFCheckCommand(outerContainer)); err != nil {
-		return []PrereqFailure{{
-			Name:     "container-awf",
-			Severity: SeverityWarning,
-			Message:  fmt.Sprintf("awf is not available via sudo inside runner container %s", outerContainer),
-			Remediation: fmt.Sprintf(`Rebuild the runner image so it includes github/gh-aw-firewall:
+	return runContainerCheck(h, containerCheckSpec{
+		name:     "container-awf",
+		checkCmd: containerAWFCheckCommand(outerContainer),
+		message:  fmt.Sprintf("awf is not available via sudo inside runner container %s", outerContainer),
+		remediation: fmt.Sprintf(`Rebuild the runner image so it includes github/gh-aw-firewall:
 
   gh sr rebuild %s
 
 For a temporary live-container unblock only:
 
   docker exec %s sh -lc 'curl -sSL https://raw.githubusercontent.com/github/gh-aw-firewall/main/install.sh | AWF_FORCE_BINARY=1 bash'`, runnerName, outerContainer),
-			DocRef: "agentic-workflows.md §12",
-		}}
-	}
-	return nil
+		docRef: "agentic-workflows.md §12",
+	})
 }
 
 func containerInnerNetworkCheckCommand(outerContainer string) string {
@@ -782,6 +740,42 @@ grep -Eq "^nameserver[[:space:]]+$gw([[:space:]]|$)" /etc/resolv.conf'`)
 // so an exact-line match is reliable.
 func containerAWFServiceRoutingCheckCommand(outerContainer string) string {
 	return runner.DockerExecCommand(outerContainer, `sh -c 'iptables -t nat -S PREROUTING 2>/dev/null | grep -Fq -e "-A PREROUTING -s 172.30.0.0/24 -m addrtype --dst-type LOCAL -j RETURN"'`)
+}
+
+// containerCheckSpec captures the per-check inputs to runContainerCheck: the
+// already-built docker-exec probe command, plus the failure Name, the pre-
+// rendered human Message and Remediation, and the DocRef. Splitting the spec
+// from the helper keeps the OS-gate + Run + PrereqFailure shape in one place
+// while each ValidateContainer* function still owns its own user-facing
+// wording (which differs materially across the six checks).
+type containerCheckSpec struct {
+	name        string
+	checkCmd    string
+	message     string
+	remediation string
+	docRef      string
+}
+
+// runContainerCheck executes one ValidateContainer* probe: short-circuits on
+// nil host or non-Linux OS, runs spec.checkCmd via h.Run, and emits a single
+// SeverityWarning PrereqFailure when the command errors. Used by all six
+// ValidateContainer* wrappers in this file; ValidateContainerMTU keeps its
+// extra hostEgressMTU guard at the wrapper level because that gate is the
+// only check that depends on a numeric input.
+func runContainerCheck(h *host.Host, spec containerCheckSpec) []PrereqFailure {
+	if h == nil || h.OS != "linux" {
+		return nil
+	}
+	if _, err := h.Run(spec.checkCmd); err != nil {
+		return []PrereqFailure{{
+			Name:        spec.name,
+			Severity:    SeverityWarning,
+			Message:     spec.message,
+			Remediation: spec.remediation,
+			DocRef:      spec.docRef,
+		}}
+	}
+	return nil
 }
 
 // failureCollector accumulates PrereqFailure entries from concurrent goroutines

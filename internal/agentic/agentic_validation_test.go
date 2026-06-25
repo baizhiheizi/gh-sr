@@ -395,3 +395,98 @@ func TestPrereqTestExecutor_RunErrorsWhenNoResponse(t *testing.T) {
 		t.Errorf("error should mention 'unexpected command', got %q", err)
 	}
 }
+
+// TestRunContainerCheck_helpersCoverAllSixWrappers pins the contract that the
+// six ValidateContainer* wrappers in agentic.go all share the same OS-gate +
+// Run + PrereqFailure shape via runContainerCheck. Future drift (one wrapper
+// re-introducing its own OS gate, one wrapper forgetting the severity, etc.)
+// will fail here.
+func TestRunContainerCheck_helpersCoverAllSixWrappers(t *testing.T) {
+	t.Parallel()
+
+	exec := &prereqTestExecutor{} // every command errors
+	hostLinux := func() *host.Host {
+		h := host.NewHost("h", config.HostConfig{OS: "linux"})
+		h.SetConn(exec)
+		return h
+	}
+	hostNonLinux := func() *host.Host {
+		h := host.NewHost("h", config.HostConfig{OS: "darwin"})
+		h.SetConn(exec)
+		return h
+	}
+
+	// Each wrapper must produce exactly one failure on a Linux host when the
+	// check command errors, with SeverityWarning and a non-empty DocRef.
+	cases := []struct {
+		name string
+		run  func() []PrereqFailure
+		want string
+	}{
+		{"InnerNetwork", func() []PrereqFailure { return ValidateContainerInnerNetwork(hostLinux(), "gh-sr-runner", "agentic-1") }, "container-inner-host-docker-internal"},
+		{"InnerResolv", func() []PrereqFailure { return ValidateContainerInnerResolv(hostLinux(), "gh-sr-runner", "agentic-1") }, "container-inner-resolv"},
+		{"AWFServiceRouting", func() []PrereqFailure {
+			return ValidateContainerAWFServiceRouting(hostLinux(), "gh-sr-runner", "agentic-1")
+		}, "container-awf-service-routing"},
+		{"MTU", func() []PrereqFailure { return ValidateContainerMTU(hostLinux(), "gh-sr-runner", "agentic-1", 1400) }, "container-mtu"},
+		{"NodeNPM", func() []PrereqFailure { return ValidateContainerNodeNPM(hostLinux(), "gh-sr-runner", "agentic-1") }, "container-node-npm"},
+		{"AWF", func() []PrereqFailure { return ValidateContainerAWF(hostLinux(), "gh-sr-runner", "agentic-1") }, "container-awf"},
+	}
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			failures := tc.run()
+			if len(failures) != 1 {
+				t.Fatalf("expected 1 failure, got %d (%#v)", len(failures), failures)
+			}
+			if failures[0].Name != tc.want {
+				t.Errorf("Name = %q, want %q", failures[0].Name, tc.want)
+			}
+			if failures[0].Severity != SeverityWarning {
+				t.Errorf("Severity = %q, want warning", failures[0].Severity)
+			}
+			if failures[0].DocRef == "" {
+				t.Error("DocRef should be populated")
+			}
+		})
+	}
+
+	// Each non-MTU wrapper must short-circuit to nil on non-Linux; MTU has
+	// its own pre-OS gate (hostEgressMTU) and is exercised separately above.
+	nonLinuxCases := []struct {
+		name string
+		run  func() []PrereqFailure
+	}{
+		{"InnerNetwork", func() []PrereqFailure {
+			return ValidateContainerInnerNetwork(hostNonLinux(), "gh-sr-runner", "agentic-1")
+		}},
+		{"InnerResolv", func() []PrereqFailure {
+			return ValidateContainerInnerResolv(hostNonLinux(), "gh-sr-runner", "agentic-1")
+		}},
+		{"AWFServiceRouting", func() []PrereqFailure {
+			return ValidateContainerAWFServiceRouting(hostNonLinux(), "gh-sr-runner", "agentic-1")
+		}},
+		{"NodeNPM", func() []PrereqFailure { return ValidateContainerNodeNPM(hostNonLinux(), "gh-sr-runner", "agentic-1") }},
+		{"AWF", func() []PrereqFailure { return ValidateContainerAWF(hostNonLinux(), "gh-sr-runner", "agentic-1") }},
+	}
+	for _, tc := range nonLinuxCases {
+		tc := tc
+		t.Run("nonLinux/"+tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := tc.run(); got != nil {
+				t.Errorf("non-linux must short-circuit, got %#v", got)
+			}
+		})
+	}
+}
+
+// TestRunContainerCheck_nilHostIsSafe pins the nil-host guard: callers may
+// short-circuit with a nil *host.Host before any dereference, and the helper
+// must not panic.
+func TestRunContainerCheck_nilHostIsSafe(t *testing.T) {
+	t.Parallel()
+	if got := runContainerCheck(nil, containerCheckSpec{name: "anything"}); got != nil {
+		t.Errorf("nil host must short-circuit, got %#v", got)
+	}
+}
