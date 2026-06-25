@@ -1,2 +1,2 @@
-- [Repo Assist state](state.md) — last run 2026-06-25 (run 28161948236): no-action run (Tasks 4/9/3 — no clearly beneficial change). Monthly Activity #100 updated; #243 already closed; #265/#266 merged since last run; #257 now `dirty` after #263/#264/#265/#266 landed and needs rebase. 4 PRs landed on 2026-06-25 (#263, #264, #265, #266) — strong merge cadence.
-- [Run notes](notes.md) — run 28161948236 entry.
+- [Repo Assist state](state.md) — last run 2026-06-25 (run 28198710817): PR #257 rebased onto current main (3 conflicts resolved, build/test/gofmt green); 2 new design comments posted on detector findings #267 and #268 (awaiting maintainer signal on rollout shape + helper signature). 5 PRs landed in last 2 days (#255-#259, #263-#266).
+- [Run notes](notes.md) — run 28198710817 entry.
