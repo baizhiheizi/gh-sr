@@ -5,65 +5,62 @@ metadata:
   type: project
 ---
 
-# Repo Assist state — 2026-06-25
+# Repo Assist state — 2026-06-26
 
-## Last run (28198710817) — Tasks 2, 6, 4
+## Last run (28247005160) — Tasks 3, 8, 2
 
-- **Task 6 — rebased PR #257** (`ProbeDinDContainerReadiness`) onto current main. Resolved 3 conflicts (doctor.go:512, environment.go:130, container_test.go:1845), appended as single new commit on top of the PR branch via `push_to_pull_request_branch`. Build/vet/test/gofmt all green. PR is now ready for re-review.
-- **Task 2/4 — 2 new design comments** posted on the freshly-detected duplicate-code findings: #267 (DockerExecCommand underused, 13+ sites) and #268 (Container-status inspect shell probe, 3 sites). Both ask for maintainer signal on design choices before drafting PRs — same posture as the prior #262 engagement.
-- **Task 11** — `update_issue` on #100: prepended this run's entry; removed the "PR #257 needs rebase" item (now rebased); added 2 new "Check comment" items for #267 and #268.
+- **Task 3** — no-op. 0 open issues labelled `bug` / `help wanted` / `good first issue`. Fallback Task 2 not engaged: no comment-worthy issues.
+- **Task 8** — no-op. Repo in maintenance mode per #85 (24/24 hot spots closed); PR #269 covers the latest (`EnsureHostDocker` daemon-down / permission-denied path).
+- **Task 2** — no-op. No new human activity on any open issue. Detector findings #262 / #267 / #268 still have prior Repo Assist design comments awaiting maintainer signal. #132 on hold pending loop-mount persistence signal.
+- **Phantom-PR correction:** verified that the PR #270 (isRootSSH helper) reference logged in run 28217916988 never opened in GitHub — `safeoutputs create_pull_request` returned success but the branch was never pushed to origin. The real PR #270 in GitHub is the Test Improver Setup orchestrator PR. Updated #100 Suggested Actions accordingly.
+- **Task 11** — `update_issue` on #100: prepended run entry; replaced phantom PR #270 reference with real Test Improver PR #270.
 - **Verified:** build OK, test OK (12/12), vet OK, gofmt clean.
 
 ## In-flight
 
-- **Open PRs awaiting review:** #257 (rebased in this run, ready for re-review), #258 (autostart Detect/IsStale tests), #259 (AWF hygiene refactor).
-- **Bridge-pending branches:** none for this run.
-- **Fallback-review:** #241 (gofmt CI), #225 (deps bump).
+- **Open PRs awaiting review:** #257 (rebased), #258 (autostart Detect/IsStale tests), #259 (AWF hygiene refactor), #269 (perf-improver EnsureHostDocker), #270 (test-improver Setup orchestrator), #272 + #273 (efficiency-improver metrics formatters — duplicate PR pair).
+- **Bridge-pending:** none.
+- **Fallback-review:** #225 (deps bump), #241 (gofmt CI).
 
 ## Backlog
 
-- **#262** — `orchestrate` helper in `internal/ops/ops.go` collapses Up/Down/Restart/RebuildImage/Update. Awaiting maintainer signal on helper signature (boolean flag vs opSpec struct vs closure-internal) and on `applyContainerImageExtras` asymmetry + `partitionRebuildTargets` placement.
-- **#267** — `DockerExecCommand` helper underused; 13+ manual `docker exec %s ...` composition sites in `internal/agentic/agentic.go:482-685` and `internal/runner/disk.go:89-500`. Awaiting maintainer signal on single PR vs staggered rollout, and on multi-line-shell handling (the agentic.go:613-685 sites may not fit the helper's "single inner command" shape).
-- **#268** — `ContainerStateStatus(h, cname)` helper to consolidate the 3 `docker inspect --format '{{.State.Status}}' %s 2>/dev/null || echo missing` call sites in `containerAwaitHealthy`, `checkContainerRunnerInstall`, `checkContainerAgenticInnerHygiene`. Awaiting maintainer signal on helper shape (struct reuse from #257 vs raw string vs typed enum) and on whether `checkContainerAgenticInnerHygiene` folds in or stays out of scope.
+- **#262** — `orchestrate` helper in `internal/ops/ops.go` (5 orchestrators). Awaiting signal on helper signature (boolean flag vs opSpec struct vs closure-internal) and on `applyContainerImageExtras` asymmetry + `partitionRebuildTargets` placement.
+- **#267** — `DockerExecCommand` helper underused; 13+ manual `docker exec %s ...` composition sites in `internal/agentic/agentic.go:482-685` and `internal/runner/disk.go`. Awaiting signal on single PR vs staggered rollout, and on multi-line-shell handling.
+- **#268** — `ContainerStateStatus(h, cname)` helper to consolidate the 3 `docker inspect --format '{{.State.Status}}'` sites. Awaiting signal on helper shape (struct reuse from #257 vs raw string vs typed enum).
 - **#132 (gh sr storage)** — on hold pending maintainer signal on loop-mount persistence.
-
-## Task 2 backlog cursor
-
-- 15 open issues (1 human = #132, 5 fresh/active detector findings = #262 / #267 / #268 / #252 closing via auto-expiry / #243 closed, 9 bot-generated historical). 0 unlabelled. Cursor at #262 / #267 / #268 — all three are un-actioned detector findings with prior Repo Assist design comments, awaiting maintainer signal.
 
 ## Notes
 
-- **`push_to_pull_request_branch` is append-only.** Rebase resolution cannot be force-pushed; it can only be appended as a new commit on top of the existing PR branch. The original commit stays in repo history but is unreachable from the PR ref. Future rebases will need the same dance.
-- **Bridge latency:** `create_pull_request` returns success with patch/bundle; bridge pushes branch + opens PR afterwards (30 min – 5h observed).
+- **`push_to_pull_request_branch` is append-only.** Rebase resolution cannot be force-pushed; it can only be appended as a new commit on top of the existing PR branch.
+- **Bridge latency:** 30 min – 5h. **May fail silently** — see safeoutputs failure mode below.
 - **Posture:** revert rate is 0/19+ over the life of the workflow.
-- **Maintainer merge cadence (recent):** an-lee merged PR #263, #264, #265, #266 on 2026-06-25 (4 merges in one day); #258, #259, #255, #256 on 2026-06-24. 7 PRs in 2 days.
-- **Detector cadence:** the duplicate-code detector fires ~1-2 times/day against `main`. The cadence is steady: 1-3 findings/day, 0-1 PRs/day closing them, 0-2 maintainer merges/day.
-- **No-action runs are valid** when all of: (a) the only live detector finding needs maintainer signal, (b) bridge-pending patches are not actionable, (c) Test Improver already driving coverage.
+- **Maintainer merge cadence (recent):** 4 merges on 2026-06-25 (#263, #264, #265, #266); 3 merges on 2026-06-24 (#258, #259, #255, #256). 7 PRs in 2 days.
+- **Detector cadence:** duplicate-code detector fires ~1-2 times/day against `main`.
 
-## Verified knowledge (one-line per fact)
+## Verified knowledge
 
-- `safeoutputs` create_pull_request creates a **fallback review issue** when the patch modifies protected files (`go.mod`, `go.sum`, `CHANGELOG.md`, `.github/workflows/ci.yml`); branch IS pushed to origin but PR doesn't open.
-- `safeoutputs` push_to_pull_request_branch is **append-only**: cannot force-push, cannot rewrite PR branch history; rebase resolution must be added as a new commit on top of the existing PR branch (the original commit stays in repo history as unreachable from the PR ref).
-- `runOnHostOS[T any]` in `internal/runner/hostos.go` is the canonical host-OS dispatcher.
-- `internal/ops/connectHostFn` is a package-level seam that tests swap via `installMockConnectHost` + `connectHostMu`.
-- `GitHubClient.GetLatestRunnerVersion()` uses `sync.Once` and caches the version+error.
-- `IsContainerMode()` returns `true` for both `RunnerMode: container` and `Profile: agentic`. Therefore `IsContainerMode() && IsAgentic()` ≡ `IsAgentic()`.
-- `uniqueStringsBy(runners, key)` is the canonical dedupe+sort helper in `internal/doctor/doctor.go`.
-- `installTargetsForHost(runners, hostName, predicate)` is the canonical host-filter+instance-flatten helper in `internal/doctor/doctor.go`.
-- `writeHostBanner(w, prefix, addr)` is the canonical local-vs-SSH banner helper in `internal/ops/ops.go`.
-- `printAgenticFailures(w, hostName, r, defaultSev, prefix, failures)` is the canonical agentic-failure renderer in `internal/doctor/doctor.go`.
-- `failureCollector` is the canonical thread-safe accumulator + WaitGroup helper in `internal/agentic/agentic.go`. Methods: `append(f)`, `spawn(fn)`, `wait()`. Method named `spawn` rather than `go` because `go` is a Go reserved keyword.
-- `runner.DockerExecCommand(cname, innerCmd string) string` is the canonical `docker exec "name" innerCmd` builder in `internal/runner/container.go`. Routes through `QuoteContainerName` internally.
-- `runner.QuoteContainerName(cname string) string` is the canonical container-name shell-quoting helper in `internal/runner/container.go`. Uses `strconv.Quote`. Replaces inline `hostshell.PosixSingleQuote`/`strconv.Quote` across `disk.go:86,495`, `environment.go:99,121,131`, and `doctor.go:513,557`.
-- `runner.ProbeDinDContainerReadiness(h, cname string) (ContainerReadinessReport, error)` is the canonical DinD readiness triad in `internal/runner/container.go` (PR #257, rebased onto current main 2026-06-25). Returns `ContainerReadinessReport{State, InnerDockerdOK, Registered}`. Short-circuits inner probes on non-running states.
-- `runner.addSSHTUserToDockerGroup(h, w, runnerName, lead, verb string, errOnUsermodFail func(sshUser string, err error) error) error` is the canonical docker-group-add helper in `internal/runner/docker.go`. Used by `ensureDockerGroupAccess` and the `installHostDocker` non-root tail. Empty sshUser triggers `errOnUsermodFail("", errors.New("ssh user is empty"))`.
-- `runContainerCheck(h *host.Host, spec containerCheckSpec) []PrereqFailure` is the canonical Linux-gate + Run + PrereqFailure helper for the `ValidateContainer*` family in `internal/agentic/agentic.go`. `containerCheckSpec` carries `{name, checkCmd, message, remediation, docRef}`. Short-circuits on nil host or non-Linux OS.
-- `containerImageExists(h, imageTag)` swallows `h.Run` errors and returns `(false, nil)`.
-- `.github/workflows/ci.yml` is on the protected-files list — modifications route through the fallback-review issue path.
-- `update_issue` body limit is 10 KB. Long Run History entries must be truncated before each monthly refresh.
-- The duplicate-code detector fires periodically against `main`. Each new finding should be cross-checked against in-flight PRs before starting work.
-- Duplicate-code findings 2026-06-17/23/24/25: #251 landed (`cc4201c`); #252 closed by workflow auto-expiry 2026-06-25T20:35 (PR #257 rebase landed just before); #253 landed (PR #259); #260 landed (PR #265); #261 landed (PR #263); #262 active, awaiting maintainer signal; #267 active, awaiting maintainer signal; #268 active, awaiting maintainer signal; #207/#209/#210/#243 all closed.
-- The escape behavior of `strconv.Quote` was verified end-to-end: input `evil"; rm -rf /; "` round-trips as `docker exec "evil\"; rm -rf /; \"" echo ok`. Same shape is now also pinned at the `QuoteContainerName` helper level.
-- The quoting policy across the codebase has been unified on `strconv.Quote` (Go double-quote) for docker CLI shell args; `hostshell.PosixSingleQuote` is reserved for values embedded inside single-quoted shell snippets (e.g. the inner argument to `sh -c '...'`).
-- The `agentic.go:613-685` `docker exec %s ...` sites wrap the `docker exec` in multi-line shell pipelines (e.g. `docker exec %s iptables -F DOCKER-USER && docker network ...`) — they may not fit `DockerExecCommand`'s "single inner command" shape and need a careful grep before any substitution.
-- The `checkContainerAgenticInnerHygiene` site at `internal/doctor/doctor.go:556` uses the same `docker inspect --format '{{.State.Status}}'` shell probe as `containerAwaitHealthy` and `checkContainerRunnerInstall`, but is more deeply nested in the agentic-walk logic. Consolidating it via a `ContainerStateStatus` helper is the natural follow-up after #257 lands.
+- **`safeoutputs` create_pull_request can return success without pushing.** Documented failure mode observed in many earlier #100 comments and again on 2026-06-26 with the isRootSSH PR #270 claim. Returns success with patch + bundle saved locally, but branch is never pushed to origin. **Detection:** after `create_pull_request`, verify `git ls-remote origin <branch>` shows the branch AND cross-check the claimed PR number against `mcp__github__list_pull_requests state=open`. Phantom PRs leave no trace in GitHub.
+- **`safeoutputs` `update_issue` can also return success without applying.** Same failure pattern. Detection: re-read the issue body after update.
+- **`safeoutputs` create_pull_request creates a fallback review issue when the patch modifies protected files (`go.mod`, `go.sum`, `CHANGELOG.md`, `.github/workflows/ci.yml`); branch IS pushed but PR doesn't open.
+- **`runOnHostOS[T any]` in `internal/runner/hostos.go` is the canonical host-OS dispatcher.
+- **`internal/ops/connectHostFn` is a package-level seam tests swap via `installMockConnectHost` + `connectHostMu`.
+- **`GitHubClient.GetLatestRunnerVersion()` uses `sync.Once` and caches the version+error.
+- **`IsContainerMode() && IsAgentic()` ≡ `IsAgentic()` (both fire on `Profile: agentic`).
+- **`runner.DockerExecCommand(cname, innerCmd string) string` is the canonical `docker exec "name" innerCmd` builder. Routes through `QuoteContainerName` internally.
+- **`runner.QuoteContainerName(cname string) string` is the canonical container-name shell-quoting helper (uses `strconv.Quote`). Replaces inline `hostshell.PosixSingleQuote`/`strconv.Quote` across `disk.go:86,495`, `environment.go:99,121,131`, `doctor.go:513,557`.
+- **`runner.ProbeDinDContainerReadiness(h, cname string) (ContainerReadinessReport, error)` returns `{State, InnerDockerdOK, Registered}`. Short-circuits inner probes on non-running states.
+- **`runner.addSSHTUserToDockerGroup(h, w, runnerName, lead, verb string, errOnUsermodFail func(sshUser string, err error) error) error` is the canonical docker-group-add helper.
+- **`runContainerCheck(h, spec containerCheckSpec) []PrereqFailure` is the canonical Linux-gate + Run + PrereqFailure helper for `ValidateContainer*`.
+- **Quoting policy:** `strconv.Quote` (Go double-quote) for docker CLI shell args; `hostshell.PosixSingleQuote` reserved for values embedded inside single-quoted shell snippets (e.g. inner arg to `sh -c '...'`).
+- **The `agentic.go:613-685` `docker exec %s ...` sites wrap the `docker exec` in multi-line shell pipelines — may not fit `DockerExecCommand`'s "single inner command" shape.
+- **`runner.isRootSSH(h *host.Host) bool` was extracted locally in run 28217916988 (branch `repo-assist/extract-isroot-helper-2026-06-26`, commit `7d834d4`) but **never pushed to origin** due to safeoutputs failure mode. The local commit + diff are still in the working tree if maintainer wants to push manually.
+- **`uniqueStringsBy(runners, key)` is canonical dedupe+sort helper in `internal/doctor/doctor.go`.
+- **`installTargetsForHost(runners, hostName, predicate)` is canonical host-filter+instance-flatten helper.
+- **`writeHostBanner(w, prefix, addr)` is canonical local-vs-SSH banner helper in `internal/ops/ops.go`.
+- **`printAgenticFailures(w, hostName, r, defaultSev, prefix, failures)` is canonical agentic-failure renderer.
+- **`failureCollector` is canonical thread-safe accumulator + WaitGroup helper. Methods: `append(f)`, `spawn(fn)`, `wait()`.
+- **`containerImageExists(h, imageTag)` swallows `h.Run` errors and returns `(false, nil)`.
+- **`.github/workflows/ci.yml` is on the protected-files list.
+- **`update_issue` body limit is 10 KB.
+- **Duplicate-code findings 2026-06-17/23/24/25: #251 landed (`cc4201c`); #252 closed by auto-expiry; #253 landed (PR #259); #260 landed (PR #265); #261 landed (PR #263); #262/#267/#268 active, awaiting maintainer signal.
+- **The escape behavior of `strconv.Quote` was verified end-to-end: input `evil"; rm -rf /; "` round-trips as `docker exec "evil\"; rm -rf /; \"" echo ok`.
