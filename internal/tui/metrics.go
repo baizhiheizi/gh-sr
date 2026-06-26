@@ -53,33 +53,75 @@ func FormatHostMetrics(metrics []host.HostMetrics) string {
 	widths := computeColumnWidths(headers, rows)
 
 	var b strings.Builder
+	// Header row + N data rows, with per-cell padding budget.
+	b.Grow((len(headers) + len(rows)) * 32)
 	for i, h := range headers {
-		b.WriteString(fmt.Sprintf("%-*s  ", widths[i], h))
+		appendHostCell(&b, h, widths[i])
 	}
-	b.WriteString("\n")
+	b.WriteByte('\n')
 
 	for _, row := range rows {
 		for j, cell := range row {
-			b.WriteString(fmt.Sprintf("%-*s  ", widths[j], cell))
+			appendHostCell(&b, cell, widths[j])
 		}
-		b.WriteString("\n")
+		b.WriteByte('\n')
 	}
 	return b.String()
+}
+
+// appendHostCell appends `cell` padded on the right to `width` plus the 2-space
+// separator that host-metrics tables use. Inlining this in place of
+// fmt.Sprintf("%-*s  ", w, cell) is a 1-alloc drop per cell, which compounds
+// across N hosts × M columns × R render ticks.
+func appendHostCell(b *strings.Builder, cell string, width int) {
+	b.WriteString(cell)
+	if len(cell) < width {
+		b.WriteString(strings.Repeat(" ", width-len(cell)))
+	}
+	b.WriteString("  ")
 }
 
 func metricsRow(m host.HostMetrics) []string {
 	if m.Err != nil {
 		return []string{m.Name, "err", "err", "err", "-", "unreachable"}
 	}
-	cpu := fmt.Sprintf("%.1f%%", m.CPUPercent)
-	mem := fmt.Sprintf("%.0f/%.0f MiB (%.0f%%)", m.MemUsedMiB, m.MemTotalMiB, m.MemPercent())
-	disk := fmt.Sprintf("%.0f/%.0f GiB (%.0f%%)", m.DiskUsedGiB, m.DiskTotalGiB, m.DiskPercent())
+	// strconv.FormatFloat + strings.Builder avoids the per-call
+	// reflection/format-string machinery that fmt.Sprintf drags in. metricsRow
+	// is on the TUI metrics render path (once per host per View()), so reducing
+	// its alloc count compounds across long dashboard sessions.
+	cpu := formatPercent(m.CPUPercent, 1)
+	mem := formatUsedTotal(m.MemUsedMiB, m.MemTotalMiB, m.MemPercent(), "MiB")
+	disk := formatUsedTotal(m.DiskUsedGiB, m.DiskTotalGiB, m.DiskPercent(), "GiB")
 	load := m.LoadStr()
 	uptime := m.Uptime
 	if uptime == "" {
 		uptime = "-"
 	}
 	return []string{m.Name, cpu, mem, disk, load, uptime}
+}
+
+// formatPercent formats v with `prec` decimals followed by '%'.
+func formatPercent(v float64, prec int) string {
+	var b strings.Builder
+	b.Grow(8)
+	b.WriteString(strconv.FormatFloat(v, 'f', prec, 64))
+	b.WriteByte('%')
+	return b.String()
+}
+
+// formatUsedTotal formats "used/total UNIT (pct%)".
+func formatUsedTotal(used, total, pct float64, unit string) string {
+	var b strings.Builder
+	b.Grow(24)
+	b.WriteString(strconv.FormatFloat(used, 'f', 0, 64))
+	b.WriteByte('/')
+	b.WriteString(strconv.FormatFloat(total, 'f', 0, 64))
+	b.WriteByte(' ')
+	b.WriteString(unit)
+	b.WriteString(" (")
+	b.WriteString(strconv.FormatFloat(pct, 'f', 0, 64))
+	b.WriteString("%)")
+	return b.String()
 }
 
 // colorizePercent highlights a cell that ends with a percentage based on severity.
