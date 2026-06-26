@@ -129,6 +129,61 @@ func QuoteContainerName(cname string) string {
 	return strconv.Quote(cname)
 }
 
+// ContainerReadinessReport captures the result of a single readiness probe
+// against a DinD runner container. The three signals (State / InnerDockerdOK /
+// Registered) together encode the contract that "a healthy DinD runner container
+// is in state running/restarting, has a responsive inner dockerd, and contains
+// a registered actions runner". Callers decide whether to interpret a partial
+// report as a transient (polling) or terminal (one-shot) failure and format
+// their own user-facing messages.
+type ContainerReadinessReport struct {
+	// State is the result of `docker inspect --format '{{.State.Status}}'`,
+	// trimmed. Expected values: "running", "restarting", "missing", "" (host
+	// unreachable or the inspect command itself failed), or any other Docker
+	// state string (e.g. "paused", "exited").
+	State string
+	// InnerDockerdOK is true iff the inner dockerd answered `docker info`.
+	// Only meaningful when State is "running" or "restarting"; false
+	// otherwise.
+	InnerDockerdOK bool
+	// Registered is true iff /home/runner/actions-runner/.runner is present
+	// inside the container (the actions runner has finished its config.sh
+	// step). Only meaningful when State is "running" or "restarting";
+	// false otherwise.
+	Registered bool
+}
+
+// ProbeDinDContainerReadiness runs the standard readiness triad against cname
+// on host h: outer container state + inner dockerd responsive + actions runner
+// registered. It is shared by:
+//   - runner.containerAwaitHealthy (polling gate during Start)
+//   - doctor.checkContainerRunnerInstall (one-shot doctor report)
+//
+// The error return is non-nil only if the underlying `docker inspect` call
+// itself failed (typically a host-level connection error). A missing container
+// surfaces as State == "missing" with err == nil, because the probe uses
+// `docker inspect ... || echo missing` to absorb the "No such object" exit
+// code into the captured stdout.
+func ProbeDinDContainerReadiness(h *host.Host, cname string) (ContainerReadinessReport, error) {
+	q := strconv.Quote(cname)
+	out, err := h.Run(fmt.Sprintf(`docker inspect --format '{{.State.Status}}' %s 2>/dev/null || echo missing`, q))
+	if err != nil {
+		return ContainerReadinessReport{}, err
+	}
+	state := strings.TrimSpace(out)
+	rep := ContainerReadinessReport{State: state}
+	if state != "running" && state != "restarting" {
+		return rep, nil
+	}
+	if _, err := h.Run(DockerExecCommand(cname, "docker info >/dev/null 2>&1")); err == nil {
+		rep.InnerDockerdOK = true
+	}
+	if reg, _ := h.Run(DockerExecCommand(cname, "test -f /home/runner/actions-runner/.runner && echo ok || echo no")); strings.TrimSpace(reg) == "ok" {
+		rep.Registered = true
+	}
+	return rep, nil
+}
+
 // containerStateDir returns the host-side bind-mount path for runner instance state
 // (mounted at /runner-state inside the container).
 //
