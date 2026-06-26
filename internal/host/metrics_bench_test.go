@@ -29,3 +29,16 @@ trailing noise`
 		}
 	}
 }
+
+// BenchmarkLoadStr measures the per-host load-avg formatter that runs once
+// per host per TUI render. Mirrors the realistic nonzero triple used in
+// parseUnixMetrics tests so the strings.Builder path can be compared head-to-
+// head with the old fmt.Sprintf path.
+func BenchmarkLoadStr(b *testing.B) {
+	m := HostMetrics{Load1: 1.23, Load5: 0.89, Load15: 0.45}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = m.LoadStr()
+	}
+}
