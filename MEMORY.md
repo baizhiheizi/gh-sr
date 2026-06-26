@@ -1,2 +1,2 @@
-- [Repo Assist state](state.md) — last run 2026-06-25 (run 28198710817): PR #257 rebased onto current main (3 conflicts resolved, build/test/gofmt green); 2 new design comments posted on detector findings #267 and #268 (awaiting maintainer signal on rollout shape + helper signature). 5 PRs landed in last 2 days (#255-#259, #263-#266).
-- [Run notes](notes.md) — run 28198710817 entry.
+- [Repo Assist state](state.md) — last run 2026-06-26 (run 28230988647): no-action outcome on Tasks 2/8/4 (all candidates either have prior Repo Assist comments awaiting maintainer signal, are bridge-pending patches, or are covered by in-flight perf-improver PR #269). PR #270 (isRootSSH helper) opened by previous run now reflected in #100's Suggested Actions.
+- [Run notes](notes.md) — run 28230988647 entry.
