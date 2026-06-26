@@ -2,7 +2,6 @@ package runner
 
 import (
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/an-lee/gh-sr/internal/config"
@@ -128,18 +127,17 @@ func innerHostDockerInternalReadyCommand(instanceName string) string {
 // resolving via the baked DNS. Reuses the same signals as gh sr doctor.
 func containerAwaitHealthy(h *host.Host, instanceName string, agentic bool, timeout time.Duration) error {
 	cname := containerName(instanceName)
-	q := QuoteContainerName(cname)
 	dnsCmd := innerHostDockerInternalReadyCommand(instanceName)
 	deadline := time.Now().Add(timeout)
 	lastErr := fmt.Errorf("container %s not ready", cname)
 
 	for {
-		out, _ := h.Run(fmt.Sprintf("docker inspect --format '{{.State.Status}}' %s 2>/dev/null || echo missing", q))
-		switch strings.TrimSpace(out) {
+		rep, _ := ProbeDinDContainerReadiness(h, cname)
+		switch rep.State {
 		case "running", "restarting":
-			if _, err := h.Run(fmt.Sprintf("docker exec %s docker info >/dev/null 2>&1", q)); err != nil {
+			if !rep.InnerDockerdOK {
 				lastErr = fmt.Errorf("inner dockerd not responding inside %s", cname)
-			} else if reg, _ := h.Run(fmt.Sprintf("docker exec %s test -f /home/runner/actions-runner/.runner && echo ok || echo no", q)); strings.TrimSpace(reg) != "ok" {
+			} else if !rep.Registered {
 				lastErr = fmt.Errorf("actions runner not yet registered inside %s", cname)
 			} else if agentic {
 				if _, err := h.Run(dnsCmd); err != nil {
@@ -153,7 +151,7 @@ func containerAwaitHealthy(h *host.Host, instanceName string, agentic bool, time
 		case "missing", "":
 			lastErr = fmt.Errorf("container %s not found", cname)
 		default:
-			lastErr = fmt.Errorf("container %s state is %q", cname, strings.TrimSpace(out))
+			lastErr = fmt.Errorf("container %s state is %q", cname, rep.State)
 		}
 		if time.Now().After(deadline) {
 			return lastErr

@@ -509,28 +509,26 @@ func checkContainerRunnerInstall(w io.Writer, hostName string, h *host.Host, run
 			continue
 		}
 
-		out, err := h.Run(fmt.Sprintf(`docker inspect --format '{{.State.Status}}' %s 2>/dev/null || echo missing`, runner.QuoteContainerName(cname)))
-		status := strings.TrimSpace(out)
-		if err != nil || status == "missing" || status == "" {
+		rep, err := runner.ProbeDinDContainerReadiness(h, cname)
+		if err != nil || rep.State == "missing" || rep.State == "" {
 			printLine(w, sevFail, hostName, fmt.Sprintf("container: instance %s (%s) — Docker container %s not found; run: gh sr setup %s", inst, runnerName, cname, runnerName))
 			r.Fail++
 			continue
 		}
-		if status != "running" && status != "restarting" {
-			printLine(w, sevWarn, hostName, fmt.Sprintf("container: instance %s (%s) — %s state is %q (expected running); run: gh sr up %s", inst, runnerName, cname, status, runnerName))
+		if rep.State != "running" && rep.State != "restarting" {
+			printLine(w, sevWarn, hostName, fmt.Sprintf("container: instance %s (%s) — %s state is %q (expected running); run: gh sr up %s", inst, runnerName, cname, rep.State, runnerName))
 			r.Warn++
 			continue
 		}
 
-		if _, err := h.Run(runner.DockerExecCommand(cname, "docker info >/dev/null 2>&1")); err != nil {
+		if !rep.InnerDockerdOK {
 			printLine(w, sevWarn, hostName, fmt.Sprintf("container: instance %s — inner dockerd not responding inside %s", inst, cname))
 			r.Warn++
 		} else {
 			printLine(w, sevOK, hostName, fmt.Sprintf("container: instance %s — inner dockerd healthy (%s)", inst, cname))
 		}
 
-		out, _ = h.Run(runner.DockerExecCommand(cname, "test -f /home/runner/actions-runner/.runner && echo ok || echo no"))
-		if strings.TrimSpace(out) != "ok" {
+		if !rep.Registered {
 			printLine(w, sevFail, hostName, fmt.Sprintf("container: instance %s — actions runner not configured inside %s (missing .runner); run: gh sr setup %s", inst, cname, runnerName))
 			r.Fail++
 			continue

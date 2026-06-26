@@ -1847,3 +1847,215 @@ func TestRemoveContainer_chainsStopAndRemove(t *testing.T) {
 		t.Errorf("expected no separate stop/rm calls; got bareStop=%d bareRm=%d; calls=%v", bareStop, bareRm, calls)
 	}
 }
+
+// TestProbeDinDContainerReadiness_RunningHealthy verifies the happy path:
+// container is running, inner dockerd answers, .runner is present. The probe
+// returns a fully-positive report.
+func TestProbeDinDContainerReadiness_RunningHealthy(t *testing.T) {
+	t.Parallel()
+	h := host.NewHost("h", config.HostConfig{OS: "linux", Arch: "amd64", Addr: "local"})
+	h.SetConn(&testutil.MockExecutor{
+		RunFn: func(cmd string) (string, error) {
+			switch {
+			case strings.Contains(cmd, "docker inspect --format '{{.State.Status}}'"):
+				return "running\n", nil
+			case strings.Contains(cmd, `docker exec "gh-sr-x" docker info`):
+				return "", nil
+			case strings.Contains(cmd, `docker exec "gh-sr-x" test -f /home/runner/actions-runner/.runner`):
+				return "ok\n", nil
+			default:
+				t.Errorf("unexpected h.Run call: %q", cmd)
+				return "", nil
+			}
+		},
+	})
+
+	rep, err := ProbeDinDContainerReadiness(h, "gh-sr-x")
+	if err != nil {
+		t.Fatalf("err = %v, want nil", err)
+	}
+	if rep.State != "running" {
+		t.Errorf("State = %q, want %q", rep.State, "running")
+	}
+	if !rep.InnerDockerdOK {
+		t.Errorf("InnerDockerdOK = false, want true")
+	}
+	if !rep.Registered {
+		t.Errorf("Registered = false, want true")
+	}
+}
+
+// TestProbeDinDContainerReadiness_RestartingInnerDown verifies that for a
+// container in "restarting" state, the probe still runs the inner-dockerd and
+// .runner checks (both fail), but returns State == "restarting" so callers
+// can distinguish it from "missing" / "exited".
+func TestProbeDinDContainerReadiness_RestartingInnerDown(t *testing.T) {
+	t.Parallel()
+	h := host.NewHost("h", config.HostConfig{OS: "linux", Arch: "amd64", Addr: "local"})
+	h.SetConn(&testutil.MockExecutor{
+		RunFn: func(cmd string) (string, error) {
+			switch {
+			case strings.Contains(cmd, "docker inspect --format '{{.State.Status}}'"):
+				return "restarting\n", nil
+			case strings.Contains(cmd, `docker exec "gh-sr-x" docker info`):
+				return "command not found", assertCalledError()
+			case strings.Contains(cmd, `docker exec "gh-sr-x" test -f`):
+				return "no\n", nil
+			default:
+				return "", nil
+			}
+		},
+	})
+
+	rep, err := ProbeDinDContainerReadiness(h, "gh-sr-x")
+	if err != nil {
+		t.Fatalf("err = %v, want nil", err)
+	}
+	if rep.State != "restarting" {
+		t.Errorf("State = %q, want %q", rep.State, "restarting")
+	}
+	if rep.InnerDockerdOK {
+		t.Errorf("InnerDockerdOK = true, want false (inner dockerd unreachable)")
+	}
+	if rep.Registered {
+		t.Errorf("Registered = true, want false (.runner missing)")
+	}
+}
+
+// TestProbeDinDContainerReadiness_MissingShortCircuits verifies that a missing
+// container surfaces as State == "missing" with the inner probes skipped (the
+// probe issues exactly 1 h.Run call, the docker inspect; the inner probes
+// would otherwise fail with "No such container" and noise up the report).
+func TestProbeDinDContainerReadiness_MissingShortCircuits(t *testing.T) {
+	t.Parallel()
+	h := host.NewHost("h", config.HostConfig{OS: "linux", Arch: "amd64", Addr: "local"})
+	calls := 0
+	h.SetConn(&testutil.MockExecutor{
+		RunFn: func(cmd string) (string, error) {
+			if strings.Contains(cmd, "docker inspect --format '{{.State.Status}}'") {
+				calls++
+				return "missing\n", nil
+			}
+			calls++
+			t.Errorf("unexpected inner probe on missing container: %q", cmd)
+			return "", nil
+		},
+	})
+
+	rep, err := ProbeDinDContainerReadiness(h, "gh-sr-x")
+	if err != nil {
+		t.Fatalf("err = %v, want nil", err)
+	}
+	if rep.State != "missing" {
+		t.Errorf("State = %q, want %q", rep.State, "missing")
+	}
+	if rep.InnerDockerdOK || rep.Registered {
+		t.Errorf("InnerDockerdOK/Registered should be false on missing container, got %+v", rep)
+	}
+	if calls != 1 {
+		t.Errorf("h.Run called %d times, want 1 (only docker inspect)", calls)
+	}
+}
+
+// TestProbeDinDContainerReadiness_OtherStateShortCircuits verifies that a
+// container in an unexpected state (e.g. "paused", "exited") is also treated
+// as terminal at the inspect step and skips the inner probes.
+func TestProbeDinDContainerReadiness_OtherStateShortCircuits(t *testing.T) {
+	t.Parallel()
+	h := host.NewHost("h", config.HostConfig{OS: "linux", Arch: "amd64", Addr: "local"})
+	calls := 0
+	h.SetConn(&testutil.MockExecutor{
+		RunFn: func(cmd string) (string, error) {
+			if strings.Contains(cmd, "docker inspect --format '{{.State.Status}}'") {
+				calls++
+				return "exited\n", nil
+			}
+			calls++
+			t.Errorf("unexpected inner probe on exited container: %q", cmd)
+			return "", nil
+		},
+	})
+
+	rep, err := ProbeDinDContainerReadiness(h, "gh-sr-x")
+	if err != nil {
+		t.Fatalf("err = %v, want nil", err)
+	}
+	if rep.State != "exited" {
+		t.Errorf("State = %q, want %q", rep.State, "exited")
+	}
+	if rep.InnerDockerdOK || rep.Registered {
+		t.Errorf("InnerDockerdOK/Registered should be false on exited container, got %+v", rep)
+	}
+	if calls != 1 {
+		t.Errorf("h.Run called %d times, want 1 (only docker inspect)", calls)
+	}
+}
+
+// TestProbeDinDContainerReadiness_InspectErrorSurfaces verifies that a host
+// connection error on the docker inspect call propagates as the error return
+// and yields an empty-state report (callers must not interpret State == ""
+// as "missing" without checking err).
+func TestProbeDinDContainerReadiness_InspectErrorSurfaces(t *testing.T) {
+	t.Parallel()
+	h := host.NewHost("h", config.HostConfig{OS: "linux", Arch: "amd64", Addr: "local"})
+	wantErr := errors.New("connection refused")
+	h.SetConn(&testutil.MockExecutor{RunErr: wantErr})
+
+	rep, err := ProbeDinDContainerReadiness(h, "gh-sr-x")
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("err = %v, want %v", err, wantErr)
+	}
+	if rep.State != "" {
+		t.Errorf("State = %q, want empty on inspect error", rep.State)
+	}
+	if rep.InnerDockerdOK || rep.Registered {
+		t.Errorf("InnerDockerdOK/Registered should be false on inspect error, got %+v", rep)
+	}
+}
+
+// TestProbeDinDContainerReadiness_NormalizesQuotedName verifies the probe
+// applies the same shell-safe quoting as the rest of the readiness triad
+// (docker exec "name" ...), so a container name with shell metacharacters
+// cannot break out of the quoted-name segment. Regression guard for the
+// "docker inspect" + "docker exec" command shape.
+func TestProbeDinDContainerReadiness_NormalizesQuotedName(t *testing.T) {
+	t.Parallel()
+	h := host.NewHost("h", config.HostConfig{OS: "linux", Arch: "amd64", Addr: "local"})
+	const cname = `evil"; rm -rf /; "`
+	var sawInspectQuoted, sawExecQuoted bool
+	mock := &testutil.MockExecutor{
+		RunFn: func(cmd string) (string, error) {
+			// Go's strconv.Quote escapes the inner double-quotes: the
+			// command must contain the literal substring "evil\"; rm -rf
+			// /; \"" to prove the quoting policy is in force.
+			const quoted = `"evil\"; rm -rf /; \""`
+			if strings.Contains(cmd, "docker inspect --format '{{.State.Status}}' "+quoted) {
+				sawInspectQuoted = true
+				return "running\n", nil
+			}
+			if strings.Contains(cmd, "docker exec "+quoted) {
+				sawExecQuoted = true
+				return "ok\n", nil
+			}
+			return "", nil
+		},
+	}
+	h.SetConn(mock)
+
+	rep, err := ProbeDinDContainerReadiness(h, cname)
+	if err != nil {
+		t.Fatalf("err = %v, want nil", err)
+	}
+	if rep.State != "running" {
+		t.Errorf("State = %q, want %q", rep.State, "running")
+	}
+	if !rep.Registered {
+		t.Errorf("Registered = false, want true (the inner exec was the only path to set this)")
+	}
+	if !sawInspectQuoted {
+		t.Errorf("docker inspect command was not shell-safe-quoted; got: %v", mock.Calls)
+	}
+	if !sawExecQuoted {
+		t.Errorf("docker exec command was not shell-safe-quoted")
+	}
+}
