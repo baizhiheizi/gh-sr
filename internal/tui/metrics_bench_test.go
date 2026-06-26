@@ -169,3 +169,27 @@ func TestFormatHostMetrics(t *testing.T) {
 		t.Errorf("empty input: got %q, want %q", empty, "  No hosts found.")
 	}
 }
+
+// TestFormatHostMetrics_ColumnAlignment pins the left-justify contract that
+// the original fmt.Sprintf("%-*s  ", ...) established: each cell is padded on
+// the RIGHT so a short cell is followed by its padding spaces, not preceded by
+// them. A regression that swaps to right-justify would shift every column's
+// start position and misalign the table without changing any Contains-based
+// assertion, so this asserts exact leading/trailing space structure.
+func TestFormatHostMetrics_ColumnAlignment(t *testing.T) {
+	t.Parallel()
+	// "h1" is the shortest host name; the HOST column width is driven by the
+	// header "HOST" (4), so "h1" must be padded to "h1  " (right-padded).
+	metrics := []host.HostMetrics{
+		{Name: "h1", CPUPercent: 12.3, MemUsedMiB: 1024, MemTotalMiB: 4096, DiskUsedGiB: 50, DiskTotalGiB: 200, Load1: 0.5, Load5: 0.4, Load15: 0.3, Uptime: "5d"},
+	}
+	got := FormatHostMetrics(metrics)
+	lines := strings.Split(strings.TrimRight(got, "\n"), "\n")
+	data := lines[1]
+	if !strings.HasPrefix(data, "h1 ") {
+		t.Errorf("HOST cell must be left-justified (padded on the right); expected %q to start with \"h1 \" (right-padded to width 4), got: %q", "h1", data)
+	}
+	if strings.HasPrefix(data, " h1") || strings.HasPrefix(data, "  h1") {
+		t.Errorf("HOST cell must NOT be right-justified (padded on the left); got leading spaces before h1 in: %q", data)
+	}
+}
