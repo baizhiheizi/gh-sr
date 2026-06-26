@@ -47,11 +47,22 @@ func (m HostMetrics) DiskPercent() float64 {
 	return m.DiskUsedGiB / m.DiskTotalGiB * 100
 }
 
+// LoadStr formats the three load averages as "l1 l5 l15" with 2-decimal
+// precision. strconv.FormatFloat + strings.Builder avoids the per-call
+// reflection/format-string machinery that fmt.Sprintf drags in — this is on
+// the TUI metrics render path and runs once per host per render.
 func (m HostMetrics) LoadStr() string {
 	if m.Load1 == 0 && m.Load5 == 0 && m.Load15 == 0 {
 		return "-"
 	}
-	return fmt.Sprintf("%.2f %.2f %.2f", m.Load1, m.Load5, m.Load15)
+	var b strings.Builder
+	b.Grow(24) // 3 × ~8 chars per float + 2 spaces
+	b.WriteString(strconv.FormatFloat(m.Load1, 'f', 2, 64))
+	b.WriteByte(' ')
+	b.WriteString(strconv.FormatFloat(m.Load5, 'f', 2, 64))
+	b.WriteByte(' ')
+	b.WriteString(strconv.FormatFloat(m.Load15, 'f', 2, 64))
+	return b.String()
 }
 
 // CollectMetrics gathers resource usage from the host.
