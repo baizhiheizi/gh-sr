@@ -46,18 +46,29 @@ func dockerInfoStatus(h *host.Host) (ok, permissionDenied bool) {
 }
 
 func ensureDockerDaemonAccess(h *host.Host, w io.Writer, runnerName string) error {
-	if ok, _ := dockerInfoStatus(h); ok {
+	// dockerInfoStatus returns (ok, permissionDenied) from a single `docker info`
+	// call. Capture both — a permission-denied result means starting the service
+	// can't help (the daemon is up but the socket is unreachable for this user),
+	// so we can skip the start+recheck round-trips and go straight to the
+	// docker-group remediation path. Saves 2 SSH round-trips on the
+	// permission-denied path (4 → 2) and 1 on the daemon-down-then-started path
+	// (4 → 3) per EnsureHostDocker call.
+	ok, denied := dockerInfoStatus(h)
+	if ok {
 		return nil
+	}
+	if denied {
+		return ensureDockerGroupAccess(h, w, runnerName)
 	}
 
 	if _, err := h.Run(startDockerServiceScript()); err != nil {
 		return fmt.Errorf("starting Docker service: %w", err)
 	}
-	if ok, _ := dockerInfoStatus(h); ok {
+	ok, denied = dockerInfoStatus(h)
+	if ok {
 		return nil
 	}
-
-	if _, denied := dockerInfoStatus(h); denied {
+	if denied {
 		return ensureDockerGroupAccess(h, w, runnerName)
 	}
 

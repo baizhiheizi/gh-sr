@@ -355,3 +355,95 @@ func TestAddSSHTUserToDockerGroup_usermodFailurePropagatesWrappedError(t *testin
 		t.Fatalf("expected no output on failure, got %q", buf.String())
 	}
 }
+
+// TestEnsureHostDocker_daemonDownUsesThreeSSHCalls pins the round-trip count
+// for the daemon-down-then-started path: dockerInfoStatus (down) → systemctl
+// start → dockerInfoStatus (ok). Previously 4 calls because the original code
+// re-checked status twice after the start; the consolidation reuses both
+// returns from the single dockerInfoStatus call. Saves 1 SSH round-trip per
+// `gh sr setup` on hosts where the docker daemon is initially down.
+func TestEnsureHostDocker_daemonDownUsesThreeSSHCalls(t *testing.T) {
+	t.Parallel()
+	var systemctlCalled bool
+	var infoCalls, startCalls int
+	mock := &testutil.MockExecutor{RunFn: func(cmd string) (string, error) {
+		switch {
+		case strings.Contains(cmd, "docker --version"):
+			return "yes", nil
+		case strings.Contains(cmd, "systemctl enable --now docker"):
+			systemctlCalled = true
+			startCalls++
+			return "", nil
+		case strings.Contains(cmd, "docker info"):
+			infoCalls++
+			if infoCalls == 1 {
+				return "Cannot connect to the Docker daemon", nil
+			}
+			return "ok", nil
+		default:
+			return "", nil
+		}
+	}}
+	h := linuxDockerHost(t, "runner@vps")
+	h.SetConn(mock)
+
+	if err := EnsureHostDocker(h, io.Discard, "aw-runner"); err != nil {
+		t.Fatalf("EnsureHostDocker: %v", err)
+	}
+	if !systemctlCalled {
+		t.Fatal("expected systemctl start when daemon was down")
+	}
+	if infoCalls != 2 {
+		t.Fatalf("expected 2 docker info calls (before+after systemctl), got %d", infoCalls)
+	}
+	if startCalls != 1 {
+		t.Fatalf("expected 1 systemctl start, got %d", startCalls)
+	}
+}
+
+// TestEnsureHostDocker_permissionDeniedSkipsSystemctlStart pins that the
+// permission-denied path does not waste SSH round-trips on
+// `systemctl enable --now docker` (which cannot fix a permission-denied error)
+// and a redundant `docker info` re-check. Previously 4 calls; now 2 calls
+// (docker info → usermod). Saves 2 SSH round-trips per `gh sr setup` on hosts
+// where the SSH user is missing from the docker group.
+func TestEnsureHostDocker_permissionDeniedSkipsSystemctlStart(t *testing.T) {
+	t.Parallel()
+	var usermodCalled bool
+	var infoCalls, startCalls int
+	mock := &testutil.MockExecutor{RunFn: func(cmd string) (string, error) {
+		switch {
+		case strings.Contains(cmd, "docker --version"):
+			return "yes", nil
+		case strings.Contains(cmd, "docker info"):
+			infoCalls++
+			return "permission denied while trying to connect to the Docker daemon socket", nil
+		case strings.Contains(cmd, "systemctl enable --now docker"):
+			startCalls++
+			return "", nil
+		case strings.Contains(cmd, "usermod"):
+			usermodCalled = true
+			return "", nil
+		case strings.Contains(cmd, "id -u"):
+			return "no", nil
+		default:
+			return "", nil
+		}
+	}}
+	h := linuxDockerHost(t, "runner@vps")
+	h.SetConn(mock)
+
+	err := EnsureHostDocker(h, io.Discard, "aw-runner")
+	if !errors.Is(err, ErrDockerGroupPending) {
+		t.Fatalf("expected ErrDockerGroupPending, got %v", err)
+	}
+	if !usermodCalled {
+		t.Fatal("expected usermod when permission denied")
+	}
+	if startCalls != 0 {
+		t.Fatalf("systemctl start cannot fix permission-denied; expected 0 calls, got %d", startCalls)
+	}
+	if infoCalls != 1 {
+		t.Fatalf("expected 1 docker info call (initial check), got %d", infoCalls)
+	}
+}
