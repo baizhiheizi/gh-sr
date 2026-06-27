@@ -84,38 +84,36 @@ func (g *GitHubClient) actionsURL(scope, target, rest string) string {
 	return g.repoActionsURL(target, rest)
 }
 
-func (g *GitHubClient) GetRegistrationTokenScoped(scope, target string) (string, error) {
-	url := g.actionsURL(scope, target, "runners/registration-token")
+// fetchToken POSTs to the given GitHub Actions endpoint and parses the token
+// response. opLabel is used in error messages (e.g. "registration" or
+// "removal"). emptyHint, if non-empty, is appended in parentheses to the
+// empty-token error to give operators actionable guidance.
+func (g *GitHubClient) fetchToken(scope, target, endpoint, opLabel, emptyHint string) (string, error) {
+	url := g.actionsURL(scope, target, endpoint)
 	resp, err := g.post(url, nil)
 	if err != nil {
-		return "", fmt.Errorf("getting registration token for %s: %w", target, err)
+		return "", fmt.Errorf("getting %s token for %s: %w", opLabel, target, err)
 	}
 
 	var tok tokenResponse
 	if err := json.Unmarshal(resp, &tok); err != nil {
-		return "", fmt.Errorf("parsing registration token: %w", err)
+		return "", fmt.Errorf("parsing %s token: %w", opLabel, err)
 	}
 	if tok.Token == "" {
-		return "", fmt.Errorf("empty registration token for %s (check GitHub token and repo admin access)", target)
+		if emptyHint != "" {
+			return "", fmt.Errorf("empty %s token for %s (%s)", opLabel, target, emptyHint)
+		}
+		return "", fmt.Errorf("empty %s token for %s", opLabel, target)
 	}
 	return tok.Token, nil
 }
 
-func (g *GitHubClient) GetRemovalTokenScoped(scope, target string) (string, error) {
-	url := g.actionsURL(scope, target, "runners/remove-token")
-	resp, err := g.post(url, nil)
-	if err != nil {
-		return "", fmt.Errorf("getting removal token for %s: %w", target, err)
-	}
+func (g *GitHubClient) GetRegistrationTokenScoped(scope, target string) (string, error) {
+	return g.fetchToken(scope, target, "runners/registration-token", "registration", "check GitHub token and repo admin access")
+}
 
-	var tok tokenResponse
-	if err := json.Unmarshal(resp, &tok); err != nil {
-		return "", fmt.Errorf("parsing removal token: %w", err)
-	}
-	if tok.Token == "" {
-		return "", fmt.Errorf("empty removal token for %s", target)
-	}
-	return tok.Token, nil
+func (g *GitHubClient) GetRemovalTokenScoped(scope, target string) (string, error) {
+	return g.fetchToken(scope, target, "runners/remove-token", "removal", "")
 }
 
 func (g *GitHubClient) ListRunnersScoped(scope, target string) ([]GitHubRunner, error) {
