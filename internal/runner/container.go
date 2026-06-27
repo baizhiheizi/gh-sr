@@ -153,6 +153,31 @@ type ContainerReadinessReport struct {
 	Registered bool
 }
 
+// ContainerStateStatus probes the runtime state of cname via
+// `docker inspect --format '{{.State.Status}}'`, returning the trimmed status
+// string (e.g. "running", "restarting", "exited"). The probe uses
+// `... || echo missing` so an absent container surfaces as ("missing", nil)
+// rather than an error; an empty inspect result is collapsed to "missing" as
+// well. err is non-nil only when the underlying h.Run call itself fails
+// (typically a host-level connection error), in which case state is "missing".
+//
+// This is the canonical helper for "what state is this container in?" and
+// consolidates the three former inline copies of the inspect probe (see issue
+// #268): ProbeDinDContainerReadiness and the doctor's per-instance hygiene
+// gate both switch on its return instead of re-emitting the shell string.
+func ContainerStateStatus(h *host.Host, cname string) (string, error) {
+	q := QuoteContainerName(cname)
+	out, err := h.Run(fmt.Sprintf(`docker inspect --format '{{.State.Status}}' %s 2>/dev/null || echo missing`, q))
+	if err != nil {
+		return "missing", err
+	}
+	state := strings.TrimSpace(out)
+	if state == "" {
+		state = "missing"
+	}
+	return state, nil
+}
+
 // ProbeDinDContainerReadiness runs the standard readiness triad against cname
 // on host h: outer container state + inner dockerd responsive + actions runner
 // registered. It is shared by:
@@ -161,16 +186,13 @@ type ContainerReadinessReport struct {
 //
 // The error return is non-nil only if the underlying `docker inspect` call
 // itself failed (typically a host-level connection error). A missing container
-// surfaces as State == "missing" with err == nil, because the probe uses
-// `docker inspect ... || echo missing` to absorb the "No such object" exit
-// code into the captured stdout.
+// surfaces as State == "missing" with err == nil, because ContainerStateStatus
+// absorbs the "No such object" exit code into the captured stdout.
 func ProbeDinDContainerReadiness(h *host.Host, cname string) (ContainerReadinessReport, error) {
-	q := strconv.Quote(cname)
-	out, err := h.Run(fmt.Sprintf(`docker inspect --format '{{.State.Status}}' %s 2>/dev/null || echo missing`, q))
+	state, err := ContainerStateStatus(h, cname)
 	if err != nil {
 		return ContainerReadinessReport{}, err
 	}
-	state := strings.TrimSpace(out)
 	rep := ContainerReadinessReport{State: state}
 	if state != "running" && state != "restarting" {
 		return rep, nil
@@ -534,10 +556,8 @@ func (m *Manager) removeContainer(h *host.Host, rc config.RunnerConfig, instance
 	removeTok, err := m.GitHub.GetRemovalTokenScoped(rc.Scope(), rc.ScopeTarget())
 	if err == nil {
 		// Run inside the container if it's still alive; ignore errors.
-		_, _ = h.Run(fmt.Sprintf(
-			"docker exec %s su - runner -c \"cd /home/runner/actions-runner && ./config.sh remove --token %s\" 2>/dev/null || true",
-			cName, hostshell.PosixSingleQuote(removeTok),
-		))
+		inner := "su - runner -c " + hostshell.PosixSingleQuote("cd /home/runner/actions-runner && ./config.sh remove --token " + removeTok)
+		_, _ = h.Run(DockerExecCommand(cName, inner+" 2>/dev/null || true"))
 	}
 
 	// Stop and remove the container in one shell so each instance costs a

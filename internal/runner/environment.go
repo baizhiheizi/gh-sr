@@ -95,7 +95,7 @@ func (e *ContainerEnvironment) AwaitHealthy(timeout time.Duration) error {
 func (e *ContainerEnvironment) Reset() error {
 	cname := containerName(e.instance)
 	// job-completed.sh performs the deterministic teardown and always exits 0.
-	_, err := e.h.Run(fmt.Sprintf("docker exec %s /opt/gh-sr/hooks/job-completed.sh 2>/dev/null || true", QuoteContainerName(cname)))
+	_, err := e.h.Run(DockerExecCommand(cname, "/opt/gh-sr/hooks/job-completed.sh 2>/dev/null || true"))
 	return err
 }
 
@@ -117,8 +117,7 @@ func (e *ContainerEnvironment) Destroy() error {
 // (falling back to 10.200.0.1) so the check stays correct even when the entrypoint's
 // collision-avoidance picked a different candidate subnet for an unusual host network.
 func innerHostDockerInternalReadyCommand(instanceName string) string {
-	q := QuoteContainerName(containerName(instanceName))
-	return "docker exec " + q + ` sh -c 'gw=$(ip -4 -o addr show docker0 2>/dev/null | awk "{print \$4}" | cut -d/ -f1 | head -n1); [ -n "$gw" ] || gw=10.200.0.1; ip=$(dig +short host.docker.internal @"$gw" 2>/dev/null | head -n1); case "$ip" in "" | 127.* | ::1) exit 1 ;; *) exit 0 ;; esac'`
+	return DockerExecCommand(containerName(instanceName), `sh -c 'gw=$(ip -4 -o addr show docker0 2>/dev/null | awk "{print \$4}" | cut -d/ -f1 | head -n1); [ -n "$gw" ] || gw=10.200.0.1; ip=$(dig +short host.docker.internal @"$gw" 2>/dev/null | head -n1); case "$ip" in "" | 127.* | ::1) exit 1 ;; *) exit 0 ;; esac'`)
 }
 
 // containerAwaitHealthy polls until the runner container is ready to accept jobs or the
