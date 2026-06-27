@@ -84,16 +84,17 @@ func posixScriptHeader(instance string) string {
 // gracefully when the inner command never runs.
 func containerEscalation(containerName, shellCmd string) string {
 	q := QuoteContainerName(containerName)
+	execCmd := DockerExecCommand(containerName, "sh -c "+hostshell.PosixSingleQuote(shellCmd))
 	return fmt.Sprintf(`
 if command -v docker >/dev/null 2>&1; then
   if ! docker inspect --format='{{.State.Running}}' %s 2>/dev/null | grep -q true; then
     docker start %s >/dev/null 2>&1 || true
   fi
   if docker inspect --format='{{.State.Running}}' %s 2>/dev/null | grep -q true; then
-    docker exec %s sh -c %s || true
+    %s || true
   fi
 fi
-`, q, q, q, q, hostshell.PosixSingleQuote(shellCmd))
+`, q, q, q, execCmd)
 }
 
 // passwordlessSudo returns the hostshell.LinuxElevatePreludeSoft fragment used
@@ -492,12 +493,11 @@ fi
 }
 
 func pruneInnerDockerCache(h *host.Host, containerName string) error {
-	q := QuoteContainerName(containerName)
-	check, err := h.Run(fmt.Sprintf("docker exec %s docker info >/dev/null 2>&1 && echo ok || echo no", q))
+	check, err := h.Run(DockerExecCommand(containerName, "docker info >/dev/null 2>&1 && echo ok || echo no"))
 	if err != nil || strings.TrimSpace(check) != "ok" {
 		return fmt.Errorf("inner dockerd not responding in %s; skipped cache prune", containerName)
 	}
-	_, err = h.Run(fmt.Sprintf("docker exec %s docker system prune -af --volumes", q))
+	_, err = h.Run(DockerExecCommand(containerName, "docker system prune -af --volumes"))
 	return err
 }
 

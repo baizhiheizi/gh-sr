@@ -551,8 +551,8 @@ func checkContainerAgenticInnerHygiene(w io.Writer, hostName string, h *host.Hos
 		runnerName := pair[1]
 		cname := runner.ContainerDockerName(inst)
 
-		out, err := h.Run(fmt.Sprintf(`docker inspect --format '{{.State.Status}}' %s 2>/dev/null || echo missing`, runner.QuoteContainerName(cname)))
-		status := strings.TrimSpace(out)
+		out, err := runner.ContainerStateStatus(h, cname)
+		status := out
 		if err != nil || status != "running" {
 			continue
 		}

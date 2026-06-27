@@ -1957,6 +1957,71 @@ func TestProbeDinDContainerReadiness_MissingShortCircuits(t *testing.T) {
 	}
 }
 
+// TestContainerStateStatus_RunningAndTrimmed verifies the helper returns the
+// trimmed docker state string for a running container.
+func TestContainerStateStatus_RunningAndTrimmed(t *testing.T) {
+	t.Parallel()
+	h := host.NewHost("h", config.HostConfig{OS: "linux", Arch: "amd64", Addr: "local"})
+	h.SetConn(&testutil.MockExecutor{RunFn: func(cmd string) (string, error) {
+		if !strings.Contains(cmd, "docker inspect --format '{{.State.Status}}'") {
+			t.Errorf("unexpected command: %q", cmd)
+		}
+		return "  running  \n", nil
+	}})
+	state, err := ContainerStateStatus(h, "gh-sr-x")
+	if err != nil {
+		t.Fatalf("err = %v, want nil", err)
+	}
+	if state != "running" {
+		t.Errorf("state = %q, want %q", state, "running")
+	}
+}
+
+// TestContainerStateStatus_MissingAndEmptyCollapse pins the contract from
+// issue #268: both a docker "No such object" (absorbed into "missing" via the
+// `|| echo missing` tail) and an empty inspect result collapse to
+// ("missing", nil). Callers switch on a single "missing" literal instead of
+// also handling "".
+func TestContainerStateStatus_MissingAndEmptyCollapse(t *testing.T) {
+	t.Parallel()
+	cases := map[string]string{
+		"explicit missing sentinel": "missing\n",
+		"empty stdout":              "",
+		"whitespace-only stdout":    "   \n",
+	}
+	for name, out := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			h := host.NewHost("h", config.HostConfig{OS: "linux", Arch: "amd64", Addr: "local"})
+			h.SetConn(&testutil.MockExecutor{RunFn: func(string) (string, error) { return out, nil }})
+			state, err := ContainerStateStatus(h, "gh-sr-x")
+			if err != nil {
+				t.Fatalf("err = %v, want nil", err)
+			}
+			if state != "missing" {
+				t.Errorf("state = %q, want %q", state, "missing")
+			}
+		})
+	}
+}
+
+// TestContainerStateStatus_InspectErrorPropagates verifies a host connection
+// error on the inspect call propagates as the error return and yields a
+// "missing" state (callers must check err first).
+func TestContainerStateStatus_InspectErrorPropagates(t *testing.T) {
+	t.Parallel()
+	h := host.NewHost("h", config.HostConfig{OS: "linux", Arch: "amd64", Addr: "local"})
+	wantErr := errors.New("connection refused")
+	h.SetConn(&testutil.MockExecutor{RunErr: wantErr})
+	state, err := ContainerStateStatus(h, "gh-sr-x")
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("err = %v, want %v", err, wantErr)
+	}
+	if state != "missing" {
+		t.Errorf("state = %q, want %q on inspect error", state, "missing")
+	}
+}
+
 // TestProbeDinDContainerReadiness_OtherStateShortCircuits verifies that a
 // container in an unexpected state (e.g. "paused", "exited") is also treated
 // as terminal at the inspect step and skips the inner probes.
