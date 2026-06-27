@@ -32,8 +32,8 @@ func EnsureHostDocker(h *host.Host, w io.Writer, runnerName string) error {
 }
 
 func dockerCLIInstalled(h *host.Host) bool {
-	out, _ := h.Run(`sh -c 'docker --version 2>/dev/null | grep -q "Docker version" && echo yes || echo no'`)
-	return strings.TrimSpace(out) == "yes"
+	ok, _ := hostshell.RemoteBoolCheck(h, `sh -c 'docker --version 2>/dev/null | grep -q "Docker version"'`)
+	return ok
 }
 
 func dockerInfoStatus(h *host.Host) (ok, permissionDenied bool) {
@@ -75,11 +75,20 @@ func ensureDockerDaemonAccess(h *host.Host, w io.Writer, runnerName string) erro
 	return fmt.Errorf("docker daemon not reachable; try on the host: sudo systemctl start docker")
 }
 
+// sshUserIsRoot reports whether the SSH session runs as uid 0. It is shared by
+// the docker-group-access and post-install paths, which both short-circuit the
+// "add user to docker group" remediation when already root (a root user has
+// full socket access; a permission-denied error for root means the daemon is
+// genuinely down).
+func sshUserIsRoot(h *host.Host) bool {
+	ok, _ := hostshell.RemoteBoolCheck(h, `[ "$(id -u)" -eq 0 ]`)
+	return ok
+}
+
 // ensureDockerGroupAccess adds the SSH user to the docker group when they cannot
 // access the socket, then returns ErrDockerGroupPending for a setup re-run.
 func ensureDockerGroupAccess(h *host.Host, w io.Writer, runnerName string) error {
-	isRoot, _ := h.Run(`sh -c '[ "$(id -u)" -eq 0 ] && echo yes || echo no'`)
-	if strings.TrimSpace(isRoot) == "yes" {
+	if sshUserIsRoot(h) {
 		return fmt.Errorf("docker CLI is installed but docker info failed as root; check that the Docker daemon is running")
 	}
 
@@ -100,8 +109,7 @@ func installHostDocker(h *host.Host, w io.Writer, runnerName string) error {
 		return fmt.Errorf("starting Docker service after install: %w", err)
 	}
 
-	isRoot, _ := h.Run(`sh -c '[ "$(id -u)" -eq 0 ] && echo yes || echo no'`)
-	if strings.TrimSpace(isRoot) == "yes" {
+	if sshUserIsRoot(h) {
 		if ok, _ := dockerInfoStatus(h); !ok {
 			return fmt.Errorf("docker installed but daemon not reachable")
 		}

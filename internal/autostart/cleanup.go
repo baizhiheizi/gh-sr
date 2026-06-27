@@ -144,11 +144,22 @@ func IsStale(h *host.Host, instance string) (bool, error) {
 		return strings.TrimSpace(out) == "yes", nil
 	}
 
-	out, err := h.Run(fmt.Sprintf(`test -d %s && test -f %s/run.sh && echo no || echo yes`, dir, dir))
+	// Stale = the runner directory or its run.sh launcher is missing. We probe
+	// for the present (non-stale) condition with the canonical yes/no helper
+	// and invert in Go, avoiding the fragile inverted-polarity shell
+	// (`echo no || echo yes`) the previous inline copy used — a copy-paste edit
+	// that flipped the wrong branch would silently invert the answer.
+	//
+	// dir carries a literal $HOME that the remote sh must expand, so it is
+	// passed raw (PosixSingleQuote would freeze "$HOME" as a literal). The
+	// instance-name segment is sanitized by SanitizeInstance, so it is safe
+	// unquoted — matching the long-standing convention (see runner.resolveStateDirOrFallback).
+	present, err := hostshell.RemoteBoolCheck(h,
+		"test -d "+dir+" && test -f "+dir+"/run.sh")
 	if err != nil {
 		return false, err
 	}
-	return strings.TrimSpace(out) == "yes", nil
+	return !present, nil
 }
 
 // CleanupStale removes autostart for installed instances whose runner directory is missing.

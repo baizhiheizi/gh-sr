@@ -178,6 +178,18 @@ func ContainerStateStatus(h *host.Host, cname string) (string, error) {
 	return state, nil
 }
 
+// IsContainerAcceptingJobs reports whether a docker container state means the
+// container is up enough to be accepting runner work — i.e. "running" or
+// "restarting" (the latter is a transient self-heal state that the readiness
+// gate treats as ready once the inner dockerd responds). It is the single
+// source of truth for the `state == "running" || state == "restarting"`
+// acceptance set that previously appeared inline in containerAwaitHealthy,
+// ProbeDinDContainerReadiness, and the doctor checks (see issue #275). If
+// Docker gains another transient-OK state, this is the only place to update.
+func IsContainerAcceptingJobs(state string) bool {
+	return state == "running" || state == "restarting"
+}
+
 // ProbeDinDContainerReadiness runs the standard readiness triad against cname
 // on host h: outer container state + inner dockerd responsive + actions runner
 // registered. It is shared by:
@@ -194,7 +206,7 @@ func ProbeDinDContainerReadiness(h *host.Host, cname string) (ContainerReadiness
 		return ContainerReadinessReport{}, err
 	}
 	rep := ContainerReadinessReport{State: state}
-	if state != "running" && state != "restarting" {
+	if !IsContainerAcceptingJobs(state) {
 		return rep, nil
 	}
 	if _, err := h.Run(DockerExecCommand(cname, "docker info >/dev/null 2>&1")); err == nil {
@@ -255,14 +267,9 @@ func resolveStateDirOrFallback(h *host.Host, instanceName string) string {
 // (regardless of whether it is running or stopped).
 func containerRunnerPresent(h *host.Host, instanceName string) bool {
 	name := containerName(instanceName)
-	out, err := h.Run(fmt.Sprintf(
-		"docker inspect --format='{{.Name}}' %s 2>/dev/null | grep -q '^/%s$' && echo yes || echo no",
-		name, name,
-	))
-	if err != nil {
-		return false
-	}
-	return strings.TrimSpace(out) == "yes"
+	ok, _ := hostshell.RemoteBoolCheck(h,
+		fmt.Sprintf("docker inspect --format='{{.Name}}' %s 2>/dev/null | grep -q '^/%s$'", name, name))
+	return ok
 }
 
 // setupContainer builds the gh-sr container runner image (if not already up to date)
@@ -529,14 +536,8 @@ func clearContainerBootstrapMarkers(h *host.Host, instanceName string) {
 // inner-dockerd bootstrap failures (bootstrap-failed marker in the state bind-mount).
 func ContainerBootstrapFailed(h *host.Host, instanceName string) bool {
 	stateDir := resolveStateDirOrFallback(h, instanceName)
-	out, err := h.Run(fmt.Sprintf(
-		"test -f %s && echo yes || echo no",
-		hostshell.PosixSingleQuote(stateDir+"/"+bootstrapFailedMarker),
-	))
-	if err != nil {
-		return false
-	}
-	return strings.TrimSpace(out) == "yes"
+	ok, _ := hostshell.RemoteFileExists(h, stateDir+"/"+bootstrapFailedMarker)
+	return ok
 }
 
 // stopContainer stops a running runner container (docker stop).
@@ -749,14 +750,13 @@ func (m *Manager) needsSetupContainer(h *host.Host, rc config.RunnerConfig) bool
 
 // containerImageExists checks whether a Docker image with the given tag exists on the host.
 func containerImageExists(h *host.Host, imageTag string) (bool, error) {
-	out, err := h.Run(fmt.Sprintf(
-		"docker image inspect %s --format='{{.Id}}' 2>/dev/null | grep -q . && echo yes || echo no",
-		hostshell.PosixSingleQuote(imageTag),
-	))
-	if err != nil {
-		return false, nil
-	}
-	return strings.TrimSpace(out) == "yes", nil
+	// RemoteBoolCheck appends `&& echo yes || echo no`; on a host-execution
+	// error we mirror the previous semantics and report "image absent" rather
+	// than surfacing the error (the caller treats a missing image as a build
+	// trigger, not a hard failure).
+	ok, _ := hostshell.RemoteBoolCheck(h,
+		"docker image inspect "+hostshell.PosixSingleQuote(imageTag)+" --format='{{.Id}}' 2>/dev/null | grep -q .")
+	return ok, nil
 }
 
 // resolveRunnerImageInputs resolves the runner version, host arch, and image tag
