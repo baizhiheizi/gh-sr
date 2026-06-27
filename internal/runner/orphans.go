@@ -8,6 +8,7 @@ import (
 	"github.com/an-lee/gh-sr/internal/autostart"
 	"github.com/an-lee/gh-sr/internal/config"
 	"github.com/an-lee/gh-sr/internal/host"
+	"github.com/an-lee/gh-sr/internal/hostshell"
 )
 
 // OrphanCleanupPlan describes autostart and/or directory cleanup for one instance.
@@ -131,9 +132,5 @@ func instanceDirectoryExists(h *host.Host, instance string) (bool, error) {
 		}
 		return strings.TrimSpace(out) == "yes", nil
 	}
-	out, err := h.Run(fmt.Sprintf(`test -d %s && echo yes || echo no`, dir))
-	if err != nil {
-		return false, err
-	}
-	return strings.TrimSpace(out) == "yes", nil
+	return hostshell.RemoteDirExists(h, dir)
 }

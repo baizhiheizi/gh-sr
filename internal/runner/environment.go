@@ -132,8 +132,8 @@ func containerAwaitHealthy(h *host.Host, instanceName string, agentic bool, time
 
 	for {
 		rep, _ := ProbeDinDContainerReadiness(h, cname)
-		switch rep.State {
-		case "running", "restarting":
+		switch {
+		case IsContainerAcceptingJobs(rep.State):
 			if !rep.InnerDockerdOK {
 				lastErr = fmt.Errorf("inner dockerd not responding inside %s", cname)
 			} else if !rep.Registered {
@@ -147,7 +147,7 @@ func containerAwaitHealthy(h *host.Host, instanceName string, agentic bool, time
 			} else {
 				return nil
 			}
-		case "missing", "":
+		case rep.State == "missing" || rep.State == "":
 			lastErr = fmt.Errorf("container %s not found", cname)
 		default:
 			lastErr = fmt.Errorf("container %s state is %q", cname, rep.State)

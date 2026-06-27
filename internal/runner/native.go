@@ -27,11 +27,8 @@ func NativeRunnerConfigPresent(h *host.Host, instanceName string) (bool, error) 
 		}
 		return strings.TrimSpace(out) == "yes", nil
 	}
-	out, err := h.Run(fmt.Sprintf("test -d %s && test -f %s/run.sh && test -f %s/.runner && echo yes || echo no", dir, dir, dir))
-	if err != nil {
-		return false, err
-	}
-	return strings.TrimSpace(out) == "yes", nil
+	qdir := hostshell.PosixSingleQuote(dir)
+	return hostshell.RemoteBoolCheck(h, "test -d "+qdir+" && test -f "+qdir+"/run.sh && test -f "+qdir+"/.runner")
 }
 
 // svcShPresent reports whether svc.sh is deployed in the runner directory.
@@ -40,8 +37,8 @@ func svcShPresent(h *host.Host, instanceName string) bool {
 	if h.OS == "windows" {
 		return false
 	}
-	out, _ := h.Run(fmt.Sprintf("test -f %s/svc.sh && echo yes || echo no", dir))
-	return strings.TrimSpace(out) == "yes"
+	ok, _ := hostshell.RemoteFileExists(h, dir+"/svc.sh")
+	return ok
 }
 
 // posixSingleQuote and writeRemoteBytes were moved to internal/hostshell.

@@ -32,6 +32,53 @@ func PlistEscape(s string) string {
 	return s
 }
 
+// RemotePathExists reports whether path exists on the remote host (file or
+// directory). It is the canonical helper for the
+// `test -e <path> && echo yes || echo no` POSIX probe, replacing the hand-built
+// copies that had drifted across the runner and autostart packages (issue #274).
+// path is shell-quoted via PosixSingleQuote, so callers pass the raw path.
+//
+// This is a POSIX-only helper; Windows callers build their own PowerShell
+// `Test-Path` probes (the dir/run.cmd/.runner triple) because there is no
+// single PowerShell idiom that composes the same way as `test -e`. Callers
+// gate on h.OS themselves before reaching for it.
+func RemotePathExists(h *host.Host, path string) (bool, error) {
+	return RemoteBoolCheck(h, "test -e "+PosixSingleQuote(path))
+}
+
+// RemoteFileExists is RemotePathExists specialized to a regular file
+// (`test -f`). Use it instead of RemotePathExists when a directory at the same
+// path must read as "absent" (e.g. a .runner file vs. a directory).
+func RemoteFileExists(h *host.Host, path string) (bool, error) {
+	return RemoteBoolCheck(h, "test -f "+PosixSingleQuote(path))
+}
+
+// RemoteDirExists is RemotePathExists specialized to a directory
+// (`test -d`).
+func RemoteDirExists(h *host.Host, path string) (bool, error) {
+	return RemoteBoolCheck(h, "test -d "+PosixSingleQuote(path))
+}
+
+// RemoteBoolCheck runs a POSIX shell condition (condCmd) — any command whose
+// exit status encodes the boolean — wrapped as `condCmd && echo yes || echo no`
+// and returns whether it printed "yes". It is the generic yes/no probe shared
+// by RemotePathExists / RemoteFileExists / RemoteDirExists and by call sites
+// whose condition is not a bare test (e.g.
+// `docker --version 2>/dev/null | grep -q "Docker version"`). Callers are
+// responsible for shell-quoting any embedded values; the path helpers above
+// already quote via PosixSingleQuote.
+//
+// A non-nil error from h.Run is returned alongside false. Many existing call
+// sites treat the error as non-fatal and treat any failure as "does not
+// exist" — they can drop the error with `ok, _ := RemoteBoolCheck(...)`.
+func RemoteBoolCheck(h *host.Host, condCmd string) (bool, error) {
+	out, err := h.Run(condCmd + " && echo yes || echo no")
+	if err != nil {
+		return false, err
+	}
+	return strings.TrimSpace(out) == "yes", nil
+}
+
 // WriteRemoteBytes writes data to a remote path using base64 (POSIX) or PowerShell (Windows).
 // Parent directories are created on the host.
 func WriteRemoteBytes(h *host.Host, remotePath string, data []byte) error {

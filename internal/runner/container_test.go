@@ -2022,6 +2022,27 @@ func TestContainerStateStatus_InspectErrorPropagates(t *testing.T) {
 	}
 }
 
+// TestIsContainerAcceptingJobs pins the acceptance set: only "running" and
+// "restarting" count as up-enough to accept work. Every other Docker state
+// (paused, exited, missing, etc.) must read false. This is the single source
+// of truth that containerAwaitHealthy, ProbeDinDContainerReadiness, and the
+// doctor readiness check all switch on (issue #275).
+func TestIsContainerAcceptingJobs(t *testing.T) {
+	t.Parallel()
+	accepting := []string{"running", "restarting"}
+	notAccepting := []string{"", "missing", "paused", "exited", "created", "dead", "RUNNING"}
+	for _, s := range accepting {
+		if !IsContainerAcceptingJobs(s) {
+			t.Errorf("IsContainerAcceptingJobs(%q) = false, want true", s)
+		}
+	}
+	for _, s := range notAccepting {
+		if IsContainerAcceptingJobs(s) {
+			t.Errorf("IsContainerAcceptingJobs(%q) = true, want false", s)
+		}
+	}
+}
+
 // TestProbeDinDContainerReadiness_OtherStateShortCircuits verifies that a
 // container in an unexpected state (e.g. "paused", "exited") is also treated
 // as terminal at the inspect step and skips the inner probes.

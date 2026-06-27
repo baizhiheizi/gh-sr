@@ -153,11 +153,7 @@ func installSystemdUser(h *host.Host, instance, san, absRunnerDir string) error 
 		return fmt.Errorf("writing systemd user unit: %w", err)
 	}
 
-	cmd := fmt.Sprintf(`set -e
-systemctl --user daemon-reload
-systemctl --user enable %s.service
-systemctl --user restart %s.service || systemctl --user start %s.service
-`, base, base, base)
+	cmd := systemdEnableUserScript(base)
 	if _, err := h.Run(cmd); err != nil {
 		return fmt.Errorf("enabling systemd user unit: %w", err)
 	}
@@ -189,16 +185,7 @@ func installSystemdSystem(h *host.Host, instance, san, absRunnerDir string) erro
 		return fmt.Errorf("staging systemd system unit: %w", err)
 	}
 
-	script := sudoPrelude() + fmt.Sprintf(`
-set -e
-$SUDO mv %s %s
-$SUDO systemctl daemon-reload
-$SUDO systemctl enable %s.service
-$SUDO systemctl restart %s.service || $SUDO systemctl start %s.service
-`,
-		hostshell.PosixSingleQuote(tmpPath),
-		hostshell.PosixSingleQuote(sysPath),
-		base, base, base)
+	script := systemdEnableSystemScript(base, tmpPath, sysPath)
 
 	if _, err := h.Run(script); err != nil {
 		return fmt.Errorf("installing system systemd unit: %w", err)
@@ -285,22 +272,11 @@ func Uninstall(h *host.Host, instance string) error {
 
 	switch kind {
 	case KindSystemdUser:
-		cmd := fmt.Sprintf(`set -e
-systemctl --user disable --now %s.service 2>/dev/null || true
-rm -f "$HOME/.config/systemd/user/%s.service"
-systemctl --user daemon-reload
-`, base, base)
-		_, err := h.Run(cmd)
+		_, err := h.Run(systemdDisableUserScript(base))
 		return err
 
 	case KindSystemdSystem:
-		script := sudoPrelude() + fmt.Sprintf(`
-set -e
-$SUDO systemctl disable --now %s.service 2>/dev/null || true
-$SUDO rm -f /etc/systemd/system/%s.service
-$SUDO systemctl daemon-reload
-`, base, base)
-		_, err := h.Run(script)
+		_, err := h.Run(systemdDisableSystemScript(base))
 		return err
 
 	case KindLaunchd:

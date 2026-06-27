@@ -515,7 +515,7 @@ func checkContainerRunnerInstall(w io.Writer, hostName string, h *host.Host, run
 			r.Fail++
 			continue
 		}
-		if rep.State != "running" && rep.State != "restarting" {
+		if !runner.IsContainerAcceptingJobs(rep.State) {
 			printLine(w, sevWarn, hostName, fmt.Sprintf("container: instance %s (%s) — %s state is %q (expected running); run: gh sr up %s", inst, runnerName, cname, rep.State, runnerName))
 			r.Warn++
 			continue
@@ -553,6 +553,9 @@ func checkContainerAgenticInnerHygiene(w io.Writer, hostName string, h *host.Hos
 
 		out, err := runner.ContainerStateStatus(h, cname)
 		status := out
+		// Stricter than IsContainerAcceptingJobs: the inner AWF/network probes
+		// below need a fully-running container, not a transient "restarting"
+		// state, so we require exactly "running".
 		if err != nil || status != "running" {
 			continue
 		}

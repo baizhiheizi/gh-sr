@@ -45,7 +45,9 @@ func TestListInstalledLinux(t *testing.T) {
 
 func TestIsStaleLinux(t *testing.T) {
 	t.Parallel()
-	mock := &testutil.MockExecutor{Output: "yes\n"}
+	// "no" = the runner dir + run.sh are present (the canonical yes/no probe
+	// prints "yes" when present), so IsStale inverts to true.
+	mock := &testutil.MockExecutor{Output: "no\n"}
 	h := newMockHost("linux", config.HostConfig{OS: "linux"}, mock)
 	stale, err := IsStale(h, "missing-1")
 	if err != nil {
@@ -68,13 +70,15 @@ func TestIsStale(t *testing.T) {
 		{
 			name: "linux dir missing",
 			os:   "linux",
-			mock: &testutil.MockExecutor{Output: "yes\n"},
+			// "no" = dir/run.sh absent (probe prints "yes" only when present).
+			mock: &testutil.MockExecutor{Output: "no\n"},
 			want: true,
 		},
 		{
 			name: "linux dir present with run.sh",
 			os:   "linux",
-			mock: &testutil.MockExecutor{Output: "no\n"},
+			// "yes" = dir + run.sh present → not stale.
+			mock: &testutil.MockExecutor{Output: "yes\n"},
 			want: false,
 		},
 		{
@@ -126,7 +130,10 @@ func TestCleanupStaleDryRun(t *testing.T) {
 			case strings.Contains(cmd, "for f in \"$HOME/.config/systemd/user/ghsr-runner-\""):
 				return "ghsr-runner-old-1\n", nil
 			case strings.Contains(cmd, "test -d"):
-				return "yes\n", nil
+				// "no" = dir/run.sh absent → stale. IsStale uses the canonical
+				// yes/no probe (present → "yes") and inverts, so a stale
+				// instance prints "no".
+				return "no\n", nil
 			default:
 				return "", nil
 			}
@@ -156,7 +163,8 @@ func TestCleanupStaleRemoves(t *testing.T) {
 			case strings.Contains(cmd, "for f in \"$HOME/.config/systemd/user/ghsr-runner-\""):
 				return "ghsr-runner-old-1\n", nil
 			case strings.Contains(cmd, "test -d"):
-				return "yes\n", nil
+				// "no" = dir/run.sh absent → stale (see TestCleanupStaleDryRun).
+				return "no\n", nil
 			default:
 				return "", nil
 			}
