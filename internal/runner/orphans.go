@@ -132,5 +132,7 @@ func instanceDirectoryExists(h *host.Host, instance string) (bool, error) {
 		}
 		return strings.TrimSpace(out) == "yes", nil
 	}
-	return hostshell.RemoteDirExists(h, dir)
+	// dir carries a literal $HOME that the remote sh must expand; pass it raw
+	// (RemoteDirExists would PosixSingleQuote it and freeze $HOME).
+	return hostshell.RemoteBoolCheck(h, "test -d "+dir)
 }

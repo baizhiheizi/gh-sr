@@ -27,8 +27,12 @@ func NativeRunnerConfigPresent(h *host.Host, instanceName string) (bool, error) 
 		}
 		return strings.TrimSpace(out) == "yes", nil
 	}
-	qdir := hostshell.PosixSingleQuote(dir)
-	return hostshell.RemoteBoolCheck(h, "test -d "+qdir+" && test -f "+qdir+"/run.sh && test -f "+qdir+"/.runner")
+	// dir is "$HOME/.gh-sr/runners/<instance>": the $HOME prefix is a literal
+	// shell variable the remote sh expands. Do NOT PosixSingleQuote it (that
+	// would freeze "$HOME" as a literal and break the probe); the instance-name
+	// segment is already sanitized by SanitizeInstance, so passing it raw
+	// matches the long-standing convention (see resolveStateDirOrFallback).
+	return hostshell.RemoteBoolCheck(h, "test -d "+dir+" && test -f "+dir+"/run.sh && test -f "+dir+"/.runner")
 }
 
 // svcShPresent reports whether svc.sh is deployed in the runner directory.
@@ -37,7 +41,9 @@ func svcShPresent(h *host.Host, instanceName string) bool {
 	if h.OS == "windows" {
 		return false
 	}
-	ok, _ := hostshell.RemoteFileExists(h, dir+"/svc.sh")
+	// dir carries a literal $HOME (see NativeRunnerConfigPresent); pass it
+	// raw so the shell expands $HOME, matching the original inline probe.
+	ok, _ := hostshell.RemoteBoolCheck(h, "test -f "+dir+"/svc.sh")
 	return ok
 }
 
