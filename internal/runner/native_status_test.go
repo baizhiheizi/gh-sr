@@ -14,7 +14,7 @@ func TestStatusNativeServiceError(t *testing.T) {
 	mock := &testutil.MockExecutor{
 		RunFn: func(cmd string) (string, error) {
 			switch {
-			case strings.Contains(cmd, "test -f") && strings.Contains(cmd, ".service"):
+			case strings.Contains(cmd, ".config/systemd/user/") && strings.Contains(cmd, "/etc/systemd/system/"):
 				return "user\n", nil
 			case strings.Contains(cmd, "is-active"):
 				return "activating\n", nil
@@ -37,7 +37,7 @@ func TestStatusNativeAutostartActive(t *testing.T) {
 	mock := &testutil.MockExecutor{
 		RunFn: func(cmd string) (string, error) {
 			switch {
-			case strings.Contains(cmd, "test -f") && strings.Contains(cmd, ".service"):
+			case strings.Contains(cmd, ".config/systemd/user/") && strings.Contains(cmd, "/etc/systemd/system/"):
 				return "user\n", nil
 			case strings.Contains(cmd, "is-active"):
 				return "active\n", nil

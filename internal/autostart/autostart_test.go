@@ -170,7 +170,7 @@ func TestDetect(t *testing.T) {
 			os:   "linux",
 			mock: &testutil.MockExecutor{
 				RunFn: func(cmd string) (string, error) {
-					if strings.Contains(cmd, ".config/systemd/user/") {
+					if strings.Contains(cmd, ".config/systemd/user/") && strings.Contains(cmd, "/etc/systemd/system/") {
 						return "user\n", nil
 					}
 					return "", nil
@@ -183,10 +183,7 @@ func TestDetect(t *testing.T) {
 			os:   "linux",
 			mock: &testutil.MockExecutor{
 				RunFn: func(cmd string) (string, error) {
-					if strings.Contains(cmd, ".config/systemd/user/") {
-						return "\n", nil
-					}
-					if strings.Contains(cmd, "/etc/systemd/system/") {
+					if strings.Contains(cmd, ".config/systemd/user/") && strings.Contains(cmd, "/etc/systemd/system/") {
 						return "system\n", nil
 					}
 					return "", nil
@@ -255,6 +252,56 @@ func TestDetect(t *testing.T) {
 			}
 			if got != tc.want {
 				t.Errorf("Detect = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestDetect_linuxUsesOneSSHCall pins the round-trip count for the Linux
+// autostart probe at 1, guarding the consolidation that folded the previous
+// "user unit exists?" + "system unit exists?" pair into a single shell
+// invocation (mirrors the win-class of PR #264 / PR #269). Re-introducing
+// the two-call pattern would silently double the SSH cost on every
+// autostart touch for Linux runners (TUI per-tick: Manager.Status →
+// statusNative → Detect runs once per instance every 5 s; per-instance
+// `gh sr up`/`gh sr down`/`gh sr remove` paths via Manager.Start/Stop
+// and resolveAutostartTarget).
+func TestDetect_linuxUsesOneSSHCall(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name string
+		mock *testutil.MockExecutor
+		want Kind
+	}{
+		{
+			name: "user unit present",
+			mock: &testutil.MockExecutor{Output: "user\n"},
+			want: KindSystemdUser,
+		},
+		{
+			name: "system unit present",
+			mock: &testutil.MockExecutor{Output: "system\n"},
+			want: KindSystemdSystem,
+		},
+		{
+			name: "neither installed",
+			mock: &testutil.MockExecutor{Output: "\n"},
+			want: KindNone,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			h := newMockHost("test", config.HostConfig{OS: "linux"}, tc.mock)
+			got, err := Detect(h, "ci-1")
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got != tc.want {
+				t.Errorf("Detect = %q, want %q", got, tc.want)
+			}
+			if n := len(tc.mock.Calls); n != 1 {
+				t.Errorf("Detect issued %d SSH call(s), want exactly 1 (consolidation regression). Calls: %q", n, tc.mock.Calls)
 			}
 		})
 	}
