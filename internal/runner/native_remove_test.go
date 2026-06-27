@@ -32,7 +32,7 @@ func TestRemoveNativeCleansServicesAndDirectory(t *testing.T) {
 			switch {
 			case strings.Contains(cmd, "test -f") && strings.Contains(cmd, "svc.sh"):
 				return "no\n", nil
-			case strings.Contains(cmd, "&& echo user || true"):
+			case strings.Contains(cmd, ".config/systemd/user/") && strings.Contains(cmd, "/etc/systemd/system/"):
 				return "user\n", nil
 			case strings.Contains(cmd, "systemctl --user disable"):
 				sawAutostartUninstall = true
