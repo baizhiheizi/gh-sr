@@ -9,6 +9,7 @@ import (
 
 	"github.com/an-lee/gh-sr/internal/config"
 	"github.com/an-lee/gh-sr/internal/runner"
+	"github.com/an-lee/gh-sr/internal/table"
 )
 
 // DiskPruneOptions configures PruneDisk.
@@ -320,11 +321,6 @@ func printPruneResult(w io.Writer, res runner.PruneResult, dryRun bool) {
 
 // PrintDiskUsageTable prints disk usage entries to w.
 func PrintDiskUsageTable(w io.Writer, entries []runner.DiskUsageEntry) {
-	if len(entries) == 0 {
-		fmt.Fprintln(w, "No runner directories found.")
-		return
-	}
-
 	headers := []string{"HOST", "INSTANCE", "MODE", "TOTAL", "WORK", "TEMP", "DOCKER-DATA", "OTHER", "BUSY", "ORPHAN"}
 	rows := make([][]string, len(entries))
 	var totalBytes int64
@@ -358,35 +354,12 @@ func PrintDiskUsageTable(w io.Writer, entries []runner.DiskUsageEntry) {
 		}
 	}
 
-	widths := columnWidths(headers, rows)
-	printRow(w, headers, widths)
-	for _, row := range rows {
-		printRow(w, row, widths)
+	if !table.PrintPlain(w, table.Options{
+		EmptyMsg: "No runner directories found.",
+		Headers:  headers,
+		Rows:     rows,
+	}) {
+		return
 	}
 	fmt.Fprintf(w, "\nTotal: %s across %d instance(s)\n", runner.FormatBytesHuman(totalBytes), len(entries))
-}
-
-func columnWidths(headers []string, rows [][]string) []int {
-	widths := make([]int, len(headers))
-	for i, h := range headers {
-		widths[i] = len(h)
-	}
-	for _, row := range rows {
-		for j, cell := range row {
-			if j < len(widths) && len(cell) > widths[j] {
-				widths[j] = len(cell)
-			}
-		}
-	}
-	return widths
-}
-
-func printRow(w io.Writer, cells []string, widths []int) {
-	for i, cell := range cells {
-		if i >= len(widths) {
-			break
-		}
-		fmt.Fprintf(w, "%-*s  ", widths[i], cell)
-	}
-	fmt.Fprintln(w)
 }

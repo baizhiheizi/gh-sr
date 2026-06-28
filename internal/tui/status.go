@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"os"
 	"sort"
 	"strings"
 
@@ -10,37 +11,29 @@ import (
 )
 
 func PrintStatusTable(statuses []runner.RunnerStatus) {
-	if len(statuses) == 0 {
-		fmt.Println("No runners found.")
-		return
-	}
-
-	fmt.Println(titleStyle.Render("Runner Status"))
-
 	headers := []string{"INSTANCE", "HOST", "REPO", "MODE", "IMAGE", "BUILD", "LOCAL", "GITHUB", "LABELS"}
 	rows := make([][]string, len(statuses))
 	for i, s := range statuses {
 		rows[i] = runnerStatusCells(s)
 	}
-	widths := computeColumnWidths(headers, rows)
-
-	colorize := func(col int, cell string) string {
-		switch col {
-		case 5: // BUILD
-			return colorizeImageBuild(cell)
-		case 6: // LOCAL
-			return colorizeLocalStatus(cell)
-		case 7: // GITHUB
-			return colorizeGitHubStatus(cell)
-		default:
-			return cell
-		}
-	}
-
-	fmt.Println(renderHeader(headers, widths))
-	for _, row := range rows {
-		fmt.Println(renderRow(row, widths, colorize))
-	}
+	PrintTable(os.Stdout, TablePrintOptions{
+		Title:    "Runner Status",
+		EmptyMsg: "No runners found.",
+		Headers:  headers,
+		Rows:     rows,
+		Colorize: func(col int, cell string) string {
+			switch col {
+			case 5: // BUILD
+				return colorizeImageBuild(cell)
+			case 6: // LOCAL
+				return colorizeLocalStatus(cell)
+			case 7: // GITHUB
+				return colorizeGitHubStatus(cell)
+			default:
+				return cell
+			}
+		},
+	})
 }
 
 // FormatConfig returns a styled, redacted snapshot of the resolved configuration (stable host order).

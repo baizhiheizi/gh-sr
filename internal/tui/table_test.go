@@ -124,6 +124,19 @@ func TestNewAltView_enablesAltScreen(t *testing.T) {
 	}
 }
 
+// TestPrintTable_emptyStyled verifies empty styled tables print EmptyMsg.
+func TestPrintTable_emptyStyled(t *testing.T) {
+	t.Parallel()
+	var buf strings.Builder
+	ok := PrintTable(&buf, TablePrintOptions{EmptyMsg: "No runners found."})
+	if ok {
+		t.Fatal("PrintTable should return false for empty rows")
+	}
+	if got := buf.String(); got != "No runners found.\n" {
+		t.Errorf("got %q want %q", got, "No runners found.\n")
+	}
+}
+
 // visibleWidth returns the printable width of an ANSI-styled string. lipgloss
 // styled output embeds escape sequences; we approximate by stripping CSI
 // sequences (anything between ESC and a final byte 0x40-0x7e).

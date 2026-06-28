@@ -1,25 +1,46 @@
 package tui
 
 import (
+	"fmt"
+	"io"
 	"strings"
 
 	"github.com/an-lee/gh-sr/internal/runner"
+	"github.com/an-lee/gh-sr/internal/table"
 	"github.com/charmbracelet/lipgloss"
 )
 
-func computeColumnWidths(headers []string, rows [][]string) []int {
-	widths := make([]int, len(headers))
-	for i, h := range headers {
-		widths[i] = len(h)
-	}
-	for _, row := range rows {
-		for j, cell := range row {
-			if len(cell) > widths[j] {
-				widths[j] = len(cell)
-			}
+// TablePrintOptions configures PrintTable.
+type TablePrintOptions struct {
+	Title    string
+	EmptyMsg string
+	Headers  []string
+	Rows     [][]string
+	Colorize func(col int, cell string) string
+}
+
+// PrintTable writes a styled lipgloss table to w. When Rows is empty,
+// EmptyMsg is printed and false is returned.
+func PrintTable(w io.Writer, opts TablePrintOptions) bool {
+	if len(opts.Rows) == 0 {
+		if opts.EmptyMsg != "" {
+			fmt.Fprintln(w, opts.EmptyMsg)
 		}
+		return false
 	}
-	return widths
+	if opts.Title != "" {
+		fmt.Fprintln(w, titleStyle.Render(opts.Title))
+	}
+	widths := table.ColumnWidths(opts.Headers, opts.Rows)
+	fmt.Fprintln(w, renderHeader(opts.Headers, widths))
+	for _, row := range opts.Rows {
+		fmt.Fprintln(w, renderRow(row, widths, opts.Colorize))
+	}
+	return true
+}
+
+func computeColumnWidths(headers []string, rows [][]string) []int {
+	return table.ColumnWidths(headers, rows)
 }
 
 func runnerStatusCells(s runner.RunnerStatus) []string {

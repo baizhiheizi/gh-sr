@@ -1,7 +1,7 @@
 package tui
 
 import (
-	"fmt"
+	"os"
 	"strconv"
 	"strings"
 
@@ -10,32 +10,23 @@ import (
 
 // PrintHostMetricsTable prints a tabular summary of host resource usage to stdout.
 func PrintHostMetricsTable(metrics []host.HostMetrics) {
-	if len(metrics) == 0 {
-		fmt.Println("No hosts found.")
-		return
-	}
-
-	fmt.Println(titleStyle.Render("Host Metrics"))
-
 	headers := []string{"HOST", "CPU", "MEMORY", "DISK", "LOAD AVG", "UPTIME"}
 	rows := make([][]string, len(metrics))
 	for i, m := range metrics {
 		rows[i] = metricsRow(m)
 	}
-
-	widths := computeColumnWidths(headers, rows)
-
-	colorize := func(col int, cell string) string {
-		if col >= 1 && col <= 3 {
-			return colorizePercent(cell)
-		}
-		return cell
-	}
-
-	fmt.Println(renderHeader(headers, widths))
-	for _, row := range rows {
-		fmt.Println(renderRow(row, widths, colorize))
-	}
+	PrintTable(os.Stdout, TablePrintOptions{
+		Title:    "Host Metrics",
+		EmptyMsg: "No hosts found.",
+		Headers:  headers,
+		Rows:     rows,
+		Colorize: func(col int, cell string) string {
+			if col >= 1 && col <= 3 {
+				return colorizePercent(cell)
+			}
+			return cell
+		},
+	})
 }
 
 // FormatHostMetrics returns a styled multiline string suitable for the TUI scroll panel.
