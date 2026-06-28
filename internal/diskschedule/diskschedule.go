@@ -62,8 +62,7 @@ func Detect() (ScheduleKind, error) {
 		}
 		return KindNone, nil
 	case "windows":
-		out, err := exec.Command("powershell.exe", "-NoProfile", "-NonInteractive", "-Command",
-			fmt.Sprintf(`if (Get-ScheduledTask -TaskName '%s' -ErrorAction SilentlyContinue) { 'yes' } else { 'no' }`, serviceBase)).Output()
+		out, err := hostshell.PowerShellExec(fmt.Sprintf(`if (Get-ScheduledTask -TaskName '%s' -ErrorAction SilentlyContinue) { 'yes' } else { 'no' }`, serviceBase))
 		if err != nil {
 			return KindNone, err
 		}
@@ -142,8 +141,7 @@ func Status() (ScheduleKind, string, error) {
 	case KindLaunchd:
 		return kind, "installed (launchd): " + labelBase + ".plist", nil
 	case KindWindowsTask:
-		out, err := exec.Command("powershell.exe", "-NoProfile", "-NonInteractive", "-Command",
-			fmt.Sprintf(`(Get-ScheduledTask -TaskName '%s' -ErrorAction SilentlyContinue | Select-Object -ExpandProperty State)`, serviceBase)).Output()
+		out, err := hostshell.PowerShellExec(fmt.Sprintf(`(Get-ScheduledTask -TaskName '%s' -ErrorAction SilentlyContinue | Select-Object -ExpandProperty State)`, serviceBase))
 		if err != nil {
 			return kind, "installed (task): error " + err.Error(), nil
 		}
@@ -307,7 +305,7 @@ $tr = New-ScheduledTaskTrigger -Daily -At (Get-Date '%02d:%02d').TimeOfDay
 $st = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable
 Register-ScheduledTask -TaskName $tn -Action $act -Trigger $tr -Settings $st -Force | Out-Null
 `, hostshell.PowerShellSingleQuote(serviceBase), hostshell.PowerShellSingleQuote(opts.GhPath), hostshell.PowerShellSingleQuote(opts.ConfigPath), hour, minute)
-	out, err := exec.Command("powershell.exe", "-NoProfile", "-NonInteractive", "-Command", ps).CombinedOutput()
+	out, err := hostshell.PowerShellCombinedOutput(ps)
 	if err != nil {
 		return fmt.Errorf("registering scheduled task: %w (%s)", err, strings.TrimSpace(string(out)))
 	}
@@ -316,7 +314,7 @@ Register-ScheduledTask -TaskName $tn -Action $act -Trigger $tr -Settings $st -Fo
 
 func uninstallWindowsTask() error {
 	ps := fmt.Sprintf(`Unregister-ScheduledTask -TaskName %s -Confirm:$false -ErrorAction SilentlyContinue`, hostshell.PowerShellSingleQuote(serviceBase))
-	_, err := exec.Command("powershell.exe", "-NoProfile", "-NonInteractive", "-Command", ps).CombinedOutput()
+	_, err := hostshell.PowerShellCombinedOutput(ps)
 	return err
 }
 

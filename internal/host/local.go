@@ -7,6 +7,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+
+	"github.com/an-lee/gh-sr/internal/hostshell/ps"
 )
 
 // LocalConnection executes commands on the local machine via os/exec.
@@ -19,7 +21,8 @@ func NewLocalConnection() *LocalConnection {
 func (c *LocalConnection) Run(cmd string) (string, error) {
 	var proc *exec.Cmd
 	if runtime.GOOS == "windows" {
-		proc = exec.Command("powershell.exe", "-NoProfile", "-NonInteractive", "-Command", cmd)
+		args := ps.CommandArgs(cmd)
+		proc = exec.Command(args[0], args[1:]...)
 	} else {
 		proc = exec.Command("sh", "-c", cmd)
 	}

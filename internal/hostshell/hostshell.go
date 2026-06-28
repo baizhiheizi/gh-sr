@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/an-lee/gh-sr/internal/host"
+	"github.com/an-lee/gh-sr/internal/hostshell/ps"
 )
 
 // PosixSingleQuote wraps s in single quotes for POSIX shell (safe for remote sh -c).
@@ -21,6 +22,21 @@ func PosixSingleQuote(s string) string {
 // Single quotes inside s are doubled, which is the PowerShell escape rule.
 func PowerShellSingleQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", "''") + "'"
+}
+
+// PowerShellExec runs script locally via powershell.exe and returns stdout.
+func PowerShellExec(script string) ([]byte, error) {
+	return ps.Exec(script)
+}
+
+// PowerShellCombinedOutput runs script locally via powershell.exe.
+func PowerShellCombinedOutput(script string) ([]byte, error) {
+	return ps.CombinedOutput(script)
+}
+
+// PowerShellCommand builds a full powershell.exe command string for host.Host.Run.
+func PowerShellCommand(script string) string {
+	return ps.CommandLine(script)
 }
 
 // PlistEscape escapes s for embedding in XML/plist string values.
