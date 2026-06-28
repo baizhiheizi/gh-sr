@@ -3,6 +3,8 @@ package host
 import (
 	"fmt"
 	"strings"
+
+	"github.com/an-lee/gh-sr/internal/hostshell/ps"
 )
 
 // DetectOS probes the remote host for its operating system and returns "linux", "darwin", or "windows".
@@ -18,7 +20,7 @@ func DetectOS(h *Host) (string, error) {
 	}
 
 	// uname failed or returned something unexpected -- try PowerShell (Windows over SSH).
-	psOut, psErr := h.Run(`powershell.exe -NoProfile -NonInteractive -Command "[Environment]::OSVersion.Platform"`)
+	psOut, psErr := h.Run(ps.CommandLine("[Environment]::OSVersion.Platform"))
 	if psErr == nil && strings.Contains(strings.ToLower(strings.TrimSpace(psOut)), "win") {
 		return "windows", nil
 	}
@@ -42,7 +44,7 @@ func DetectArch(h *Host) (string, error) {
 	}
 
 	// Try PowerShell for Windows.
-	psOut, psErr := h.Run(`powershell.exe -NoProfile -NonInteractive -Command "$env:PROCESSOR_ARCHITECTURE"`)
+	psOut, psErr := h.Run(ps.CommandLine("$env:PROCESSOR_ARCHITECTURE"))
 	if psErr == nil {
 		return normalizeArch(strings.TrimSpace(psOut))
 	}
