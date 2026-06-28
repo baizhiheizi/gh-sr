@@ -19,6 +19,7 @@ history when you want more than the auto-generated GitHub summary.
 
 ### Changed
 
+- `gh sr down` on container-mode runners is faster for multi-instance configs: `docker stop` and `docker rm -f` now run in a single SSH round-trip per instance instead of two, reducing round-trips from 4N to 3N (~25% fewer SSH calls for an N-instance teardown). (#264)
 - `gh sr doctor` now runs host SSH checks and GitHub API checks (repos and orgs) concurrently, reducing wall-clock time from O(N × latency) to O(latency) for configurations with multiple hosts or targets. Output within each section is printed in sorted order. (#33)
 - `gh sr service install`, `gh sr service uninstall`, and `gh sr service status` now open one SSH connection per host concurrently via `runPerHostParallel`, matching the behavior already in place for `up`, `down`, `restart`, `update`, and `status`. For single-host configs there is no observable difference; for multi-host configs completion time drops from O(N × SSH_latency) to O(SSH_latency). Output order across hosts is non-deterministic. (#30)
 
