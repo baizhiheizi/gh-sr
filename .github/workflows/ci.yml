@@ -21,6 +21,15 @@ jobs:
       - name: Vet
         run: go vet ./...
 
+      - name: Format
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "The following files are not gofmt-clean:"
+            echo "$unformatted"
+            exit 1
+          fi
+
       - name: Test
         env:
           CGO_ENABLED: "1"
