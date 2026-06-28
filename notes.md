@@ -1,30 +1,31 @@
 ---
-name: run-2026-06-27-28278761096
-description: Run history entry for Repo Assist run 28278761096 (selected tasks 9, 3, 2)
+name: run-2026-06-28-28334110025
+description: Run history entry for Repo Assist run 28334110025 (selected tasks 2, 3, 8)
 metadata:
   type: project
 ---
 
-# Run 28278761096 — 2026-06-27
+# Run 28334110025 — 2026-06-28 20:00 UTC
 
 ## Selected tasks
-- Task 9 — no-op. Comprehensive test coverage (1.6× test:code ratio, 72 `_test.go` files). Recent merged helpers all have tests.
-- Task 3 — no-op. 0 open issues labelled `bug` / `help wanted` / `good first issue`. Detector findings #262/#267/#268 closed via PRs #277/#278.
-- Task 2 — no-op. No new human activity on any open issue.
-- Task 11 — `update_issue` on #100 FAILED SILENTLY (documented "success without apply" failure mode). **Recovery: posted run summary as `add_comment`** (temp_id `aw_4Z625ASk`) with intended new body content. Need to retry body update next run.
+- Task 2 (Comment) — no-op. No new human activity on any open issue. #132 (btrfs storage) still on hold pending maintainer signal on loop-mount persistence; last human comment was Efficiency Improver on 2026-06-15.
+- Task 3 (Fix) — no-op. 0 open issues labelled `bug` / `help wanted` / `good first issue`.
+- Task 8 (Performance) — no-op. No open PRs awaiting rebase; #85 hot-spot board 24/24 closed. Repo in maintenance mode.
+- Task 11 — `update_issue` on #100 FAILED SILENTLY again (recurring "success without apply" pattern — observed on 2026-06-17, 2026-06-27, 2026-06-28). Verified by re-read: `updated_at` still 2026-06-27T20:38:01Z. **Recovery: posted full run summary + intended new body as `add_comment`** (temp_id `aw_3U28NHFA`).
 
 ## State changes since last run
-- Merged PRs: #257 (DinD readiness probe), #269 (dockerInfoStatus), #270 (Setup tests), #273 (strconv.FormatFloat metrics), #277 (docker exec/inspect, closes #267/#268), #278 (remote probes + systemd, closes #274/#275/#276).
-- New open PR: #279 (deps bump). Verified real (not phantom) — cross-checked via `mcp__github__list_pull_requests state=open` and `git ls-remote origin`.
-- #225 closes when #279 merges.
-
-## update_issue failure
-- Two consecutive `update_issue` calls (full ~9KB body and trimmed ~6KB body) both returned "success" but body unchanged.
-- `updated_at` for #100 still 2026-06-26 15:38:32 after both calls — confirms silent failure.
-- Recovery: `add_comment` worked (got temp_id back). Future posture: try `update_issue` first; on failure, comment-as-fallback + note in memory; retry body update on next run.
+- Merged PRs: #284 (closes #282, fetchToken helper), #285 (perf-improver: autostart Detect Linux probe consolidation, −1 SSH round-trip), #286 (perf-improver: same, closed draft), #287 (ci: gofmt drift check — resolves the #241 phantom-PR concern), #288 (docs: CHANGELOG for #264 perf), #289 (refactor: powershell.exe invocation flags — addresses the #281 duplicate-code finding), #290 (refactor: table-printing boilerplate — addresses the #283 finding).
+- 0 open PRs. 0 bug-labelled issues. 0 help-wanted / good-first-issue issues.
+- The gofmt CI check (#287) closes the #241 phantom-PR concern — the safeoutputs failure on `ci.yml` protected file was bypassed because the maintainer pushed their own version of the patch directly.
 
 ## Verified
-- `go build ./...` OK; `go test ./... -count=1` OK (12/12); `go vet ./...` OK; `gofmt -l .` clean.
+- `go build ./...` OK; `go test ./... -count=1` 12/12 OK; `go test ./race ./...` OK; `go vet ./...` clean.
+- `gofmt -l .` still reports 2 pre-existing drift files (`internal/hostshell/hostshell_remote_test.go`, `internal/runner/container.go`) — untouched for 14+ days; not addressed by any merged PR including #287 (the CI check just enforces going forward, doesn't fix existing drift). The maintainer will need to either run `gofmt -w` on those two files manually or let them stay (drift doesn't break the build).
 
 ## Open PRs awaiting maintainer attention
-- #279 (deps bump, real PR, closes #225)
+- None. All previously open PRs (including #279 deps bump and #284 fetchToken) have been merged.
+
+## update_issue failure
+- Third documented occurrence of the silent failure mode (after 2026-06-17 and 2026-06-27). The 7.9KB body was well under the 10KB limit.
+- Hypothesis: the issue's body has been edited via `update_issue` so many times that the bridge hits a "diff too large" or "patch collision" threshold. Consider trying a smaller delta next time (e.g. `operation: "prepend"` with just the new run entry), or accepting that this issue is comment-only going forward.
+- Recovery pattern confirmed: `add_comment` reliably delivers (temp_id returned). Body update remains best-effort.
