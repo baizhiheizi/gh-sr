@@ -60,20 +60,32 @@ func Detect(h *host.Host, instance string) (Kind, error) {
 
 	switch h.OS {
 	case "linux":
-		userUnit := fmt.Sprintf(`test -f "$HOME/.config/systemd/user/%s.service" && echo user || true`, base)
-		out, err := h.Run(userUnit)
+		// Combine the two candidate unit paths into a single SSH call.
+		// Mirrors the win-class of runner.removeContainer (PR #264) and
+		// runner.EnsureHostDocker (PR #269): when a helper answers with
+		// multiple correlated values from the same host state, the probes
+		// belong in one shell invocation. Saves 1 SSH round-trip on every
+		// autostart touch for Linux runners — material on the TUI per-tick
+		// path (Manager.Status → statusNative → Detect runs once per
+		// instance every 5 s) and on `gh sr up` / `gh sr down` per-instance
+		// paths. The if/elif form is equivalent to the previous
+		// "&& echo ... || true" pair: user unit wins (matches the previous
+		// short-circuit on `out == "user"`), and an empty stdout means no
+		// unit of either kind is installed.
+		userPath := fmt.Sprintf(`"$HOME/.config/systemd/user/%s.service"`, base)
+		sysPath := fmt.Sprintf(`/etc/systemd/system/%s.service`, base)
+		script := fmt.Sprintf(
+			`if [ -f %s ]; then echo user; elif [ -f %s ]; then echo system; fi`,
+			userPath, sysPath,
+		)
+		out, err := h.Run(script)
 		if err != nil {
 			return KindNone, err
 		}
-		if strings.TrimSpace(out) == "user" {
+		switch strings.TrimSpace(out) {
+		case "user":
 			return KindSystemdUser, nil
-		}
-		sysCheck := fmt.Sprintf(`test -f /etc/systemd/system/%s.service && echo system || true`, base)
-		out2, err := h.Run(sysCheck)
-		if err != nil {
-			return KindNone, err
-		}
-		if strings.TrimSpace(out2) == "system" {
+		case "system":
 			return KindSystemdSystem, nil
 		}
 		return KindNone, nil

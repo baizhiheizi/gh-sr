@@ -158,10 +158,12 @@ func TestCleanupStaleRemoves(t *testing.T) {
 			case strings.Contains(cmd, "systemctl --user disable"):
 				uninstallCalled = true
 				return "", nil
-			case strings.Contains(cmd, "&& echo user || true"):
-				return "user\n", nil
 			case strings.Contains(cmd, "for f in \"$HOME/.config/systemd/user/ghsr-runner-\""):
+				// listInstalledLinux iterates both user+system dirs in one script.
 				return "ghsr-runner-old-1\n", nil
+			case strings.Contains(cmd, ".config/systemd/user/") && strings.Contains(cmd, "/etc/systemd/system/"):
+				// Detect: combined if/elif probe (no `for f in`).
+				return "user\n", nil
 			case strings.Contains(cmd, "test -d"):
 				// "no" = dir/run.sh absent → stale (see TestCleanupStaleDryRun).
 				return "no\n", nil
