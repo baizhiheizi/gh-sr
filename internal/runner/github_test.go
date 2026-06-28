@@ -328,3 +328,92 @@ func TestGitHubClient_GetLatestRunnerVersion_errorNotRetried(t *testing.T) {
 		t.Errorf("expected 1 request (error should not be retried), got %d", requestCount)
 	}
 }
+
+func TestGitHubClient_fetchToken_emptyTokenWithHint(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(tokenResponse{Token: ""})
+	}))
+	defer ts.Close()
+
+	g := NewGitHubClientWithHTTP("pat", ts.Client(), ts.URL)
+	_, err := g.fetchToken("repo", "o/r", "runners/registration-token", "registration", "check GitHub token and repo admin access")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	msg := err.Error()
+	want := "empty registration token for o/r (check GitHub token and repo admin access)"
+	if msg != want {
+		t.Errorf("error mismatch\n got: %q\nwant: %q", msg, want)
+	}
+}
+
+func TestGitHubClient_fetchToken_emptyTokenNoHint(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(tokenResponse{Token: ""})
+	}))
+	defer ts.Close()
+
+	g := NewGitHubClientWithHTTP("pat", ts.Client(), ts.URL)
+	_, err := g.fetchToken("repo", "o/r", "runners/remove-token", "removal", "")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	msg := err.Error()
+	want := "empty removal token for o/r"
+	if msg != want {
+		t.Errorf("error mismatch\n got: %q\nwant: %q", msg, want)
+	}
+}
+
+func TestGitHubClient_fetchToken_parseError(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("not-json"))
+	}))
+	defer ts.Close()
+
+	g := NewGitHubClientWithHTTP("pat", ts.Client(), ts.URL)
+	_, err := g.fetchToken("repo", "o/r", "runners/registration-token", "registration", "")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "parsing registration token") {
+		t.Fatalf("expected parsing error, got: %v", err)
+	}
+}
+
+func TestGitHubClient_fetchToken_postError(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte("boom"))
+	}))
+	defer ts.Close()
+
+	g := NewGitHubClientWithHTTP("pat", ts.Client(), ts.URL)
+	_, err := g.fetchToken("repo", "o/r", "runners/registration-token", "registration", "")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "getting registration token for o/r") {
+		t.Fatalf("expected wrapped get-error, got: %v", err)
+	}
+}
+
+func TestGitHubClient_fetchToken_orgScope(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/orgs/my-org/actions/runners/registration-token" {
+			http.NotFound(w, r)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(tokenResponse{Token: "org-via-helper"})
+	}))
+	defer ts.Close()
+
+	g := NewGitHubClientWithHTTP("pat", ts.Client(), ts.URL)
+	tok, err := g.fetchToken("org", "my-org", "runners/registration-token", "registration", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tok != "org-via-helper" {
+		t.Errorf("token %q", tok)
+	}
+}
