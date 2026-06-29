@@ -1848,6 +1848,51 @@ func TestRemoveContainer_chainsStopAndRemove(t *testing.T) {
 	}
 }
 
+func TestRemoveContainer_propagatesChainedTeardownError(t *testing.T) {
+	t.Parallel()
+	// GitHub server returns 500 so GetRemovalTokenScoped errors out and
+	// the docker-exec deregister step is skipped (best-effort).
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "boom", http.StatusInternalServerError)
+	}))
+	defer ts.Close()
+
+	sentinel := errors.New("ssh connection reset")
+	var stateDirRemoved bool
+	mock := &testutil.MockExecutor{RunFn: func(cmd string) (string, error) {
+		switch {
+		case strings.Contains(cmd, "docker stop") && strings.Contains(cmd, "docker rm -f"):
+			return "", sentinel
+		case strings.Contains(cmd, "rm -rf"):
+			stateDirRemoved = true
+		}
+		return "", nil
+	}}
+	h := host.NewHost("h", config.HostConfig{Addr: "runner@vps", OS: "linux", Arch: "amd64"})
+	h.SetConn(mock)
+	m := &Manager{
+		GitHub:      NewGitHubClientWithHTTP("pat", ts.Client(), ts.URL),
+		GhSrVersion: "1.2.3",
+		Out:         io.Discard,
+	}
+	rc := config.RunnerConfig{
+		Name:       "aw-runner",
+		Repo:       "o/r",
+		Host:       "h",
+		Profile:    "agentic",
+		RunnerMode: config.RunnerModeContainer,
+		Count:      1,
+	}
+
+	err := m.removeContainer(h, rc, "aw-runner-1")
+	if !errors.Is(err, sentinel) {
+		t.Fatalf("removeContainer error = %v, want sentinel %v", err, sentinel)
+	}
+	if stateDirRemoved {
+		t.Fatal("state directory was removed after container teardown failed")
+	}
+}
+
 // TestProbeDinDContainerReadiness_RunningHealthy verifies the happy path:
 // container is running, inner dockerd answers, .runner is present. The probe
 // returns a fully-positive report.
