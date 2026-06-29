@@ -7,29 +7,28 @@ metadata:
 
 Keep the last 4 runs in detail; older runs are summarised in one line each.
 
-## 2026-06-24 — Run 28079915247
-- Branch: `test-assist/collect-status-orchestrator`; commit `3c7296f`
-- Coverage: `internal/ops` 62.1% → 68.2% (+6.1 pp); `CollectStatus` 0% → 90.5%
-- New file: `internal/ops/collect_status_test.go` (444 lines, 9 tests)
-- PR: NOT created via safeoutputs (bridge failed; same recurring issue as prior 4 runs)
+## 2026-06-29 — Run 28355199319
+- Branch: `test-assist/orchestrator-connect-errors`; commit `a3c3b89`
+- Coverage: `internal/ops` 90.4% → 90.9% (+0.5 pp); `Down` 83.3% → 100% (closed); `Restart` 85.7% → 100% (closed); `RebuildImage` 69.2% → 76.9% (+7.7 pp)
+- New file: `internal/ops/orchestrator_connect_errors_test.go` (127 lines, 3 tests)
+- PR: phantom — bridge failure recurring.
 
-## 2026-06-21 — Run 27897086810
-- Branch: `test-assist/remove-orchestrator`; commit `3521f2b`
-- Coverage: `internal/ops` 52.3% → 54.6% (+2.3 pp); `Remove` 0% → 94.1%; `removeHost` 0% → 100%
-- New file: `internal/ops/remove_test.go` (593 lines, 12 tests)
-- PR: NOT created via safeoutputs (bridge failed)
+## 2026-06-27 — Run 28280956385 — disk-orchestrators, ops 70.2%→90.7% (+20.5 pp). **PR #280 merged 2026-06-27**.
 
-## 2026-06-20 — Run 27863360393
-- Branch: `test-assist/logs-orchestrator`; commit `d0bca1c`
-- Coverage: `internal/ops` 50.2% → 52.3% (+2.1 pp); `Logs` 0% → 92.9%
-- PR: NOT created via safeoutputs (bridge failed)
+## 2026-06-26 — Run 28221781038 — setup-orchestrator, ops 68.2%→70.2% (+2.0 pp). **PR #270 merged 2026-06-26**.
 
-## 2026-06-19 — Run 27814296911
-- Branch: `test-assist/up-orchestrator`; commit `c2719e5`
-- Coverage: `internal/ops` 42.8% → 44.0% (+1.2 pp); `Up` 0% → 77.8%
-- **Squashed into main via ff8d9cd (2026-06-19)** by maintainer manual merge
+## 2026-06-24 — Run 28079915247 — collect-status-orchestrator, ops 62.1%→68.2% (+6.1 pp). **PR #256 merged 2026-06-24**.
 
-## Earlier (see backlog.md for merged PRs)
+## Earlier (one-line archive)
+- 2026-06-21: Remove 0%→94.1%; **PR #242 merged**.
+- 2026-06-20: Logs 0%→92.9%; **PR #233 merged 2026-06-21**.
+- 2026-06-19: Up 0%→77.8%; **PR #224 merged**. Restart 0%→85.7%; **PR #216 merged**.
+- 2026-06-17: Down 0%→83.3%; **PR #200 merged**.
+- 2026-06-15: CollectHostMetrics 0%→100%; **PR #189 merged**.
+- 2026-06-14: ResolveHostInfo 0%→100%; **PR #178 merged**.
+- 2026-06-12: runPerHostParallel 0%→100%; **PR #168 merged**.
+- 2026-06-11: WriteRemoteBytes 0%→100%; **PR #156 merged**.
+- 2026-06-10: six pure helpers in ops/disk.go 0%→100%; **PR #147 merged**.
 - Monthly Activity issues: #4 (April, closed), #69 (May, closed), #109 (June, active).
 
 [[wip]] [[backlog]]

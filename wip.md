@@ -5,21 +5,18 @@ metadata:
   type: project
 ---
 
-## Run #28079915247 (2026-06-24)
+## Run #28355199319 (2026-06-29)
 
-- **Branch:** `test-assist/collect-status-orchestrator`; commit `3c7296f`
-- **PR:** **NOT CREATED** — safeoutputs bridge failed (recurring). Patch at `/tmp/gh-aw/aw-test-assist-collect-status-orchestrator.patch` (~17 KB, 487 lines). Bundle at `/tmp/gh-aw/aw-test-assist-collect-status-orchestrator.bundle` (~5 KB). Maintainer: `git am` + push.
-- **Coverage:** `internal/ops` 62.1% → 68.2% (+6.1 pp); `CollectStatus` 0% → 90.5%.
-- **New file:** `internal/ops/collect_status_test.go` (444 lines, 9 contract tests)
+- **Branch:** `test-assist/orchestrator-connect-errors`; commit `a3c3b89`
+- **PR:** **NOT CREATED** — safeoutputs reported success but no PR landed (phantom; recurring bridge failure). Patch at `/tmp/gh-aw/aw-test-assist-orchestrator-connect-errors.patch` (~6.6 KB, 172 lines). Bundle at `/tmp/gh-aw/aw-test-assist-orchestrator-connect-errors.bundle` (~2.8 KB). Maintainer: `git am` + push.
+- **Coverage:** `internal/ops` 90.4% → 90.9% (+0.5 pp); `Down` 83.3% → 100.0% (gap fully closed); `Restart` 85.7% → 100.0% (gap fully closed); `RebuildImage` 69.2% → 76.9% (+7.7 pp; inner callback still uncovered).
+- **New file:** `internal/ops/orchestrator_connect_errors_test.go` (127 lines, 3 contract tests)
 - **Status:** build ✅, vet ✅, race ✅, full suite ✅, gofmt ✅.
 
 **Pattern (reusable):**
-- `newStatusNativeRunningMock()` — substring-matched kill-0 → running
-- `newCollectStatusHTTPServer` / `newEmptyGitHubHTTPServer` — httptest-backed GitHubClient fixture for EnrichWithGitHubStatus
-- `barrierMockExecutor` — signals on Run + blocks on barrier (proves goroutines actually run in parallel)
+- `installFailingConnectHost(t, sentinel)` from `run_per_host_parallel_test.go` — installs a package-level factory swap that always returns the sentinel. Mirrors `TestSetup_ConnectError` / `TestUpdate_ConnectError` from `orchestrators_test.go`.
+- Non-local `Addr` + missing `OS`/`Arch` forces `ResolveHostInfo` to probe (without probing, the host is already "resolved" and the orchestrator skips the error branch).
 
-**Bug uncovered (out of scope):** `CollectStatus` panics on nil `mgr.GitHub` (`mgr.EnrichWithGitHubStatus` dereferences `m.GitHub`). TUI callers all pass a real GitHub client so not user-visible today, but a future programmatic caller could trip it. Suggested fix: short-circuit when `m.GitHub == nil`.
-
-**Next:** `Setup` (56.2%) or `Update` (53.8%) are the next natural `internal/ops` targets. Or `internal/diskschedule` (14.2%) for a wider package win.
+**Next:** `Update` (53.8%) is the largest remaining gap (Remove + Setup + Start composition). Requires httptest GitHub client + many host probes. Otherwise `internal/diskschedule` (14.2%) for a wider package win.
 
 [[backlog]] [[run-history]]
