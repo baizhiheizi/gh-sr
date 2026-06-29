@@ -16,11 +16,11 @@ import (
 // lives in this package (hostshell is an import of host, not the other
 // way around, so we cannot reuse host's unexported mock).
 type recordingExecutor struct {
-	runs        []string
-	runErr      error
-	runReplyFn  func(string) (string, error)
-	uploadC     int
-	closeC      int
+	runs       []string
+	runErr     error
+	runReplyFn func(string) (string, error)
+	uploadC    int
+	closeC     int
 }
 
 func (r *recordingExecutor) Run(cmd string) (string, error) {
@@ -359,12 +359,12 @@ func TestWriteRemoteBytes_DoesNotUpload(t *testing.T) {
 func TestRemotePathExists_Posix(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
-		name   string
-		fn     func(*host.Host, string) (bool, error)
-		path   string
-		flag   string // expected test flag (e/d/f)
-		reply  string
-		want   bool
+		name  string
+		fn    func(*host.Host, string) (bool, error)
+		path  string
+		flag  string // expected test flag (e/d/f)
+		reply string
+		want  bool
 	}{
 		{"RemotePathExists yes", RemotePathExists, "/tmp/x", "e", "yes\n", true},
 		{"RemotePathExists no", RemotePathExists, "/tmp/x", "e", "no\n", false},
