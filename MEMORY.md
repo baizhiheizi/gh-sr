@@ -1,2 +1,2 @@
-- [Repo Assist state](state.md) — last run 2026-06-29 (run 28350202697): gofmt drift fix PR opened (commit 3ff794f); update_issue on #100 silent failure 4th time (prepend also failed) — recovered via add_comment (temp_id aw_3CGUeIKU).
-- [Run notes](notes.md) — run 28350202697 entry.
+- [Repo Assist state](state.md) — last run 2026-06-29 11:53 UTC (run 28368951549): renderRowWith helper refactor (commit 6d901d0) — phantom PR #5; Task 11 done via add_comment (temp_id aw_GUQIE4hg).
+- [Run notes](notes.md) — run 28368951549 entry.

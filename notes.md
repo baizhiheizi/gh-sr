@@ -1,33 +1,25 @@
 ---
-name: run-2026-06-29-28350202697
-description: Run history entry for Repo Assist run 28350202697 (selected tasks 3, 2, 5)
+name: run-2026-06-29-28368951549
+description: Run history entry for Repo Assist run 28368951549 (selected tasks 2, 10, 5)
 metadata:
   type: project
 ---
 
-# Run 28350202697 — 2026-06-29 (date placeholder; verify UTC timestamp before commit)
+# Run 28368951549 — 2026-06-29 11:53 UTC
 
 ## Selected tasks
-- Task 3 (Fix) — no-op. 0 open issues labelled `bug` / `help wanted` / `good first issue`. Fell back to Task 2 per the table.
-- Task 2 (Comment) — no-op. No new human activity on any open issue since 2026-06-15 (#132 last comment by Efficiency Improver). All recent duplicate-code findings (#274/#275/#276/#281/#282/#283) closed via PRs.
-- Task 5 (Coding Improvements) — **branch `repo-assist/gofmt-drift-fix-2026-06-29`, commit `3ff794f`**: ran `gofmt -w` on the 2 files drifting 14+ days (`internal/hostshell/hostshell_remote_test.go` + `internal/runner/container.go`). Purely cosmetic. Build/vet/tests/race all OK (14/14 packages). **Draft PR opened** via safeoutputs (`create_pull_request` returned success).
-- Task 11 — `update_issue` on #100 returned success but did NOT apply (4th silent failure; `updated_at` still 2026-06-28T20:08:57Z). Tried the hypothesis from last run (`operation: "prepend"` with smaller payload) — also failed silently. **Recovered via `add_comment`** (temp_id `aw_3CGUeIKU`).
-
-## State changes since last run
-- 0 PRs merged since 2026-06-28 (PR #290 table-printing was the last).
-- 1 new open PR (this run): gofmt drift fix.
-- gofmt drift: RESOLVED (this run). `gofmt -l .` is now clean (was 2 files drifting for 14+ days).
-- Spec coverage: all 8 archived openspec specs remain implemented (no new specs opened in archive).
+- Task 2 (Comment) — no-op. Last human activity on a candidate open issue was Efficiency Improver on #132 (2026-06-15). All open issues either automated, on hold pending maintainer direction, or doc-updater blocked.
+- Task 10 (Forward) — no separate action; forward motion came from Task 5.
+- Task 5 (Coding) — **branch `repo-assist/tui-render-row-helper-2026-06-29`, commit `6d901d0`**: extracted private `renderRowWith(cells, widths, colorize, extraStyle)` helper in `internal/tui/table.go`. `renderRow`/`renderHighlightedRow` were 95% identical. Hoisted `cursorRowBackground` to package-level. Build/vet/tests/race all OK (14/14). Benchmarks unchanged (158/248/302 allocs/op). **Phantom PR — safeoutputs reported success but branch NOT pushed** (verified via `git ls-remote`). Patch at `/tmp/gh-aw/aw-repo-assist-tui-render-row-helper-2026-06-29.patch` (~4.1 KB), bundle at `/tmp/gh-aw/aw-repo-assist-tui-render-row-helper-2026-06-29.bundle` (~1.5 KB). **5th phantom-PR event this month.**
+- Task 11 — `add_comment` on #100 with full Suggested Actions + Run History entry succeeded (temp_id `aw_GUQIE4hg`). Skipped `update_issue` per established pattern.
 
 ## Verified
 - `go build ./...` OK; `go vet ./...` clean; `go test ./... -count=1` 14/14 OK; `go test ./... -race -count=1` 14/14 OK; `gofmt -l .` clean.
-- Diff: 2 files, 12 insertions / 12 deletions (purely cosmetic — struct field alignment + missing space before `+removeTok`).
+- Diff: 1 file (`internal/tui/table.go`), +19 / −17.
 
-## Open PRs awaiting maintainer attention
-- 1: `[repo-assist] style: fix pre-existing gofmt drift` (this run, branch `repo-assist/gofmt-drift-fix-2026-06-29`). Addresses the implicit follow-up to PR #287 (gofmt CI check).
-
-## update_issue failure
-- 4th documented silent failure on #100 (after 2026-06-17, 2026-06-27, 2026-06-28, 2026-06-29).
-- Hypotheses tried: (a) `replace` with full body — failed; (b) `prepend` with smaller payload (~600 chars) — also failed silently.
-- Pattern now well-established: the body cannot be modified in place once edited multiple times. Going forward, treat #100 as comment-only — the run history lives in the comment stream.
-- Recovery pattern confirmed: `add_comment` reliably delivers (temp_id `aw_3CGUeIKU`).
+## phantom-PR pattern (5th occurrence)
+- #292 (run 28350202697) — eventually visible after delay.
+- #293 (run 28355199319) — visible as PR #293.
+- #273 (run 28231593128) — landed later.
+- Run 28302041922 (Perf Improver) — reported incomplete.
+- **Run 28368951549 (this)** — branch not pushed. Recovery: `git am /tmp/gh-aw/aw-<name>.patch && git push origin <branch>`.
