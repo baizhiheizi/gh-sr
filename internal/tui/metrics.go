@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/an-lee/gh-sr/internal/host"
+	"github.com/an-lee/gh-sr/internal/table"
 )
 
 // PrintHostMetricsTable prints a tabular summary of host resource usage to stdout.
@@ -41,35 +42,11 @@ func FormatHostMetrics(metrics []host.HostMetrics) string {
 		rows[i] = metricsRow(m)
 	}
 
-	widths := computeColumnWidths(headers, rows)
-
-	var b strings.Builder
-	// Header row + N data rows, with per-cell padding budget.
-	b.Grow((len(headers) + len(rows)) * 32)
-	for i, h := range headers {
-		appendHostCell(&b, h, widths[i])
-	}
-	b.WriteByte('\n')
-
-	for _, row := range rows {
-		for j, cell := range row {
-			appendHostCell(&b, cell, widths[j])
-		}
-		b.WriteByte('\n')
-	}
-	return b.String()
-}
-
-// appendHostCell appends `cell` padded on the right to `width` plus the 2-space
-// separator that host-metrics tables use. Inlining this in place of
-// fmt.Sprintf("%-*s  ", w, cell) is a 1-alloc drop per cell, which compounds
-// across N hosts × M columns × R render ticks.
-func appendHostCell(b *strings.Builder, cell string, width int) {
-	b.WriteString(cell)
-	if len(cell) < width {
-		b.WriteString(strings.Repeat(" ", width-len(cell)))
-	}
-	b.WriteString("  ")
+	return table.RenderPlain(table.Options{
+		EmptyMsg: "  No hosts found.",
+		Headers:  headers,
+		Rows:     rows,
+	})
 }
 
 func metricsRow(m host.HostMetrics) []string {

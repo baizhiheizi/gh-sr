@@ -39,10 +39,6 @@ func PrintTable(w io.Writer, opts TablePrintOptions) bool {
 	return true
 }
 
-func computeColumnWidths(headers []string, rows [][]string) []int {
-	return table.ColumnWidths(headers, rows)
-}
-
 func runnerStatusCells(s runner.RunnerStatus) []string {
 	ghStatus := formatGitHubStatus(s)
 	img := s.ContainerImage
