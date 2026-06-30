@@ -1,2 +1,2 @@
-- [Repo Assist state](state.md) — last run 2026-06-29 11:53 UTC (run 28368951549): renderRowWith helper refactor (commit 6d901d0) — phantom PR #5; Task 11 done via add_comment (temp_id aw_GUQIE4hg).
-- [Run notes](notes.md) — run 28368951549 entry.
+- [Repo Assist state](state.md) — last run 2026-06-30 10:56 UTC (run 28436621798): table.RenderPlain + FormatHostMetrics refactor (commit 7080e5a) — phantom PR #6; Task 11 done via add_comment (temp_id aw_M4OSpFIc); comment on #295 (temp_id aw_tcjkbb10).
+- [Run notes](notes.md) — run 28436621798 entry.

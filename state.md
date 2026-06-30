@@ -7,13 +7,38 @@ metadata:
 
 # Repo Assist state — 2026-06-29
 
-## Last run (28368951549) — Tasks 2, 10, 5
+## Last run (28436621798) — Tasks 2, 3, 5
 
-- **Task 2** — no-op. No new human activity on candidate open issues since 2026-06-15.
-- **Task 10** — no separate action.
-- **Task 5** — `repo-assist/tui-render-row-helper-2026-06-29`, commit `6d901d0`: extracted `renderRowWith` helper. **Phantom PR #5** — patch + bundle preserved locally.
-- **Task 11** — `add_comment` on #100 succeeded (temp_id `aw_GUQIE4hg`).
+- **Task 2** — no-op. No open issues warrant a substantive new comment.
+- **Task 3** — fallback to Task 2 (no bug/help wanted/good first issue labels).
+- **Task 5** — `repo-assist/improve-format-host-metrics-shared-table`, commit `7080e5a`: `table.RenderPlain` + FormatHostMetrics refactor. **Phantom PR #6** — patch + bundle preserved locally.
+- **Task 11** — `add_comment` on #100 (temp_id `aw_M4OSpFIc`); comment on #295 with recovery steps.
 - **Open PRs (mine):** 1 phantom. **Open PRs (others):** #291, #292, #293.
+
+## Previous run (28368951549) — Tasks 2, 10, 5
+
+- Task 5 — `repo-assist/tui-render-row-helper-2026-06-29`, commit `6d901d0`: extracted `renderRowWith` helper. **Phantom PR #5** — patch + bundle preserved locally.
+- Task 11 — `add_comment` on #100 succeeded (temp_id `aw_GUQIE4hg`).
+
+## In-flight
+
+- **Open PRs awaiting review:** #291 (cursor[bot]), #292 (mine, landed), #293 (test-improver), +1 phantom (RenderPlain refactor).
+
+## Backlog
+
+- **#132 (gh sr storage)** — on hold pending maintainer signal on loop-mount persistence.
+- **#208 parent** — duplicate-code detector parent; ~1-2 findings/day.
+- **#281 / #283 follow-ups** — partial refactors in #289/#290; per-call-site extraction pending.
+- **#124** — benchstat comparison on PRs. Item 1 (gate on PRs) already done — verify before re-drafting.
+- **#294** — doc-updater blocked (CHANGELOG.md protected); maintainer must create PR manually.
+- **#295** — FormatHostMetrics table-rendering duplication. Resolved locally on phantom branch; awaiting manual push.
+
+## Notes
+
+- **phantom-PR pattern:** safeoutputs create_pull_request may report success without pushing. Detection: `git ls-remote --heads origin | grep <branch>`. Recovery: `git am <patch> && git push`. **6th occurrence this month.**
+- **update_issue on #100:** fails silently 4× confirmed; recovery via add_comment.
+- **CI bench job:** already gated on both `push: [main]` and `pull_request: [main]`.
+- **Revert rate:** 0/19+.
 
 ## Previous run (28350202697) — Tasks 3, 2, 5
 
@@ -63,4 +88,6 @@ metadata:
 - **Duplicate-code findings closed:** #251/253/260/261/281/282/283 (via PRs); #252 (auto-expiry); #262/#267/#268/#274/#275/#276 (maintainer).
 - **strconv.Quote round-trip:** input `evil"; rm -rf /; "` → `docker exec "evil\"; rm -rf /; \"" echo ok`.
 - **`renderRow` / `renderHighlightedRow`** in `internal/tui/table.go` — refactored to share `renderRowWith(cells, widths, colorize, extraStyle)` body. `cursorRowBackground` package-level style. (Commit 6d901d0 on branch `repo-assist/tui-render-row-helper-2026-06-29`.)
+- **`table.RenderPlain(opts Options) string`** — added in commit `7080e5a` on branch `repo-assist/improve-format-host-metrics-shared-table`. Uses `strings.Builder` + `appendRowPlain` for the per-cell padding loop, preserving 1-alloc/cell. Returns string (not io.Writer). When `Rows` is empty, returns `EmptyMsg` as the sole line (no trailing newline). `FormatHostMetrics` now delegates to it; `appendHostCell` deleted.
+- **`computeColumnWidths`** in `internal/tui/table.go` — REMOVED in commit `7080e5a`. Both call sites in `dashboard_view.go` now use `table.ColumnWidths` directly.
 - **`gofmt -l .` clean** since 2026-06-29.
