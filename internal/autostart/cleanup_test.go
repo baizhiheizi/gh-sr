@@ -197,3 +197,15 @@ func TestServiceActiveStateFailed(t *testing.T) {
 		t.Fatalf("got %q", state)
 	}
 }
+
+// BenchmarkParseInstanceLines measures parseInstanceLines on a realistic
+// `basename` output shape (a handful of ghsr-runner-* lines). It is called
+// once per host per CleanupStale / OrphanInstances invocation.
+func BenchmarkParseInstanceLines(b *testing.B) {
+	raw := "ghsr-runner-ci-1\nghsr-runner-ci-2\nghsr-runner-rune-x1-2\nghsr-runner-rune-x2-3\nghsr-runner-rune-x3-4\nghsr-runner-rune-x4-5\n"
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = parseInstanceLines(raw)
+	}
+}
