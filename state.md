@@ -22,7 +22,7 @@ metadata:
 
 ## In-flight
 
-- **Open PRs awaiting review:** #291 (cursor[bot]), #292 (mine, landed), #293 (test-improver), +1 phantom (RenderPlain refactor).
+- **Open PRs awaiting review:** #291 (cursor[bot]), #292 (mine, landed), #293 (test-improver), #298 (mine, SplitSeq, awaiting review), +1 phantom (test-listinstalled-os-paths, commit `4d8e291`).
 
 ## Backlog
 
@@ -91,6 +91,9 @@ metadata:
 - **`table.RenderPlain(opts Options) string`** — added in commit `7080e5a` on branch `repo-assist/improve-format-host-metrics-shared-table`. Uses `strings.Builder` + `appendRowPlain` for the per-cell padding loop, preserving 1-alloc/cell. Returns string (not io.Writer). When `Rows` is empty, returns `EmptyMsg` as the sole line (no trailing newline). `FormatHostMetrics` now delegates to it; `appendHostCell` deleted.
 - **`computeColumnWidths`** in `internal/tui/table.go` — REMOVED in commit `7080e5a`. Both call sites in `dashboard_view.go` now use `table.ColumnWidths` directly.
 - **`gofmt -l .` clean** since 2026-06-29.
+- **`internal/autostart.ListInstalled(h)`** dispatch contract: linux → listInstalledLinux, darwin → listInstalledDarwin (strip `com.github.ghsr.runner.` prefix), windows → listInstalledWindows (Get-ScheduledTask via RunShell, parse via instanceFromServiceBasename), unsupported → error mentioning the OS name. All 4 arms now have direct test coverage (commit `4d8e291` on `repo-assist/test-listinstalled-os-paths-2026-06-30`).
+- **`internal/autostart.parseInstanceLines(out)`** — preserves input order, skips blank lines and lines without `ghsr-runner-` prefix, trims whitespace per line. Dedup is the caller's responsibility via `dedupeInstances`. Pinned by 5 sub-tests in commit `4d8e291`.
+- **`internal/host.Host.RunShell`** wraps the script via `wrapCommand`: for windows hosts with non-local `Addr` it base64-encodes for `powershell.exe -EncodedCommand`; for local Addr or non-windows hosts it's a no-op. Tests should set `Addr: "local"` to bypass the encoding and let the mock see the raw script.
 ## Previous run (28455022510) — Tasks 3, 8, 2
 
 - Task 3 — closed #295 via PR #297 (FormatHostMetrics RenderPlain refactor, landed `df08279` 2026-06-30). Comment on #295 confirming closure (`aw_close295`).

@@ -1,2 +1,2 @@
-- [Repo Assist state](state.md) — last run 2026-06-30 15:20 UTC (run 28455022510): SplitSeq cleanup refactor (commit fac4fad) — phantom PR #7; #295 closed via PR #297; Task 11 done via add_comment (temp_id aw_m4ospfic_v3); comment on #295 (temp_id aw_close295).
-- [Run notes](notes.md) — run 28455022510 entry.
+- [Repo Assist state](state.md) — last run 2026-06-30 20:45 UTC (run 28473873742): task selection 6/9/1; Task 1 → Task 2 fallback (0 unlabelled); Task 6 verified PR #298 healthy; Task 9 created branch `repo-assist/test-listinstalled-os-paths-2026-06-30` (commit `4d8e291`): 5 new tests / 13 sub-tests in `internal/autostart/cleanup_test.go`, coverage `40%/0%/0%` → `100%/100%/100%`, package 43.7%→51.9% (+8.2 pp). Phantom PR; patch+bundle at `/tmp/gh-aw/aw-repo-assist-test-listinstalled-os-paths-2026-06-30.{patch,bundle}`. Task 11 done via add_comment after 5th `update_issue` silent failure on #100.
+- [Run notes](notes.md) — run 28473873742 entry.
