@@ -82,7 +82,7 @@ func BenchmarkMetricsRow(b *testing.B) {
 }
 
 // BenchmarkFormatHostMetrics measures the full FormatHostMetrics path: the
-// per-row metricsRow + per-cell appendHostCell work that produces the TUI
+// per-row metricsRow + per-cell padding work that produces the TUI
 // scroll-panel string. It runs once per host-metric refresh tick per
 // View() call, so its alloc count compounds across long sessions.
 func BenchmarkFormatHostMetrics(b *testing.B) {

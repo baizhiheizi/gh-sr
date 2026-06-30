@@ -104,6 +104,50 @@ func TestPrintPlain_empty(t *testing.T) {
 	}
 }
 
+func TestRenderPlain_empty(t *testing.T) {
+	t.Parallel()
+	got := RenderPlain(Options{EmptyMsg: "nothing here"})
+	if got != "nothing here" {
+		t.Errorf("got %q want %q", got, "nothing here")
+	}
+}
+
+func TestRenderPlain_rows(t *testing.T) {
+	t.Parallel()
+	got := RenderPlain(Options{
+		Headers: []string{"HOST", "CPU", "MEMORY"},
+		Rows: [][]string{
+			{"h1", "12.3%", "1.0/4.0 GiB (25%)"},
+			{"h2", "78.9%", "8.0/16.0 GiB (50%)"},
+		},
+	})
+	// Column widths: HOST=4, CPU=max(3,5,5)=5, MEMORY=max(6,17,18)=18.
+	// Each cell gets "<cell>  " with right-pad to its column width.
+	want := "HOST  CPU    MEMORY              \n" +
+		"h1    12.3%  1.0/4.0 GiB (25%)   \n" +
+		"h2    78.9%  8.0/16.0 GiB (50%)  \n"
+	if got != want {
+		t.Errorf("RenderPlain mismatch:\ngot:\n%q\nwant:\n%q", got, want)
+	}
+}
+
+// TestRenderPlain_ragged pins the contract that callers (FormatHostMetrics)
+// rely on: ragged rows (cells beyond len(widths)) are truncated at the
+// widths boundary instead of panicking. Mirrors TestPrintRow's behavior.
+func TestRenderPlain_ragged(t *testing.T) {
+	t.Parallel()
+	got := RenderPlain(Options{
+		Headers: []string{"A", "B"},
+		Rows:    [][]string{{"long", "x", "extra"}},
+	})
+	// Widths: A=max(1,4)=4, B=max(1,1)=1.
+	want := "A     B  \n" +
+		"long  x  \n"
+	if got != want {
+		t.Errorf("RenderPlain ragged mismatch:\ngot:\n%q\nwant:\n%q", got, want)
+	}
+}
+
 func assertIntSlice(t *testing.T, label string, got, want []int) {
 	t.Helper()
 	if len(got) != len(want) {

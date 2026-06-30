@@ -5,6 +5,8 @@ import (
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
+
+	"github.com/an-lee/gh-sr/internal/table"
 )
 
 func (m *dashboardModel) View() tea.View {
@@ -110,7 +112,7 @@ func (m *dashboardModel) viewMain() tea.View {
 	for i, s := range m.statuses {
 		rows[i] = runnerStatusCells(s)
 	}
-	widths := computeColumnWidths(headers, rows)
+	widths := table.ColumnWidths(headers, rows)
 
 	colorize := func(col int, cell string) string {
 		switch col {
@@ -267,7 +269,7 @@ func (m *dashboardModel) viewHostMetrics() tea.View {
 			rows[i] = metricsRow(met)
 		}
 
-		widths := computeColumnWidths(headers, rows)
+		widths := table.ColumnWidths(headers, rows)
 
 		colorize := func(col int, cell string) string {
 			if col >= 1 && col <= 3 {
