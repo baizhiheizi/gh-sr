@@ -557,7 +557,7 @@ func (m *Manager) removeContainer(h *host.Host, rc config.RunnerConfig, instance
 	removeTok, err := m.GitHub.GetRemovalTokenScoped(rc.Scope(), rc.ScopeTarget())
 	if err == nil {
 		// Run inside the container if it's still alive; ignore errors.
-		inner := "su - runner -c " + hostshell.PosixSingleQuote("cd /home/runner/actions-runner && ./config.sh remove --token " + removeTok)
+		inner := "su - runner -c " + hostshell.PosixSingleQuote("cd /home/runner/actions-runner && ./config.sh remove --token "+removeTok)
 		_, _ = h.Run(DockerExecCommand(cName, inner+" 2>/dev/null || true"))
 	}
 
