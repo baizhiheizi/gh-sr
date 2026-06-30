@@ -91,3 +91,16 @@ metadata:
 - **`table.RenderPlain(opts Options) string`** — added in commit `7080e5a` on branch `repo-assist/improve-format-host-metrics-shared-table`. Uses `strings.Builder` + `appendRowPlain` for the per-cell padding loop, preserving 1-alloc/cell. Returns string (not io.Writer). When `Rows` is empty, returns `EmptyMsg` as the sole line (no trailing newline). `FormatHostMetrics` now delegates to it; `appendHostCell` deleted.
 - **`computeColumnWidths`** in `internal/tui/table.go` — REMOVED in commit `7080e5a`. Both call sites in `dashboard_view.go` now use `table.ColumnWidths` directly.
 - **`gofmt -l .` clean** since 2026-06-29.
+## Previous run (28455022510) — Tasks 3, 8, 2
+
+- Task 3 — closed #295 via PR #297 (FormatHostMetrics RenderPlain refactor, landed `df08279` 2026-06-30). Comment on #295 confirming closure (`aw_close295`).
+- Task 8 — `repo-assist/perf-splitseq-cleanup-2026-06-30`, commit `fac4fad`: 3× `strings.Split` → `strings.SplitSeq` in autostart/cleanup.go (parseInstanceLines + Darwin + Windows paths). **Phantom PR #7** — patch 3.9 KB + bundle 1.9 KB preserved.
+- Task 2 — comment on #295 with full close rationale.
+- Task 11 — `add_comment` on #100 succeeded (`aw_m4ospfic_v3`); `update_issue` skipped per established pattern.
+
+### Verified
+
+- `go build ./...` OK; `go vet ./...` clean; `gofmt -l .` clean.
+- `go test ./... -count=1` 15/15 OK; `go test ./... -race -count=1` 15/15 OK.
+- `BenchmarkParseInstanceLines`: 165.7 / 145.9 / 179.5 ns/op; 240 B/op; 4 allocs/op (was 5 allocs/op, 352 B/op, ~190 ns/op).
+- Diff: 2 files, +24 / −3.
