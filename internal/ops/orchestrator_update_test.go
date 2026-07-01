@@ -84,6 +84,11 @@ func newUpdateMockExecutor() *testutil.MockExecutor {
 			// Remove + Setup + Start share the systemd-system probe.
 			case strings.Contains(cmd, "test -f") && strings.Contains(cmd, "/etc/systemd/system"):
 				return "", nil
+			// Start: the nohup-runner launch command. Must be checked before the
+			// generic "pid_file=" case below, since startNative's launch command
+			// also contains "pid_file=" (it sets the var before nohup'ing).
+			case strings.Contains(cmd, "nohup ./run.sh"):
+				return "started PID 12345\n", nil
 			// Remove: stopNative's pid-file probe.
 			case strings.Contains(cmd, "pid_file="):
 				return "not running\n", nil
@@ -96,9 +101,6 @@ func newUpdateMockExecutor() *testutil.MockExecutor {
 			// Setup + Start: NativeRunnerConfigPresent (test -d + run.sh).
 			case strings.Contains(cmd, "test -d") && strings.Contains(cmd, "run.sh"):
 				return "yes\n", nil
-			// Start: the nohup-runner launch command.
-			case strings.Contains(cmd, "nohup ./run.sh"):
-				return "started PID 12345\n", nil
 			// Start: stale-registration probe (sleeps, then greps runner.log).
 			case strings.Contains(cmd, "sleep 5"):
 				return "ok\n", nil
@@ -250,14 +252,16 @@ func TestUpdate_RemoveErrorIsIgnored(t *testing.T) {
 				return "", nil
 			case strings.Contains(cmd, "test -f") && strings.Contains(cmd, "/etc/systemd/system"):
 				return "", nil
+			// Checked before the generic "pid_file=" case below, since
+			// startNative's launch command also contains "pid_file=".
+			case strings.Contains(cmd, "nohup ./run.sh"):
+				return "started PID 12345\n", nil
 			case strings.Contains(cmd, "pid_file="):
 				return "not running\n", nil
 			case strings.Contains(cmd, "rm -rf"):
 				return "", removeSentinel
 			case strings.Contains(cmd, "test -d") && strings.Contains(cmd, "run.sh"):
 				return "yes\n", nil
-			case strings.Contains(cmd, "nohup ./run.sh"):
-				return "started PID 12345\n", nil
 			case strings.Contains(cmd, "sleep 5"):
 				return "ok\n", nil
 			default:
