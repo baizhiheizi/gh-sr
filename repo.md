@@ -7,7 +7,7 @@ metadata:
 
 `baizhiheizi/gh-sr` — Go module (`go 1.25.9`). `cmd/gh-sr/` is the CLI entry (0% tested); `internal/` is the impl.
 
-Packages and coverage (2026-06-29):
+Packages and coverage (2026-07-01):
 
 - `internal/agentic` 81.0% — agentic-workflow prereq validators
 - `internal/autostart` 43.7% — systemd/launchd/scheduled-task install
@@ -18,11 +18,11 @@ Packages and coverage (2026-06-29):
 - `internal/host` 59.6% — SSH+local exec; `Executor` interface
 - `internal/hostshell` 89.7% — shell-quoting + remote-write helpers
 - `internal/hostshell/ps` 60.0%
-- `internal/ops` **90.9%** — orchestration; all orchestrators ≥75% except `Update` 53.8% and `ServiceCleanup` 67.5%
+- `internal/ops` **93.6%** — orchestration; `Update` 100%, `Remove` 93.3%, `ServiceCleanup` 92.5%, `ServiceInstall` 90.5%, `ServiceStatus` 80%, `ServiceUninstall` 75%, `Up` 77.8%, `RebuildImage` 76.9%
 - `internal/runner` 55.0% — container + native lifecycle
-- `internal/table` 77.3%
+- `internal/table` 87.5%
 - `internal/testutil` 88.2% — shared mocks
-- `internal/tui` 16.5% — bubbletea TUI
+- `internal/tui` 14.8% — bubbletea TUI
 - `cmd/gh-sr` 0.0% — tested via `internal/ops` end-to-end
 
 Module path: `github.com/an-lee/gh-sr` (note: changed from `baizhiheizi/gh-sr`; remote URL still `baizhiheizi/gh-sr.git`).
@@ -30,5 +30,7 @@ Module path: `github.com/an-lee/gh-sr` (note: changed from `baizhiheizi/gh-sr`; 
 CI: `.github/workflows/ci.yml` runs `go vet ./...` then `go test ./... -race -count=1` on `[self-hosted, linux]`.
 
 Maintainer (an-lee) merges test-improver PRs regularly.
+
+**Safeoutputs bridge status (2026-07-01):** 3rd consecutive phantom run. `create_pull_request`, `update_issue`, `create_issue`, `add_comment` all reported success but did not land. Local artifacts (patches, bundles) survive; maintainer must `git am` + push.
 
 [[commands]] [[testing-notes]] [[backlog]]
