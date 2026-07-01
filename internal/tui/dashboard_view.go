@@ -263,25 +263,14 @@ func (m *dashboardModel) viewHostMetrics() tea.View {
 	if len(m.hostMetrics) == 0 {
 		b.WriteString("  No hosts found.\n")
 	} else {
-		headers := []string{"HOST", "CPU", "MEMORY", "DISK", "LOAD AVG", "UPTIME"}
-		rows := make([][]string, len(m.hostMetrics))
-		for i, met := range m.hostMetrics {
-			rows[i] = metricsRow(met)
-		}
+		rows := buildHostMetricsRows(m.hostMetrics)
 
-		widths := table.ColumnWidths(headers, rows)
+		widths := table.ColumnWidths(hostMetricsHeaders, rows)
 
-		colorize := func(col int, cell string) string {
-			if col >= 1 && col <= 3 {
-				return colorizePercent(cell)
-			}
-			return cell
-		}
-
-		b.WriteString(renderHeader(headers, widths) + "\n")
+		b.WriteString(renderHeader(hostMetricsHeaders, widths) + "\n")
 
 		for _, row := range rows {
-			b.WriteString(renderRow(row, widths, colorize) + "\n")
+			b.WriteString(renderRow(row, widths, hostMetricsColorize) + "\n")
 		}
 	}
 
