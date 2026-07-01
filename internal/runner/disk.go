@@ -501,21 +501,30 @@ func pruneInnerDockerCache(h *host.Host, containerName string) error {
 	return err
 }
 
-// FormatBytesHuman formats bytes as GiB/MiB for display.
+// FormatBytesHuman formats bytes as GiB/MiB/KiB/B for display.
+//
+// strconv.AppendFloat + a stack-allocated byte buffer avoids the
+// format-string parser + reflection that fmt.Sprintf drags in for every call.
+// Called 5× per row by ops.PrintDiskUsage and once per host by doctor
+// DiskEntry rendering, so the per-call alloc drop compounds across listings
+// with many instances.
 func FormatBytesHuman(b int64) string {
 	if b < 0 {
 		b = 0
 	}
 	const gib = 1024 * 1024 * 1024
 	const mib = 1024 * 1024
-	if b >= gib {
-		return fmt.Sprintf("%.1f GiB", float64(b)/float64(gib))
+	switch {
+	case b >= gib:
+		var buf [16]byte
+		return string(strconv.AppendFloat(buf[:0], float64(b)/float64(gib), 'f', 1, 64)) + " GiB"
+	case b >= mib:
+		var buf [16]byte
+		return string(strconv.AppendFloat(buf[:0], float64(b)/float64(mib), 'f', 1, 64)) + " MiB"
+	case b >= 1024:
+		var buf [16]byte
+		return string(strconv.AppendFloat(buf[:0], float64(b)/1024, 'f', 1, 64)) + " KiB"
+	default:
+		return strconv.FormatInt(b, 10) + " B"
 	}
-	if b >= mib {
-		return fmt.Sprintf("%.1f MiB", float64(b)/float64(mib))
-	}
-	if b >= 1024 {
-		return fmt.Sprintf("%.1f KiB", float64(b)/1024)
-	}
-	return fmt.Sprintf("%d B", b)
 }

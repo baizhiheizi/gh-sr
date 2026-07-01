@@ -1,6 +1,7 @@
 package runner
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -276,8 +277,52 @@ func TestPruneInstance_neverTouchesRunnerRegistration(t *testing.T) {
 
 func TestFormatBytesHuman(t *testing.T) {
 	t.Parallel()
-	if got := FormatBytesHuman(2 * 1024 * 1024 * 1024); got != "2.0 GiB" {
-		t.Fatalf("got %q", got)
+	cases := []struct {
+		in   int64
+		want string
+	}{
+		{0, "0 B"},
+		{1, "1 B"},
+		{512, "512 B"},
+		{1023, "1023 B"},
+		{1024, "1.0 KiB"},
+		{2 * 1024, "2.0 KiB"},
+		{1024*1024 - 1, "1024.0 KiB"}, // boundary: just under MiB still renders as KiB
+		{1024 * 1024, "1.0 MiB"},
+		{500 * 1024 * 1024, "500.0 MiB"},
+		{1024*1024*1024 - 1, "1024.0 MiB"}, // boundary: just under GiB still renders as MiB
+		{1024 * 1024 * 1024, "1.0 GiB"},
+		{2 * 1024 * 1024 * 1024, "2.0 GiB"},
+		{50 * 1024 * 1024 * 1024, "50.0 GiB"},
+		{-1, "0 B"}, // negative input clamps to zero
+		{-1024, "0 B"},
+	}
+	for _, tc := range cases {
+		tc := tc
+		t.Run(fmt.Sprintf("%d_to_%s", tc.in, tc.want), func(t *testing.T) {
+			t.Parallel()
+			if got := FormatBytesHuman(tc.in); got != tc.want {
+				t.Errorf("FormatBytesHuman(%d) = %q, want %q", tc.in, got, tc.want)
+			}
+		})
+	}
+}
+
+// BenchmarkFormatBytesHuman exercises the per-row size formatter that runs
+// 5× per runner instance per `gh sr disk` listing plus once per host for the
+// doctor disk-entry path. Per-call alloc drops compound across listings with
+// many runners, so this benchmark pins the cost on the hot path.
+func BenchmarkFormatBytesHuman(b *testing.B) {
+	samples := []int64{
+		0, 512, 2 * 1024, 5 * 1024 * 1024, 500 * 1024 * 1024,
+		2 * 1024 * 1024 * 1024, 50 * 1024 * 1024 * 1024,
+	}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		for _, sz := range samples {
+			_ = FormatBytesHuman(sz)
+		}
 	}
 }
 
