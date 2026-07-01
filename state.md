@@ -5,72 +5,37 @@ metadata:
   type: project
 ---
 
-# Repo Assist state — 2026-06-29
+# Repo Assist state — 2026-07-01
 
-## Last run (28436621798) — Tasks 2, 3, 5
+## Last run (28494945299) — Tasks 2, 5, 8
 
-- **Task 2** — no-op. No open issues warrant a substantive new comment.
-- **Task 3** — fallback to Task 2 (no bug/help wanted/good first issue labels).
-- **Task 5** — `repo-assist/improve-format-host-metrics-shared-table`, commit `7080e5a`: `table.RenderPlain` + FormatHostMetrics refactor. **Phantom PR #6** — patch + bundle preserved locally.
-- **Task 11** — `add_comment` on #100 (temp_id `aw_M4OSpFIc`); comment on #295 with recovery steps.
-- **Open PRs (mine):** 1 phantom. **Open PRs (others):** #291, #292, #293.
-
-## Previous run (28368951549) — Tasks 2, 10, 5
-
-- Task 5 — `repo-assist/tui-render-row-helper-2026-06-29`, commit `6d901d0`: extracted `renderRowWith` helper. **Phantom PR #5** — patch + bundle preserved locally.
-- Task 11 — `add_comment` on #100 succeeded (temp_id `aw_GUQIE4hg`).
+- **Task 2** — no-op. #295 auto-expires today (addressed by #297). #299 closed locally via Task 5. #132/#124/#208 on hold.
+- **Task 5** — `repo-assist/improve-hostmetrics-shared-builder-2026-07-01`, commit `c2b96ad`: extracted `hostMetricsHeaders` + `buildHostMetricsRows` + `hostMetricsColorize` in `internal/tui/metrics.go`. All 3 renderers (PrintHostMetricsTable / FormatHostMetrics / viewHostMetrics) share them. Diff: 2 files, +36 / −35. Closes #299. **Phantom PR #10** — patch+bundle at `/tmp/gh-aw/aw-repo-assist-improve-hostmetrics-shared-builder-2026-07-01.{patch,bundle}`.
+- **Task 8** — `repo-assist/perf-formatbyteshuman-appendfloat-2026-07-01`, commit `898e101`: 4× `fmt.Sprintf` → `strconv.AppendFloat` + stack `[16]byte` in `FormatBytesHuman`. Per-call: 89→53 ns/op (−40%), 16→8 B/op (−50%), 1.9→1.14 allocs/op (−40%). Diff: 2 files, +66 / −12. Test 1→15 sub-tests; benchmark added. **Phantom PR #11** — patch+bundle at `/tmp/gh-aw/aw-repo-assist-perf-formatbyteshuman-appendfloat-2026-07-01.{patch,bundle}`.
+- **Task 11** — `add_comment` on #100 succeeded (`aw_jul01_run`); `update_issue` not attempted per silent-failure pattern.
 
 ## In-flight
 
-- **Open PRs awaiting review:** #291 (cursor[bot]), #292 (mine, landed), #293 (test-improver), #298 (mine, SplitSeq, awaiting review), +1 phantom (test-listinstalled-os-paths, commit `4d8e291`).
+- **Open PRs awaiting review:** #298 (SplitSeq, mine), #300 (test-listinstalled, mine), #301 (perf-improver), + 2 phantoms (this run).
 
 ## Backlog
 
 - **#132 (gh sr storage)** — on hold pending maintainer signal on loop-mount persistence.
-- **#208 parent** — duplicate-code detector parent; ~1-2 findings/day.
-- **#281 / #283 follow-ups** — partial refactors in #289/#290; per-call-site extraction pending.
-- **#124** — benchstat comparison on PRs. Item 1 (gate on PRs) already done — verify before re-drafting.
+- **#208 parent** — duplicate-code detector; ~1-2 findings/day.
 - **#294** — doc-updater blocked (CHANGELOG.md protected); maintainer must create PR manually.
-- **#295** — FormatHostMetrics table-rendering duplication. Resolved locally on phantom branch; awaiting manual push.
+- **#295** — addressed by #297; auto-expiry 2026-07-01.
 
 ## Notes
 
-- **phantom-PR pattern:** safeoutputs create_pull_request may report success without pushing. Detection: `git ls-remote --heads origin | grep <branch>`. Recovery: `git am <patch> && git push`. **6th occurrence this month.**
-- **update_issue on #100:** fails silently 4× confirmed; recovery via add_comment.
+- **phantom-PR pattern:** **11 occurrences**. Detection: `git ls-remote --heads origin | grep <branch>` or `search_pull_requests with head:` filter. Recovery: `git am <patch> && git push origin <branch> && gh pr create --base main --head <branch> --draft`.
+- **update_issue on #100:** fails silently 5× confirmed; recovery via `add_comment`.
 - **CI bench job:** already gated on both `push: [main]` and `pull_request: [main]`.
-- **Revert rate:** 0/19+.
-
-## Previous run (28350202697) — Tasks 3, 2, 5
-
-- Task 5 — `repo-assist/gofmt-drift-fix-2026-06-29`, commit `3ff794f`: `gofmt -w` on 2 long-drifting files. PR #292 landed (delayed).
-- Task 11 — `update_issue` on #100 4th silent failure; recovered via `add_comment`.
-
-## In-flight
-
-- **Open PRs awaiting review:** #291 (cursor[bot]), #292 (mine), #293 (test-improver), +1 phantom (this run).
-
-## Backlog
-
-- **#132 (gh sr storage)** — on hold pending maintainer signal on loop-mount persistence.
-- **#208 parent** — duplicate-code detector parent; ~1-2 findings/day.
-- **#281 / #283 follow-ups** — partial refactors in #289/#290; per-call-site extraction pending.
-- **#124** — benchstat comparison on PRs. Item 1 (gate on PRs) already done — verify before re-drafting.
-- **#294** — doc-updater blocked (CHANGELOG.md protected); maintainer must create PR manually.
-
-## Notes
-
-- **phantom-PR pattern:** safeoutputs create_pull_request may report success without pushing. Detection: `git ls-remote --heads origin | grep <branch>`. Recovery: `git am <patch> && git push`.
-- **update_issue on #100:** fails silently 4× confirmed; recovery via add_comment.
-- **CI bench job:** already gated on both `push: [main]` and `pull_request: [main]`.
-- **Revert rate:** 0/19+.
+- **Revert rate:** 0/21+.
 
 ## Verified knowledge
 
 - **`runner.DockerExecCommand(cname, innerCmd) string`** — canonical builder.
-- **`runner.QuoteContainerName(cname) string`** — uses `strconv.Quote`.
-- **`runner.ProbeDinDContainerReadiness(h, cname) (ContainerReadinessReport, error)`** — `{State, InnerDockerdOK, Registered}`.
-- **`runner.addSSHTUserToDockerGroup(...)`** — docker-group-add helper.
-- **`runner.fetchToken(scope, target, endpoint, opLabel, emptyHint) (string, error)`** — extracted in #284, closes #282.
+- **`runner.fetchToken(scope, target, endpoint, opLabel, emptyHint)`** — extracted in #284, closes #282.
 - **`runContainerCheck(h, spec containerCheckSpec) []PrereqFailure`** — for `ValidateContainer*`.
 - **`runOnHostOS[T any]`** in `internal/runner/hostos.go`.
 - **`internal/ops/connectHostFn`** — seam tests swap via `installMockConnectHost` + `connectHostMu`.
@@ -85,25 +50,16 @@ metadata:
 - **`agentic.go:613-685` `docker exec %s ...`** — multi-line pipelines may not fit `DockerExecCommand`.
 - **Protected files:** `go.mod`, `go.sum`, `CHANGELOG.md`, `.github/workflows/ci.yml`.
 - **`update_issue` body limit:** 10 KB.
-- **Duplicate-code findings closed:** #251/253/260/261/281/282/283 (via PRs); #252 (auto-expiry); #262/#267/#268/#274/#275/#276 (maintainer).
+- **Duplicate-code findings closed:** #251/253/260/261/281/282/283/295/299.
 - **strconv.Quote round-trip:** input `evil"; rm -rf /; "` → `docker exec "evil\"; rm -rf /; \"" echo ok`.
-- **`renderRow` / `renderHighlightedRow`** in `internal/tui/table.go` — refactored to share `renderRowWith(cells, widths, colorize, extraStyle)` body. `cursorRowBackground` package-level style. (Commit 6d901d0 on branch `repo-assist/tui-render-row-helper-2026-06-29`.)
-- **`table.RenderPlain(opts Options) string`** — added in commit `7080e5a` on branch `repo-assist/improve-format-host-metrics-shared-table`. Uses `strings.Builder` + `appendRowPlain` for the per-cell padding loop, preserving 1-alloc/cell. Returns string (not io.Writer). When `Rows` is empty, returns `EmptyMsg` as the sole line (no trailing newline). `FormatHostMetrics` now delegates to it; `appendHostCell` deleted.
-- **`computeColumnWidths`** in `internal/tui/table.go` — REMOVED in commit `7080e5a`. Both call sites in `dashboard_view.go` now use `table.ColumnWidths` directly.
+- **`renderRow` / `renderHighlightedRow`** in `internal/tui/table.go` — share `renderRowWith(cells, widths, colorize, extraStyle)` body.
+- **`table.RenderPlain(opts Options) string`** — strings.Builder + appendRowPlain; 1-alloc/cell.
+- **`computeColumnWidths`** in `internal/tui/table.go` — REMOVED in commit `7080e5a`.
 - **`gofmt -l .` clean** since 2026-06-29.
-- **`internal/autostart.ListInstalled(h)`** dispatch contract: linux → listInstalledLinux, darwin → listInstalledDarwin (strip `com.github.ghsr.runner.` prefix), windows → listInstalledWindows (Get-ScheduledTask via RunShell, parse via instanceFromServiceBasename), unsupported → error mentioning the OS name. All 4 arms now have direct test coverage (commit `4d8e291` on `repo-assist/test-listinstalled-os-paths-2026-06-30`).
-- **`internal/autostart.parseInstanceLines(out)`** — preserves input order, skips blank lines and lines without `ghsr-runner-` prefix, trims whitespace per line. Dedup is the caller's responsibility via `dedupeInstances`. Pinned by 5 sub-tests in commit `4d8e291`.
-- **`internal/host.Host.RunShell`** wraps the script via `wrapCommand`: for windows hosts with non-local `Addr` it base64-encodes for `powershell.exe -EncodedCommand`; for local Addr or non-windows hosts it's a no-op. Tests should set `Addr: "local"` to bypass the encoding and let the mock see the raw script.
-## Previous run (28455022510) — Tasks 3, 8, 2
-
-- Task 3 — closed #295 via PR #297 (FormatHostMetrics RenderPlain refactor, landed `df08279` 2026-06-30). Comment on #295 confirming closure (`aw_close295`).
-- Task 8 — `repo-assist/perf-splitseq-cleanup-2026-06-30`, commit `fac4fad`: 3× `strings.Split` → `strings.SplitSeq` in autostart/cleanup.go (parseInstanceLines + Darwin + Windows paths). **Phantom PR #7** — patch 3.9 KB + bundle 1.9 KB preserved.
-- Task 2 — comment on #295 with full close rationale.
-- Task 11 — `add_comment` on #100 succeeded (`aw_m4ospfic_v3`); `update_issue` skipped per established pattern.
-
-### Verified
-
-- `go build ./...` OK; `go vet ./...` clean; `gofmt -l .` clean.
-- `go test ./... -count=1` 15/15 OK; `go test ./... -race -count=1` 15/15 OK.
-- `BenchmarkParseInstanceLines`: 165.7 / 145.9 / 179.5 ns/op; 240 B/op; 4 allocs/op (was 5 allocs/op, 352 B/op, ~190 ns/op).
-- Diff: 2 files, +24 / −3.
+- **`internal/autostart.ListInstalled(h)`** dispatch contract: linux/darwin/windows/unsupported-OS.
+- **`internal/autostart.parseInstanceLines(out)`** — preserves input order; dedupe is caller's job.
+- **`internal/host.Host.RunShell`** wraps via `wrapCommand`: windows+non-local base64; otherwise no-op.
+- **`internal/tui.hostMetricsHeaders`** — package-level `var` (commit `c2b96ad`); canonical column ordering shared by PrintHostMetricsTable / FormatHostMetrics / viewHostMetrics.
+- **`internal/tui.buildHostMetricsRows(metrics)`** — shared row constructor (commit `c2b96ad`).
+- **`internal/tui.hostMetricsColorize(col, cell)`** — shared colorize closure (commit `c2b96ad`); not used by FormatHostMetrics.
+- **`runner.FormatBytesHuman(b int64)`** — 4× `fmt.Sprintf` → `strconv.AppendFloat`+stack `[16]byte` (3 float branches) + `strconv.FormatInt` (1 int branch). Per-call: 89→53 ns/op (−40%), 16→8 B/op (−50%), 1.9→1.14 allocs/op (−40%). Output byte-identical; parity-checked against 15 sub-tests including boundary cases at 1024 / 1MiB / 1GiB and negative-input clamping. (Commit `898e101`.)
