@@ -9,24 +9,43 @@ import (
 	"github.com/an-lee/gh-sr/internal/table"
 )
 
-// PrintHostMetricsTable prints a tabular summary of host resource usage to stdout.
-func PrintHostMetricsTable(metrics []host.HostMetrics) {
-	headers := []string{"HOST", "CPU", "MEMORY", "DISK", "LOAD AVG", "UPTIME"}
+// hostMetricsHeaders is the canonical column ordering for the host-metrics
+// table shared by PrintHostMetricsTable, FormatHostMetrics, and viewHostMetrics.
+// Keep this slice in sync with metricsRow so a column rename does not silently
+// misalign the three renderers.
+var hostMetricsHeaders = []string{"HOST", "CPU", "MEMORY", "DISK", "LOAD AVG", "UPTIME"}
+
+// buildHostMetricsRows maps metrics → the per-row string slices used by all
+// three host-metrics renderers. Centralising the row construction keeps the
+// header literal and metricsRow call in one place.
+func buildHostMetricsRows(metrics []host.HostMetrics) [][]string {
 	rows := make([][]string, len(metrics))
 	for i, m := range metrics {
 		rows[i] = metricsRow(m)
 	}
+	return rows
+}
+
+// hostMetricsColorize highlights CPU/MEMORY/DISK percentage cells (columns
+// 1..3) using colorizePercent. Non-percentage cells pass through unchanged.
+// Shared by the styled host-metrics renderers (PrintHostMetricsTable +
+// viewHostMetrics); the plain-text renderer FormatHostMetrics does not apply
+// colorization since table.RenderPlain has no Colorize hook.
+func hostMetricsColorize(col int, cell string) string {
+	if col >= 1 && col <= 3 {
+		return colorizePercent(cell)
+	}
+	return cell
+}
+
+// PrintHostMetricsTable prints a tabular summary of host resource usage to stdout.
+func PrintHostMetricsTable(metrics []host.HostMetrics) {
 	PrintTable(os.Stdout, TablePrintOptions{
 		Title:    "Host Metrics",
 		EmptyMsg: "No hosts found.",
-		Headers:  headers,
-		Rows:     rows,
-		Colorize: func(col int, cell string) string {
-			if col >= 1 && col <= 3 {
-				return colorizePercent(cell)
-			}
-			return cell
-		},
+		Headers:  hostMetricsHeaders,
+		Rows:     buildHostMetricsRows(metrics),
+		Colorize: hostMetricsColorize,
 	})
 }
 
@@ -35,17 +54,10 @@ func FormatHostMetrics(metrics []host.HostMetrics) string {
 	if len(metrics) == 0 {
 		return "  No hosts found."
 	}
-
-	headers := []string{"HOST", "CPU", "MEMORY", "DISK", "LOAD AVG", "UPTIME"}
-	rows := make([][]string, len(metrics))
-	for i, m := range metrics {
-		rows[i] = metricsRow(m)
-	}
-
 	return table.RenderPlain(table.Options{
 		EmptyMsg: "  No hosts found.",
-		Headers:  headers,
-		Rows:     rows,
+		Headers:  hostMetricsHeaders,
+		Rows:     buildHostMetricsRows(metrics),
 	})
 }
 

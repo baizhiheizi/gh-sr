@@ -54,7 +54,10 @@ done
 		return nil, err
 	}
 	var instances []string
-	for _, line := range strings.Split(out, "\n") {
+	// SplitSeq avoids the upfront []string allocation that strings.Split makes
+	// for the whole multi-line launchctl output. ListInstalled runs once per
+	// host per CleanupStale / OrphanInstances call.
+	for line := range strings.SplitSeq(out, "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" {
 			continue
@@ -77,7 +80,9 @@ func listInstalledWindows(h *host.Host) ([]string, error) {
 		return nil, err
 	}
 	var instances []string
-	for _, line := range strings.Split(out, "\n") {
+	// SplitSeq avoids the upfront []string allocation that strings.Split makes
+	// for the whole multi-line Get-ScheduledTask output.
+	for line := range strings.SplitSeq(out, "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" {
 			continue
@@ -91,7 +96,11 @@ func listInstalledWindows(h *host.Host) ([]string, error) {
 
 func parseInstanceLines(out string) []string {
 	var instances []string
-	for _, line := range strings.Split(out, "\n") {
+	// SplitSeq avoids the upfront []string allocation that strings.Split makes
+	// for the whole multi-line `basename` output. CleanupStale and
+	// OrphanInstances each call ListInstalled (→ parseInstanceLines on Linux)
+	// once per host per orchestrator invocation.
+	for line := range strings.SplitSeq(out, "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" {
 			continue
