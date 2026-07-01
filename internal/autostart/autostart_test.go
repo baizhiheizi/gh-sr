@@ -380,3 +380,109 @@ func TestResolveAutostartTarget(t *testing.T) {
 		}
 	})
 }
+
+// TestInstall_linuxSystemUsesOneHomeAndOneIdCall pins the round-trip budget
+// for `gh sr service install --system`. Same win-class as Detect (PR #264,
+// PR #269, the Linux probe consolidation): the system install previously
+// issued two `printf %s "$HOME"` calls (Install → remoteHome →
+// installSystemdSystem → remoteHome) and two separate `id -un` / `id -gn`
+// calls. The fix passes the already-computed `home` through to
+// installSystemdSystem and folds the two `id` probes into a single shell
+// invocation, saving 2 SSH round-trips on every system install.
+//
+// The test asserts:
+//   - exactly one `printf %s "$HOME"` call across the full Install path
+//   - zero standalone `id -un` or `id -gn` calls (they must be combined)
+//   - the install completes successfully (mock answers with sane outputs)
+func TestInstall_linuxSystemUsesOneHomeAndOneIdCall(t *testing.T) {
+	t.Parallel()
+
+	mock := &testutil.MockExecutor{
+		RunFn: func(cmd string) (string, error) {
+			switch {
+			case strings.Contains(cmd, `printf %s "$HOME"`):
+				return "/home/test\n", nil
+			case strings.Contains(cmd, "id -un") && strings.Contains(cmd, "id -gn"):
+				// Combined id probe: returns two lines.
+				return "test\ntest\n", nil
+			case strings.Contains(cmd, "id -un") || strings.Contains(cmd, "id -gn"):
+				return "test\n", nil
+			case strings.Contains(cmd, "base64 -d"):
+				return "", nil // WriteRemoteBytes
+			case strings.Contains(cmd, "systemctl"):
+				return "", nil
+			}
+			return "", nil
+		},
+	}
+	h := newMockHost("h1", config.HostConfig{OS: "linux"}, mock)
+
+	if err := Install(h, "ci-1", InstallOpts{System: true}); err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+
+	var homeCalls, standaloneIdUn, standaloneIdGn, combinedId int
+	for _, cmd := range mock.Calls {
+		if strings.Contains(cmd, `printf %s "$HOME"`) {
+			homeCalls++
+		}
+		if strings.HasPrefix(strings.TrimSpace(cmd), "id -un") {
+			standaloneIdUn++
+		}
+		if strings.HasPrefix(strings.TrimSpace(cmd), "id -gn") {
+			standaloneIdGn++
+		}
+		if strings.Contains(cmd, "id -un") && strings.Contains(cmd, "id -gn") {
+			combinedId++
+		}
+	}
+	if homeCalls != 1 {
+		t.Errorf("printf $HOME calls = %d, want 1 (was 2 before fix)", homeCalls)
+	}
+	if standaloneIdUn != 0 {
+		t.Errorf("standalone `id -un` calls = %d, want 0 (must be combined with -gn)", standaloneIdUn)
+	}
+	if standaloneIdGn != 0 {
+		t.Errorf("standalone `id -gn` calls = %d, want 0 (must be combined with -un)", standaloneIdGn)
+	}
+	if combinedId != 1 {
+		t.Errorf("combined id -un/-gn call = %d, want 1", combinedId)
+	}
+}
+
+// TestInstall_linuxUserReusesHome pins the user-mode counterpart: the
+// user-mode Install path also used to call remoteHome twice (once in Install
+// and once in installSystemdUser). The fix passes `home` through, so the
+// happy path issues exactly one `printf %s "$HOME"` call.
+func TestInstall_linuxUserReusesHome(t *testing.T) {
+	t.Parallel()
+
+	mock := &testutil.MockExecutor{
+		RunFn: func(cmd string) (string, error) {
+			switch {
+			case strings.Contains(cmd, `printf %s "$HOME"`):
+				return "/home/test\n", nil
+			case strings.Contains(cmd, "base64 -d"):
+				return "", nil
+			case strings.Contains(cmd, "systemctl"):
+				return "", nil
+			}
+			return "", nil
+		},
+	}
+	h := newMockHost("h1", config.HostConfig{OS: "linux"}, mock)
+
+	if err := Install(h, "ci-1", InstallOpts{}); err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+
+	var homeCalls int
+	for _, cmd := range mock.Calls {
+		if strings.Contains(cmd, `printf %s "$HOME"`) {
+			homeCalls++
+		}
+	}
+	if homeCalls != 1 {
+		t.Errorf("printf $HOME calls = %d, want 1 (was 2 before fix)", homeCalls)
+	}
+}

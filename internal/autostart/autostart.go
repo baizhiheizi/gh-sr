@@ -140,9 +140,9 @@ func Install(h *host.Host, instance string, opts InstallOpts) error {
 	switch h.OS {
 	case "linux":
 		if opts.System {
-			return installSystemdSystem(h, instance, san, runnerDir)
+			return installSystemdSystem(h, instance, san, home, runnerDir)
 		}
-		return installSystemdUser(h, instance, san, runnerDir)
+		return installSystemdUser(h, instance, san, home, runnerDir)
 	case "darwin":
 		return installLaunchd(h, instance, san, runnerDir, home)
 	case "windows":
@@ -152,13 +152,9 @@ func Install(h *host.Host, instance string, opts InstallOpts) error {
 	}
 }
 
-func installSystemdUser(h *host.Host, instance, san, absRunnerDir string) error {
+func installSystemdUser(h *host.Host, instance, san, home, absRunnerDir string) error {
 	unit := SystemdUserUnit(san, absRunnerDir)
 	base := ServiceBasename(san)
-	home, err := remoteHome(h)
-	if err != nil {
-		return err
-	}
 	fullUnitPath := home + "/.config/systemd/user/" + base + ".service"
 
 	if err := hostshell.WriteRemoteBytes(h, fullUnitPath, []byte(unit)); err != nil {
@@ -173,25 +169,27 @@ func installSystemdUser(h *host.Host, instance, san, absRunnerDir string) error 
 	return nil
 }
 
-func installSystemdSystem(h *host.Host, instance, san, absRunnerDir string) error {
-	userOut, err := h.Run(`id -un`)
+func installSystemdSystem(h *host.Host, instance, san, home, absRunnerDir string) error {
+	// Combine `id -un` and `id -gn` into a single SSH call. Both probes
+	// answer the same correlated question ("who am I, what group?") from the
+	// same host state, so they belong in one shell invocation. Saves 1 SSH
+	// round-trip on every `gh sr service install --system` call. Mirrors the
+	// win-class of Detect (PR #264, PR #269, autostart.Detect Linux probe):
+	// when a helper needs multiple values from the same host state, fetch
+	// them together.
+	whoOut, err := h.Run(`printf '%s\n' "$(id -un)" "$(id -gn)"`)
 	if err != nil {
-		return fmt.Errorf("id -un: %w", err)
+		return fmt.Errorf("id -un/-gn: %w", err)
 	}
-	groupOut, err := h.Run(`id -gn`)
-	if err != nil {
-		return fmt.Errorf("id -gn: %w", err)
+	whoLines := strings.Split(strings.TrimRight(whoOut, "\n"), "\n")
+	if len(whoLines) != 2 {
+		return fmt.Errorf("id -un/-gn: expected 2 lines, got %d", len(whoLines))
 	}
-	user := strings.TrimSpace(userOut)
-	group := strings.TrimSpace(groupOut)
+	user, group := strings.TrimSpace(whoLines[0]), strings.TrimSpace(whoLines[1])
 	unit := SystemdSystemUnit(san, absRunnerDir, user, group)
 	base := ServiceBasename(san)
 	sysPath := "/etc/systemd/system/" + base + ".service"
 
-	home, err := remoteHome(h)
-	if err != nil {
-		return err
-	}
 	tmpPath := home + "/.gh-sr/" + base + ".service.tmp"
 	if err := hostshell.WriteRemoteBytes(h, tmpPath, []byte(unit)); err != nil {
 		return fmt.Errorf("staging systemd system unit: %w", err)
