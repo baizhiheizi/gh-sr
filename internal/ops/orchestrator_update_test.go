@@ -195,17 +195,24 @@ func TestUpdate_CallOrderRemoveSetupStart(t *testing.T) {
 	}
 
 	removeIdx, setupProbeIdx, startNohupIdx := -1, -1, -1
+	var probeIdxs []int
 	for i, c := range exec.Calls {
 		if removeIdx == -1 && strings.Contains(c, "config.sh remove") {
 			removeIdx = i
 		}
-		// Setup path: NativeRunnerConfigPresent runs in setupNative before
-		// the per-instance "already installed" branch. The probe is
-		// `test -d ... run.sh`. Start also probes the same pattern, but
-		// in the orchestrator's per-host lambda, the FIRST instance of
-		// this probe is from Setup (Remove doesn't run it).
-		if setupProbeIdx == -1 && strings.Contains(c, "test -d") && strings.Contains(c, "run.sh") {
-			setupProbeIdx = i
+		// NativeRunnerConfigPresent's `test -d ... run.sh` probe is issued
+		// twice on the success path: once explicitly by mgr.Setup, and once
+		// internally by startNativeOnce (which re-checks before deciding
+		// whether to auto-install). Collect every occurrence rather than just
+		// the first: if a refactor swapped the explicit Setup/Start calls,
+		// Start's own internal probe would still land before nohup and be
+		// mistaken for Setup's, making a first-occurrence-only check pass
+		// even though Setup no longer ran before Start.
+		if strings.Contains(c, "test -d") && strings.Contains(c, "run.sh") {
+			probeIdxs = append(probeIdxs, i)
+			if setupProbeIdx == -1 {
+				setupProbeIdx = i
+			}
 		}
 		if startNohupIdx == -1 && strings.Contains(c, "nohup ./run.sh") {
 			startNohupIdx = i
@@ -219,6 +226,20 @@ func TestUpdate_CallOrderRemoveSetupStart(t *testing.T) {
 	}
 	if startNohupIdx == -1 {
 		t.Fatalf("Start's nohup command never issued; calls=%v", exec.Calls)
+	}
+	// Both the explicit Setup probe and Start's own internal probe must land
+	// before nohup fires. If Setup ran after Start instead, only Start's
+	// internal probe would precede nohup (count == 1), and Setup's probe
+	// would land after nohup.
+	probesBeforeNohup := 0
+	for _, idx := range probeIdxs {
+		if idx < startNohupIdx {
+			probesBeforeNohup++
+		}
+	}
+	if probesBeforeNohup != 2 {
+		t.Errorf("expected 2 NativeRunnerConfigPresent probes (Setup's + Start's own) before nohup, got %d; probeIdxs=%v startNohupIdx=%d calls=%v",
+			probesBeforeNohup, probeIdxs, startNohupIdx, exec.Calls)
 	}
 	if !(removeIdx < setupProbeIdx && setupProbeIdx < startNohupIdx) {
 		t.Errorf("expected Remove < Setup < Start order; got remove=%d setup=%d start=%d",
