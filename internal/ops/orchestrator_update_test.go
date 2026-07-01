@@ -226,14 +226,21 @@ func TestUpdate_CallOrderRemoveSetupStart(t *testing.T) {
 
 // TestUpdate_RemoveErrorIsIgnored pins the contract that the orchestrator
 // deliberately swallows mgr.Remove's error: the line `_ = mgr.Remove(h, rc)`
-// means a partial Remove (e.g. the runner is already gone from the host)
+// means a partial Remove (e.g. the runner directory could not be cleaned up)
 // does not abort the Update. Setup and Start must still run.
+//
+// Note: removeNative itself discards the *config.sh remove* result (it's a
+// best-effort deregister step — see internal/runner/native.go), so failing
+// that command would not actually make mgr.Remove return an error. The one
+// path that does propagate is removeNativeDirectory's `rm -rf`, so that's
+// what this test fails to genuinely exercise the swallow contract.
 func TestUpdate_RemoveErrorIsIgnored(t *testing.T) {
 	t.Parallel()
 
-	// config.sh remove returns a hard error — this surfaces from removeNative.
-	// The orchestrator must swallow it and continue to Setup + Start.
-	removeSentinel := errors.New("simulated config.sh remove failure")
+	// rm -rf on the runner directory returns a hard error — this surfaces
+	// from removeNativeDirectory as mgr.Remove's return value. The
+	// orchestrator must swallow it and continue to Setup + Start.
+	removeSentinel := errors.New("simulated rm -rf failure")
 	exec := &testutil.MockExecutor{
 		RunFn: func(cmd string) (string, error) {
 			switch {
@@ -245,7 +252,7 @@ func TestUpdate_RemoveErrorIsIgnored(t *testing.T) {
 				return "", nil
 			case strings.Contains(cmd, "pid_file="):
 				return "not running\n", nil
-			case strings.Contains(cmd, "config.sh remove"):
+			case strings.Contains(cmd, "rm -rf"):
 				return "", removeSentinel
 			case strings.Contains(cmd, "test -d") && strings.Contains(cmd, "run.sh"):
 				return "yes\n", nil
