@@ -7,28 +7,29 @@ metadata:
 
 # Repo Assist state — 2026-07-01
 
-## Last run (28494945299) — Tasks 2, 5, 8
+## Last run (28545571496) — Tasks 10, 2, 3
 
-- **Task 2** — no-op. #295 auto-expires today (addressed by #297). #299 closed locally via Task 5. #132/#124/#208 on hold.
-- **Task 5** — `repo-assist/improve-hostmetrics-shared-builder-2026-07-01`, commit `c2b96ad`: extracted `hostMetricsHeaders` + `buildHostMetricsRows` + `hostMetricsColorize` in `internal/tui/metrics.go`. All 3 renderers (PrintHostMetricsTable / FormatHostMetrics / viewHostMetrics) share them. Diff: 2 files, +36 / −35. Closes #299. **Phantom PR #10** — patch+bundle at `/tmp/gh-aw/aw-repo-assist-improve-hostmetrics-shared-builder-2026-07-01.{patch,bundle}`.
-- **Task 8** — `repo-assist/perf-formatbyteshuman-appendfloat-2026-07-01`, commit `898e101`: 4× `fmt.Sprintf` → `strconv.AppendFloat` + stack `[16]byte` in `FormatBytesHuman`. Per-call: 89→53 ns/op (−40%), 16→8 B/op (−50%), 1.9→1.14 allocs/op (−40%). Diff: 2 files, +66 / −12. Test 1→15 sub-tests; benchmark added. **Phantom PR #11** — patch+bundle at `/tmp/gh-aw/aw-repo-assist-perf-formatbyteshuman-appendfloat-2026-07-01.{patch,bundle}`.
-- **Task 11** — `add_comment` on #100 succeeded (`aw_jul01_run`); `update_issue` not attempted per silent-failure pattern.
+- **Task 10** — `repo-assist/eng-bench-compare-2026-07-01`, commit `2c76716`: 2 files (+378 lines). New `scripts/benchstat/main.go` (self-contained Go, stdlib only, `//go:build ignore`) + new `.github/workflows/bench-compare.yml`. **Closes #124 (option a, benchstat piece).** **Phantom PR #12** — patch + bundle at `/tmp/gh-aw/aw-repo-assist-eng-bench-compare-2026-07-01.{patch,bundle}` (14.5 KB / 6.2 KB).
+- **Task 2** — comment on #124 (the bench-gate clarification + design rationale). Phantom comment — bridge failed.
+- **Task 3** — no-op (0 open issues labeled `bug`/`help wanted`/`good first issue`).
+- **Task 11** — `report_incomplete` after safe-outputs bridge failed across all write tools. The maintainer can apply the patch manually and post the #124 comment + open the new July issue themselves (full body text in the report_incomplete details payload).
 
 ## In-flight
 
-- **Open PRs awaiting review:** #298 (SplitSeq, mine), #300 (test-listinstalled, mine), #301 (perf-improver), + 2 phantoms (this run).
+- **Open PRs awaiting review:** none (all repo-assist drafts from prior runs are now merged or are phantom).
+- **Phantom PR #12** — `repo-assist/eng-bench-compare-2026-07-01` at commit `2c76716`. Patch + bundle at `/tmp/gh-aw/aw-repo-assist-eng-bench-compare-2026-07-01.{patch,bundle}` (14.5 KB / 6.2 KB). Recovery: `git am` + push + `gh pr create`.
 
 ## Backlog
 
 - **#132 (gh sr storage)** — on hold pending maintainer signal on loop-mount persistence.
-- **#208 parent** — duplicate-code detector; ~1-2 findings/day.
+- **#208 parent** — duplicate-code detector; ~1-2 findings/day, all recent ones closed.
 - **#294** — doc-updater blocked (CHANGELOG.md protected); maintainer must create PR manually.
-- **#295** — addressed by #297; auto-expiry 2026-07-01.
+- **#124** — implementation ready locally; awaiting manual application of the patch.
 
 ## Notes
 
-- **phantom-PR pattern:** **11 occurrences**. Detection: `git ls-remote --heads origin | grep <branch>` or `search_pull_requests with head:` filter. Recovery: `git am <patch> && git push origin <branch> && gh pr create --base main --head <branch> --draft`.
-- **update_issue on #100:** fails silently 5× confirmed; recovery via `add_comment`.
+- **phantom-PR pattern:** **12 occurrences**. Most recent: run 28545571496 (bench-compare) — not just PRs this time, ALL safe-outputs write tools failed (create_issue, update_issue, add_comment, create_pull_request). This is a safe-outputs bridge outage, not a transient phantom.
+- **safe-outputs bridge failure** (run 28545571496): every write tool returned `success` from the MCP server but produced no remote side effect. Recovery options: (a) wait for next run and retry (bridge may recover), (b) maintainer applies the patch manually, (c) investigate the agentic-workflows bridge on the platform side. **Recommendation: option (c) — the failure is too systemic to retry around.**
 - **CI bench job:** already gated on both `push: [main]` and `pull_request: [main]`.
 - **Revert rate:** 0/21+.
 
@@ -63,3 +64,5 @@ metadata:
 - **`internal/tui.buildHostMetricsRows(metrics)`** — shared row constructor (commit `c2b96ad`).
 - **`internal/tui.hostMetricsColorize(col, cell)`** — shared colorize closure (commit `c2b96ad`); not used by FormatHostMetrics.
 - **`runner.FormatBytesHuman(b int64)`** — 4× `fmt.Sprintf` → `strconv.AppendFloat`+stack `[16]byte` (3 float branches) + `strconv.FormatInt` (1 int branch). Per-call: 89→53 ns/op (−40%), 16→8 B/op (−50%), 1.9→1.14 allocs/op (−40%). Output byte-identical; parity-checked against 15 sub-tests including boundary cases at 1024 / 1MiB / 1GiB and negative-input clamping. (Commit `898e101`.)
+- **`scripts/benchstat/main.go`** (commit `2c76716`) — self-contained Go, stdlib only, `//go:build ignore`. Parses `go test -bench=. -benchmem` single-line output, computes per-benchmark deltas for `ns/op` / `B/op` / `allocs/op`, prints a markdown table, exits 1 on a fail-level regression. Thresholds (warn/fail): `ns/op` 10/30%, `B/op` 15/50%, `allocs/op` 10/25%. Public surface: `parseFile`, `computeDelta`, `classify`, `formatPct`, `statusGlyph`, `main`. Excluded from `go build ./...` and `go test ./...` via the build ignore tag.
+- **`.github/workflows/bench-compare.yml`** (commit `2c76716`) — runs on `pull_request: [main]`, downloads the most recent successful `bench-*` artifact from main via `gh api` against the Actions REST API, runs the comparison, posts a PR comment via `peter-evans/create-or-update-comment@v4` in `edit-mode: replace`. Self-deactivates (returns 0) when no main artifact exists.

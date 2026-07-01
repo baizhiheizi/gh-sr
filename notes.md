@@ -1,41 +1,46 @@
 ---
-name: run-2026-07-01-28494945299
-description: Run history entry for Repo Assist run 28494945299 (selected tasks 2, 5, 8)
+name: run-2026-07-01-28545571496
+description: Run history entry for Repo Assist run 28545571496 (selected tasks 10, 2, 3)
 metadata:
   type: project
 ---
 
-# Run 28494945299 — 2026-07-01 05:33 UTC
+# Run 28545571496 — 2026-07-01 23:00 UTC
 
 ## Selected tasks
-- Task 2 (Comment) — no-op. No genuinely new actionable comment items: #295 auto-expires today (already addressed by #297), #299 closed locally via Task 5, #132/#124/#208 on hold or actively running.
-- Task 5 (Coding Improvement) — `repo-assist/improve-hostmetrics-shared-builder-2026-07-01`, commit `c2b96ad`: extracted `hostMetricsHeaders` + `buildHostMetricsRows` + `hostMetricsColorize` in `internal/tui/metrics.go`. All 3 host-metrics renderers now share them. Diff: 2 files, +36 / −35. Closes #299. **Phantom PR #10** — patch (5.2 KB) + bundle (1.9 KB) preserved at `/tmp/gh-aw/aw-repo-assist-improve-hostmetrics-shared-builder-2026-07-01.{patch,bundle}`. Local branch preserved.
-- Task 8 (Performance) — `repo-assist/perf-formatbyteshuman-appendfloat-2026-07-01`, commit `898e101`: 4× `fmt.Sprintf` → `strconv.AppendFloat` + stack-allocated `[16]byte` in `FormatBytesHuman`. Per-call: 89→53 ns/op (−40%), 16→8 B/op (−50%), 1.9→1.14 allocs/op (−40%). Diff: 2 files, +66 / −12. Test expanded 1→15 sub-tests; benchmark added. **Phantom PR #11** — patch (5.3 KB) + bundle (2.6 KB) preserved at `/tmp/gh-aw/aw-repo-assist-perf-formatbyteshuman-appendfloat-2026-07-01.{patch,bundle}`. Local branch preserved.
-- Task 11 — `add_comment` on #100 with full Suggested Actions + Run History entry succeeded (`aw_jul01_run`); `update_issue` not attempted per established silent-failure pattern.
+- Task 10 (Take Forward) — `repo-assist/eng-bench-compare-2026-07-01`, commit `2c76716`: 2 files (+378 lines). New `scripts/benchstat/main.go` (self-contained Go, stdlib only, `//go:build ignore`) parses `go test -bench=. -benchmem` output, computes per-benchmark deltas, prints a markdown table, exits 1 on a fail-level regression. New `.github/workflows/bench-compare.yml` runs on `pull_request: [main]`, downloads the most recent main bench artifact, runs the comparison, posts a PR comment. **Closes #124 (option a, benchstat piece).** **Phantom PR #12** — safeoutputs reported success but no PR opened (verified via `list_pull_requests state=open`); patch + bundle preserved at `/tmp/gh-aw/aw-repo-assist-eng-bench-compare-2026-07-01.{patch,bundle}` (14.5 KB / 6.2 KB).
+- Task 2 (Comment) — substantive comment on #124 confirming the bench job is already gated on `pull_request: [main]` and explaining the design choice (in-tree stdlib script vs. `benchstat`/`gobenchdata` dep). Phantom comment — `add_comment` reported success but #124's most recent comment is still 2026-06-19.
+- Task 3 (Fix) — no-op. 0 open issues labeled `bug` / `help wanted` / `good first issue`. No fix candidates identified during investigation.
+- Task 11 — `report_incomplete` after safe-outputs bridge failed across all write tools.
 
 ## Verified
-- `go build ./...` OK; `go vet ./...` clean; `gofmt -l .` clean.
-- `go test ./... -count=1 -race` 14/14 OK.
-- `BenchmarkFormatBytesHuman`: 374 ns/op, 56 B/op, 8 allocs/op (across 7 calls → 53.4 ns/call, 8 B/call, 1.14 allocs/call).
-- `BenchmarkFormatHostMetrics`: 3153 ns/op, 1944 B/op, 24 allocs/op (unchanged shape; alloc count preserved).
+- `go build ./...` OK
+- `go vet ./...` clean
+- `gofmt -l .` clean
+- `go test ./... -race -count=1` 14/14 OK
+- `go run scripts/benchstat/main.go` — verified against three synthetic fixtures:
+  - benign (no regression): exit 0, no status glyph
+  - 32% ns/op + 25% alloc regression + 43% B/op regression: exit 1, table shows 🔥 on ns and allocs, ⚠️ on bytes
+  - 5% improvement on an existing benchmark + one new benchmark: exit 0, table shows `🆕` for the new row
+- Workflow YAML parses cleanly via `yaml.safe_load`.
 
-## phantom-PR pattern (11th+ occurrence)
-- Phantom PRs from this month:
-  1. Run 28436621798 (RenderPlain refactor) — landed as PR #297.
-  2. Run 28350202697 (gofmt drift fix) — landed as PR #292.
-  3. Run 28368951549 (renderRowWith refactor) — branch not pushed.
-  4. Run 28302041922 (Perf Improver consolidate-autostart-detect) — reported incomplete.
-  5. #273 (run 28231593128) — landed later.
-  6. Run 28355199319 (orchestrator-connect-errors) — visible as PR #293.
-  7. Run 28455022510 (SplitSeq cleanup) — landed as PR #298 despite phantom report.
-  8. Run 28473873742 (test-listinstalled-os-paths) — landed as PR #300 despite phantom report.
-  9. Run 28494945299 (improve-hostmetrics-shared-builder, this run #10) — branch not pushed.
-  10. Run 28494945299 (perf-formatbyteshuman-appendfloat, this run #11) — branch not pushed.
+## safe-outputs bridge failure (CRITICAL)
+- `create_pull_request` → reported success, no PR created. Phantom PR #12.
+- `add_comment` on #124 → reported success, no comment landed. Phantom comment.
+- `add_comment` on #100 → reported success, no comment landed. Phantom comment.
+- `update_issue` on #100 to status=closed → reported success, #100 still open with original body. Phantom update.
+- `create_issue` (full body) → reported success, no new issue created. Phantom issue.
+- `create_issue` (smaller body retry) → reported success, no new issue created. Phantom issue.
+- `report_incomplete` → reported success; effect unknown (verified the read-back isn't possible — that's the point of `report_incomplete`).
 
-Recovery: `git am /tmp/gh-aw/aw-<branch-slug>.patch && git push origin <branch-slug> && gh pr create --base main --head <branch-slug> --draft`.
+This is the most severe safe-outputs bridge failure yet. The bridge appears to be fully non-functional for write operations on this run, not just intermittent. The MCP server is reporting success for every tool call regardless of whether the underlying API call succeeded.
+
+**Recovery instructions are documented in the report_incomplete details payload.** The maintainer can:
+1. Apply the bench-compare patch manually via `git am` or the bundle.
+2. Manually close #100 and open a new `[repo-assist] Monthly Activity 2026-07` issue.
+3. Post the #124 comment text manually.
 
 ## Discovered contracts (for future reference)
-- **`internal/tui.hostMetricsHeaders`** — package-level `var` in `metrics.go`; canonical column ordering shared by PrintHostMetricsTable / FormatHostMetrics / viewHostMetrics.
-- **`internal/tui.buildHostMetricsRows(metrics) [][]string`** — shared row constructor.
-- **`internal/tui.hostMetricsColorize(col, cell) string`** — shared colorize closure; not used by FormatHostMetrics (table.RenderPlain has no Colorize hook).
-- **`runner.FormatBytesHuman(b int64)`** — output byte-identical to fmt.Sprintf version; parity-checked against 15 sub-tests including boundary cases at 1024 / 1MiB / 1GiB and negative-input clamping to zero. New contract pins: B/KiB/MiB/GiB ordering, boundary semantics (1023 → 1023 B, 1MiB−1 → 1024.0 KiB, 1GiB−1 → 1024.0 MiB), negative input clamps to zero.
+- **`scripts/benchstat/main.go`** — self-contained Go script (266 lines, stdlib only), `//go:build ignore`. Public surface: `parseFile(path) (map[string]benchRow, error)`, `computeDelta(base, head) delta`, `classify(d, warn, fail) delta`, `formatPct(d) string`, `statusGlyph(s) string`, `main()`. Thresholds in `defaultThresholds` (ns/op 10%/30%, B/op 15%/50%, allocs/op 10%/25%). Single-line bench output: `BenchmarkName-GOMAXPROCS  iters  ns/op  [B/op]  [allocs/op]` (B/op and allocs/op optional for non-benchmem invocations).
+- **`.github/workflows/bench-compare.yml`** — pulls the most recent successful `bench-*` artifact from the most recent successful `ci.yml` run on main via `gh api`. Self-deactivates when no main artifact exists (first PR after a branch cut, etc). Posts via `peter-evans/create-or-update-comment@v4` in `edit-mode: replace` keyed by `bench-diff.md`. Uses `actions/checkout@v6` and `actions/setup-go@v5` with `go-version: "1.25.x"` (matches existing ci.yml).
+- **PR #124 status** — the bench job's `pull_request: [main]` gate was already true (efficiency-improver noted this in their 2026-06-19 comment). What was missing was the diff step, which is what this commit adds.
