@@ -7,10 +7,10 @@ metadata:
 
 `baizhiheizi/gh-sr` — Go module (`go 1.25.9`). `cmd/gh-sr/` is the CLI entry (0% tested); `internal/` is the impl.
 
-Packages and coverage (2026-07-01):
+Packages and coverage (2026-07-02):
 
 - `internal/agentic` 81.0% — agentic-workflow prereq validators
-- `internal/autostart` 43.7% — systemd/launchd/scheduled-task install
+- `internal/autostart` **62.7%** — systemd/launchd/scheduled-task install (not 43.7% as previously noted in old memory; prior work raised it)
 - `internal/config` 83.9% — runners.yml parser (best-tested)
 - `internal/diskschedule` 14.2% — local schedule install for `gh sr disk prune`
 - `internal/doctor` 68.8% — health checks
@@ -19,10 +19,10 @@ Packages and coverage (2026-07-01):
 - `internal/hostshell` 89.7% — shell-quoting + remote-write helpers
 - `internal/hostshell/ps` 60.0%
 - `internal/ops` **93.6%** — orchestration; `Update` 100%, `Remove` 93.3%, `ServiceCleanup` 92.5%, `ServiceInstall` 90.5%, `ServiceStatus` 80%, `ServiceUninstall` 75%, `Up` 77.8%, `RebuildImage` 76.9%
-- `internal/runner` 55.0% — container + native lifecycle
+- `internal/runner` **56.7%** — container + native lifecycle (2026-07-02: formatContainerImageBuild → 100, windowsNativeConfigScript → 100, containerImageExtraApt → 100)
 - `internal/table` 87.5%
 - `internal/testutil` 88.2% — shared mocks
-- `internal/tui` 14.8% — bubbletea TUI
+- `internal/tui` 15.0% — bubbletea TUI
 - `cmd/gh-sr` 0.0% — tested via `internal/ops` end-to-end
 
 Module path: `github.com/an-lee/gh-sr` (note: changed from `baizhiheizi/gh-sr`; remote URL still `baizhiheizi/gh-sr.git`).
@@ -31,6 +31,6 @@ CI: `.github/workflows/ci.yml` runs `go vet ./...` then `go test ./... -race -co
 
 Maintainer (an-lee) merges test-improver PRs regularly.
 
-**Safeoutputs bridge status (2026-07-01):** 3rd consecutive phantom run. `create_pull_request`, `update_issue`, `create_issue`, `add_comment` all reported success but did not land. Local artifacts (patches, bundles) survive; maintainer must `git am` + push.
+**Safeoutputs bridge status (2026-07-02):** 4th consecutive phantom run for `create_pull_request`. `create_issue`, `update_issue`, `add_comment` mixed: 1-2 phantom each run. Local artifacts (patches, bundles) survive; maintainer must `git am` + push. Bridge failure appears stochastic, not deterministic.
 
 [[commands]] [[testing-notes]] [[backlog]]

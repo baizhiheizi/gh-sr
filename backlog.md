@@ -7,31 +7,38 @@ metadata:
 
 ## High value (next runs)
 
-### 1. `internal/ops` user-facing orchestrators (90.9% as of 2026-06-29)
-- Remaining gaps: `Update` 53.8% (largest; Remove + Setup + Start), `RebuildImage` 76.9% (inner callback uncovered), `Up` 77.8% (`EnsureSetup` error branch), `ServiceCleanup` 67.5%, `ServiceUninstall` 75%, `ServiceStatus` 80%, `ServiceInstall` 90.5%, `Remove` 93.3%.
-- Still at 0%: `ConnectHost` (SSH integration test).
+### 1. `internal/autostart` Start/Stop/Status/Uninstall (0–31%)
+- 3 large orchestrators at 0% + Uninstall partial. Testable with `installMockConnectHost`-style pattern. Could push package 62.7→~85%.
 
-### 2. `internal/diskschedule` (14.2%) — `Detect`/`Install`/`Uninstall`/`Status` 0%
-- Needs `exec.Command` injection refactor.
+### 2. `internal/diskschedule` (14.2%) — needs `exec.Command` injection refactor
+- Pure helpers (parseAtTime / systemdQuoteArg / PlistEscape / PowerShellSingleQuote) already at 100%.
+- `Detect` linux/darwin branches testable via `t.Setenv("HOME", t.TempDir())` + `os.Stat`.
 
-### 3. `internal/autostart` (43.7%), `internal/runner/container.go` (~50%), `internal/tui/*` (16.5%) — broader package wins.
+### 3. `internal/runner` (56.7%) — broader package wins
+- Pure helpers covered this run. Orchestrators at 0% (setupNative, startNative, etc.) need real Manager + httptest — high complexity, lower marginal ROI.
+
+### 4. `internal/tui/*` (15.0%) — bubbletea UI rendering (lower priority)
 
 ## Patterns proved (reusable)
 
-- `installMockConnectHost(t, map[string]host.Executor)` and `installFailingConnectHost(t, sentinel)` — mock/sentinel-returning factory swap (uses `connectHostMu` for `-race` safety).
-- `*runner.Manager{GitHub: runner.NewGitHubClientWithHTTP(pat, ts.Client(), ts.URL)}` — real Manager backed by httptest GitHub server.
-- `barrierMockExecutor` (signals + blocks) and `newStatusNativeRunningMock()` (substring-matched `kill -0` → "running").
+- `installMockConnectHost(t, map[string]host.Executor)` factory swap (uses `connectHostMu` for `-race`).
+- `*runner.Manager{GitHub: runner.NewGitHubClientWithHTTP(pat, ts.Client(), ts.URL)}` — real Manager over httptest.
+- `barrierMockExecutor`, `newStatusNativeRunningMock()` — substring-matched mocks.
+- **Pure-function table tests with `t.Parallel()`** (2026-07-02): 12 sub-cases, no mocks/SSH/exec, high leverage.
 
 ## Completed (do not re-do)
 
-- 2026-06-29: Down→100, Restart→100, RebuildImage→76.9%; ops 90.4→90.9. Phantom patch.
-- 2026-06-27: CollectDiskUsage 0→92.1%; PruneDisk 0→91.9%; ops +20.5 pp. **PR #280 merged**.
-- 2026-06-26: Setup 56.2→100. **PR #270 merged**.
-- 2026-06-24: CollectStatus 0→90.5. **PR #256 merged**.
-- 2026-06-21: Remove 0→94.1. **PR #242 merged**.
-- 2026-06-20: Logs 0→92.9. **PR #233 merged**.
-- 2026-06-19: Up/Restart covered. **PR #224/#216 merged**.
-- 2026-06-17: Down 0→83.3. **PR #200 merged**.
+- 2026-07-02: formatContainerImageBuild 0→100, windowsNativeConfigScript 71.4→100, containerImageExtraApt 66.7→100; runner +1.1 pp. Phantom.
+- 2026-07-01: Update 53.8→100; ops +1.0 pp. PR #304 landed.
+- 2026-06-30: ServiceCleanup 67.5→92.5. Phantom.
+- 2026-06-29: Down→100, Restart→100, RebuildImage→76.9. PR #293.
+- 2026-06-27: CollectDiskUsage 0→92.1; PruneDisk 0→91.9. PR #280.
+- 2026-06-26: Setup 56.2→100. PR #270.
+- 2026-06-24: CollectStatus 0→90.5. PR #256.
+- 2026-06-21: Remove 0→94.1. PR #242.
+- 2026-06-20: Logs 0→92.9. PR #233.
+- 2026-06-19: Up/Restart. PR #224/#216.
+- 2026-06-17: Down 0→83.3. PR #200.
 - Earlier: #189, #178, #168, #156, #147 (all merged).
 
 [[repo]] [[testing-notes]] [[wip]] [[run-history]]
