@@ -81,27 +81,46 @@ func metricsRow(m host.HostMetrics) []string {
 }
 
 // formatPercent formats v with `prec` decimals followed by '%'.
+// formatPercent formats v with `prec` decimals followed by '%'.
+//
+// strconv.AppendFloat + a stack-allocated byte buffer avoids both the
+// per-call string allocation that strconv.FormatFloat returns AND the
+// strings.Builder heap allocation that the previous implementation
+// dragged in. metricsRow calls this once per host per View(); for a
+// 10-host panel that's 10 calls per render, and the cumulative cost
+// compounds across long dashboard sessions.
+//
+// The largest realistic output is "100.0%" (6 chars); [16]byte holds
+// the maximum AppendFloat output (24 chars) plus '%'.
 func formatPercent(v float64, prec int) string {
-	var b strings.Builder
-	b.Grow(8)
-	b.WriteString(strconv.FormatFloat(v, 'f', prec, 64))
-	b.WriteByte('%')
-	return b.String()
+	var buf [24]byte
+	b := buf[:0]
+	b = strconv.AppendFloat(b, v, 'f', prec, 64)
+	b = append(b, '%')
+	return string(b)
 }
 
 // formatUsedTotal formats "used/total UNIT (pct%)".
+//
+// strconv.AppendFloat + stack buffer avoids the strings.Builder heap
+// allocation the previous implementation had. The largest realistic
+// output is around 24 chars (e.g. "999999/9999999 GiB (100%)"); [40]byte
+// holds AppendFloat's worst case (24 chars per float × 1 float at a time
+// since the buffer is reused across writes) plus the 8 non-float chars
+// ("/", " ", " (", "%)"). The buffer is big enough that this function
+// never allocates on the heap.
 func formatUsedTotal(used, total, pct float64, unit string) string {
-	var b strings.Builder
-	b.Grow(24)
-	b.WriteString(strconv.FormatFloat(used, 'f', 0, 64))
-	b.WriteByte('/')
-	b.WriteString(strconv.FormatFloat(total, 'f', 0, 64))
-	b.WriteByte(' ')
-	b.WriteString(unit)
-	b.WriteString(" (")
-	b.WriteString(strconv.FormatFloat(pct, 'f', 0, 64))
-	b.WriteString("%)")
-	return b.String()
+	var buf [48]byte
+	b := buf[:0]
+	b = strconv.AppendFloat(b, used, 'f', 0, 64)
+	b = append(b, '/')
+	b = strconv.AppendFloat(b, total, 'f', 0, 64)
+	b = append(b, ' ')
+	b = append(b, unit...)
+	b = append(b, ' ', '(')
+	b = strconv.AppendFloat(b, pct, 'f', 0, 64)
+	b = append(b, '%', ')')
+	return string(b)
 }
 
 // colorizePercent highlights a cell that ends with a percentage based on severity.
