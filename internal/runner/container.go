@@ -209,11 +209,25 @@ func ProbeDinDContainerReadiness(h *host.Host, cname string) (ContainerReadiness
 	if !IsContainerAcceptingJobs(state) {
 		return rep, nil
 	}
-	if _, err := h.Run(DockerExecCommand(cname, "docker info >/dev/null 2>&1")); err == nil {
-		rep.InnerDockerdOK = true
-	}
-	if reg, _ := h.Run(DockerExecCommand(cname, "test -f /home/runner/actions-runner/.runner && echo ok || echo no")); strings.TrimSpace(reg) == "ok" {
-		rep.Registered = true
+	// Combine the two inner docker-exec probes (inner dockerd + .runner
+	// registered) into a single `docker exec` SSH round-trip. Both probes
+	// run against the same container and answer correlated questions, so
+	// they belong in one shell invocation — saves 1 round-trip per probe,
+	// which is material on containerAwaitHealthy's 2-s polling loop during
+	// Start and on doctor.checkContainerRunnerInstall's per-instance check.
+	// Mirrors the win-class of removeContainer (PR #264), EnsureHostDocker
+	// (PR #269), and autostart.Detect (PR #285). Observable contract is
+	// unchanged: "dockerd-ok" sets InnerDockerdOK, "ok" sets Registered,
+	// and either token being absent leaves the corresponding bool false.
+	out, _ := h.Run(DockerExecCommand(cname, `sh -c 'docker info >/dev/null 2>&1 && echo dockerd-ok || echo no
+test -f /home/runner/actions-runner/.runner && echo ok || echo no'`))
+	for _, line := range strings.Split(out, "\n") {
+		switch strings.TrimSpace(line) {
+		case "dockerd-ok":
+			rep.InnerDockerdOK = true
+		case "ok":
+			rep.Registered = true
+		}
 	}
 	return rep, nil
 }
