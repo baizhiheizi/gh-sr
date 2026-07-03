@@ -14,7 +14,7 @@ CMD_DIR := ./cmd/gh-sr
 
 GIT_TAG := $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 
-.PHONY: all build test bench vet check clean install uninstall
+.PHONY: all build test bench vet fmt tidy ci check clean install uninstall
 
 all: build
 
@@ -30,7 +30,24 @@ bench:
 vet:
 	go vet ./...
 
-check: vet test
+# fmt lists gofmt-clean violations without mutating files (mirrors the
+# CI "Format" step in .github/workflows/ci.yml). Use `gofmt -w` to apply.
+fmt:
+	@output=$$(gofmt -l .); \
+	if [ -n "$$output" ]; then \
+		echo "The following files are not gofmt-clean:"; \
+		echo "$$output"; \
+		exit 1; \
+	fi
+
+tidy:
+	go mod tidy
+
+# ci is the local equivalent of .github/workflows/ci.yml's test job so
+# contributors can verify the green-CI surface before pushing.
+ci: vet fmt test
+
+check: ci
 
 clean:
 	rm -f $(BINARY)
