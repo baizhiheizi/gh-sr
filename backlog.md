@@ -9,7 +9,6 @@ metadata:
 
 | Priority | Focus Area | Opportunity | Estimated Impact |
 |----------|------------|-------------|------------------|
-| ⏳ | Code | TUI `metricsRow` + `FormatHostMetrics` + `host.LoadStr` `fmt.Sprintf` → `strconv.FormatFloat` + `strings.Builder`. Branch `efficiency/metrics-strconv-formatfloat-2026-06-26` (commit 6f0b887). `BenchmarkMetricsRow` 20→10 allocs/op (**-50%**), ~1800→~1380 ns/op (-23%), 472→424 B/op (-10%). `safe-outputs create_pull_request` reported success 2× but no PR opened (recurring). Patch + bundle at `/tmp/gh-aw/aw-efficiency-metrics-strconv-formatfloat-2026-06-26.{patch,bundle}`. | MEDIUM (-50% allocs, -23% ns) |
 | TBD | Network | TUI refresh polling (5s) — `EnrichWithGitHubStatus` fires K parallel `ListRunnersScoped` HTTP. ETag cache opportunity. | TBD |
 | TBD | Network | Audit repeated `gh run` calls for batching | TBD |
 | LOW | Code | `diskschedule.parseAtTime` uses `fmt.Sscanf` — cold-path | LOW |
@@ -21,14 +20,15 @@ metadata:
 
 ## Completed (recent)
 
-- ✅ `FilterRunners_ByName` 503→1 allocs/op — PR #123
-- ✅ `dirSizesPOSIX` 4 SSH round trips → 1 — PR #136
-- ✅ `InstanceNames` 21→11 allocs/op — PR #146
-- ✅ `FindRunnerForLogs_Match` 5906→790 ns/op (-86%) — PR #155
-- ✅ `EnrichFromScopeRunners_Small` 33→28 allocs/op (-15%) — PR #167
-- ✅ `extractTrailingPercent` 3806→452 ns/op (-88%) — PR #191
-- ✅ `containerLocalStatusImageAndRevision` 2-3 → 1 SSH round trip — PR #203
-- ✅ `Manager.Status` loop-invariant hoist — PR #213
-- ✅ `ContainerImageLayoutRevision` hoist (-85% time, -89% bytes) — PR #226
-- ✅ TUI render `var line string + line +=` → `strings.Builder` — PR #249
-- ✅ TUI metrics `strconv.FormatFloat` + `strings.Builder` (commit 6f0b887, no PR — silent tool failure; preserved locally)
+- ✅ `FormatBytesHuman` inline unit suffix — 8→7 allocs/op, 56→48 B/op (-14%), ~444→~367 ns/op avg (-17%). Per-call 2→1 alloc. Branch `efficiency/format-bytes-human-single-alloc` (commit 9b384c8). PR created 2026-07-03.
+- ✅ TUI metrics `strconv.AppendFloat` + `[24]byte` stack buffer (merged via squash 2373126, in tree as of 2026-07-03).
+- ✅ `FilterRunners_ByName` 503→1 allocs/op — PR #123.
+- ✅ `dirSizesPOSIX` 4 SSH round trips → 1 — PR #136.
+- ✅ `InstanceNames` 21→11 allocs/op — PR #146.
+- ✅ `FindRunnerForLogs_Match` 5906→790 ns/op (-86%) — PR #155.
+- ✅ `EnrichFromScopeRunners_Small` 33→28 allocs/op (-15%) — PR #167.
+- ✅ `extractTrailingPercent` 3806→452 ns/op (-88%) — PR #191.
+- ✅ `containerLocalStatusImageAndRevision` 2-3 → 1 SSH round trip — PR #203.
+- ✅ `Manager.Status` loop-invariant hoist — PR #213.
+- ✅ `ContainerImageLayoutRevision` hoist (-85% time, -89% bytes) — PR #226.
+- ✅ TUI render `var line string + line +=` → `strings.Builder` — PR #249.
