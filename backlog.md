@@ -7,8 +7,8 @@ metadata:
 
 ## High value (next runs)
 
-### 1. `internal/autostart` Start/Stop/Status/Uninstall (0–31%)
-- 3 large orchestrators at 0% + Uninstall partial. Testable with `installMockConnectHost`-style pattern. Could push package 62.7→~85%.
+### 1. `internal/autostart.installLaunchd` + `installWindowsTask` (both 0%)
+- Reachable via the same Kind-dispatch pattern proved in Start/Stop/Status. Could close `internal/autostart` 84.9% → ~95%.
 
 ### 2. `internal/diskschedule` (14.2%) — needs `exec.Command` injection refactor
 - Pure helpers (parseAtTime / systemdQuoteArg / PlistEscape / PowerShellSingleQuote) already at 100%.
@@ -25,9 +25,11 @@ metadata:
 - `*runner.Manager{GitHub: runner.NewGitHubClientWithHTTP(pat, ts.Client(), ts.URL)}` — real Manager over httptest.
 - `barrierMockExecutor`, `newStatusNativeRunningMock()` — substring-matched mocks.
 - **Pure-function table tests with `t.Parallel()`** (2026-07-02): 12 sub-cases, no mocks/SSH/exec, high leverage.
+- **Kind-dispatch orchestrator tests** (2026-07-03): `TestStart`/`TestStop`/`TestStatus` table over 4 (os, kind) combos. Windows arms use `powershell.exe -EncodedCommand` substring (since `host.Host.RunShell` base64-encodes the script).
 
 ## Completed (do not re-do)
 
+- 2026-07-03: Start 0→91.7, Stop 0→95, Status 0→96.6, Uninstall 31.6→84.2; autostart +22.2 pp. Phantom.
 - 2026-07-02: formatContainerImageBuild 0→100, windowsNativeConfigScript 71.4→100, containerImageExtraApt 66.7→100; runner +1.1 pp. Phantom.
 - 2026-07-01: Update 53.8→100; ops +1.0 pp. PR #304 landed.
 - 2026-06-30: ServiceCleanup 67.5→92.5. Phantom.

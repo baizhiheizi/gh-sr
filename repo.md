@@ -10,7 +10,7 @@ metadata:
 Packages and coverage (2026-07-02):
 
 - `internal/agentic` 81.0% — agentic-workflow prereq validators
-- `internal/autostart` **62.7%** — systemd/launchd/scheduled-task install (not 43.7% as previously noted in old memory; prior work raised it)
+- `internal/autostart` **84.9%** — systemd/launchd/scheduled-task install (2026-07-03: Start 0→91.7, Stop 0→95, Status 0→96.6, Uninstall 31.6→84.2)
 - `internal/config` 83.9% — runners.yml parser (best-tested)
 - `internal/diskschedule` 14.2% — local schedule install for `gh sr disk prune`
 - `internal/doctor` 68.8% — health checks
@@ -31,6 +31,6 @@ CI: `.github/workflows/ci.yml` runs `go vet ./...` then `go test ./... -race -co
 
 Maintainer (an-lee) merges test-improver PRs regularly.
 
-**Safeoutputs bridge status (2026-07-02):** 4th consecutive phantom run for `create_pull_request`. `create_issue`, `update_issue`, `add_comment` mixed: 1-2 phantom each run. Local artifacts (patches, bundles) survive; maintainer must `git am` + push. Bridge failure appears stochastic, not deterministic.
+**Safeoutputs bridge status (2026-07-03):** 5th consecutive phantom run for `create_pull_request`. `update_issue` to rewrite #306 landed (this run); patch + bundle preserved for each missing PR. Maintainer pattern: organic merges happen for ~half the runs despite phantom reports.
 
 [[commands]] [[testing-notes]] [[backlog]]

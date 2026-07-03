@@ -7,21 +7,26 @@ metadata:
 
 Keep the last 4 runs in detail; older runs in one line each.
 
+## 2026-07-03 — Run 28642393250
+- Branch: `test-assist/autostart-start-stop-status`; commit `c7aabdb`
+- Coverage: `Start` 0→91.7, `Stop` 0→95, `Status` 0→96.6, `Uninstall` 31.6→84.2; `internal/autostart` 62.7→84.9 (+22.2 pp)
+- New file: `internal/autostart/autostart_orchestrator_test.go` (475 lines, 4 test groups)
+- **Phantom PR (5th consecutive)**. Patch `/tmp/gh-aw/aw-test-assist-autostart-start-stop-status.patch`.
+
 ## 2026-07-02 — Run 28570083207
 - Branch: `test-assist/runner-format-container-image-build`; commit `d986ad7`
 - Coverage: `formatContainerImageBuild` 0→100, `windowsNativeConfigScript` 71.4→100, `containerImageExtraApt` 66.7→100; `internal/runner` 55.6→56.7% (+1.1 pp)
 - New file: `internal/runner/runner_format_test.go` (242 lines, 7 tests / 12 cases)
-- **Phantom PR (4th consecutive)**. `update_issue` to close #305 also phantom.
+- **Phantom PR (4th consecutive)**.
 
 ## 2026-07-01 — Run 28499581092
 - `internal/ops.Update` 53.8→100; ops 92.6→93.6 (+1.0 pp). `internal/ops/orchestrator_update_test.go` (385 lines, 5 tests).
-- PR #304 from this run landed organically. Phantom reported but PR created.
+- **Phantom PR (3rd consecutive)**.
 
 ## 2026-06-30 — Run 28425497071 — ServiceCleanup 67.5→92.5; ops +1.7 pp. Phantom PR.
 
-## 2026-06-29 — Run 28355199319 — Down→100, Restart→100, RebuildImage→76.9. PR #293 landed.
-
 ## Earlier (one-line archive)
+- 2026-06-29 Down→100, Restart→100, RebuildImage→76.9. PR #293 landed.
 - 2026-06-27 CollectDiskUsage+PruneDisk 0→92/91; ops +20.5 pp; PR #280 merged
 - 2026-06-26 Setup 56.2→100; PR #270 merged
 - 2026-06-24 CollectStatus 0→90.5; PR #256 merged
