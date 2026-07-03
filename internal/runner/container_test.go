@@ -1904,10 +1904,8 @@ func TestProbeDinDContainerReadiness_RunningHealthy(t *testing.T) {
 			switch {
 			case strings.Contains(cmd, "docker inspect --format '{{.State.Status}}'"):
 				return "running\n", nil
-			case strings.Contains(cmd, `docker exec "gh-sr-x" docker info`):
-				return "", nil
-			case strings.Contains(cmd, `docker exec "gh-sr-x" test -f /home/runner/actions-runner/.runner`):
-				return "ok\n", nil
+			case strings.Contains(cmd, `docker exec "gh-sr-x" sh -c`) && strings.Contains(cmd, "docker info") && strings.Contains(cmd, "test -f /home/runner/actions-runner/.runner"):
+				return "dockerd-ok\nok\n", nil
 			default:
 				t.Errorf("unexpected h.Run call: %q", cmd)
 				return "", nil
@@ -1942,10 +1940,8 @@ func TestProbeDinDContainerReadiness_RestartingInnerDown(t *testing.T) {
 			switch {
 			case strings.Contains(cmd, "docker inspect --format '{{.State.Status}}'"):
 				return "restarting\n", nil
-			case strings.Contains(cmd, `docker exec "gh-sr-x" docker info`):
-				return "command not found", assertCalledError()
-			case strings.Contains(cmd, `docker exec "gh-sr-x" test -f`):
-				return "no\n", nil
+			case strings.Contains(cmd, `docker exec "gh-sr-x" sh -c`) && strings.Contains(cmd, "docker info") && strings.Contains(cmd, "test -f /home/runner/actions-runner/.runner"):
+				return "no\nno\n", nil
 			default:
 				return "", nil
 			}
@@ -1999,6 +1995,49 @@ func TestProbeDinDContainerReadiness_MissingShortCircuits(t *testing.T) {
 	}
 	if calls != 1 {
 		t.Errorf("h.Run called %d times, want 1 (only docker inspect)", calls)
+	}
+}
+
+// TestProbeDinDContainerReadiness_UsesOneDockerExecOnHappyPath pins the
+// round-trip count of the probe on the happy path (state == running) at
+// exactly 2: one `docker inspect` for state + one combined `docker exec`
+// carrying both the inner-dockerd and the .runner-registered probes. The
+// probe used to issue 3 round-trips (state + docker info + test -f); the
+// two docker-exec probes were folded into one shell invocation (see the
+// win-class of PR #264, #269, #285). If a future refactor splits them back
+// apart, this test fails with a clear message.
+func TestProbeDinDContainerReadiness_UsesOneDockerExecOnHappyPath(t *testing.T) {
+	t.Parallel()
+	h := host.NewHost("h", config.HostConfig{OS: "linux", Arch: "amd64", Addr: "local"})
+	var inspectCalls, execCalls int
+	h.SetConn(&testutil.MockExecutor{
+		RunFn: func(cmd string) (string, error) {
+			switch {
+			case strings.Contains(cmd, "docker inspect --format '{{.State.Status}}'"):
+				inspectCalls++
+				return "running\n", nil
+			case strings.Contains(cmd, `docker exec "gh-sr-x"`):
+				execCalls++
+				return "dockerd-ok\nok\n", nil
+			default:
+				t.Errorf("unexpected h.Run call: %q", cmd)
+				return "", nil
+			}
+		},
+	})
+
+	rep, err := ProbeDinDContainerReadiness(h, "gh-sr-x")
+	if err != nil {
+		t.Fatalf("err = %v, want nil", err)
+	}
+	if rep.State != "running" || !rep.InnerDockerdOK || !rep.Registered {
+		t.Fatalf("unexpected report: %+v", rep)
+	}
+	if inspectCalls != 1 {
+		t.Errorf("docker inspect h.Run calls = %d, want 1", inspectCalls)
+	}
+	if execCalls != 1 {
+		t.Errorf("docker exec h.Run calls = %d, want 1 (combined inner dockerd + .runner probe)", execCalls)
 	}
 }
 
