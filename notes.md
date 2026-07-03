@@ -1,40 +1,41 @@
 ---
-name: run-2026-07-02-28565949565
-description: Run history entry for Repo Assist run 28565949565 (selected tasks 3, 10, 2)
+name: run-2026-07-03-28638387867
+description: Run history entry for Repo Assist run 28638387867 (selected tasks 9, 4, 8)
 metadata:
   type: project
 ---
 
-# Run 28565949565 — 2026-07-02 05:32 UTC
+# Run 28638387867 — 2026-07-03 04:30 UTC
 
 ## Selected tasks
-- Task 3 (Fix) — no-op. 0 open issues labeled `bug` / `help wanted` / `good first issue`. Fallback to Task 2.
-- Task 10 (Take Forward) — `repo-assist/perf-metricsrow-appendfloat-2026-07-02`, commit `e0c9de9`: 1 file (`internal/tui/metrics.go`), +35 / −16. `formatPercent` + `formatUsedTotal` switched from `strings.Builder + strconv.FormatFloat` to `strconv.AppendFloat` + stack `[N]byte`. Same win-class as PR #303 (`FormatBytesHuman`). **Phantom PR #13** — patch + bundle preserved at `/tmp/gh-aw/aw-repo-assist-perf-metricsrow-appendfloat-2026-07-02.{patch,bundle}` (4.9 KB / 2.2 KB).
-- Task 2 (Comment) — no-op. No open issues warrant a new comment: #124 is actively addressed by the in-progress bench-compare work (issue #307), #132/#208 on hold, #307/#305/#306/#308/#309 are all automation artifacts.
-- Task 11 (Update Monthly Activity) — `update_issue` to #309 (full body with this run's entry prepended to Run History) — phantom. Also attempted `update_issue` to #308 with status=closed (bridge phantom) — #308 still open.
+- Task 8 (Performance) — `repo-assist/perf-loadstr-appendfloat-2026-07-03`, commit `977e1c5`: 1 file (`internal/host/metrics.go`), +21 / −11. `LoadStr` switched from `strings.Builder + strconv.FormatFloat` to `strconv.AppendFloat + stack [40]byte`. Same win-class as PR #310 (formatPercent / formatUsedTotal) and PR #303 (FormatBytesHuman). **Locally measured** (`BenchmarkLoadStr` -count=5): 284→257 ns/op (**-9.5%**), 24→16 B/op (**-33%**). Allocs/op unchanged. **NOT submitted as PR** — maintainer explicitly reverted the working-tree version mid-run (linter or user edit between commit and the bridge call). Branch and commit preserved locally; no `create_pull_request` was invoked for this work.
+- Task 9 (Testing) — `repo-assist/test-editor-open-windows-default-2026-07-03`, commit `6db86e8`: 1 file (`internal/editor/editor_test.go`), +58 / −3. New: `TestPreferred/default_notepad_on_Windows` (onlyOS=windows), `TestOpen_success` (`VISUAL=true` happy path), `TestOpen_missingEditor` (`VISUAL=gh-sr-nonexistent-xyz` + `errors.Is(err, exec.ErrNotFound)`). Coverage `internal/editor`: **53.8% → 92.3%**. POSIX-only `Open` tests `t.Skip` on Windows; Windows coverage is via the notepad case. **`create_pull_request` reported success**. Local patch + bundle at `/tmp/gh-aw/aw-repo-assist-test-editor-open-windows-default-2026-07-03.{patch,bundle}` (4.7 KB / 2.6 KB) as a recovery fallback if the bridge phantom-fails.
+- Task 4 (Engineering) — `repo-assist/eng-makefile-fmt-target-2026-07-03`, commit `9bfa21c`: 1 file (`Makefile`), +19 / −2. Adds `make fmt` (non-mutating `gofmt -l .` mirror of ci.yml's Format step), `make tidy`, `make ci` (vet + fmt + test mirror of ci.yml). `make check` kept as alias for ci. Zero new module deps, zero protected-file changes. **`create_pull_request` reported success**. Local patch + bundle at `/tmp/gh-aw/aw-repo-assist-eng-makefile-fmt-target-2026-07-03.{patch,bundle}` (2.4 KB / 1.4 KB).
+- Task 11 — `update_issue` to #309 with new full body (this run's entry prepended to Run History; Suggested Actions rebuilt to reflect 14-occurrence phantom backlog + new pending PRs). Reported success.
 
 ## Verified
 - `go build ./...` OK
 - `go vet ./...` clean
 - `gofmt -l .` clean
+- `make fmt` exit 0
+- `make ci` 14/14 OK (vet + fmt + test)
+- `go test ./internal/editor/ -race -count=1` 7/7 PASS (TestPreferred/3 subtests + TestCommand_usesPreferred + TestOpen_success + TestOpen_missingEditor)
 - `go test ./... -race -count=1` 14/14 OK
-- `BenchmarkFormatHostMetrics` 5 samples × 3 reps: 3374→3023 ns/op (**-10%**), 1944→1904 B/op (**-2%**)
-- `BenchmarkMetricsRow` 3 samples × 3 reps: 1042→960 ns/op (**-8%**), 424→400 B/op (**-6%**)
-- Allocs/op unchanged (the previous `strings.Builder` was already stack-allocated by escape analysis)
-
-## safe-outputs bridge failure (CRITICAL — 13th consecutive phantom)
-- `create_pull_request` for the metricsrow commit → reported success, no PR created. Phantom PR #13.
-- `update_issue` to #309 with new full body → reported success, body unchanged. Phantom update.
-- `update_issue` to #308 with status=closed → reported success, #308 still open. Phantom close.
-
-The bridge has been phantom-failing for every write tool across the last 4 consecutive runs. The maintainer can:
-1. Apply the metricsrow patch manually via `git am /tmp/gh-aw/aw-repo-assist-perf-metricsrow-appendfloat-2026-07-02.patch` + push + `gh pr create`.
-2. Apply the bench-compare patch manually via `git am /tmp/gh-aw/aw-repo-assist-eng-bench-compare-2026-07-01.patch` + push + `gh pr create` (or use the bundle at `/tmp/gh-aw/aw-repo-assist-eng-bench-compare-2026-07-01.bundle`).
-3. Manually close #308 and update #309 with the new content from the activity summary above.
+- `BenchmarkLoadStr` 5 reps: 284→257 ns/op (**-9.5%**), 24→16 B/op (**-33%**)
 
 ## Discovered contracts (for future reference)
-- **`tui.formatPercent(v float64, prec int) string`** (commit `e0c9de9`) — `strconv.AppendFloat` + stack `[24]byte` + `append(b, '%')`. Single alloc (the final `string(b)` conversion). Public surface unchanged.
-- **`tui.formatUsedTotal(used, total, pct float64, unit string) string`** (commit `e0c9de9`) — `strconv.AppendFloat` + stack `[48]byte` for the "used/total UNIT (pct%)" pattern. Single alloc. Public surface unchanged.
-- **Stack buffer sizing**: `[24]byte` for `formatPercent` (max output `100.0%` = 6 chars; `strconv.AppendFloat` max is 24 chars per float at prec=0); `[48]byte` for `formatUsedTotal` (max output `9999999/99999999 GiB (100%)` ≈ 28 chars; 24 + 8 fixed = 32 chars).
-- **Escape analysis invariant**: `var b strings.Builder; ... return b.String()` keeps `b` on the stack as long as the result escapes through a single return (no `&b` or `b` captured in a closure). The AppendFloat refactor's alloc count is therefore identical, but ns/op and B/op drop because the intermediate `strconv.FormatFloat`-returned strings are skipped.
-- **Win-class** (same as PR #303 `FormatBytesHuman`): replace `strings.Builder + strconv.FormatFloat` with `strconv.AppendFloat + stack [N]byte`.
+- **`os/exec` missing-binary error chain** wraps `exec.ErrNotFound`, NOT `fs.ErrNotExist`. Tests that assert "executable file not found" should match `exec.ErrNotFound` directly. Discovered while wiring `TestOpen_missingEditor`.
+- **`t.Setenv` is per-test isolation** — safe to use across subtests without teardown leaks. Editor tests rely on this for VISUAL/EDITOR overrides.
+- **`make ci` ergonomics**: vet + fmt + test, in that order, exit on first failure. Approximates `ci.yml`'s `test` job without the bench artifact upload.
+
+## safe-outputs bridge (uncertain but reported success)
+- `create_pull_request` (editor tests) — reported success.
+- `create_pull_request` (Makefile) — reported success.
+- `update_issue` (#309) — reported success.
+- Three predecessor phantom-failed runs suggests the next run should verify these landed before trusting the green.
+
+## Discovered contracts (for future reference)
+- Same as above.
+
+## LoadStr commit status
+- The `977e1c5` commit survives on `repo-assist/perf-loadstr-appendfloat-2026-07-03`. Working tree at `main` reverts to the `strings.Builder` version. If maintainer wants the perf win, they can `git checkout repo-assist/perf-loadstr-appendfloat-2026-07-03` and `git diff main` shows only the LoadStr change.
