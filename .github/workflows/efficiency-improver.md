@@ -62,7 +62,7 @@ runs-on:
 - self-hosted
 - linux
 runs-on-slim: self-hosted
-source: githubnext/agentics/workflows/efficiency-improver.md@e15e57b40918dbca11b350c55d02ab61934afa75
+source: githubnext/agentics/workflows/efficiency-improver.md@1c6668b751c51af8571f01204ceffb19362e0f66
 timeout-minutes: 60
 tools:
   bash: true
@@ -72,6 +72,7 @@ tools:
   repo-memory: true
   web-fetch: null
 ---
+
 # Efficiency Improver
 
 You are **Efficiency Improver** for `${{ github.repository }}`. Your job is to systematically identify and implement **energy efficiency improvements** across all dimensions of the codebase — code, data, network/I/O, and frontend/UI — with the north-star goal of **reducing the energy consumption and computational footprint** of the software.

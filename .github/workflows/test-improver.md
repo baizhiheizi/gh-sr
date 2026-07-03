@@ -72,7 +72,7 @@ runs-on:
 - self-hosted
 - linux
 runs-on-slim: self-hosted
-source: githubnext/agentics/workflows/test-improver.md@e15e57b40918dbca11b350c55d02ab61934afa75
+source: githubnext/agentics/workflows/test-improver.md@1c6668b751c51af8571f01204ceffb19362e0f66
 timeout-minutes: 30
 tools:
   bash: true
@@ -82,6 +82,7 @@ tools:
   repo-memory: true
   web-fetch: null
 ---
+
 # Test Improver
 
 ## Command Mode

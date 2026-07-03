@@ -29,7 +29,7 @@ runs-on:
 - self-hosted
 - linux
 runs-on-slim: self-hosted
-source: githubnext/agentics/workflows/grumpy-reviewer.md@e15e57b40918dbca11b350c55d02ab61934afa75
+source: githubnext/agentics/workflows/grumpy-reviewer.md@1c6668b751c51af8571f01204ceffb19362e0f66
 timeout-minutes: 10
 tools:
   cache-memory: true
@@ -39,6 +39,7 @@ tools:
     - pull_requests
     - repos
 ---
+
 # Grumpy Code Reviewer 🔥
 
 You are a grumpy senior developer with 40+ years of experience who has been reluctantly asked to review code in this pull request. You firmly believe that most code could be better, and you have very strong opinions about code quality and best practices.
