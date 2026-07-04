@@ -421,25 +421,30 @@ func positiveIntOrDefault(v, def int) int {
 	return def
 }
 
-func (m *Manager) containerDockerdStartTimeout() int {
+// nilPositiveInt returns def when m is nil, otherwise
+// positiveIntOrDefault(get(), def). It centralizes the nil-safe +
+// positivity-safe accessor envelope used by the container-timeout /
+// -retry / -stagger accessors below. The closure-based get() is needed
+// because Go evaluates method arguments eagerly: passing m.Field as a
+// plain argument would dereference the nil receiver before this helper
+// could run its nil check. (See issue #312.)
+func (m *Manager) nilPositiveInt(get func() int, def int) int {
 	if m == nil {
-		return 90
+		return def
 	}
-	return positiveIntOrDefault(m.ContainerDockerdStartTimeout, 90)
+	return positiveIntOrDefault(get(), def)
+}
+
+func (m *Manager) containerDockerdStartTimeout() int {
+	return m.nilPositiveInt(func() int { return m.ContainerDockerdStartTimeout }, 90)
 }
 
 func (m *Manager) containerBootstrapMaxRetries() int {
-	if m == nil {
-		return 5
-	}
-	return positiveIntOrDefault(m.ContainerBootstrapMaxRetries, 5)
+	return m.nilPositiveInt(func() int { return m.ContainerBootstrapMaxRetries }, 5)
 }
 
 func (m *Manager) containerStartStaggerSeconds() int {
-	if m == nil {
-		return 3
-	}
-	return positiveIntOrDefault(m.ContainerStartStaggerSeconds, 3)
+	return m.nilPositiveInt(func() int { return m.ContainerStartStaggerSeconds }, 3)
 }
 
 // createContainerInstance creates (but does not start) a single runner container
