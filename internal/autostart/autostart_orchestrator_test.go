@@ -473,3 +473,341 @@ func TestUninstall_kinds(t *testing.T) {
 		})
 	}
 }
+
+// installKinds enumerates the (os, kind) combos Install has to dispatch through.
+// Mirrors startKinds but the (system) opt toggle splits Linux into two arms.
+var installKinds = []struct {
+	name       string
+	os         string
+	system     bool
+	wantShell  bool   // true if expected to go through h.RunShell (PowerShell wrapper)
+	wantAction string // substring expected in the action SSH call
+	wantWrite  string // substring expected in the unit-file-write SSH call (base64)
+}{
+	{"linux user", "linux", false, false, "systemctl --user enable", ".config/systemd/user/ghsr-runner-ci-1.service"},
+	{"linux system", "linux", true, false, "systemctl enable", "/etc/systemd/system/ghsr-runner-ci-1.service"},
+	// launchd labels look like "com.github.ghsr.runner.<instance>" (see LaunchdLabel).
+	{"darwin launchd", "darwin", false, false, "launchctl bootstrap", "Library/LaunchAgents/com.github.ghsr.runner.ci-1.plist"},
+	// Windows uses PowerShell for both the unit write and the registration;
+	// the script body is base64-encoded (only the wrapper substring survives).
+	{"windows task", "windows", false, true, "Register-ScheduledTask", "powershell.exe"},
+}
+
+func TestInstall(t *testing.T) {
+	t.Parallel()
+
+	t.Run("invalid instance name error propagates", func(t *testing.T) {
+		t.Parallel()
+		mock := &testutil.MockExecutor{Output: "user\n"}
+		h := newMockHost("h1", config.HostConfig{OS: "linux"}, mock)
+		if err := Install(h, "@@@", InstallOpts{}); err == nil {
+			t.Error("expected error from SanitizeInstance, got nil")
+		}
+	})
+
+	t.Run("unsupported OS returns error", func(t *testing.T) {
+		t.Parallel()
+		h := newMockHost("h1", config.HostConfig{OS: "freebsd"}, &testutil.MockExecutor{})
+		err := Install(h, "ci-1", InstallOpts{})
+		if err == nil {
+			t.Fatal("expected error for unsupported OS, got nil")
+		}
+		if !strings.Contains(err.Error(), "freebsd") {
+			t.Errorf("error should mention OS, got %q", err.Error())
+		}
+	})
+
+	t.Run("remote home error propagates", func(t *testing.T) {
+		t.Parallel()
+		h := newMockHost("h1", config.HostConfig{OS: "linux"}, &testutil.MockExecutor{RunErr: errCalled})
+		if err := Install(h, "ci-1", InstallOpts{}); err == nil {
+			t.Error("expected error from remoteHome, got nil")
+		}
+	})
+
+	for _, tc := range installKinds {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			mock := &testutil.MockExecutor{
+				RunFn: func(cmd string) (string, error) {
+					if tc.os == "windows" {
+						// Windows RunShell wraps the script in powershell.exe
+						// -EncodedCommand (host.NewHost defaults to non-local
+						// Addr, so wrapCommand fires). We only need to drive
+						// remoteHome (USERPROFILE) and the Register call.
+						if strings.Contains(cmd, "powershell.exe") {
+							return `C:\Users\test`, nil
+						}
+						return "", nil
+					}
+					if strings.Contains(cmd, `printf %s "$HOME"`) {
+						return "/home/test\n", nil
+					}
+					if strings.Contains(cmd, "id -un") && strings.Contains(cmd, "id -gn") {
+						return "test\ntest\n", nil
+					}
+					if strings.Contains(cmd, "systemctl") || strings.Contains(cmd, "launchctl") {
+						return "", nil
+					}
+					return "", nil
+				},
+			}
+			h := newMockHost("h1", config.HostConfig{OS: tc.os}, mock)
+
+			if err := Install(h, "ci-1", InstallOpts{System: tc.system}); err != nil {
+				t.Fatalf("Install: %v", err)
+			}
+
+			// Linux/darwin: substring-match the action SSH call.
+			// Windows: the RunShell wrapper fired (the action script body
+			// is base64-encoded and unobservable from the mock).
+			if tc.wantShell {
+				last := mock.Calls[len(mock.Calls)-1]
+				if !strings.Contains(last, "powershell.exe") || !strings.Contains(last, "-EncodedCommand") {
+					t.Errorf("windows Install should go through RunShell wrapper, got %q", last)
+				}
+			} else {
+				last := mock.Calls[len(mock.Calls)-1]
+				if !strings.Contains(last, tc.wantAction) {
+					t.Errorf("last SSH call = %q, want substring %q", last, tc.wantAction)
+				}
+			}
+			// All four arms write the unit file via hostshell.WriteRemoteBytes,
+			// which streams the base64 payload over h.Run (POSIX) or
+			// h.RunShell (Windows). Confirm the write path was exercised.
+			if tc.wantWrite != "" {
+				found := false
+				for _, c := range mock.Calls {
+					if strings.Contains(c, tc.wantWrite) {
+						found = true
+						break
+					}
+				}
+				if !found {
+					t.Errorf("expected unit-file write call containing %q for %s, got calls: %q", tc.wantWrite, tc.name, mock.Calls)
+				}
+			}
+		})
+	}
+
+	t.Run("linux user upload failure propagates", func(t *testing.T) {
+		t.Parallel()
+		// WriteRemoteBytes fails by returning an error from the
+		// base64-decode SSH call.
+		mock := &testutil.MockExecutor{
+			RunFn: func(cmd string) (string, error) {
+				if strings.Contains(cmd, `printf %s "$HOME"`) {
+					return "/home/test\n", nil
+				}
+				if strings.Contains(cmd, "base64 -d") {
+					return "", errCalled
+				}
+				return "", nil
+			},
+		}
+		h := newMockHost("h1", config.HostConfig{OS: "linux"}, mock)
+		err := Install(h, "ci-1", InstallOpts{})
+		if err == nil {
+			t.Fatal("expected error from unit write, got nil")
+		}
+		if !strings.Contains(err.Error(), "writing systemd user unit") {
+			t.Errorf("error should mention 'writing systemd user unit', got %q", err.Error())
+		}
+	})
+
+	t.Run("linux user systemctl enable failure propagates", func(t *testing.T) {
+		t.Parallel()
+		mock := &testutil.MockExecutor{
+			RunFn: func(cmd string) (string, error) {
+				if strings.Contains(cmd, `printf %s "$HOME"`) {
+					return "/home/test\n", nil
+				}
+				if strings.Contains(cmd, "systemctl") {
+					return "", errCalled
+				}
+				return "", nil
+			},
+		}
+		h := newMockHost("h1", config.HostConfig{OS: "linux"}, mock)
+		err := Install(h, "ci-1", InstallOpts{})
+		if err == nil {
+			t.Fatal("expected error from systemctl, got nil")
+		}
+		if !strings.Contains(err.Error(), "enabling systemd user unit") {
+			t.Errorf("error should mention 'enabling systemd user unit', got %q", err.Error())
+		}
+	})
+
+	t.Run("linux system id probe failure propagates", func(t *testing.T) {
+		t.Parallel()
+		mock := &testutil.MockExecutor{
+			RunFn: func(cmd string) (string, error) {
+				if strings.Contains(cmd, `printf %s "$HOME"`) {
+					return "/home/test\n", nil
+				}
+				if strings.Contains(cmd, "id -un") {
+					return "", errCalled
+				}
+				return "", nil
+			},
+		}
+		h := newMockHost("h1", config.HostConfig{OS: "linux"}, mock)
+		err := Install(h, "ci-1", InstallOpts{System: true})
+		if err == nil {
+			t.Fatal("expected error from id probe, got nil")
+		}
+		if !strings.Contains(err.Error(), "id -un") {
+			t.Errorf("error should mention 'id -un', got %q", err.Error())
+		}
+	})
+
+	t.Run("linux system id probe malformed output returns error", func(t *testing.T) {
+		t.Parallel()
+		mock := &testutil.MockExecutor{
+			RunFn: func(cmd string) (string, error) {
+				if strings.Contains(cmd, `printf %s "$HOME"`) {
+					return "/home/test\n", nil
+				}
+				if strings.Contains(cmd, "id -un") && strings.Contains(cmd, "id -gn") {
+					// Only one line — installSystemdSystem expects 2.
+					return "test\n", nil
+				}
+				return "", nil
+			},
+		}
+		h := newMockHost("h1", config.HostConfig{OS: "linux"}, mock)
+		err := Install(h, "ci-1", InstallOpts{System: true})
+		if err == nil {
+			t.Fatal("expected error from malformed id output, got nil")
+		}
+		if !strings.Contains(err.Error(), "expected 2 lines") {
+			t.Errorf("error should mention 'expected 2 lines', got %q", err.Error())
+		}
+	})
+
+	t.Run("linux system upload failure propagates", func(t *testing.T) {
+		t.Parallel()
+		mock := &testutil.MockExecutor{
+			RunFn: func(cmd string) (string, error) {
+				if strings.Contains(cmd, `printf %s "$HOME"`) {
+					return "/home/test\n", nil
+				}
+				if strings.Contains(cmd, "id -un") && strings.Contains(cmd, "id -gn") {
+					return "test\ntest\n", nil
+				}
+				if strings.Contains(cmd, "base64 -d") {
+					return "", errCalled
+				}
+				return "", nil
+			},
+		}
+		h := newMockHost("h1", config.HostConfig{OS: "linux"}, mock)
+		err := Install(h, "ci-1", InstallOpts{System: true})
+		if err == nil {
+			t.Fatal("expected error from unit write, got nil")
+		}
+		if !strings.Contains(err.Error(), "staging systemd system unit") {
+			t.Errorf("error should mention 'staging systemd system unit', got %q", err.Error())
+		}
+	})
+
+	t.Run("linux system systemctl enable failure propagates", func(t *testing.T) {
+		t.Parallel()
+		mock := &testutil.MockExecutor{
+			RunFn: func(cmd string) (string, error) {
+				if strings.Contains(cmd, `printf %s "$HOME"`) {
+					return "/home/test\n", nil
+				}
+				if strings.Contains(cmd, "id -un") && strings.Contains(cmd, "id -gn") {
+					return "test\ntest\n", nil
+				}
+				if strings.Contains(cmd, "systemctl") {
+					return "", errCalled
+				}
+				return "", nil
+			},
+		}
+		h := newMockHost("h1", config.HostConfig{OS: "linux"}, mock)
+		err := Install(h, "ci-1", InstallOpts{System: true})
+		if err == nil {
+			t.Fatal("expected error from systemctl, got nil")
+		}
+		if !strings.Contains(err.Error(), "installing system systemd unit") {
+			t.Errorf("error should mention 'installing system systemd unit', got %q", err.Error())
+		}
+	})
+
+	t.Run("darwin upload failure propagates", func(t *testing.T) {
+		t.Parallel()
+		mock := &testutil.MockExecutor{
+			RunFn: func(cmd string) (string, error) {
+				if strings.Contains(cmd, `printf %s "$HOME"`) {
+					return "/Users/test\n", nil
+				}
+				if strings.Contains(cmd, "base64 -d") {
+					return "", errCalled
+				}
+				return "", nil
+			},
+		}
+		h := newMockHost("h1", config.HostConfig{OS: "darwin"}, mock)
+		err := Install(h, "ci-1", InstallOpts{})
+		if err == nil {
+			t.Fatal("expected error from unit write, got nil")
+		}
+		if !strings.Contains(err.Error(), "writing LaunchAgent plist") {
+			t.Errorf("error should mention 'writing LaunchAgent plist', got %q", err.Error())
+		}
+	})
+
+	t.Run("darwin launchctl failure propagates", func(t *testing.T) {
+		t.Parallel()
+		mock := &testutil.MockExecutor{
+			RunFn: func(cmd string) (string, error) {
+				if strings.Contains(cmd, `printf %s "$HOME"`) {
+					return "/Users/test\n", nil
+				}
+				if strings.Contains(cmd, "launchctl") {
+					return "", errCalled
+				}
+				return "", nil
+			},
+		}
+		h := newMockHost("h1", config.HostConfig{OS: "darwin"}, mock)
+		err := Install(h, "ci-1", InstallOpts{})
+		if err == nil {
+			t.Fatal("expected error from launchctl, got nil")
+		}
+		if !strings.Contains(err.Error(), "loading LaunchAgent") {
+			t.Errorf("error should mention 'loading LaunchAgent', got %q", err.Error())
+		}
+	})
+
+	t.Run("windows task registration failure propagates", func(t *testing.T) {
+		t.Parallel()
+		// remoteHome on Windows uses RunShell (wrapped in powershell.exe
+		// -EncodedCommand). The Register-ScheduledTask call also goes
+		// through RunShell. Fail on the second powershell call to
+		// exercise the "registering scheduled task" error branch.
+		mock := &testutil.MockExecutor{}
+		mock.RunFn = func(cmd string) (string, error) {
+			if !strings.Contains(cmd, "powershell.exe") {
+				return "", nil
+			}
+			// len(mock.Calls) is the index *after* append, so this fires
+			// on the second wrapped call (Register-ScheduledTask).
+			if len(mock.Calls) >= 2 {
+				return "", errCalled
+			}
+			return `C:\Users\test`, nil
+		}
+		h := newMockHost("h1", config.HostConfig{OS: "windows"}, mock)
+		err := Install(h, "ci-1", InstallOpts{})
+		if err == nil {
+			t.Fatal("expected error from Register-ScheduledTask, got nil")
+		}
+		if !strings.Contains(err.Error(), "registering scheduled task") {
+			t.Errorf("error should mention 'registering scheduled task', got %q", err.Error())
+		}
+	})
+}
