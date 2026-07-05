@@ -687,6 +687,261 @@ For a temporary live-container unblock only:
 	})
 }
 
+// containerAgenticFanoutCheck describes one of the six agentic container probes
+// that fan out through a single `docker exec` round-trip from
+// ValidateContainerAgenticFanout. The Name is the stable tag emitted on the
+// combined shell's stdout (`#<Name>:0|1`); the inner Cmd is the probe body,
+// scoped to `{ set -eu; ... } >/dev/null 2>&1` so the script never aborts on
+// a single failing probe. Message / Remediation / DocRef are rendered into
+// the PrereqFailure returned for a `:1` tag, exactly as the per-check wrappers
+// do.
+type containerAgenticFanoutCheck struct {
+	Name        string
+	InnerBody   string
+	Message     string
+	Remediation string
+	DocRef      string
+}
+
+// ValidateContainerAgenticFanout runs all six agentic container prereq probes
+// (InnerNetwork, InnerResolv, AWFServiceRouting, NodeNPM, AWF, MTU) against the
+// outerContainer in a single `docker exec` invocation, replacing the six
+// separate h.Run round-trips the per-check wrappers used to issue with one.
+//
+// Each probe runs in its own `{ ...; } >/dev/null 2>&1` block whose exit code
+// is captured by a trailing `echo "#<Name>:$?"`. The combined shell exits 0
+// unconditionally (trailing `true`) so h.Run always returns success and the
+// full tagged output reaches the Go side, where it's parsed line-by-line: a
+// `:1` tag emits the per-check PrereqFailure; `:0` (or no line, for the MTU
+// check skipped on hosts with nothing to pin) emits nothing.
+//
+// This is the same win-class as PR #264/#269/#285/#301/#317 — collapse
+// independent probes of the same resource into a single shell call so the
+// SSH/host-exec round-trip count drops from 6 (one per probe) to 1 per
+// container scanned by `gh sr doctor`. Material on agentic-fleet doctor
+// runs (one round-trip per instance, regardless of how many probes fail).
+//
+// hostEgressMTU gates the MTU check (same rule as ValidateContainerMTU):
+// 0 (unknown) or >= 1500 (standard) means there is nothing to pin, so the MTU
+// block is omitted from the combined shell. Caller-visible behaviour is
+// identical to calling the six per-check wrappers in order.
+//
+// On a nil host, non-Linux host, or empty outerContainer the function returns
+// nil without making any SSH round-trip — same short-circuit as the
+// per-check wrappers.
+func ValidateContainerAgenticFanout(h *host.Host, outerContainer, runnerName string, hostEgressMTU int) []PrereqFailure {
+	if h == nil || h.OS != "linux" || outerContainer == "" {
+		return nil
+	}
+	cmd := containerAgenticFanoutCheckCommand(outerContainer, runnerName, hostEgressMTU)
+	specs := containerAgenticFanoutSpecs(outerContainer, runnerName, hostEgressMTU)
+	out, err := h.Run(cmd)
+	if err != nil {
+		// Transport-level failure (SSH drop, etc.) — surface one synthetic
+		// failure for the fanout itself rather than silently dropping the
+		// per-check warnings. Callers see this as the fanout having run
+		// but produced no per-check detail.
+		return []PrereqFailure{{
+			Name:        "container-agentic-fanout",
+			Severity:    SeverityWarning,
+			Message:     fmt.Sprintf("could not run agentic container fanout against %s: %v", outerContainer, err),
+			Remediation: fmt.Sprintf("Verify the runner container %s is reachable and Docker is responsive:\n\n  docker ps --filter name=%s\n  docker exec %s echo ok", outerContainer, outerContainer, outerContainer),
+			DocRef:      "agentic-workflows.md §11",
+		}}
+	}
+	return parseContainerAgenticFanoutOutput(out, specs)
+}
+
+// containerAgenticFanoutCheckCommand builds the single `docker exec` command
+// that runs all in-scope agentic container probes against outerContainer. The
+// MTU block is appended only when hostEgressMTU falls in the pinning window
+// (0 < MTU < 1500), matching ValidateContainerMTU's gate so a fanout call
+// has identical observable behaviour to calling the six per-check wrappers.
+func containerAgenticFanoutCheckCommand(outerContainer, runnerName string, hostEgressMTU int) string {
+	mtu := strconv.Itoa(hostEgressMTU)
+	includeMTU := hostEgressMTU > 0 && hostEgressMTU < 1500
+
+	var b strings.Builder
+	b.WriteString(runner.DockerExecCommand(outerContainer, `sh -lc '
+{ set -eu
+  ok=0
+  for i in 1 2 3 4 5; do
+    ip=$(docker run --rm alpine getent hosts host.docker.internal 2>/dev/null | awk "{print \$1; exit}")
+    case "$ip" in
+      "" | 127.* | ::1) ;;
+      *) ok=1; break ;;
+    esac
+    sleep 1
+  done
+  [ "$ok" -eq 1 ]
+} >/dev/null 2>&1; echo "#container-inner-host-docker-internal:$?"
+{ set -eu
+  gw=$(ip -4 -o addr show docker0 2>/dev/null | awk "{print \$4}" | cut -d/ -f1 | head -n1)
+  [ -n "$gw" ] || gw=10.200.0.1
+  grep -Eq "^nameserver[[:space:]]+$gw([[:space:]]|$)" /etc/resolv.conf
+} >/dev/null 2>&1; echo "#container-inner-resolv:$?"
+{ set -eu
+  iptables -t nat -S PREROUTING 2>/dev/null | grep -Fq -e "-A PREROUTING -s 172.30.0.0/24 -m addrtype --dst-type LOCAL -j RETURN"
+} >/dev/null 2>&1; echo "#container-awf-service-routing:$?"
+{ set -eu
+  command -v node >/dev/null && command -v npm >/dev/null
+} >/dev/null 2>&1; echo "#container-node-npm:$?"
+{ set -eu
+  command -v awf >/dev/null
+  sudo -n -E awf --version >/dev/null
+} >/dev/null 2>&1; echo "#container-awf:$?"
+`))
+	if includeMTU {
+		b.WriteString(`{ host=` + mtu + `
+  for ifc in eth0 docker0; do
+    m=$(cat /sys/class/net/$ifc/mtu 2>/dev/null || echo 0)
+    [ "$m" -le "$host" ] || exit 1
+  done
+} >/dev/null 2>&1; echo "#container-mtu:$?"
+`)
+	}
+	b.WriteString(`true` + "'")
+	return b.String()
+}
+
+// containerAgenticFanoutSpecs returns the per-check metadata used by the
+// fanout parser to convert a `#<Name>:1` tag into the corresponding
+// PrereqFailure. The set mirrors ValidateContainerAgenticFanout's
+// containerAgenticFanoutCheckCommand body — when the MTU block is omitted,
+// the parser simply never sees a `#container-mtu:...` line and the spec is
+// silently ignored. Message and Remediation are pre-rendered against the
+// supplied outerContainer / runnerName so the output is byte-identical to
+// the per-check wrappers.
+func containerAgenticFanoutSpecs(outerContainer, runnerName string, hostEgressMTU int) map[string]PrereqFailure {
+	specs := map[string]PrereqFailure{
+		"container-inner-host-docker-internal": {
+			Name:     "container-inner-host-docker-internal",
+			Severity: SeverityWarning,
+			Message:  fmt.Sprintf("host.docker.internal does not resolve to a usable non-loopback address inside runner container %s (baked dnsmasq/daemon.json DNS)", outerContainer),
+			Remediation: fmt.Sprintf(`Inspect the runner container's inner Docker DNS and restart/rebuild it if stale:
+
+  docker exec -it %s bash
+  getent hosts host.docker.internal
+  docker run --rm alpine sh -c 'getent hosts host.docker.internal'
+  docker run --rm --network host alpine sh -c 'getent hosts host.docker.internal'
+  docker run --rm --add-host=host.docker.internal:host-gateway alpine sh -c 'getent hosts host.docker.internal'
+
+If add-host resolution is empty or loopback, restart the runner container. If it persists, run:
+
+  gh sr rebuild %s`, outerContainer, runnerName),
+			DocRef: "agentic-workflows.md §11a",
+		},
+		"container-inner-resolv": {
+			Name:     "container-inner-resolv",
+			Severity: SeverityWarning,
+			Message:  fmt.Sprintf("runner container %s /etc/resolv.conf is not pinned to the bundled dnsmasq (inner bridge gateway); the gh-aw agent sandbox can inherit the host resolver and intermittently fail MCP launch (host.docker.internal force-proxied into Squid)", outerContainer),
+			Remediation: fmt.Sprintf(`Rebuild the runner image so entrypoint.sh repoints resolv.conf at the bundled dnsmasq:
+
+  gh sr rebuild %s
+
+Verify after restart (expect a single nameserver equal to the inner docker0 gateway, e.g. 10.200.0.1):
+
+  docker exec %s cat /etc/resolv.conf
+  docker exec %s ip -4 -o addr show docker0`, runnerName, outerContainer, outerContainer),
+			DocRef: "agentic-workflows.md §11a",
+		},
+		"container-awf-service-routing": {
+			Name:     "container-awf-service-routing",
+			Severity: SeverityWarning,
+			Message:  fmt.Sprintf("AWF service-routing bypass not installed in runner container %s; agentic workflows that use `services:` (postgres, redis, etc.) will see `Connection refused` on host.docker.internal", outerContainer),
+			Remediation: fmt.Sprintf(`Rebuild the runner image (entrypoint.sh installs the bypass at startup):
+
+  gh sr rebuild %s
+
+Or apply the rule live without restart (lasts until docker daemon restart):
+
+  docker exec %s iptables -t nat -I PREROUTING -s 172.30.0.0/24 -m addrtype --dst-type LOCAL -j RETURN
+
+Verify:
+
+  docker exec %s iptables -t nat -S PREROUTING | head -3`, runnerName, outerContainer, outerContainer),
+			DocRef: "agentic-workflows.md §11b",
+		},
+		"container-node-npm": {
+			Name:     "container-node-npm",
+			Severity: SeverityWarning,
+			Message:  fmt.Sprintf("node LTS/npm are not on PATH inside runner container %s", outerContainer),
+			Remediation: fmt.Sprintf(`Rebuild the runner image so it includes Node.js LTS:
+
+  gh sr rebuild %s`, runnerName),
+			DocRef: "agentic-workflows.md §8",
+		},
+		"container-awf": {
+			Name:     "container-awf",
+			Severity: SeverityWarning,
+			Message:  fmt.Sprintf("awf is not available via sudo inside runner container %s", outerContainer),
+			Remediation: fmt.Sprintf(`Rebuild the runner image so it includes github/gh-aw-firewall:
+
+  gh sr rebuild %s
+
+For a temporary live-container unblock only:
+
+  docker exec %s sh -lc 'curl -sSL https://raw.githubusercontent.com/github/gh-aw-firewall/main/install.sh | AWF_FORCE_BINARY=1 bash'`, runnerName, outerContainer),
+			DocRef: "agentic-workflows.md §12",
+		},
+	}
+	if hostEgressMTU > 0 && hostEgressMTU < 1500 {
+		specs["container-mtu"] = PrereqFailure{
+			Name:     "container-mtu",
+			Severity: SeverityWarning,
+			Message:  fmt.Sprintf("runner container %s has a Docker interface MTU larger than the host egress MTU (%d); large-packet TLS handshakes (e.g. actions/setup-go) can fail with \"Client network socket disconnected before secure TLS connection was established\"", outerContainer, hostEgressMTU),
+			Remediation: fmt.Sprintf(`Rebuild the runner so it pins the inner/outer Docker MTU to the host egress MTU:
+
+  gh sr rebuild %s
+
+Verify (both must be <= %d):
+
+  docker exec %s cat /sys/class/net/eth0/mtu
+  docker exec %s cat /sys/class/net/docker0/mtu
+
+If the host's real path MTU is below its NIC MTU (a tunnel the NIC is unaware of), set it explicitly in runners.yml and rebuild:
+
+  container_runner_image:
+    mtu: %d`, runnerName, hostEgressMTU, outerContainer, outerContainer, hostEgressMTU),
+			DocRef: "agentic-workflows.md §11c",
+		}
+	}
+	return specs
+}
+
+// parseContainerAgenticFanoutOutput walks the tagged stdout emitted by the
+// combined `docker exec` fanout and emits a PrereqFailure for every
+// `#<specName>:1` line it finds. Lines that don't match the `#name:N` shape
+// (e.g. incidental stderr that snuck through, or shell noise from one of the
+// scoped blocks) are ignored. A `:0` tag means the probe passed and is
+// silently dropped. The order of returned failures matches the order of the
+// tags on stdout, which in turn matches the order of the probe blocks in
+// containerAgenticFanoutCheckCommand — i.e. the same submission order the
+// per-check wrappers would have produced.
+func parseContainerAgenticFanoutOutput(out string, specs map[string]PrereqFailure) []PrereqFailure {
+	var failures []PrereqFailure
+	for _, line := range strings.Split(out, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || !strings.HasPrefix(line, "#") {
+			continue
+		}
+		rest := strings.TrimPrefix(line, "#")
+		name, status, ok := strings.Cut(rest, ":")
+		if !ok {
+			continue
+		}
+		if strings.TrimSpace(status) != "1" {
+			continue
+		}
+		spec, ok := specs[name]
+		if !ok {
+			continue
+		}
+		failures = append(failures, spec)
+	}
+	return failures
+}
+
 func containerInnerNetworkCheckCommand(outerContainer string) string {
 	// Require the PRODUCTION baked-DNS path: a plain default-bridge child container must
 	// resolve host.docker.internal to a non-loopback address purely via the image-baked

@@ -561,12 +561,14 @@ func checkContainerAgenticInnerHygiene(w io.Writer, hostName string, h *host.Hos
 		}
 
 		failures := agentic.ValidateAWFHygieneInner(h, cname)
-		failures = append(failures, agentic.ValidateContainerNodeNPM(h, cname, runnerName)...)
-		failures = append(failures, agentic.ValidateContainerAWF(h, cname, runnerName)...)
-		failures = append(failures, agentic.ValidateContainerInnerNetwork(h, cname, runnerName)...)
-		failures = append(failures, agentic.ValidateContainerInnerResolv(h, cname, runnerName)...)
-		failures = append(failures, agentic.ValidateContainerAWFServiceRouting(h, cname, runnerName)...)
-		failures = append(failures, agentic.ValidateContainerMTU(h, cname, runnerName, hostEgressMTU)...)
+		// Fan the six inner-docker agentic prereq probes (NodeNPM, AWF,
+		// InnerNetwork, InnerResolv, AWFServiceRouting, MTU) into a single
+		// `docker exec` round-trip via ValidateContainerAgenticFanout. This
+		// replaces the six separate h.Run calls that used to issue per
+		// container scanned by `gh sr doctor` with one — same observable
+		// PrereqFailure surface, six fewer SSH round-trips per instance.
+		// See PR #264/#269/#285/#301/#317 for the same win-class.
+		failures = append(failures, agentic.ValidateContainerAgenticFanout(h, cname, runnerName, hostEgressMTU)...)
 		if len(failures) == 0 {
 			printLine(w, sevOK, hostName, fmt.Sprintf("container(agent): awf installed, inner Docker clean, host.docker.internal reachable, resolv.conf pinned to dnsmasq, and AWF service-routing bypass present (%s)", cname))
 			continue
