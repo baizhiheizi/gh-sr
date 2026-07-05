@@ -92,6 +92,84 @@ func Test_windowsNativeConfigScript_usesRunnerDirVariable(t *testing.T) {
 	}
 }
 
+// Test_nativeShellConfigScript mirrors Test_windowsNativeConfigScript_usesRunnerDirVariable
+// for the POSIX sibling helper. The flag set is identical (--unattended --url --token
+// --name --labels --work '_work' --replace, plus --runnergroup/--ephemeral when set);
+// the only differences are the cd path (uses h.RunnerDir, no PowerShell variable
+// indirection) and the executable prefix (`./config.sh` vs `.\\config.cmd`).
+// See issue #313.
+func Test_nativeShellConfigScript(t *testing.T) {
+	t.Parallel()
+
+	h := host.NewHost("lin", config.HostConfig{Addr: "u@h", OS: "linux", Arch: "amd64"})
+
+	t.Run("base flags + cd into runner dir", func(t *testing.T) {
+		t.Parallel()
+		rc := config.RunnerConfig{Repo: "an-lee/gh-sr", Labels: []string{"linux", "native"}}
+		script := nativeShellConfigScript(h, rc, "unlx-1", "token-value", 0)
+
+		wantDir := h.RunnerDir("unlx-1")
+		if !strings.HasPrefix(script, "cd "+wantDir+" && ") {
+			t.Fatalf("script should cd into the runner dir first; got %q", script)
+		}
+		if !strings.Contains(script, "./config.sh --unattended --url '") {
+			t.Fatalf("script should invoke ./config.sh with --unattended; got %q", script)
+		}
+		for _, want := range []string{
+			"--token 'token-value'",
+			"--name 'unlx-1'",
+			"--labels 'linux,native'",
+			"--work '_work'",
+			"--replace",
+		} {
+			if !strings.Contains(script, want) {
+				t.Errorf("script missing %q in: %q", want, script)
+			}
+		}
+	})
+
+	t.Run("group and ephemeral are appended when set", func(t *testing.T) {
+		t.Parallel()
+		rc := config.RunnerConfig{
+			Repo:      "an-lee/gh-sr",
+			Labels:    []string{"linux"},
+			Group:     "rg-east",
+			Ephemeral: true,
+		}
+		script := nativeShellConfigScript(h, rc, "unlx-1", "tok", 0)
+
+		if !strings.Contains(script, " --runnergroup 'rg-east'") {
+			t.Errorf("script missing --runnergroup; got %q", script)
+		}
+		if !strings.HasSuffix(script, " --ephemeral") {
+			t.Errorf("script should end with --ephemeral; got %q", script)
+		}
+	})
+
+	t.Run("no group / not ephemeral omits those flags", func(t *testing.T) {
+		t.Parallel()
+		rc := config.RunnerConfig{Repo: "an-lee/gh-sr", Labels: []string{"linux"}}
+		script := nativeShellConfigScript(h, rc, "unlx-1", "tok", 0)
+
+		if strings.Contains(script, "--runnergroup") {
+			t.Errorf("script should not include --runnergroup when rc.Group is empty; got %q", script)
+		}
+		if strings.Contains(script, "--ephemeral") {
+			t.Errorf("script should not include --ephemeral when rc.Ephemeral is false; got %q", script)
+		}
+	})
+
+	t.Run("local-host path is used verbatim (no SSH expansion)", func(t *testing.T) {
+		t.Parallel()
+		h2 := host.NewHost("local", config.HostConfig{Addr: config.LocalAddr, OS: "linux", Arch: "amd64"})
+		rc := config.RunnerConfig{Repo: "an-lee/gh-sr", Labels: []string{"self-hosted"}}
+		script := nativeShellConfigScript(h2, rc, "self-1", "tok", 0)
+		if !strings.Contains(script, h2.RunnerDir("self-1")) {
+			t.Fatalf("script should resolve runner dir from local host; got %q", script)
+		}
+	})
+}
+
 func Test_windowsStartNative_usesCimProcessCreateForMergedLogs(t *testing.T) {
 	t.Parallel()
 	for _, addr := range []string{config.LocalAddr, "u@h"} {

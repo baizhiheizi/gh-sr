@@ -130,6 +130,33 @@ func windowsNativeConfigScript(h *host.Host, rc config.RunnerConfig, instanceNam
 	}, "; ")
 }
 
+// nativeShellConfigScript is the POSIX (sh/bash) sibling of
+// windowsNativeConfigScript. It returns a single-line `cd <dir> && ./config.sh ...`
+// command string ready for h.Run. The flag set mirrors windowsNativeConfigScript
+// (--unattended --url --token --name --labels --work '_work' --replace, plus
+// --runnergroup when set and --ephemeral when ephemeral). The only cross-OS
+// differences are quoting (`'%s'` vs hostshell.PowerShellSingleQuote) and the
+// executable prefix (`./config.sh` vs `.\\config.cmd`).
+//
+// See issue #313 — this is option 3 (mirror the Windows helper) from the
+// detector's recommendations. Option 1 (extract registrationFlags(rc) and
+// share the flag list) is a follow-up once this helper exists.
+func nativeShellConfigScript(h *host.Host, rc config.RunnerConfig, instanceName, regToken string, instanceIndex int) string {
+	labels := strings.Join(rc.EffectiveLabelsForInstance(h.OS, h.Arch, instanceIndex), ",")
+	dir := h.RunnerDir(instanceName)
+	cmd := fmt.Sprintf(
+		"cd %s && ./config.sh --unattended --url '%s' --token '%s' --name '%s' --labels '%s' --work '_work' --replace",
+		dir, rc.GitHubRegistrationURL(), regToken, instanceName, labels,
+	)
+	if rc.Group != "" {
+		cmd += fmt.Sprintf(" --runnergroup '%s'", rc.Group)
+	}
+	if rc.Ephemeral {
+		cmd += " --ephemeral"
+	}
+	return cmd
+}
+
 // staleRegistrationMsg is the substring the Actions runner writes to its log when the
 // server-side registration has been deleted (auto-pruned after inactivity).
 const staleRegistrationMsg = "runner registration has been deleted from the server"
@@ -290,26 +317,13 @@ func (m *Manager) setupNative(h *host.Host, rc config.RunnerConfig) error {
 			return err
 		}
 
-		labels := strings.Join(rc.EffectiveLabelsForInstance(h.OS, h.Arch, i), ",")
-
 		fmt.Fprintf(m.out(), "  %s: registering runner with GitHub...\n", name)
 		if h.OS == "windows" {
 			if _, err := h.RunShell(windowsNativeConfigScript(h, rc, name, regToken, i)); err != nil {
 				return fmt.Errorf("configuring runner on Windows: %w", err)
 			}
 		} else {
-			configURL := rc.GitHubRegistrationURL()
-			configCmd := fmt.Sprintf(
-				"cd %s && ./config.sh --unattended --url '%s' --token '%s' --name '%s' --labels '%s' --work '_work' --replace",
-				dir, configURL, regToken, name, labels,
-			)
-			if rc.Group != "" {
-				configCmd += fmt.Sprintf(" --runnergroup '%s'", rc.Group)
-			}
-			if rc.Ephemeral {
-				configCmd += " --ephemeral"
-			}
-			if _, err := h.Run(configCmd); err != nil {
+			if _, err := h.Run(nativeShellConfigScript(h, rc, name, regToken, i)); err != nil {
 				return fmt.Errorf("configuring runner: %w", err)
 			}
 		}
