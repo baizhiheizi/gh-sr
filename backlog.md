@@ -20,7 +20,7 @@ metadata:
 
 ## Completed (recent)
 
-- ✅ `FormatBytesHuman` inline unit suffix — 8→7 allocs/op, 56→48 B/op (-14%), ~444→~367 ns/op avg (-17%). Per-call 2→1 alloc. Branch `efficiency/format-bytes-human-single-alloc` (commit 9b384c8). PR created 2026-07-03.
+- ✅ `FormatBytesHuman` inline unit suffix — avg **443.5 → 379.9 ns/op (-14.3%)** multi-sample; per-call ~79 → ~65 ns/op (-18%). Branch `efficiency/format-bytes-human-inlined` (commit 9337d8c). PR tool reported success but no PR #323 on GitHub (404) — recurring silent-failure pattern; branch + patch + bundle preserved for manual push.
 - ✅ TUI metrics `strconv.AppendFloat` + `[24]byte` stack buffer (merged via squash 2373126, in tree as of 2026-07-03).
 - ✅ `FilterRunners_ByName` 503→1 allocs/op — PR #123.
 - ✅ `dirSizesPOSIX` 4 SSH round trips → 1 — PR #136.
@@ -32,3 +32,4 @@ metadata:
 - ✅ `Manager.Status` loop-invariant hoist — PR #213.
 - ✅ `ContainerImageLayoutRevision` hoist (-85% time, -89% bytes) — PR #226.
 - ✅ TUI render `var line string + line +=` → `strings.Builder` — PR #249.
+- ✅ Doctor 6 agentic container probes → 1 docker exec — PR #322 (perf-improver agent).

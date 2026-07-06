@@ -11,7 +11,7 @@ metadata:
 - **`fmt.Sscanf` for one float** → `strconv.ParseFloat` (PR #191: 3806→452 ns/op, -88%).
 - **`fmt.Sprintf("%.<prec>f ...")` for numeric cells** → `strconv.FormatFloat` + `strings.Builder`. Even better: `strconv.AppendFloat` + `[N]byte` stack buffer (TUI: BenchmarkMetricsRow 20→10 allocs/op, -50%).
 - **`fmt.Sprintf("%-*s  ", w, s)` for column padding** → inline `appendHostCell(b, cell, width)` helper.
-- **`string(AppendFloat(...)) + " GiB"`** = 2 allocs/call (string + concat). Switch to `[N]byte` + AppendFloat + inline unit suffix → 1 alloc/call. FormatBytesHuman: 8→7 allocs/op, 56→48 B/op, ~444→~367 ns/op.
+- **`string(AppendFloat(...)) + " GiB"`** = 1 alloc/call (Go's compiler merges the concat into the string conversion; alloc was never actually 2/call as 2026-07-03 notes claimed). Replacing with `[N]byte` + AppendFloat + inline unit-suffix bytes + `string(b)` reduces wall-time per call but NOT alloc count. FormatBytesHuman: 443.5 → 379.9 ns/op (**-14.3%** multi-sample; per-call ~79 → ~65 ns/op, **-18%**).
 - **`strings.Builder.String()` is zero-copy** — returns unsafe string from its pre-allocated internal slice. Stack buffer + `return string(b)` forces a copy on return. **Measured**: HostMetrics.LoadStr stack-buffer was 553 vs 385 ns/op (+44% regression). Reverted; documented tradeoff.
 - Dead-code `seen map[*T]bool` keyed on `&slice[i]` is always false. PR #155: 297→5 allocs/op.
 - **Allocation reduction > time reduction** in micro-opts: alloc cost compounds in GC pressure.
@@ -23,5 +23,6 @@ metadata:
 - **TUI render hotspots look big in source but are tiny in alloc count** — Go's escape analysis stack-allocates small slices.
 - **`ContainerImageLayoutRevision` is loop-invariant in `Manager.Status`** — sha256-sums embedded assets. Hoist once per `Status()`: -85% time, -89% bytes, -50% allocs (PR #226).
 - **`[N]byte` stack buffer sizing rule**: max realistic output × 1.25, multiple of 8. Always document worst case in comment so maintainers can adjust precision without exceeding the buffer.
-- **safe-outputs `create_pull_request` silent failure pattern** (recurring 2026-06-17, -19, -23, -25; Repo Assist 2026-07-01; multiple other agents). PRs surface later but tool-side `success` cannot be trusted alone — cross-check via GitHub MCP.
+- **safe-outputs `create_pull_request` silent failure pattern** (recurring 2026-06-17, -19, -23, -25; Repo Assist 2026-07-01; 2026-07-06 FormatBytesHuman again — tool reported success at create time, GitHub MCP GET /pulls/323 returned 404). PRs surface later but tool-side `success` cannot be trusted alone — cross-check via GitHub MCP. Branch + patch + bundle preserved at `/tmp/gh-aw/aw-efficiency-*` for manual push.
 - Always scan newly-merged code first for fresh efficiency opportunities.
+- PR #322 (perf-improver agent): `gh sr doctor` 6 → 1 SSH round-trips per agentic DinD container; same win-class as #203 (status) and #264/#269/#285/#301/#317 — six fewer SSH per doctor invocation per agentic container scanned.
