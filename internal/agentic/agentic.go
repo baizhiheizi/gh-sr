@@ -57,53 +57,14 @@ func ValidatePrereqs(h *host.Host) []PrereqFailure {
 
 	// ── Independent checks (all run in parallel) ──────────────────────────────
 
-	// docker --version
+	// docker CLI → daemon → socket chain — all three sub-probes run in one
+	// SSH round-trip via dockerChainCheckCommand. Exit codes are captured
+	// by parseDockerChainOutput and mapped to PrereqFailure entries via
+	// dockerChainSpecs. Replaces 3 sequential h.Run calls with 1.
 	collector.spawn(func() {
-		out, err := h.Run(`docker --version 2>/dev/null`)
-		if err != nil || !strings.Contains(out, "Docker version") {
-			appendFailure(PrereqFailure{
-				Name:     "docker-cli",
-				Severity: SeverityError,
-				Message:  "docker CLI not found on PATH",
-				Remediation: `On the host, install Docker:
-
-  sudo apt-get update && sudo apt-get install -y docker.io
-  sudo systemctl enable --now docker
-  sudo usermod -aG docker $USER
-  # Log out and back in for group membership to take effect`,
-				DocRef: "agentic-workflows.md §3g",
-			})
-			return
-		}
-		// docker info — only if version check passed
-		out, err = h.Run(`docker info 2>/dev/null`)
-		if err != nil {
-			appendFailure(PrereqFailure{
-				Name:     "docker-daemon",
-				Severity: SeverityError,
-				Message:  "docker daemon not running",
-				Remediation: `Start the Docker daemon on the host:
-
-  sudo systemctl start docker
-  sudo systemctl enable docker  # persist across reboots`,
-				DocRef: "agentic-workflows.md §3g",
-			})
-			return
-		}
-		// docker socket — only if daemon check passed
-		out, err = h.Run(`docker run --rm -v /var/run/docker.sock:/var/run/docker.sock docker:cli docker ps 2>/dev/null`)
-		if err != nil {
-			appendFailure(PrereqFailure{
-				Name:     "docker-socket",
-				Severity: SeverityError,
-				Message:  "cannot spawn containers via Docker socket; MCP gateway will fail",
-				Remediation: `The MCP Gateway needs access to the Docker socket to spawn MCP server containers.
-Ensure the runner user is in the docker group:
-
-  sudo usermod -aG docker $USER
-  # Log out and back in for group membership to take effect`,
-				DocRef: "agentic-workflows.md §4c",
-			})
+		out, _ := h.Run(dockerChainCheckCommand("socket"))
+		for _, f := range parseDockerChainOutput(out, dockerChainSpecs("socket")) {
+			appendFailure(f)
 		}
 	})
 
@@ -329,61 +290,12 @@ func ValidateContainerPrereqs(h *host.Host) []PrereqFailure {
 		return failures
 	}
 
-	// Docker CLI check
-	out, err := h.Run(`docker --version 2>/dev/null`)
-	if err != nil || !strings.Contains(out, "Docker version") {
-		failures = append(failures, PrereqFailure{
-			Name:     "docker-cli",
-			Severity: SeverityError,
-			Message:  "docker CLI not found on PATH; required to manage runner containers",
-			Remediation: `On Linux, gh sr setup installs Docker automatically when possible (requires root SSH or passwordless sudo).
-After a fresh install, run gh sr setup again so a new SSH session picks up docker group membership.
-
-Or install manually on the host:
-
-  curl -fsSL https://get.docker.com | sudo sh
-  sudo systemctl enable --now docker
-  sudo usermod -aG docker $USER
-  # Then re-run: gh sr setup`,
-			DocRef: "agentic-workflows.md §8b",
-		})
-		return failures
-	}
-
-	// Docker daemon check
-	if _, err = h.Run(`docker info >/dev/null 2>&1`); err != nil {
-		failures = append(failures, PrereqFailure{
-			Name:     "docker-daemon",
-			Severity: SeverityError,
-			Message:  "docker daemon not running",
-			Remediation: `Start and enable Docker:
-
-  sudo systemctl start docker
-  sudo systemctl enable docker`,
-			DocRef: "agentic-workflows.md §8b",
-		})
-		return failures
-	}
-
-	// --privileged support check (required for DinD)
-	// We try to create a short-lived privileged container; if the daemon or kernel
-	// security policy rejects --privileged, the inner dockerd will not start.
-	privOut, err := h.Run(`docker run --rm --privileged alpine sh -c "echo privileged-ok" 2>/dev/null`)
-	if err != nil || strings.TrimSpace(privOut) != "privileged-ok" {
-		failures = append(failures, PrereqFailure{
-			Name:     "docker-privileged",
-			Severity: SeverityError,
-			Message:  "docker --privileged containers are not supported; required for DinD (inner dockerd)",
-			Remediation: `Privileged containers may be blocked by:
-  - A non-root Docker daemon with userns-remap enabled (disable it for this use-case)
-  - A Kubernetes/container runtime security policy
-  - Seccomp/AppArmor profile restrictions
-
-  Verify with: docker run --rm --privileged alpine echo ok
-  For Sysbox (rootless-compatible alternative): see agentic-workflows.md §12`,
-			DocRef: "agentic-workflows.md §8b",
-		})
-	}
+	// docker CLI → daemon → --privileged chain — all three sub-probes run in
+	// one SSH round-trip via dockerChainCheckCommand. Exit codes are captured
+	// by parseDockerChainOutput and mapped to PrereqFailure entries via
+	// dockerChainSpecs. Replaces 3 sequential h.Run calls with 1.
+	out, _ := h.Run(dockerChainCheckCommand("privileged"))
+	failures = append(failures, parseDockerChainOutput(out, dockerChainSpecs("privileged"))...)
 
 	return failures
 }
@@ -931,6 +843,137 @@ func parseContainerAgenticFanoutOutput(out string, specs map[string]PrereqFailur
 			continue
 		}
 		if strings.TrimSpace(status) != "1" {
+			continue
+		}
+		spec, ok := specs[name]
+		if !ok {
+			continue
+		}
+		failures = append(failures, spec)
+	}
+	return failures
+}
+
+// dockerChainCheckCommand builds the single shell command that runs the
+// three docker-chain prereq probes (CLI → daemon → <third>) and tags each
+// with `#<name>:<exit>` on stdout. All three sub-probes run unconditionally
+// so a single failing prerequisite surfaces every dependent failure in one
+// pass — the Go parser maps each non-zero tag back to its PrereqFailure
+// via the chain's specs. Replaces 3 sequential h.Run calls with 1 SSH
+// round-trip on the `gh sr doctor` ValidatePrereqs / ValidateContainerPrereqs
+// hot paths.
+//
+// variant selects the third probe and its associated spec key:
+//   - "socket": docker run against the host socket (used by ValidatePrereqs)
+//   - "privileged": --privileged support probe (used by ValidateContainerPrereqs)
+//
+// The first two probes (CLI version, daemon info) are identical across both
+// variants; only the third differs to match each caller's intent.
+func dockerChainCheckCommand(variant string) string {
+	var third string
+	switch variant {
+	case "socket":
+		third = `{ docker run --rm -v /var/run/docker.sock:/var/run/docker.sock docker:cli docker ps >/dev/null 2>&1; echo "#docker-socket:$?"; } >/dev/null 2>&1`
+	case "privileged":
+		// Mirrors the original probe's dual check: docker must exit 0 AND
+		// the inner shell must echo "privileged-ok". Either failing the
+		// block emits a non-zero tag.
+		third = `{ out=$(docker run --rm --privileged alpine sh -c "echo privileged-ok" 2>/dev/null); rc=$?; if [ "$rc" -ne 0 ] || [ "$out" != "privileged-ok" ]; then exit 1; fi; echo "#docker-privileged:$?"; } >/dev/null 2>&1`
+	default:
+		return ""
+	}
+	return `{ docker --version >/dev/null 2>&1; echo "#docker-cli:$?"; } >/dev/null 2>&1
+{ docker info >/dev/null 2>&1; echo "#docker-daemon:$?"; } >/dev/null 2>&1
+` + third
+}
+
+// dockerChainSpecs returns the per-probe metadata the docker-chain parser
+// uses to convert a `#<name>:<non-zero>` tag into the corresponding
+// PrereqFailure. The CLI/daemon specs are shared across both variants; the
+// third probe spec varies. Pass the same variant string to both
+// dockerChainCheckCommand and dockerChainSpecs so they line up.
+func dockerChainSpecs(variant string) map[string]PrereqFailure {
+	specs := map[string]PrereqFailure{
+		"docker-cli": {
+			Name:     "docker-cli",
+			Severity: SeverityError,
+			Message:  "docker CLI not found on PATH",
+			Remediation: `On the host, install Docker:
+
+  sudo apt-get update && sudo apt-get install -y docker.io
+  sudo systemctl enable --now docker
+  sudo usermod -aG docker $USER
+  # Log out and back in for group membership to take effect`,
+			DocRef: "agentic-workflows.md §3g",
+		},
+		"docker-daemon": {
+			Name:     "docker-daemon",
+			Severity: SeverityError,
+			Message:  "docker daemon not running",
+			Remediation: `Start the Docker daemon on the host:
+
+  sudo systemctl start docker
+  sudo systemctl enable docker  # persist across reboots`,
+			DocRef: "agentic-workflows.md §3g",
+		},
+	}
+	switch variant {
+	case "socket":
+		specs["docker-socket"] = PrereqFailure{
+			Name:     "docker-socket",
+			Severity: SeverityError,
+			Message:  "cannot spawn containers via Docker socket; MCP gateway will fail",
+			Remediation: `The MCP Gateway needs access to the Docker socket to spawn MCP server containers.
+Ensure the runner user is in the docker group:
+
+  sudo usermod -aG docker $USER
+  # Log out and back in for group membership to take effect`,
+			DocRef: "agentic-workflows.md §4c",
+		}
+	case "privileged":
+		specs["docker-privileged"] = PrereqFailure{
+			Name:     "docker-privileged",
+			Severity: SeverityError,
+			Message:  "docker --privileged containers are not supported; required for DinD (inner dockerd)",
+			Remediation: `Privileged containers may be blocked by:
+  - A non-root Docker daemon with userns-remap enabled (disable it for this use-case)
+  - A Kubernetes/container runtime security policy
+  - Seccomp/AppArmor profile restrictions
+
+  Verify with: docker run --rm --privileged alpine echo ok
+  For Sysbox (rootless-compatible alternative): see agentic-workflows.md §12`,
+			DocRef: "agentic-workflows.md §8b",
+		}
+	}
+	return specs
+}
+
+// parseDockerChainOutput converts the stdout of dockerChainCheckCommand
+// into the per-probe failure list. Each `#<name>:N` tag is mapped through
+// the supplied specs; tags with N==0 (success) are dropped, non-zero tags
+// produce a failure entry. Tags absent from the output (e.g. shell
+// short-circuited away — never happens with dockerChainCheckCommand's
+// unconditional block layout, but defensive against future tightening) are
+// silently ignored. Order of returned failures matches tag order on stdout,
+// which matches probe-block order in dockerChainCheckCommand.
+func parseDockerChainOutput(out string, specs map[string]PrereqFailure) []PrereqFailure {
+	var failures []PrereqFailure
+	for _, line := range strings.Split(out, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || !strings.HasPrefix(line, "#") {
+			continue
+		}
+		rest := strings.TrimPrefix(line, "#")
+		name, status, ok := strings.Cut(rest, ":")
+		if !ok {
+			continue
+		}
+		// Non-zero exit code → failure. Covers docker CLI missing (127),
+		// daemon down (1), permission denied (1), image pull failure (125/1),
+		// and any other error mode without the parser needing to know the
+		// specific code.
+		code, err := strconv.Atoi(strings.TrimSpace(status))
+		if err != nil || code == 0 {
 			continue
 		}
 		spec, ok := specs[name]
