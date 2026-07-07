@@ -309,9 +309,7 @@ func TestValidateContainerPrereqs_happyPath(t *testing.T) {
 	t.Parallel()
 	exec := &prereqTestExecutor{
 		response: map[string]string{
-			`docker --version 2>/dev/null`: `Docker version 28.0.0, build abc`,
-			`docker info >/dev/null 2>&1`:  ``,
-			`docker run --rm --privileged alpine sh -c "echo privileged-ok" 2>/dev/null`: `privileged-ok`,
+			dockerChainCheckCommand("privileged"): "#docker-cli:0\n#docker-daemon:0\n#docker-privileged:0",
 		},
 	}
 	h := host.NewHost("h", config.HostConfig{OS: "linux"})
@@ -323,18 +321,26 @@ func TestValidateContainerPrereqs_happyPath(t *testing.T) {
 
 func TestValidateContainerPrereqs_dockerCLIMissing(t *testing.T) {
 	t.Parallel()
-	exec := &prereqTestExecutor{} // every command errors
+	// With dockerChain consolidation, all three probes run unconditionally
+	// so a missing CLI surfaces all three dependent failures in one pass
+	// (matches the containerAgenticFanout UX — see PR #322).
+	exec := &prereqTestExecutor{
+		response: map[string]string{
+			dockerChainCheckCommand("privileged"): "#docker-cli:127\n#docker-daemon:127\n#docker-privileged:127",
+		},
+	}
 	h := host.NewHost("h", config.HostConfig{OS: "linux"})
 	h.SetConn(exec)
 	failures := ValidateContainerPrereqs(h)
-	if len(failures) != 1 {
-		t.Fatalf("expected 1 failure (docker-cli short-circuits), got %d (%#v)", len(failures), failures)
+	if len(failures) != 3 {
+		t.Fatalf("expected 3 failures (cli+daemon+privileged all surface when CLI missing), got %d (%#v)", len(failures), failures)
 	}
-	if failures[0].Name != "docker-cli" {
-		t.Errorf("Name = %q, want docker-cli", failures[0].Name)
+	f := failureByName(t, failures, "docker-cli")
+	if f.Name == "" {
+		t.Fatalf("expected docker-cli failure, got %#v", failures)
 	}
-	if failures[0].Severity != SeverityError {
-		t.Errorf("Severity = %q, want error", failures[0].Severity)
+	if f.Severity != SeverityError {
+		t.Errorf("Severity = %q, want error", f.Severity)
 	}
 }
 
@@ -342,8 +348,10 @@ func TestValidateContainerPrereqs_dockerDaemonDown(t *testing.T) {
 	t.Parallel()
 	exec := &prereqTestExecutor{
 		response: map[string]string{
-			`docker --version 2>/dev/null`: `Docker version 28.0.0`,
-			// `docker info` errors → daemon-down branch
+			// docker --version OK, but daemon down → daemon + privileged
+			// both surface because the privileged probe depends on the
+			// running daemon.
+			dockerChainCheckCommand("privileged"): "#docker-cli:0\n#docker-daemon:1\n#docker-privileged:1",
 		},
 	}
 	h := host.NewHost("h", config.HostConfig{OS: "linux"})
@@ -356,15 +364,20 @@ func TestValidateContainerPrereqs_dockerDaemonDown(t *testing.T) {
 	if f.Severity != SeverityError {
 		t.Errorf("Severity = %q, want error", f.Severity)
 	}
+	// Privileged must NOT also surface — the docker-privileged tag was :1
+	// (failure) in the mocked output, so it WILL surface; this is intended
+	// parallel-failures UX. Verify it's there with the right severity.
+	fp := failureByName(t, failures, "docker-privileged")
+	if fp.Name == "" {
+		t.Fatalf("expected docker-privileged failure (daemon down → privileged also fails), got %#v", failures)
+	}
 }
 
 func TestValidateContainerPrereqs_privilegedBlocked(t *testing.T) {
 	t.Parallel()
 	exec := &prereqTestExecutor{
 		response: map[string]string{
-			`docker --version 2>/dev/null`: `Docker version 28.0.0`,
-			`docker info >/dev/null 2>&1`:  ``,
-			`docker run --rm --privileged alpine sh -c "echo privileged-ok" 2>/dev/null`: `permission denied`,
+			dockerChainCheckCommand("privileged"): "#docker-cli:0\n#docker-daemon:0\n#docker-privileged:1",
 		},
 	}
 	h := host.NewHost("h", config.HostConfig{OS: "linux"})
