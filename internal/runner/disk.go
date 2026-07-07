@@ -503,27 +503,41 @@ func pruneInnerDockerCache(h *host.Host, containerName string) error {
 
 // FormatBytesHuman formats bytes as GiB/MiB/KiB/B for display.
 //
-// strconv.AppendFloat + a stack-allocated byte buffer avoids the
-// format-string parser + reflection that fmt.Sprintf drags in for every call.
+// strconv.AppendFloat + stack-allocated byte buffer + inline unit-suffix
+// bytes avoids the two allocations the previous `string(AppendFloat(...)) +
+// " GiB"` chain dragged in (one for the string coercion, one for the concat).
+// Writing the unit suffix directly into the buffer collapses to a single
+// allocation on the GiB/MiB/KiB branches.
+//
 // Called 5× per row by ops.PrintDiskUsage and once per host by doctor
 // DiskEntry rendering, so the per-call alloc drop compounds across listings
 // with many instances.
+//
+// The largest realistic output is "9999.9 GiB" (10 chars); [24]byte holds
+// AppendFloat's worst case (~24 chars) plus the 4-char unit suffix.
 func FormatBytesHuman(b int64) string {
 	if b < 0 {
 		b = 0
 	}
 	const gib = 1024 * 1024 * 1024
 	const mib = 1024 * 1024
+	var buf [24]byte
 	switch {
 	case b >= gib:
-		var buf [16]byte
-		return string(strconv.AppendFloat(buf[:0], float64(b)/float64(gib), 'f', 1, 64)) + " GiB"
+		out := buf[:0]
+		out = strconv.AppendFloat(out, float64(b)/float64(gib), 'f', 1, 64)
+		out = append(out, ' ', 'G', 'i', 'B')
+		return string(out)
 	case b >= mib:
-		var buf [16]byte
-		return string(strconv.AppendFloat(buf[:0], float64(b)/float64(mib), 'f', 1, 64)) + " MiB"
+		out := buf[:0]
+		out = strconv.AppendFloat(out, float64(b)/float64(mib), 'f', 1, 64)
+		out = append(out, ' ', 'M', 'i', 'B')
+		return string(out)
 	case b >= 1024:
-		var buf [16]byte
-		return string(strconv.AppendFloat(buf[:0], float64(b)/1024, 'f', 1, 64)) + " KiB"
+		out := buf[:0]
+		out = strconv.AppendFloat(out, float64(b)/1024, 'f', 1, 64)
+		out = append(out, ' ', 'K', 'i', 'B')
+		return string(out)
 	default:
 		return strconv.FormatInt(b, 10) + " B"
 	}
