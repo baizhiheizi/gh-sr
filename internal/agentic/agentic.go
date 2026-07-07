@@ -873,17 +873,17 @@ func dockerChainCheckCommand(variant string) string {
 	var third string
 	switch variant {
 	case "socket":
-		third = `{ docker run --rm -v /var/run/docker.sock:/var/run/docker.sock docker:cli docker ps >/dev/null 2>&1; echo "#docker-socket:$?"; } >/dev/null 2>&1`
+		third = `{ docker run --rm -v /var/run/docker.sock:/var/run/docker.sock docker:cli docker ps >/dev/null 2>&1; } >/dev/null 2>&1; echo "#docker-socket:$?"`
 	case "privileged":
 		// Mirrors the original probe's dual check: docker must exit 0 AND
 		// the inner shell must echo "privileged-ok". Either failing the
 		// block emits a non-zero tag.
-		third = `{ out=$(docker run --rm --privileged alpine sh -c "echo privileged-ok" 2>/dev/null); rc=$?; if [ "$rc" -ne 0 ] || [ "$out" != "privileged-ok" ]; then exit 1; fi; echo "#docker-privileged:$?"; } >/dev/null 2>&1`
+		third = `{ out=$(docker run --rm --privileged alpine sh -c "echo privileged-ok" 2>/dev/null); rc=$?; if [ "$rc" -ne 0 ] || [ "$out" != "privileged-ok" ]; then exit 1; fi; } >/dev/null 2>&1; echo "#docker-privileged:$?"`
 	default:
 		return ""
 	}
-	return `{ docker --version >/dev/null 2>&1; echo "#docker-cli:$?"; } >/dev/null 2>&1
-{ docker info >/dev/null 2>&1; echo "#docker-daemon:$?"; } >/dev/null 2>&1
+	return `{ docker --version >/dev/null 2>&1; } >/dev/null 2>&1; echo "#docker-cli:$?"
+{ docker info >/dev/null 2>&1; } >/dev/null 2>&1; echo "#docker-daemon:$?"
 ` + third
 }
 

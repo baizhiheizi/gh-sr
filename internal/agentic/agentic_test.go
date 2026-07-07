@@ -258,6 +258,31 @@ done
 	}
 }
 
+// TestDockerChainCheckCommandEchoOutsideRedirect guards against placing the
+// status-tag echo inside the `{ ... } >/dev/null 2>&1` block — that would
+// discard stdout and parseDockerChainOutput would always see empty output.
+func TestDockerChainCheckCommandEchoOutsideRedirect(t *testing.T) {
+	t.Parallel()
+	for _, variant := range []string{"socket", "privileged"} {
+		variant := variant
+		t.Run(variant, func(t *testing.T) {
+			t.Parallel()
+			cmd := dockerChainCheckCommand(variant)
+			for _, line := range strings.Split(cmd, "\n") {
+				line = strings.TrimSpace(line)
+				if !strings.Contains(line, `echo "#docker-`) {
+					continue
+				}
+				// Status tags must follow the block-level redirect, not sit
+				// inside `{ ... } >/dev/null 2>&1` where stdout is discarded.
+				if !strings.Contains(line, `} >/dev/null 2>&1; echo "#docker-`) {
+					t.Errorf("probe tag echo must follow block redirect, got: %q", line)
+				}
+			}
+		})
+	}
+}
+
 // TestValidatePrereqsDockerChainConsolidation pins the SSH round-trip count
 // for the docker CLI → daemon → socket chain to exactly 1 — the consolidated
 // dockerChainCheckCommand replaces the three sequential h.Run calls that
