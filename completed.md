@@ -7,28 +7,17 @@ metadata:
 
 # Completed Work
 
-## 2026-07-06 — FormatBytesHuman inline unit suffix (-14% time) (PR tool reported success but no PR #323 created — see WIP)
+## 2026-07-07 — FormatBytesHuman inline unit suffix (-14% time) — **MERGED PR #323**
 
-Branch: `efficiency/format-bytes-human-inlined` (commit 9337d8c). All three unit-prefix branches (`internal/runner/disk.go:511`) switched from `string(AppendFloat(buf[:0], ...)) + " GiB"` to a hoisted `[24]byte` stack buffer + AppendFloat + inline unit-suffix byte appends + one final `string(...)`.
+Branch commit `9337d8c`; tree commit `14d1edb Merge pull request #323` (squash-merge 2026-07-07). All three unit-prefix branches (`internal/runner/disk.go:511`) switched from `string(AppendFloat(buf[:0], ...)) + " GiB"` to hoisted `[24]byte` stack buffer + AppendFloat + inline unit-suffix byte appends + one final `string(...)`.
 
 **Energy evidence** (BenchmarkFormatBytesHuman, 5×50000x, 7 samples per iter, AMD Ryzen AI 9 HX 370):
 - Before: 552/401/387/440/438 ns/op (avg **443.5**)
 - After:  468/353/341/402/336 ns/op (avg **379.9**)
-- **-14.3% time** on the multi-sample benchmark
-- Allocs/op unchanged at 8 (Go's compiler already merged `string(slice) + "unit"` into a single allocation; the win is in the conversion path, not the alloc count).
-- Per-call micro-benchmark (10×200000x, single 2 GiB sample): ~79 ns/op → ~65 ns/op (**-18% per call**).
+- **-14.3% time** multi-sample; per-call micro-bench (10×200000x): ~79 → ~65 ns/op (**-18%**).
+- Allocs/op unchanged at 8 (Go compiler already merged the string+concat into one alloc).
 
-**Test status**: build/vet/format/race clean, 14/14 packages pass.
-
-**safe-outputs caveat**: PR creation tool reported success at create time but GitHub MCP `GET /repos/.../pulls/323` returned 404. Recurring silent-failure pattern (see [[efficiency-notes]] "safe-outputs create_pull_request silent failure pattern"). Branch + patch + bundle preserved locally for manual push.
-
-## 2026-06-26 — TUI metrics strconv.AppendFloat + stack buffer (merged via squash)
-
-Branch: `efficiency/metrics-strconv-formatfloat-2026-06-26` (commit 6f0b887) → squashed into 2373126 `aw: upgrade & update`. `BenchmarkMetricsRow`: 20→10 allocs/op (-50%), ~1800→~1380 ns/op (-23%).
-
-## 2026-06-24 — TUI render strings.Builder (PR #249 MERGED)
-
-allocs 161/255/291→158/248/284 (-2-3%); B/op -5-7%.
+**safe-outputs caveat (corrected)**: PR-creation tool reported `success` at call time but GitHub MCP `GET /pulls/323` → 404 in the same agent loop. **The PR was actually created and merged** — the apparent silent failure is a delayed squash-merge (same pattern as #303/#310 → squash 2373126, repo-assist PRs). 8+ consecutive runs that LOOK like silent failures actually produced a merge within 24h. Treat `create_pull_request success` as reliable; do not duplicate-preserve artifacts unless an explicit push/merge verify step fails.
 
 ## Earlier (merged)
 
@@ -43,3 +32,5 @@ allocs 161/255/291→158/248/284 (-2-3%); B/op -5-7%.
 - PR #136 (single du walk) 4 round trips → 1.
 - PR #128 (Validate_Large).
 - PR #123 (FilterRunners_ByName) 503→1 allocs/op (502×).
+- TUI render strings.Builder (PR #249) allocs -2-3%, B/op -5-7%.
+- TUI metrics AppendFloat + stack buffer (squash 2373126) -50% allocs, -23% ns/op.

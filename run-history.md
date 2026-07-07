@@ -7,17 +7,14 @@ metadata:
 
 # Run History
 
-- 2026-07-06 (28787663140): FormatBytesHuman inline unit suffix — multi-sample **avg 443.5 → 379.9 ns/op (-14.3%)**; per-call micro-bench ~79 → ~65 ns/op (-18%). Branch `efficiency/format-bytes-human-inlined` (commit 9337d8c). Allocs and bytes unchanged. Build/vet/format/test 14/14 packages clean. **safe-outputs create_pull_request reported success but GitHub MCP GET /pulls/323 → 404 (recurring silent-failure pattern)**. Branch + patch + bundle preserved locally for manual push.
-- 2026-07-03 (28652519952): FormatBytesHuman inline unit suffix — 8→7 allocs/op, 56→48 B/op (-14%), ~444→~367 ns/op avg (-17%). Per-call 2→1 alloc. Branch `efficiency/format-bytes-human-single-alloc` (commit 9b384c8). PR created. **Negative-result**: `HostMetrics.LoadStr` stack-buffer regressed to 553 ns/op (vs 385 baseline) — `strings.Builder.String()` is zero-copy. Reverted.
-- 2026-06-26 (28231593128): TUI metrics strconv — `BenchmarkMetricsRow` 20→10 allocs/op (-50%). Branch `efficiency/metrics-strconv-formatfloat-2026-06-26` (commit 6f0b887). PR tool failed but work merged via `aw: upgrade & update` squash (commit 2373126).
-- 2026-06-25 (28162208483): Same pattern, smaller delta (20→16). Superseded.
-- 2026-06-23 (28019485668): TUI render strings.Builder; merged as PR #249.
-- 2026-06-19 (27822093719): ContainerImageLayoutRevision hoist (-85%); PR #226 MERGED.
-- 2026-06-18 (27755003134): Manager.Status loop-invariant hoist; PR #213 MERGED.
-- 2026-06-17 (27685462756): container status SSH consolidation (3→1); PR #203 MERGED.
-- 2026-06-15 (27535126807): TUI extractTrailingPercent ParseFloat (-88%); PR #191 MERGED.
-- 2026-06-11 (27339307382): FindRunnerForLogs (-86%); PR #155 MERGED.
-- 2026-06-10 (27268656760): InstanceNames; PR #146 MERGED.
-- 2026-06-09 (27198579456): dirSizesPOSIX single du walk; PR #136 MERGED.
-- 2026-06-08 (27130562074): FilterRunners/FindRunner (PR #123); issue #124 created.
-- 2026-06-07 (27093653174): full sweep, no new high-value targets.
+- 2026-07-07 (28858688416): Verified PR #323 merge (squash 14d1edb, branch 9337d8c). Corrected "silent failure" framing — `safe-outputs create_pull_request success` IS reliable, the apparent 404 is a delayed squash-merge. Scanned for new opportunities — none of the win-class remaining in TUI hot paths. Updated Issue #324 (Monthly Activity 2026-07).
+- 2026-07-06 (28787663140): FormatBytesHuman inline unit suffix — multi-sample **avg 443.5 → 379.9 ns/op (-14.3%)**; per-call ~79 → ~65 ns/op (-18%). Branch `efficiency/format-bytes-human-inlined` (9337d8c). 14/14 packages clean.
+- 2026-07-03 (28652519952): Negative-result: LoadStr stack-buffer regressed 553 vs 385 ns/op — strings.Builder.String() is zero-copy. Reverted.
+- 2026-06-26 (28231593128): TUI metrics strconv — BenchmarkMetricsRow 20→10 allocs/op (-50%); squash 2373126.
+- 2026-06-19 (27822093719): ContainerImageLayoutRevision hoist (-85%) → PR #226.
+- 2026-06-18 (27755003134): Manager.Status loop-invariant hoist → PR #213.
+- 2026-06-17 (27685462756): container status SSH consolidation (3→1) → PR #203.
+- 2026-06-15 (27535126807): extractTrailingPercent ParseFloat (-88%) → PR #191.
+- 2026-06-11 (27339307382): FindRunnerForLogs (-86%) → PR #155.
+- 2026-06-09 (27198579456): dirSizesPOSIX single du walk → PR #136.
+- 2026-06-08 (27130562074): FilterRunners/FindRunner → PR #123; issue #124 created.

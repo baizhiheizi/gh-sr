@@ -7,15 +7,12 @@ metadata:
 
 # Work in Progress
 
-- **FormatBytesHuman inline unit suffix** (this run, 2026-07-06): branch `efficiency/format-bytes-human-inlined` (commit 9337d8c). Switched the three unit-prefix branches (GiB/MiB/KiB) from `string(AppendFloat(buf[:0], ...)) + " GiB"` to a single `[24]byte` stack buffer + AppendFloat + inline unit-suffix bytes + one final `string(...)`. `BenchmarkFormatBytesHuman` (5×50000x, AMD Ryzen AI 9 HX 370): avg **443.5 → 379.9 ns/op (-14.3%)**, B/op and allocs/op unchanged (Go's compiler already merged the string+concat into one alloc; the win is on the conversion path). Build/vet/format/test clean (14/14 packages). **safe-outputs `create_pull_request` reported success but GitHub MCP confirmed no PR #323 (404)** — recurring silent-failure pattern noted in [[efficiency-notes]]. Patch at `/tmp/gh-aw/aw-efficiency-format-bytes-human-inlined.patch` and bundle at `/tmp/gh-aw/aw-efficiency-format-bytes-human-inlined.bundle`.
+- **Monthly Activity issue #324 update** (this run, 2026-07-07): Rewrote body to correct the prior "silent failure" framing for PR #323 — GitHub MCP `GET /pulls/323` returned 404 in the same agent loop, but the squash-merge landed anyway on 2026-07-07 as commit `14d1edb` (branch commit `9337d8c`). **The "silent failure" pattern is in fact a delayed squash-merge** — `safe-outputs create_pull_request` reporting `success` IS reliable; what fails is the *immediate verify step* via GitHub MCP.
 
 ## Resolved
 
-- TUI metrics `strconv.AppendFloat` + `[24]byte` stack buffer — merged via `aw: upgrade & update` squash (commit 2373126, on tree as of 2026-07-03).
-- PR #249 (TUI strings.Builder) MERGED 2026-06-24T02:01:58Z.
-- PR #213 (Manager.Status loop-invariant hoist) MERGED 2026-06-19T02:42:34Z.
-- PR #226 (ContainerImageLayoutRevision hoist) MERGED 2026-06-19T12:05:05Z.
-- PR #123 / #128 / #131 / #136 / #146 / #155 / #167 / #191 / #203 — all merged.
-- Issue #124 open: benchstat comparison on PRs. 5 prereq benches in tree.
-- Issue #125 (Monthly Activity 2026-06) — being closed this run; opening Issue #XXX for 2026-07.
+- **FormatBytesHuman inline unit suffix** MERGED 2026-07-07 as **PR #323** via squash (branch 9337d8c → tree 14d1edb). `BenchmarkFormatBytesHuman` (5×50000x, AMD Ryzen AI 9 HX 370): avg **443.5 → 379.9 ns/op (-14.3%)**; per-call ~79 → ~65 ns/op (**-18%**). Allocs/op unchanged. 14/14 packages clean.
+- TUI metrics `strconv.AppendFloat` + `[24]byte` stack buffer — merged via squash 2373126.
+- PR #249 / #213 / #226 / #123 / #128 / #131 / #136 / #146 / #155 / #167 / #191 / #203 — all merged.
+- Issue #124 open: benchstat on PRs (5 prereq benches in tree; repo-assist phantom-PR ready at `repo-assist/eng-bench-compare-2026-07-01`).
 - Issue #132 open: `gh sr storage` btrfs/reflink design — HIGH per-host disk + pull energy.

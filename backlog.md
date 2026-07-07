@@ -15,13 +15,14 @@ metadata:
 | LOW | Data | `BenchmarkLoad_Large` ~3.1k allocs/op — YAML loading hotspot | yaml.v3 internals |
 | LOW | Code | `Remove` parallelization (per-host) | Rare op |
 | LOW | Code | `ValidateContainerPrereqs` parallelization | ~150ms |
-| MEDIUM | Infra | Issue #124 — benchstat on PRs (5 prereq benches in tree) | Unblocks future detection |
+| LOW | Code | `LoadStr` stack-buffer REGRESSED 553 vs 385 ns/op (strings.Builder.String() zero-copy). Do NOT pursue. | NEGATIVE |
+| MEDIUM | Infra | Issue #124 — benchstat on PRs (5 prereq benches; repo-assist phantom-PR `repo-assist/eng-bench-compare-2026-07-01`) | Unblocks future detection |
 | MEDIUM | Storage | Issue #132 — btrfs loop + reflink seed | HIGH per-host disk + pull energy |
 
 ## Completed (recent)
 
-- ✅ `FormatBytesHuman` inline unit suffix — avg **443.5 → 379.9 ns/op (-14.3%)** multi-sample; per-call ~79 → ~65 ns/op (-18%). Branch `efficiency/format-bytes-human-inlined` (commit 9337d8c). PR tool reported success but no PR #323 on GitHub (404) — recurring silent-failure pattern; branch + patch + bundle preserved for manual push.
-- ✅ TUI metrics `strconv.AppendFloat` + `[24]byte` stack buffer (merged via squash 2373126, in tree as of 2026-07-03).
+- ✅ `FormatBytesHuman` inline unit suffix — avg **443.5 → 379.9 ns/op (-14.3%)**; per-call ~79 → ~65 ns/op (-18%). **MERGED PR #323 on 2026-07-07** (squash-merge 14d1edb, branch 9337d8c).
+- ✅ TUI metrics `strconv.AppendFloat` + `[24]byte` stack buffer (squash 2373126).
 - ✅ `FilterRunners_ByName` 503→1 allocs/op — PR #123.
 - ✅ `dirSizesPOSIX` 4 SSH round trips → 1 — PR #136.
 - ✅ `InstanceNames` 21→11 allocs/op — PR #146.
