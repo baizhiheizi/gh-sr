@@ -301,17 +301,71 @@ Write-Output "$t $w $te $dk"
 	return parseFourInt64s(out)
 }
 
+// parseFourInt64s extracts up to four int64 values from the trailing
+// whitespace-separated line of `out`. The line shape is the emit produced by
+// the `du`-based POSIX script (`echo "$total $work $temp $docker"`) and the
+// `Write-Output "$t $w $te $dk"` PowerShell path. The inner scanner is a
+// manual ASCII scan over the line — strings.Fields would allocate a
+// []string header for every call, and parseFourInt64s runs once per host per
+// `gh sr disk` listing refresh, so the saved allocation compounds across
+// listings with many hosts.
 func parseFourInt64s(out string) (a, b, c, d int64, err error) {
-	line := strings.TrimSpace(out)
-	if line == "" {
+	// Trim leading whitespace and a single trailing newline without
+	// strings.TrimSpace's full Unicode pass.
+	idx := 0
+	for idx < len(out) && (out[idx] == ' ' || out[idx] == '\t' || out[idx] == '\n' || out[idx] == '\r') {
+		idx++
+	}
+	if idx >= len(out) {
 		return 0, 0, 0, 0, nil
 	}
-	if idx := strings.LastIndex(line, "\n"); idx >= 0 {
-		line = strings.TrimSpace(line[idx+1:])
+	end := len(out)
+	for end > idx && (out[end-1] == ' ' || out[end-1] == '\t' || out[end-1] == '\n' || out[end-1] == '\r') {
+		end--
 	}
-	fields := strings.Fields(line)
-	vals := make([]int64, 4)
-	for i := 0; i < 4 && i < len(fields); i++ {
+	line := out[idx:end]
+	// If the script emitted multiple lines (a stale diagnostic trailing the
+	// sizes), keep the last non-empty line — matches the prior LastIndex('\n')
+	// + TrimSpace behavior.
+	if nl := strings.LastIndexByte(line, '\n'); nl >= 0 {
+		seg := line[nl+1:]
+		t := seg
+		j := 0
+		for j < len(t) && (t[j] == ' ' || t[j] == '\t' || t[j] == '\r') {
+			j++
+		}
+		k := len(t)
+		for k > j && (t[k-1] == ' ' || t[k-1] == '\t' || t[k-1] == '\r') {
+			k--
+		}
+		line = t[j:k]
+		if line == "" {
+			return 0, 0, 0, 0, nil
+		}
+	}
+	// Manual scan: split on whitespace into at most 4 substrings of `line`,
+	// then strconv.ParseInt each one. The field slice is a [4]string stack
+	// array so no heap allocation is needed for typical 4-number lines.
+	var fields [4]string
+	nf := 0
+	for i := 0; i < len(line); {
+		for i < len(line) && (line[i] == ' ' || line[i] == '\t') {
+			i++
+		}
+		if i >= len(line) {
+			break
+		}
+		start := i
+		for i < len(line) && line[i] != ' ' && line[i] != '\t' {
+			i++
+		}
+		if nf < 4 {
+			fields[nf] = line[start:i]
+			nf++
+		}
+	}
+	var vals [4]int64
+	for i := 0; i < nf; i++ {
 		vals[i], err = strconv.ParseInt(fields[i], 10, 64)
 		if err != nil {
 			return 0, 0, 0, 0, fmt.Errorf("parsing size line %q: %w", line, err)
