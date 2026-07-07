@@ -213,10 +213,8 @@ func TestValidatePrereqsSkipsHostNetworkWhenBridgeCheckFails(t *testing.T) {
 
 	exec := &prereqTestExecutor{
 		response: map[string]string{
-			`docker --version 2>/dev/null`: `Docker version 28.0.0`,
-			`docker info 2>/dev/null`:      `Server Version: 28.0.0`,
-			`docker run --rm -v /var/run/docker.sock:/var/run/docker.sock docker:cli docker ps 2>/dev/null`: ``,
-			`command -v iptables >/dev/null 2>&1 && echo ok || echo missing`:                                `ok`,
+			dockerChainCheckCommand("socket"):                                "#docker-cli:0\n#docker-daemon:0\n#docker-socket:0",
+			`command -v iptables >/dev/null 2>&1 && echo ok || echo missing`: `ok`,
 			`
 FOUND_BAD=0
 for ENV_FILE in $(find "$HOME/.gh-sr/runners" -maxdepth 2 -name ".env" 2>/dev/null); do
@@ -258,4 +256,235 @@ done
 	if !found {
 		t.Fatalf("expected host-docker-internal failure, got %#v", failures)
 	}
+}
+
+// TestDockerChainCheckCommandEchoOutsideRedirect guards against placing the
+// status-tag echo inside the `{ ... } >/dev/null 2>&1` block — that would
+// discard stdout and parseDockerChainOutput would always see empty output.
+func TestDockerChainCheckCommandEchoOutsideRedirect(t *testing.T) {
+	t.Parallel()
+	for _, variant := range []string{"socket", "privileged"} {
+		variant := variant
+		t.Run(variant, func(t *testing.T) {
+			t.Parallel()
+			cmd := dockerChainCheckCommand(variant)
+			for _, line := range strings.Split(cmd, "\n") {
+				line = strings.TrimSpace(line)
+				if !strings.Contains(line, `echo "#docker-`) {
+					continue
+				}
+				// Status tags must follow the block-level redirect, not sit
+				// inside `{ ... } >/dev/null 2>&1` where stdout is discarded.
+				if !strings.Contains(line, `} >/dev/null 2>&1; echo "#docker-`) {
+					t.Errorf("probe tag echo must follow block redirect, got: %q", line)
+				}
+			}
+		})
+	}
+}
+
+// TestValidatePrereqsDockerChainConsolidation pins the SSH round-trip count
+// for the docker CLI → daemon → socket chain to exactly 1 — the consolidated
+// dockerChainCheckCommand replaces the three sequential h.Run calls that
+// existed before this optimization. The test also verifies the parser
+// surfaces per-probe failures from the tagged stdout in submission order.
+func TestValidatePrereqsDockerChainConsolidation(t *testing.T) {
+	t.Parallel()
+
+	t.Run("uses exactly one h.Run call for the chain on happy path", func(t *testing.T) {
+		t.Parallel()
+		chainCmd := dockerChainCheckCommand("socket")
+		exec := &prereqTestExecutor{
+			response: map[string]string{
+				chainCmd: "#docker-cli:0\n#docker-daemon:0\n#docker-socket:0",
+				// Stubs for the other parallel goroutines; their probes are not
+				// under test here, but the test executor errors on unexpected
+				// commands so we have to satisfy every call ValidatePrereqs makes.
+				`command -v iptables >/dev/null 2>&1 && echo ok || echo missing`: `ok`,
+				`
+FOUND_BAD=0
+for ENV_FILE in $(find "$HOME/.gh-sr/runners" -maxdepth 2 -name ".env" 2>/dev/null); do
+  RUNNER_TEMP=$(grep "^RUNNER_TEMP=" "$ENV_FILE" 2>/dev/null | cut -d= -f2)
+  INSTANCE=$(basename "$(dirname "$ENV_FILE")")
+  if [ -z "$RUNNER_TEMP" ]; then
+    echo "unset:$INSTANCE"
+    FOUND_BAD=1
+  elif [ "$RUNNER_TEMP" = "/tmp" ]; then
+    echo "tmp:$INSTANCE"
+    FOUND_BAD=1
+  fi
+done
+[ $FOUND_BAD -eq 0 ] && echo "ok"
+`: `ok`,
+				`id -u`: `0`,
+				`docker run --rm alpine sh -c "getent hosts host.docker.internal 2>/dev/null" 2>/dev/null`:                 `192.168.65.2 host.docker.internal`,
+				`docker run --rm --network host alpine sh -c "getent hosts host.docker.internal 2>/dev/null" 2>/dev/null`:  `192.168.65.2 host.docker.internal`,
+				`docker run --rm alpine sh -c "nslookup github.com >/dev/null 2>&1 && echo ok || echo failed" 2>/dev/null`: `ok`,
+			},
+		}
+		h := host.NewHost("linux-box", config.HostConfig{Addr: "local", OS: "linux", Arch: "amd64"})
+		h.SetConn(exec)
+
+		failures := ValidatePrereqs(h)
+
+		// Pin round-trip count: exactly one h.Run for the docker chain.
+		chainCount := 0
+		for _, cmd := range exec.seen {
+			if cmd == chainCmd {
+				chainCount++
+			}
+		}
+		if chainCount != 1 {
+			t.Errorf("docker-chain should make exactly 1 h.Run call, saw %d (all calls: %v)", chainCount, exec.seen)
+		}
+
+		// Happy path: no docker-related failures should surface.
+		for _, f := range failures {
+			if f.Name == "docker-cli" || f.Name == "docker-daemon" || f.Name == "docker-socket" {
+				t.Errorf("happy path should produce no docker-chain failures, got %q: %s", f.Name, f.Message)
+			}
+		}
+	})
+
+	t.Run("surfaces each failing probe independently", func(t *testing.T) {
+		t.Parallel()
+		chainCmd := dockerChainCheckCommand("socket")
+		cases := []struct {
+			name           string
+			output         string
+			wantFailures   []string
+			wantNoneOfTags []string
+		}{
+			{
+				name:           "docker-cli missing surfaces all three failures",
+				output:         "#docker-cli:127\n#docker-daemon:127\n#docker-socket:127",
+				wantFailures:   []string{"docker-cli", "docker-daemon", "docker-socket"},
+				wantNoneOfTags: nil,
+			},
+			{
+				name:           "docker-daemon down surfaces daemon and socket",
+				output:         "#docker-cli:0\n#docker-daemon:1\n#docker-socket:1",
+				wantFailures:   []string{"docker-daemon", "docker-socket"},
+				wantNoneOfTags: []string{"docker-cli"},
+			},
+			{
+				name:           "socket permission denied surfaces only socket",
+				output:         "#docker-cli:0\n#docker-daemon:0\n#docker-socket:1",
+				wantFailures:   []string{"docker-socket"},
+				wantNoneOfTags: []string{"docker-cli", "docker-daemon"},
+			},
+		}
+
+		for _, tc := range cases {
+			tc := tc
+			t.Run(tc.name, func(t *testing.T) {
+				t.Parallel()
+				exec := &prereqTestExecutor{
+					response: map[string]string{
+						chainCmd: tc.output,
+						`command -v iptables >/dev/null 2>&1 && echo ok || echo missing`: `ok`,
+						`
+FOUND_BAD=0
+for ENV_FILE in $(find "$HOME/.gh-sr/runners" -maxdepth 2 -name ".env" 2>/dev/null); do
+  RUNNER_TEMP=$(grep "^RUNNER_TEMP=" "$ENV_FILE" 2>/dev/null | cut -d= -f2)
+  INSTANCE=$(basename "$(dirname "$ENV_FILE")")
+  if [ -z "$RUNNER_TEMP" ]; then
+    echo "unset:$INSTANCE"
+    FOUND_BAD=1
+  elif [ "$RUNNER_TEMP" = "/tmp" ]; then
+    echo "tmp:$INSTANCE"
+    FOUND_BAD=1
+  fi
+done
+[ $FOUND_BAD -eq 0 ] && echo "ok"
+`: `ok`,
+						`id -u`: `0`,
+						`docker run --rm alpine sh -c "getent hosts host.docker.internal 2>/dev/null" 2>/dev/null`:                 `192.168.65.2 host.docker.internal`,
+						`docker run --rm --network host alpine sh -c "getent hosts host.docker.internal 2>/dev/null" 2>/dev/null`:  `192.168.65.2 host.docker.internal`,
+						`docker run --rm alpine sh -c "nslookup github.com >/dev/null 2>&1 && echo ok || echo failed" 2>/dev/null`: `ok`,
+					},
+				}
+				h := host.NewHost("linux-box", config.HostConfig{Addr: "local", OS: "linux", Arch: "amd64"})
+				h.SetConn(exec)
+
+				failures := ValidatePrereqs(h)
+
+				got := map[string]bool{}
+				for _, f := range failures {
+					got[f.Name] = true
+				}
+				for _, want := range tc.wantFailures {
+					if !got[want] {
+						t.Errorf("expected failure %q to be surfaced, got %v", want, failures)
+					}
+				}
+				for _, dont := range tc.wantNoneOfTags {
+					if got[dont] {
+						t.Errorf("did not expect failure %q to be surfaced, got %v", dont, failures)
+					}
+				}
+			})
+		}
+	})
+
+	t.Run("parseDockerChainOutput ignores malformed tags", func(t *testing.T) {
+		t.Parallel()
+		specs := dockerChainSpecs("socket")
+		out := "#docker-cli:0\n#docker-daemon:abc\nnot-a-tag\n#unknown-tag:1\n#docker-socket:1\n"
+		failures := parseDockerChainOutput(out, specs)
+		if len(failures) != 1 {
+			t.Fatalf("expected 1 failure (malformed/non-zero unknown tags ignored), got %d (%#v)", len(failures), failures)
+		}
+		if failures[0].Name != "docker-socket" {
+			t.Errorf("expected docker-socket, got %q", failures[0].Name)
+		}
+	})
+}
+
+// TestValidateContainerPrereqsDockerChainConsolidation pins the SSH
+// round-trip count for the docker CLI → daemon → privileged chain to
+// exactly 1 — the consolidated dockerChainCheckCommand replaces the three
+// sequential h.Run calls that existed before this optimization. This is
+// the hot-path equivalent for the container-mode runner prereq check
+// (called once per container-mode runner from `gh sr doctor`).
+func TestValidateContainerPrereqsDockerChainConsolidation(t *testing.T) {
+	t.Parallel()
+
+	t.Run("uses exactly one h.Run call on happy path", func(t *testing.T) {
+		t.Parallel()
+		chainCmd := dockerChainCheckCommand("privileged")
+		exec := &prereqTestExecutor{
+			response: map[string]string{
+				chainCmd: "#docker-cli:0\n#docker-daemon:0\n#docker-privileged:0",
+			},
+		}
+		h := host.NewHost("h", config.HostConfig{OS: "linux"})
+		h.SetConn(exec)
+
+		failures := ValidateContainerPrereqs(h)
+
+		if len(exec.seen) != 1 {
+			t.Errorf("expected exactly 1 h.Run call on happy path, saw %d (%v)", len(exec.seen), exec.seen)
+		}
+		if exec.seen[0] != chainCmd {
+			t.Errorf("expected single call to be dockerChainCheckCommand(\"privileged\"), got %q", exec.seen[0])
+		}
+		if len(failures) != 0 {
+			t.Errorf("happy path should produce no failures, got %#v", failures)
+		}
+	})
+
+	t.Run("non-linux still short-circuits to one linux-required failure", func(t *testing.T) {
+		t.Parallel()
+		exec := &prereqTestExecutor{}
+		h := host.NewHost("h", config.HostConfig{OS: "darwin"})
+		h.SetConn(exec)
+		failures := ValidateContainerPrereqs(h)
+		if len(failures) != 1 || failures[0].Name != "linux-required" {
+			t.Errorf("non-linux must short-circuit to linux-required, got %#v", failures)
+		}
+		if len(exec.seen) != 0 {
+			t.Errorf("non-linux must make zero h.Run calls, saw %d (%v)", len(exec.seen), exec.seen)
+		}
+	})
 }
