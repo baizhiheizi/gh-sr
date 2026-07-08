@@ -5,25 +5,14 @@ metadata:
   type: project
 ---
 
-## Run #28697055488 (2026-07-04)
+## Run #28920234933 (2026-07-08)
 
-- Branch: `test-assist/autostart-install`; commit `f0a38bf`
-- PR: **PHANTOM (6th consecutive)** — safeoutputs returned patch+bundle metadata only, no PR number. Patch `/tmp/gh-aw/aw-test-assist-autostart-install.patch`; bundle `/tmp/gh-aw/aw-test-assist-autostart-install.bundle`. Maintainer: `git am` + push.
-- Coverage:
-  - `Install` **64.3% → 100.0%**
-  - `installSystemdUser` **80.0% → 100.0%**
-  - `installSystemdSystem` **77.8% → 100.0%**
-  - `installLaunchd` **0.0% → 100.0%**
-  - `installWindowsTask` **0.0% → 100.0%**
-  - `remoteHome` **44.4% → 88.9%**
-  - package `internal/autostart` **84.9% → 94.7%** (+9.8 pp)
-- New code: `internal/autostart/autostart_orchestrator_test.go` (TestInstall group added, 4-arm dispatch table + 8 subtests for orchestrator + error branches).
-- Status: build ✅, vet ✅, race ✅, full suite ✅, gofmt ✅.
-
-**Pattern (reusable):** WriteRemoteBytes streams base64 over `h.Run` (POSIX) / `h.RunShell` (Windows), NOT via the SSH `Upload` API. Tests assert on the SSH command substring (`base64 -d`/powershell) — the real install path matches the mock path.
-
-**Safeoutputs bridge (CRITICAL — 6th consecutive phantom):** `create_pull_request` reported success but no PR landed remotely. Patch + bundle preserved for each missing PR. Maintainer pattern: organic merges happen for ~half the runs despite phantom reports.
-
-**Next:** `internal/diskschedule` (14.2%, needs `exec.Command` injection refactor) — or revisit `internal/runner` orchestrators (setupNative, startNative — 0%, high complexity, lower marginal ROI).
+- Branch `test-assist/diskschedule-command-seams`, commit `54b8881`.
+- Draft PR intent `#aw_dskpr`; safeoutputs returned patch `/tmp/gh-aw/aw-test-assist-diskschedule-command-seams.patch` and bundle `/tmp/gh-aw/aw-test-assist-diskschedule-command-seams.bundle`.
+- Changed `internal/diskschedule`: unexported command/GOOS/PowerShell seams plus tests for `Detect`, `Install`, `Uninstall`, and `Status` across linux/darwin/windows/unsupported GOOS. `internal/agentic/agentic.go` has gofmt-only cleanup because CI checks full-tree gofmt.
+- Coverage: package 14.2→88.2; `Detect` 0→90.9; `Install` 0→100; `Uninstall` 0→100; `Status` 56.2→94.1; `installWindowsTask` 66.7→100.
+- Verified: package coverage, package race, full race, vet, build, gofmt, diff check.
+- Monthly issue #306 updated. Prior July patch actions removed because those test files are now on `main`; duplicate #305 still open.
+- Next: `internal/runner` orchestrators are highest-value. Diskschedule follow-ups now lower ROI.
 
 [[backlog]] [[run-history]]

@@ -5,37 +5,18 @@ metadata:
   type: project
 ---
 
-Keep the last 4 runs in detail; older runs in one line each.
+## 2026-07-08 — Run 28920234933
+- `internal/diskschedule` 14.2→88.2; `Detect` 0→90.9, `Install` 0→100, `Uninstall` 0→100, `Status` 56.2→94.1.
+- Branch `test-assist/diskschedule-command-seams`, commit `54b8881`; PR intent `#aw_dskpr`; patch `/tmp/gh-aw/aw-test-assist-diskschedule-command-seams.patch`.
+- Verified gofmt, diff check, build, vet, package coverage/race, full race.
 
-## 2026-07-04 — Run 28697055488
-- Branch: `test-assist/autostart-install`; commit `f0a38bf`
-- Coverage: `Install` 64.3→100, `installSystemdUser` 80→100, `installSystemdSystem` 77.8→100, `installLaunchd` 0→100, `installWindowsTask` 0→100, `remoteHome` 44.4→88.9; `internal/autostart` 84.9→94.7 (+9.8 pp). **Phantom PR (6th)**.
-
-## 2026-07-03 — Run 28642393250
-- Branch: `test-assist/autostart-start-stop-status`; commit `c7aabdb`
-- Coverage: `Start` 0→91.7, `Stop` 0→95, `Status` 0→96.6, `Uninstall` 31.6→84.2; `internal/autostart` 62.7→84.9 (+22.2 pp). **Phantom PR (5th)**.
-
-## 2026-07-02 — Run 28570083207
-- `formatContainerImageBuild` 0→100, `windowsNativeConfigScript` 71.4→100, `containerImageExtraApt` 66.7→100; `internal/runner` 55.6→56.7. **Phantom PR (4th)**.
-
-## 2026-07-01 — Run 28499581092
-- `internal/ops.Update` 53.8→100; ops 92.6→93.6. **Phantom PR (3rd)**.
-
-## Earlier (one-line archive)
-- 2026-06-30 ServiceCleanup 67.5→92.5; ops +1.7 pp. Phantom.
-- 2026-06-29 Down→100, Restart→100, RebuildImage→76.9. PR #293.
-- 2026-06-27 CollectDiskUsage+PruneDisk; ops +20.5 pp; PR #280.
-- 2026-06-26 Setup 56.2→100; PR #270.
-- 2026-06-24 CollectStatus 0→90.5; PR #256.
-- 2026-06-21 Remove 0→94.1; PR #242.
-- 2026-06-20 Logs 0→92.9; PR #233.
-- 2026-06-19 Up/Restart; PR #224/#216.
-- 2026-06-17 Down 0→83.3; PR #200.
-- 2026-06-15 CollectHostMetrics; PR #189.
-- 2026-06-14 ResolveHostInfo; PR #178.
-- 2026-06-12 runPerHostParallel; PR #168.
-- 2026-06-11 WriteRemoteBytes; PR #156.
-- 2026-06-10 six pure helpers; PR #147.
-- Monthly: #4 Apr, #69 May, #109 June (closed); #305 + #306 July duplicate pair.
+## Recent
+- 2026-07-04 autostart Install helpers; package 84.9→94.7. Present on main by 2026-07-08.
+- 2026-07-03 autostart Start/Stop/Status/Uninstall; package 62.7→84.9. Present on main by 2026-07-08.
+- 2026-07-02 runner pure helpers; package 55.6→56.7. Present on main by 2026-07-08.
+- 2026-07-01 ops Update 53.8→100; ops +1.0 pp. Present on main by 2026-07-08.
+- 2026-06-30 ServiceCleanup 67.5→92.5. Present on main by 2026-07-08.
+- Earlier merged: #293, #280, #270, #256, #242, #233, #224/#216, #200, #189, #178, #168, #156, #147.
+- Monthly: #4 Apr, #69 May, #109 June closed; #305/#306 July duplicate pair (#306 active).
 
 [[wip]] [[backlog]]
