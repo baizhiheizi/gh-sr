@@ -602,7 +602,7 @@ for i in 1 2 3 4 5; do
   sleep 1
 done
 [ "$ok" -eq 1 ]`,
-			Message:     fmt.Sprintf("host.docker.internal does not resolve to a usable non-loopback address inside runner container %s (baked dnsmasq/daemon.json DNS)", outerContainer),
+			Message: fmt.Sprintf("host.docker.internal does not resolve to a usable non-loopback address inside runner container %s (baked dnsmasq/daemon.json DNS)", outerContainer),
 			Remediation: fmt.Sprintf(`Inspect the runner container's inner Docker DNS and restart/rebuild it if stale:
 
   docker exec -it %s bash
@@ -623,7 +623,7 @@ If add-host resolution is empty or loopback, restart the runner container. If it
 gw=$(ip -4 -o addr show docker0 2>/dev/null | awk "{print \$4}" | cut -d/ -f1 | head -n1)
 [ -n "$gw" ] || gw=10.200.0.1
 grep -Eq "^nameserver[[:space:]]+$gw([[:space:]]|$)" /etc/resolv.conf`,
-			Message:     fmt.Sprintf("runner container %s /etc/resolv.conf is not pinned to the bundled dnsmasq (inner bridge gateway); the gh-aw agent sandbox can inherit the host resolver and intermittently fail MCP launch (host.docker.internal force-proxied into Squid)", outerContainer),
+			Message: fmt.Sprintf("runner container %s /etc/resolv.conf is not pinned to the bundled dnsmasq (inner bridge gateway); the gh-aw agent sandbox can inherit the host resolver and intermittently fail MCP launch (host.docker.internal force-proxied into Squid)", outerContainer),
 			Remediation: fmt.Sprintf(`Rebuild the runner image so entrypoint.sh repoints resolv.conf at the bundled dnsmasq:
 
   gh sr rebuild %s
@@ -638,7 +638,7 @@ Verify after restart (expect a single nameserver equal to the inner docker0 gate
 			Name:       "container-awf-service-routing",
 			LoginShell: false,
 			InnerBody:  `iptables -t nat -S PREROUTING 2>/dev/null | grep -Fq -e "-A PREROUTING -s 172.30.0.0/24 -m addrtype --dst-type LOCAL -j RETURN"`,
-			Message:     fmt.Sprintf("AWF service-routing bypass not installed in runner container %s; agentic workflows that use `services:` (postgres, redis, etc.) will see `Connection refused` on host.docker.internal", outerContainer),
+			Message:    fmt.Sprintf("AWF service-routing bypass not installed in runner container %s; agentic workflows that use `services:` (postgres, redis, etc.) will see `Connection refused` on host.docker.internal", outerContainer),
 			Remediation: fmt.Sprintf(`Rebuild the runner image (entrypoint.sh installs the bypass at startup):
 
   gh sr rebuild %s
@@ -656,7 +656,7 @@ Verify:
 			Name:       "container-node-npm",
 			LoginShell: true,
 			InnerBody:  `command -v node >/dev/null && command -v npm >/dev/null`,
-			Message:     fmt.Sprintf("node LTS/npm are not on PATH inside runner container %s", outerContainer),
+			Message:    fmt.Sprintf("node LTS/npm are not on PATH inside runner container %s", outerContainer),
 			Remediation: fmt.Sprintf(`Rebuild the runner image so it includes Node.js LTS:
 
   gh sr rebuild %s`, runnerName),
@@ -668,7 +668,7 @@ Verify:
 			InnerBody: `set -eu
 command -v awf >/dev/null
 sudo -n -E awf --version >/dev/null`,
-			Message:     fmt.Sprintf("awf is not available via sudo inside runner container %s", outerContainer),
+			Message: fmt.Sprintf("awf is not available via sudo inside runner container %s", outerContainer),
 			Remediation: fmt.Sprintf(`Rebuild the runner image so it includes github/gh-aw-firewall:
 
   gh sr rebuild %s
@@ -689,7 +689,7 @@ for ifc in eth0 docker0; do
   m=$(cat /sys/class/net/$ifc/mtu 2>/dev/null || echo 0)
   [ "$m" -le "$host" ] || exit 1
 done`,
-			Message:     fmt.Sprintf("runner container %s has a Docker interface MTU larger than the host egress MTU (%d); large-packet TLS handshakes (e.g. actions/setup-go) can fail with \"Client network socket disconnected before secure TLS connection was established\"", outerContainer, hostEgressMTU),
+			Message: fmt.Sprintf("runner container %s has a Docker interface MTU larger than the host egress MTU (%d); large-packet TLS handshakes (e.g. actions/setup-go) can fail with \"Client network socket disconnected before secure TLS connection was established\"", outerContainer, hostEgressMTU),
 			Remediation: fmt.Sprintf(`Rebuild the runner so it pins the inner/outer Docker MTU to the host egress MTU:
 
   gh sr rebuild %s
