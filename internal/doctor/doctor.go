@@ -110,52 +110,24 @@ func Run(w io.Writer, cfgPath, envPath string, cfg *config.Config, cfgErr error,
 		repos := uniqueStringsBy(runners, func(rc config.RunnerConfig) string { return rc.Repo })
 		orgs := uniqueStringsBy(runners, func(rc config.RunnerConfig) string { return rc.Org })
 
-		type apiResult struct {
-			sev string
-			msg string
-		}
 		repoResults := make([]apiResult, len(repos))
 		orgResults := make([]apiResult, len(orgs))
 
 		var apiWg sync.WaitGroup
-		for i, repo := range repos {
-			apiWg.Add(1)
-			go func(idx int, repo string) {
-				defer apiWg.Done()
-				list, err := gh.ListRunnersScoped("repo", repo)
-				if err != nil {
-					repoResults[idx] = apiResult{sevFail, fmt.Sprintf("%s: %v", repo, err)}
-				} else {
-					repoResults[idx] = apiResult{sevOK, fmt.Sprintf("%s: list runners OK (%d registered)", repo, len(list))}
-				}
-			}(i, repo)
-		}
-		for i, org := range orgs {
-			apiWg.Add(1)
-			go func(idx int, org string) {
-				defer apiWg.Done()
-				list, err := gh.ListRunnersScoped("org", org)
-				if err != nil {
-					orgResults[idx] = apiResult{sevFail, formatOrgAPIError(org, err)}
-				} else {
-					orgResults[idx] = apiResult{sevOK, fmt.Sprintf("org %s: list runners OK (%d registered)", org, len(list))}
-				}
-			}(i, org)
-		}
+		checkRunnerScope(&apiWg, gh, "repo", repos, repoResults,
+			func(name string, err error) string { return fmt.Sprintf("%s: %v", name, err) },
+			func(name string, n int) string { return fmt.Sprintf("%s: list runners OK (%d registered)", name, n) },
+		)
+		checkRunnerScope(&apiWg, gh, "org", orgs, orgResults,
+			formatOrgAPIError,
+			func(name string, n int) string {
+				return fmt.Sprintf("org %s: list runners OK (%d registered)", name, n)
+			},
+		)
 		apiWg.Wait()
 
-		for _, res := range repoResults {
-			printLine(w, res.sev, "github", res.msg)
-			if res.sev == sevFail {
-				r.Fail++
-			}
-		}
-		for _, res := range orgResults {
-			printLine(w, res.sev, "github", res.msg)
-			if res.sev == sevFail {
-				r.Fail++
-			}
-		}
+		printAPIFailures(w, &r, repoResults)
+		printAPIFailures(w, &r, orgResults)
 	}
 
 	fmt.Fprintln(w, "\n=== Hosts ===")
@@ -275,6 +247,47 @@ func formatOrgAPIError(org string, err error) string {
 		msg += " (org-level runners require org owner access or admin:org scope — run `gh auth login` with sufficient org permissions)"
 	}
 	return msg
+}
+
+// apiResult is one (severity, message) pair produced by the GitHub-API
+// section of Run. Shared by the repo and org checks so both can flow through
+// the same waitgroup / print / counter-update plumbing.
+type apiResult struct {
+	sev string
+	msg string
+}
+
+// checkRunnerScope runs gh.ListRunnersScoped in parallel for each name in
+// names and fills results[i] with the (sev, msg) pair produced by errMsg /
+// okMsg. The caller owns the WaitGroup so it can fan both the repo and org
+// scopes out on the same wg before waiting once. errMsg and okMsg are passed
+// per scope because the repo and org surfaces use different wording (plain
+// "name: err" vs formatOrgAPIError; no prefix vs "org " prefix).
+func checkRunnerScope(wg *sync.WaitGroup, gh *runner.GitHubClient, scope string, names []string, results []apiResult, errMsg func(string, error) string, okMsg func(string, int) string) {
+	for i, name := range names {
+		wg.Add(1)
+		go func(idx int, name string) {
+			defer wg.Done()
+			list, err := gh.ListRunnersScoped(scope, name)
+			if err != nil {
+				results[idx] = apiResult{sevFail, errMsg(name, err)}
+			} else {
+				results[idx] = apiResult{sevOK, okMsg(name, len(list))}
+			}
+		}(i, name)
+	}
+}
+
+// printAPIFailures writes each apiResult to w as a `github` line and bumps
+// r.Fail for every FAIL entry. Used for both the repo and org slices in Run
+// so the print + counter-update lives in one place.
+func printAPIFailures(w io.Writer, r *Result, results []apiResult) {
+	for _, res := range results {
+		printLine(w, res.sev, "github", res.msg)
+		if res.sev == sevFail {
+			r.Fail++
+		}
+	}
 }
 
 // installTargetsForHost lists (instanceName, runnerConfigName) pairs for
