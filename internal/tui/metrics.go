@@ -137,19 +137,56 @@ func colorizePercent(cell string) string {
 }
 
 func extractTrailingPercent(s string) float64 {
-	s = strings.TrimRight(s, ")")
-	idx := strings.LastIndex(s, "(")
-	if idx >= 0 {
-		s = s[idx+1:]
+	// Manual scan to find the trailing percentage without allocating
+	// intermediate trimmed strings. The cell formats colorizePercent sees:
+	//
+	//   "12.3/45.6 GiB (78.9%)"  → 78.9
+	//   "0.0/0.0 MiB (0%)"       → 0
+	//   "99.0/100.0 GiB (95.5%)" → 95.5
+	//   "3.2%"                   → 3.2
+	//   "100%"                   → 100
+	//   "err" / "-" / "unreachable" → 0 (no '%' anywhere)
+	//
+	// The original implementation chained strings.TrimRight +
+	// strings.LastIndex + two strings.TrimSpace + strings.TrimSuffix,
+	// allocating up to 4 intermediate strings. This version finds the last
+	// '%', walks back to skip trailing whitespace, and parses digits + a
+	// single optional '.', allocating only the float64 return value (and
+	// the strconv error's wrapping, which we drop via the `_` on the
+	// pre-1.21 ParseFloat path that returned an error). On the TUI metrics
+	// render path this is called once per colored cell per host on every
+	// Bubble Tea View() call (per keypress and per refresh tick).
+	i := strings.LastIndexByte(s, '%')
+	if i < 0 {
+		return 0
 	}
-	s = strings.TrimSpace(s)
-	s = strings.TrimSuffix(s, "%")
-	s = strings.TrimSpace(s)
-	// strconv.ParseFloat is ~7x faster than fmt.Sscanf for a single float
-	// (Sscanf goes through the format-string parser + reflection). On the
-	// TUI metrics render path this is called once per colored cell per host
-	// on every Bubble Tea View() call (per keypress and per refresh tick).
-	v, err := strconv.ParseFloat(s, 64)
+	// Walk back over trailing whitespace (defensive — production cells
+	// from formatUsedTotal don't have trailing whitespace, but
+	// "95.5 %" with a space before % is plausible and we want to handle
+	// it the same way the old TrimSpace + TrimSuffix did).
+	j := i
+	for j > 0 && s[j-1] == ' ' {
+		j--
+	}
+	// Walk back over the digits + at most one '.', then any leading
+	// whitespace (also defensive).
+	start := j
+	for start > 0 {
+		c := s[start-1]
+		if c >= '0' && c <= '9' {
+			start--
+			continue
+		}
+		if c == '.' {
+			start--
+			continue
+		}
+		break
+	}
+	for start > 0 && s[start-1] == ' ' {
+		start--
+	}
+	v, err := strconv.ParseFloat(s[start:j], 64)
 	if err != nil {
 		return 0
 	}
