@@ -527,28 +527,40 @@ docker create \
 }
 
 // startContainer starts an existing runner container (docker start).
+//
+// All three pre-flight operations are chained into a single h.Run so each
+// instance costs one SSH round-trip instead of three (saves 2 round-trips
+// per instance per `gh sr up`):
+//
+//  1. rm -f of the bootstrap-failed and dockerd-start-failures state-dir
+//     markers. Uses the unresolved `$HOME/.gh-sr/runners/<inst>` form — the
+//     shell expands $HOME so we save the separate `echo $HOME` resolve that
+//     resolveAbsoluteRunnerDir would otherwise make. Mirrors the
+//     `containerLocalStatusOneShot` script (line ~654) which uses the same
+//     `$HOME`-form path inside its single h.Run.
+//  2. `docker update --restart=<policy>` (best-effort — failures here should
+//     not block starting the container, hence the trailing `|| true`).
+//  3. `docker start <name>` — the only operation whose failure surfaces.
+//
+// Mirrors the same per-instance chain pattern used by removeContainer
+// (PR #264) and rebuildContainerImage (PR #255).
 func (m *Manager) startContainer(h *host.Host, instanceName string) error {
 	name := containerName(instanceName)
-	clearContainerBootstrapMarkers(h, instanceName)
 	policy := containerRestartPolicy(m.containerBootstrapMaxRetries())
-	_, _ = h.Run(fmt.Sprintf(
-		"docker update --restart=%s %s 2>/dev/null || true",
+	script := fmt.Sprintf(
+		"rm -f %s %s; "+
+			"docker update --restart=%s %s 2>/dev/null || true; "+
+			"docker start %s",
+		hostshell.PosixSingleQuote("$HOME/.gh-sr/runners/"+instanceName+"/"+bootstrapFailedMarker),
+		hostshell.PosixSingleQuote("$HOME/.gh-sr/runners/"+instanceName+"/"+dockerdStartFailuresFile),
 		hostshell.PosixSingleQuote(policy),
 		hostshell.PosixSingleQuote(name),
-	))
-	if _, err := h.Run(fmt.Sprintf("docker start %s", name)); err != nil {
+		name,
+	)
+	if _, err := h.Run(script); err != nil {
 		return fmt.Errorf("starting container %s: %w", name, err)
 	}
 	return nil
-}
-
-func clearContainerBootstrapMarkers(h *host.Host, instanceName string) {
-	stateDir := resolveStateDirOrFallback(h, instanceName)
-	_, _ = h.Run(fmt.Sprintf(
-		"rm -f %s %s",
-		hostshell.PosixSingleQuote(stateDir+"/"+bootstrapFailedMarker),
-		hostshell.PosixSingleQuote(stateDir+"/"+dockerdStartFailuresFile),
-	))
 }
 
 // ContainerBootstrapFailed reports whether the runner instance gave up after repeated
