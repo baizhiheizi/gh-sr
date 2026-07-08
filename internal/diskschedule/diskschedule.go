@@ -20,6 +20,24 @@ const (
 	DefaultAtTime = "03:00"
 )
 
+var (
+	runtimeGOOS        = runtime.GOOS
+	execLookPath       = exec.LookPath
+	execCombinedOutput = func(name string, args ...string) ([]byte, error) {
+		return exec.Command(name, args...).CombinedOutput()
+	}
+	execRun = func(name string, args ...string) error {
+		return exec.Command(name, args...).Run()
+	}
+	execRunInDir = func(dir, name string, args ...string) error {
+		cmd := exec.Command(name, args...)
+		cmd.Dir = dir
+		return cmd.Run()
+	}
+	powerShellExec           = hostshell.PowerShellExec
+	powerShellCombinedOutput = hostshell.PowerShellCombinedOutput
+)
+
 // ScheduleKind describes how disk prune scheduling is installed locally.
 type ScheduleKind string
 
@@ -40,7 +58,7 @@ type InstallOpts struct {
 
 // Detect reports whether a disk prune schedule is installed on this machine.
 func Detect() (ScheduleKind, error) {
-	switch runtime.GOOS {
+	switch runtimeGOOS {
 	case "linux":
 		home, err := os.UserHomeDir()
 		if err != nil {
@@ -62,7 +80,7 @@ func Detect() (ScheduleKind, error) {
 		}
 		return KindNone, nil
 	case "windows":
-		out, err := hostshell.PowerShellExec(fmt.Sprintf(`if (Get-ScheduledTask -TaskName '%s' -ErrorAction SilentlyContinue) { 'yes' } else { 'no' }`, serviceBase))
+		out, err := powerShellExec(fmt.Sprintf(`if (Get-ScheduledTask -TaskName '%s' -ErrorAction SilentlyContinue) { 'yes' } else { 'no' }`, serviceBase))
 		if err != nil {
 			return KindNone, err
 		}
@@ -71,7 +89,7 @@ func Detect() (ScheduleKind, error) {
 		}
 		return KindNone, nil
 	default:
-		return KindNone, fmt.Errorf("disk schedule not supported on GOOS %q", runtime.GOOS)
+		return KindNone, fmt.Errorf("disk schedule not supported on GOOS %q", runtimeGOOS)
 	}
 }
 
@@ -81,7 +99,7 @@ func Install(opts InstallOpts) error {
 		return fmt.Errorf("config path is required")
 	}
 	if opts.GhPath == "" {
-		gh, err := exec.LookPath("gh")
+		gh, err := execLookPath("gh")
 		if err != nil {
 			return fmt.Errorf("gh not found on PATH: %w", err)
 		}
@@ -95,7 +113,7 @@ func Install(opts InstallOpts) error {
 		return err
 	}
 
-	switch runtime.GOOS {
+	switch runtimeGOOS {
 	case "linux":
 		return installSystemdUser(opts, hour, minute)
 	case "darwin":
@@ -103,13 +121,13 @@ func Install(opts InstallOpts) error {
 	case "windows":
 		return installWindowsTask(opts, hour, minute)
 	default:
-		return fmt.Errorf("disk schedule install not supported on GOOS %q", runtime.GOOS)
+		return fmt.Errorf("disk schedule install not supported on GOOS %q", runtimeGOOS)
 	}
 }
 
 // Uninstall removes the local disk prune schedule.
 func Uninstall() error {
-	switch runtime.GOOS {
+	switch runtimeGOOS {
 	case "linux":
 		return uninstallSystemdUser()
 	case "darwin":
@@ -117,7 +135,7 @@ func Uninstall() error {
 	case "windows":
 		return uninstallWindowsTask()
 	default:
-		return fmt.Errorf("disk schedule uninstall not supported on GOOS %q", runtime.GOOS)
+		return fmt.Errorf("disk schedule uninstall not supported on GOOS %q", runtimeGOOS)
 	}
 }
 
@@ -132,7 +150,7 @@ func Status() (ScheduleKind, string, error) {
 	}
 	switch kind {
 	case KindSystemdUser:
-		out, err := exec.Command("systemctl", "--user", "is-enabled", serviceBase+".timer").CombinedOutput()
+		out, err := execCombinedOutput("systemctl", "--user", "is-enabled", serviceBase+".timer")
 		detail := strings.TrimSpace(string(out))
 		if err != nil {
 			detail += " (check failed: " + err.Error() + ")"
@@ -141,7 +159,7 @@ func Status() (ScheduleKind, string, error) {
 	case KindLaunchd:
 		return kind, "installed (launchd): " + labelBase + ".plist", nil
 	case KindWindowsTask:
-		out, err := hostshell.PowerShellExec(fmt.Sprintf(`(Get-ScheduledTask -TaskName '%s' -ErrorAction SilentlyContinue | Select-Object -ExpandProperty State)`, serviceBase))
+		out, err := powerShellExec(fmt.Sprintf(`(Get-ScheduledTask -TaskName '%s' -ErrorAction SilentlyContinue | Select-Object -ExpandProperty State)`, serviceBase))
 		if err != nil {
 			return kind, "installed (task): error " + err.Error(), nil
 		}
@@ -211,7 +229,7 @@ WantedBy=timers.target
 		{"systemctl", "--user", "start", serviceBase + ".timer"},
 	}
 	for _, c := range cmds {
-		if out, err := exec.Command(c[0], c[1:]...).CombinedOutput(); err != nil {
+		if out, err := execCombinedOutput(c[0], c[1:]...); err != nil {
 			return fmt.Errorf("%s: %w (%s)", strings.Join(c, " "), err, strings.TrimSpace(string(out)))
 		}
 	}
@@ -224,10 +242,10 @@ func uninstallSystemdUser() error {
 		return err
 	}
 	dir := filepath.Join(home, ".config", "systemd", "user")
-	_ = exec.Command("systemctl", "--user", "disable", "--now", serviceBase+".timer").Run()
+	_ = execRun("systemctl", "--user", "disable", "--now", serviceBase+".timer")
 	_ = os.Remove(filepath.Join(dir, serviceBase+".timer"))
 	_ = os.Remove(filepath.Join(dir, serviceBase+".service"))
-	_ = exec.Command("systemctl", "--user", "daemon-reload").Run()
+	_ = execRun("systemctl", "--user", "daemon-reload")
 	return nil
 }
 
@@ -274,8 +292,8 @@ func installLaunchd(opts InstallOpts, hour, minute int) error {
 		return err
 	}
 	uid := os.Getuid()
-	load := exec.Command("launchctl", "bootstrap", fmt.Sprintf("gui/%d", uid), plistPath)
-	if out, err := load.CombinedOutput(); err != nil {
+	out, err := execCombinedOutput("launchctl", "bootstrap", fmt.Sprintf("gui/%d", uid), plistPath)
+	if err != nil {
 		return fmt.Errorf("launchctl bootstrap: %w (%s)", err, strings.TrimSpace(string(out)))
 	}
 	return nil
@@ -288,9 +306,7 @@ func uninstallLaunchd() error {
 	}
 	plistFile := labelBase + ".plist"
 	script := autostart.LaunchdBootoutScript(hostshell.PosixSingleQuote(labelBase), plistFile)
-	cmd := exec.Command("sh", "-c", script)
-	cmd.Dir = home
-	_ = cmd.Run()
+	_ = execRunInDir(home, "sh", "-c", script)
 	return nil
 }
 
@@ -305,7 +321,7 @@ $tr = New-ScheduledTaskTrigger -Daily -At (Get-Date '%02d:%02d').TimeOfDay
 $st = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable
 Register-ScheduledTask -TaskName $tn -Action $act -Trigger $tr -Settings $st -Force | Out-Null
 `, hostshell.PowerShellSingleQuote(serviceBase), hostshell.PowerShellSingleQuote(opts.GhPath), hostshell.PowerShellSingleQuote(opts.ConfigPath), hour, minute)
-	out, err := hostshell.PowerShellCombinedOutput(ps)
+	out, err := powerShellCombinedOutput(ps)
 	if err != nil {
 		return fmt.Errorf("registering scheduled task: %w (%s)", err, strings.TrimSpace(string(out)))
 	}
@@ -314,7 +330,7 @@ Register-ScheduledTask -TaskName $tn -Action $act -Trigger $tr -Settings $st -Fo
 
 func uninstallWindowsTask() error {
 	ps := fmt.Sprintf(`Unregister-ScheduledTask -TaskName %s -Confirm:$false -ErrorAction SilentlyContinue`, hostshell.PowerShellSingleQuote(serviceBase))
-	_, err := hostshell.PowerShellCombinedOutput(ps)
+	_, err := powerShellCombinedOutput(ps)
 	return err
 }
 
