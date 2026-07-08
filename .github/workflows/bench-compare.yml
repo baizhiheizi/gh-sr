@@ -1,0 +1,147 @@
+name: Bench Compare
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: write
+
+# Surface per-benchmark ns/op, B/op and allocs/op regressions on PRs.
+# Compares the PR's `go test -bench=.` output against the latest successful
+# `bench` artifact uploaded by ci.yml on `main`. Posts (or updates) a single
+# markdown comment tagged with `<!-- benchstat-report -->`. Exit code is
+# non-zero on fail-level regressions, so the PR check fails loudly.
+#
+# Self-deactivates when no main artifact is available yet (first PR after
+# this workflow lands) — the comment will say so and the job will pass.
+jobs:
+  compare:
+    name: bench-compare
+    runs-on: [self-hosted, linux]
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.x"
+          cache-dependency-path: go.sum
+
+      - name: Benchmark PR
+        run: go test ./... -run='^$' -bench=. -benchmem -count=1 | tee bench-pr.txt
+
+      - name: Fetch main benchmark artifact
+        id: fetch-main
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const fs = require('fs');
+            try {
+              const { data: runs } = await github.rest.actions.listWorkflowRuns({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                workflow_id: 'ci.yml',
+                branch: 'main',
+                status: 'success',
+                per_page: 1
+              });
+              if (!runs.workflow_runs.length) {
+                core.setOutput('has-main', 'false');
+                core.setOutput('skip-reason', 'no successful main CI runs yet');
+                return;
+              }
+              const runId = runs.workflow_runs[0].id;
+              const { data: artifacts } = await github.rest.actions.listWorkflowRunArtifacts({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                run_id: runId
+              });
+              const benchArt = (artifacts.artifacts || []).find(a => a.name && a.name.startsWith('bench-'));
+              if (!benchArt) {
+                core.setOutput('has-main', 'false');
+                core.setOutput('skip-reason', `no bench-* artifact in main run ${runId}`);
+                return;
+              }
+              const dl = await github.rest.actions.downloadArtifact({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                artifact_id: benchArt.id,
+                archive_format: 'zip'
+              });
+              fs.writeFileSync('bench-main.zip', Buffer.from(dl.data));
+              core.setOutput('has-main', 'true');
+              core.setOutput('main-sha', runs.workflow_runs[0].head_sha);
+            } catch (err) {
+              core.setOutput('has-main', 'false');
+              core.setOutput('skip-reason', `artifact fetch failed: ${err.message}`);
+              core.warning(`benchstat: could not fetch main artifact (${err.message}); skipping comparison`);
+            }
+
+      - name: Extract main benchmark
+        if: steps.fetch-main.outputs.has-main == 'true'
+        run: |
+          unzip -o bench-main.zip
+          if [ ! -f bench.txt ]; then
+            echo "bench.txt missing from main artifact zip" >&2
+            exit 1
+          fi
+          mv bench.txt bench-main.txt
+
+      - name: Run benchstat
+        if: steps.fetch-main.outputs.has-main == 'true'
+        id: benchstat
+        run: |
+          set +e
+          go run scripts/benchstat/main.go \
+            -base bench-main.txt \
+            -head bench-pr.txt \
+            -base-ref "${{ steps.fetch-main.outputs.main-sha }}" \
+            -head-ref "${{ github.event.pull_request.head.label }}" \
+            -output comment.md
+          ec=$?
+          echo "exit-code=$ec" >> "$GITHUB_OUTPUT"
+          exit "$ec"
+
+      - name: Post PR comment
+        if: always() && steps.fetch-main.outputs.has-main == 'true'
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const fs = require('fs');
+            const marker = '<!-- benchstat-report -->';
+            let body;
+            try {
+              const md = fs.readFileSync('comment.md', 'utf8');
+              body = marker + '\n' + md;
+            } catch (e) {
+              const reason = '${{ steps.fetch-main.outputs.skip-reason }}' || 'comparison step did not produce a report';
+              body = marker + `\n_Benchstat: ${reason}._`;
+            }
+
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              per_page: 100
+            });
+            const existing = (comments || []).find(c => c.body && c.body.startsWith(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body
+              });
+              core.info(`Updated existing benchstat comment ${existing.id}`);
+            } else {
+              const created = await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body
+              });
+              core.info(`Created benchstat comment ${created.data.id}`);
+            }
