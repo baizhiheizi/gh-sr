@@ -61,6 +61,10 @@ func FormatHostMetrics(metrics []host.HostMetrics) string {
 	})
 }
 
+// metricsRow builds the per-host row that PrintHostMetricsTable,
+// FormatHostMetrics, and viewHostMetrics all render. The error branch
+// produces a recognizable placeholder row so a single unreachable host
+// does not blank the table.
 func metricsRow(m host.HostMetrics) []string {
 	if m.Err != nil {
 		return []string{m.Name, "err", "err", "err", "-", "unreachable"}
@@ -80,7 +84,6 @@ func metricsRow(m host.HostMetrics) []string {
 	return []string{m.Name, cpu, mem, disk, load, uptime}
 }
 
-// formatPercent formats v with `prec` decimals followed by '%'.
 // formatPercent formats v with `prec` decimals followed by '%'.
 //
 // strconv.AppendFloat + a stack-allocated byte buffer avoids both the
