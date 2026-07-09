@@ -1,29 +1,30 @@
 ---
 name: repo-assist-state
-description: Repo Assist persistent state — in-flight work, backlog, verified knowledge (latest: 2026-07-09 #29010395183)
+description: Repo Assist persistent state — in-flight work, backlog, verified knowledge (latest: 2026-07-09 #29047663570)
 metadata:
   type: project
 ---
 
-# Repo Assist state — 2026-07-09 (run 29010395183)
+# Repo Assist state — 2026-07-09 (run 29047663570)
 
-## Last run — Tasks 2, 4, 3
-- **Task 2** — Comment on #341 (PowerShell `Get-ScheduledTask` probes). Verified 4 call-site locations; offered 3 scope options (A/B/C).
-- **Task 4** — `repo-assist/eng-gitignore-coverage-artifacts-2026-07-09` @ `3019889`. `.gitignore` +18. PR reported success.
+## Last run — Tasks 5, 8, 3
+- **Task 5** — `repo-assist/improve-tui-runner-status-table-columns-2026-07-09` @ `1a1fb8c`. Resolves #346. Runner-status headers + colorize lambda dedup. Net +29/−32.
+- **Task 8** — `repo-assist/perf-shared-fmtfloat-helper-2026-07-09` @ `d126f1a`. Resolves #347. New `internal/strfmt.FmtFloat`. Benchmarks unchanged (alloc counts and ns/op within noise).
 - **Task 3** — Fallback (no bug/help-wanted/good-first-issue).
-- **Task 11** — Updated #309. Body consolidated to single canonical structure.
+- **Task 11** — Updated #309. Body rebuilt; Run History trimmed (older 2026-07-04 / 2026-07-03 / 2026-07-01 collapsed to pointer) to fit the 10 KB tool-input limit.
 
 ## In-flight / backlog
 - **#307 / #124** — bench-compare piece. Closes via PR #333 (merged 2026-07-08).
 - **#132** (gh sr storage) — on hold.
-- **#208** parent — duplicate-code detector; sub-issues from 2026-07-06/07 all closed; #341 from 2026-07-08 pending scope pick.
+- **#208** parent — duplicate-code detector; sub-issues from 2026-07-06/07 all closed; **#346 + #347 from 2026-07-09 PRs awaiting review**; #341 from 2026-07-08 still pending scope pick.
 - **#309** — current Monthly Activity.
 - **#341** — pending maintainer scope choice (A/B/C).
-- **Open PRs awaiting review:** #328, #323, #338, #339, #340, #342, #343, plus my new gitignore PR.
+- **Open PRs awaiting review:** #328, #323, #338, #339, #340, #342, #343, #344, #345, plus my new #346 + #347 PRs.
 
 ## Notes
 - phantom-PR pattern: 16+ occurrences historically; now resolved.
 - mid-run reverts: not observed.
+- issue body 10 KB cap: trim Run History to keep #309 updatable.
 
 ## Verified knowledge (cumulative)
 - **Quoting:** `strconv.Quote` for docker CLI args; `hostshell.PosixSingleQuote` for shell snippets; `hostshell.PowerShellSingleQuote` for PowerShell.
@@ -32,6 +33,7 @@ metadata:
 - **autostart:** `ListInstalled(h)` linux/darwin/windows/unsupported dispatch; `parseInstanceLines(out)` preserves order.
 - **host.Host.RunShell:** wraps via wrapCommand (windows+non-local base64; else no-op).
 - **tui:** `hostMetricsHeaders`, `buildHostMetricsRows`, `hostMetricsColorize` shared by PrintHostMetricsTable + FormatHostMetrics + viewHostMetrics.
+- **tui runner-status (1a1fb8c):** `runnerStatusHeaders` + `runnerStatusColorize` in `table.go` next to `runnerStatusCells`. 9 columns: INSTANCE, HOST, REPO, MODE, IMAGE, BUILD, LOCAL, GITHUB, LABELS. Column indices 5/6/7 map to BUILD/LOCAL/GITHUB.
 - **FormatBytesHuman (898e101):** 4× fmt.Sprintf → AppendFloat + [16]byte + FormatInt. -40% ns/op, -50% B/op, -40% allocs.
 - **tui.formatPercent + formatUsedTotal (e0c9de9):** AppendFloat + [24]byte / [48]byte.
 - **tui.extractTrailingPercent (965dc50):** manual byte scan, no string allocations. 252→75 ns/op (-75%), 160→0 B/op, 6→0 allocs.
@@ -49,4 +51,6 @@ metadata:
 - **startContainer one-shot (#342, draft PR):** chains marker `rm -f` + `docker update --restart=` + `docker start`. Saves 2 SSH round-trips per instance per `gh sr up`.
 - **runner NeedsSetup/RebuildImage tests (#343, draft PR):** 14 new tests. `internal/runner` 57.6%→59.6%.
 - **.gitignore after `3019889`:** added `coverage.out`, `coverage.html`, `*.test`, `.vscode/`, `.idea/`, `*.swp`, `*.swo`, `.DS_Store` to existing list.
-- **Coverage (latest, project total ≈ 58.0%):** highs `internal/autostart` 94.7%, `internal/ops` 93.6%, `internal/editor` 92.3%, `internal/agentic` 89.6%, `internal/hostshell` 89.7%. Lows `internal/diskschedule` 14.2%, `internal/tui` 17.4% (was 15.0%, +2.4 pp from PR #338), `internal/runner` 59.6% (was 57.6%, +2.0 pp from PR #343), `internal/host` 59.6%.
+- **internal/strfmt (d126f1a):** `FmtFloat(dst, v, prec) []byte` one-line wrapper around `strconv.AppendFloat(_, _, 'f', prec, 64)`. Owns the 24-byte upper-bound documentation. Migrated callers: `internal/tui/metrics.go` (formatPercent, formatUsedTotal — 4 call sites), `internal/runner/disk.go` (FormatBytesHuman — 3 switch arms). `scripts/benchstat` cannot import (//go:build ignore, stdlib-only).
+- **AllocsPerRun test contract:** `testing.AllocsPerRun` panics with "AllocsPerRun called during parallel test" when combined with `t.Parallel()`. Make alloc-asserting tests sequential.
+- **Coverage (latest, project total ≈ 58.0%):** highs `internal/autostart` 94.7%, `internal/ops` 93.6%, `internal/editor` 92.3%, `internal/agentic` 89.6%, `internal/hostshell` 89.7%, **new `internal/strfmt` 100%**. Lows `internal/diskschedule` 14.2%, `internal/tui` 17.4% (was 15.0%, +2.4 pp from PR #338), `internal/runner` 59.6% (was 57.6%, +2.0 pp from PR #343), `internal/host` 59.6%.
