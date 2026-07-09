@@ -7,30 +7,21 @@ metadata:
 
 # Completed Work
 
-## 2026-07-07 — FormatBytesHuman inline unit suffix (-14% time) — **MERGED PR #323**
+## 2026-07-09 — scripts/benchstat RenderMarkdown (-51% time / -79% allocs) — **DRAFT PR pending**
 
-Branch commit `9337d8c`; tree commit `14d1edb Merge pull request #323` (squash-merge 2026-07-07). All three unit-prefix branches (`internal/runner/disk.go:511`) switched from `string(AppendFloat(buf[:0], ...)) + " GiB"` to hoisted `[24]byte` stack buffer + AppendFloat + inline unit-suffix byte appends + one final `string(...)`.
+Branch `efficiency/benchstat-format-fprintf-replace` (34c4908). Issue: `fmt.Fprintf(&sb, ...)` triggers reflection (no Fprintf fast-path on `*strings.Builder`).
 
-**Energy evidence** (BenchmarkFormatBytesHuman, 5×50000x, 7 samples per iter, AMD Ryzen AI 9 HX 370):
-- Before: 552/401/387/440/438 ns/op (avg **443.5**)
-- After:  468/353/341/402/336 ns/op (avg **379.9**)
-- **-14.3% time** multi-sample; per-call micro-bench (10×200000x): ~79 → ~65 ns/op (**-18%**).
-- Allocs/op unchanged at 8 (Go compiler already merged the string+concat into one alloc).
+| Bench | Before | After | Δ |
+|---|---|---|---|
+| `BenchmarkRenderMarkdown` | 12,877 ns/op · 6,205 B/op · **226 allocs/op** | 6,248 ns/op · 2,800 B/op · **47 allocs/op** | **−51.5% / −54.9% / −79.2%** |
+| `BenchmarkFullPipeline` | 42,309 ns/op · 29,045 B/op · 324 allocs/op | 31,427 ns/op · 25,637 B/op · 145 allocs/op | **−25.7% / −11.7% / −55.2%** |
 
-**safe-outputs caveat (corrected)**: PR-creation tool reported `success` at call time but GitHub MCP `GET /pulls/323` → 404 in the same agent loop. **The PR was actually created and merged** — the apparent silent failure is a delayed squash-merge (same pattern as #303/#310 → squash 2373126, repo-assist PRs). 8+ consecutive runs that LOOK like silent failures actually produced a merge within 24h. Treat `create_pull_request success` as reliable; do not duplicate-preserve artifacts unless an explicit push/merge verify step fails.
+Fix: `sb.WriteString(...)` + `strconv.AppendFloat([24]byte, ...)` / `strconv.AppendFloat([32]byte, ...)`, `sb.Grow(128 + 96*len(rows))`. New helpers: `formatDeltaTo([]byte, float64)`, `writeMetricCell`. 3 new bench funcs added (picked up by bench-compare.yml baseline on next main run). 14/14 existing benchstat_test.go + 16/16 packages pass.
 
-## Earlier (merged)
+## 2026-07-07 — FormatBytesHuman inline unit suffix (-14.3%) — **MERGED PR #323**
 
-- PR #322 (doctor fan-out — perf-improver agent) — 6 → 1 agentic probe round-trips.
-- PR #226 (ContainerImageLayoutRevision hoist) -85% time, -89% bytes, -50% allocs.
-- PR #213 (Manager.Status loop-invariant hoist) -15.74% allocs/op, p=0.008.
-- PR #203 (container status SSH consolidation) 3/2 → 1 SSH round trip.
-- PR #191 (extractTrailingPercent ParseFloat) 3806→452 ns/op (-88%).
-- PR #167 (EnrichWithGitHubStatus) -15% allocs/op.
-- PR #155 (FindRunnerForLogs) 5906→790 ns/op (-86%), 297→5 allocs/op (-98%).
-- PR #146 (InstanceNames) 21→11 allocs/op (-48%).
-- PR #136 (single du walk) 4 round trips → 1.
-- PR #128 (Validate_Large).
-- PR #123 (FilterRunners_ByName) 503→1 allocs/op (502×).
-- TUI render strings.Builder (PR #249) allocs -2-3%, B/op -5-7%.
-- TUI metrics AppendFloat + stack buffer (squash 2373126) -50% allocs, -23% ns/op.
+Branch commit 9337d8c; tree 14d1edb. `BenchmarkFormatBytesHuman` (5×50000x): avg 443.5 → 379.9 ns/op; per-call ~79 → ~65 ns/op (-18%).
+
+## Earlier merged
+
+- #322 doctor fan-out, #226 ContainerImageLayoutRevision hoist (-85%/-89%/-50%), #213 Manager.Status hoist (-15.74% allocs), #203 container status SSH (3→1), #191 extractTrailingPercent (-88%), #167 EnrichWithGitHubStatus (-15%), #155 FindRunnerForLogs (-86%/-98%), #146 InstanceNames (-48%), #136 dirSizesPOSIX single du walk, #128 Validate_Large, #123 FilterRunners (502×), #249 TUI render, TUI metrics (squash 2373126).
