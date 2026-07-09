@@ -1893,6 +1893,92 @@ func TestRemoveContainer_propagatesChainedTeardownError(t *testing.T) {
 	}
 }
 
+// TestStartContainer_OneSshRoundTrip pins the perf shape of startContainer:
+// the three pre-flight operations (rm -f of bootstrap markers, docker update
+// --restart, docker start) must run in a single h.Run call (chained in one
+// shell) instead of as three separate SSH round-trips. Saves 2 round-trips
+// per instance per `gh sr up`; for an N-instance fleet this is 2*N fewer
+// SSH round-trips on every `gh sr up` invocation.
+//
+// Also verifies the script:
+//   - uses the unresolved `$HOME/.gh-sr/runners/<inst>` form for the rm -f
+//     targets (the shell expands $HOME), so we no longer pay a separate
+//     `echo $HOME` resolve call (see containerLocalStatusOneShot which uses
+//     the same `$HOME`-form pattern).
+//   - chains the docker update with `|| true` so a policy-update failure does
+//     not block the subsequent docker start.
+func TestStartContainer_OneSshRoundTrip(t *testing.T) {
+	t.Parallel()
+	var calls []string
+	mock := &testutil.MockExecutor{RunFn: func(cmd string) (string, error) {
+		calls = append(calls, cmd)
+		return "", nil
+	}}
+	h := host.NewHost("h", config.HostConfig{Addr: "runner@vps", OS: "linux", Arch: "amd64"})
+	h.SetConn(mock)
+	m := &Manager{Out: io.Discard}
+
+	if err := m.startContainer(h, "aw-runner-1"); err != nil {
+		t.Fatalf("startContainer: unexpected error: %v", err)
+	}
+
+	// Exactly one h.Run call: the three pre-flight ops are chained in one shell.
+	if got := len(calls); got != 1 {
+		t.Fatalf("h.Run calls = %d, want 1 (one chained SSH round-trip); calls=%v", got, calls)
+	}
+	script := calls[0]
+	// Marker cleanup uses double-quoted $HOME form so the shell expands it
+	// (PosixSingleQuote would freeze a literal "$HOME/..." path).
+	if !strings.Contains(script, `"$HOME/.gh-sr/runners/aw-runner-1/bootstrap-failed"`) {
+		t.Errorf("script missing bootstrap-failed rm -f; got: %q", script)
+	}
+	if !strings.Contains(script, `"$HOME/.gh-sr/runners/aw-runner-1/dockerd-start-failures"`) {
+		t.Errorf("script missing dockerd-start-failures rm -f; got: %q", script)
+	}
+	if strings.Contains(script, `'$HOME/.gh-sr/runners/`) {
+		t.Errorf("script must not single-quote $HOME paths (blocks expansion); got: %q", script)
+	}
+	// docker update chained before docker start, with `|| true` so it cannot
+	// block the start. containerBootstrapMaxRetries defaults to 5, so the
+	// policy is "on-failure:5" — assert the prefix is present.
+	if !strings.Contains(script, "docker update --restart='on-failure:") {
+		t.Errorf("script missing docker update --restart=<policy>; got: %q", script)
+	}
+	if !strings.Contains(script, "2>/dev/null || true") {
+		t.Errorf("docker update must be best-effort (2>/dev/null || true); got: %q", script)
+	}
+	// docker start is the final command (and the only one whose failure surfaces).
+	if !strings.HasSuffix(strings.TrimSpace(script), "docker start gh-sr-aw-runner-1") {
+		t.Errorf("script must end with `docker start <name>`; got: %q", script)
+	}
+	// No bare `echo $HOME` resolve (we now rely on the shell to expand it).
+	for _, c := range calls {
+		if strings.Contains(c, "echo $HOME") {
+			t.Errorf("startContainer should not issue a separate `echo $HOME` resolve; calls=%v", calls)
+		}
+	}
+}
+
+// TestStartContainer_PropagatesDockerStartError pins that a docker start
+// failure still surfaces as an error even though the preceding rm -f and
+// docker update are best-effort. The chained `|| true` after docker update
+// must not swallow the docker start exit code.
+func TestStartContainer_PropagatesDockerStartError(t *testing.T) {
+	t.Parallel()
+	sentinel := errors.New("docker start failed: no such container")
+	mock := &testutil.MockExecutor{RunFn: func(cmd string) (string, error) {
+		return "", sentinel
+	}}
+	h := host.NewHost("h", config.HostConfig{Addr: "runner@vps", OS: "linux", Arch: "amd64"})
+	h.SetConn(mock)
+	m := &Manager{Out: io.Discard}
+
+	err := m.startContainer(h, "aw-runner-1")
+	if !errors.Is(err, sentinel) {
+		t.Fatalf("startContainer error = %v, want sentinel %v", err, sentinel)
+	}
+}
+
 // TestProbeDinDContainerReadiness_RunningHealthy verifies the happy path:
 // container is running, inner dockerd answers, .runner is present. The probe
 // returns a fully-positive report.

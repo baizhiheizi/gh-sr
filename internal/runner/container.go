@@ -527,28 +527,44 @@ docker create \
 }
 
 // startContainer starts an existing runner container (docker start).
+//
+// All three pre-flight operations are chained into a single h.Run so each
+// instance costs one SSH round-trip instead of three (saves 2 round-trips
+// per instance per `gh sr up`):
+//
+//  1. rm -f of the bootstrap-failed and dockerd-start-failures state-dir
+//     markers. Uses the unresolved `"$HOME/.gh-sr/runners/<inst>/..."` form
+//     (double-quoted so the shell expands $HOME) — saves the separate
+//     `echo $HOME` resolve that resolveAbsoluteRunnerDir would otherwise
+//     make. Mirrors `containerLocalStatusOneShot` and disk.go's
+//     `"$HOME/.gh-sr/runners/..."` listing pattern.
+//  2. `docker update --restart=<policy>` (best-effort — failures here should
+//     not block starting the container, hence the trailing `|| true`).
+//  3. `docker start <name>` — the only operation whose failure surfaces.
+//
+// Mirrors the same per-instance chain pattern used by removeContainer
+// (PR #264) and rebuildContainerImage (PR #255).
 func (m *Manager) startContainer(h *host.Host, instanceName string) error {
 	name := containerName(instanceName)
-	clearContainerBootstrapMarkers(h, instanceName)
 	policy := containerRestartPolicy(m.containerBootstrapMaxRetries())
-	_, _ = h.Run(fmt.Sprintf(
-		"docker update --restart=%s %s 2>/dev/null || true",
+	// Keep $HOME outside single quotes so the remote shell expands it.
+	// PosixSingleQuote("$HOME/...") would freeze the literal "$HOME" path
+	// (same pitfall as a single-quoted assignment). Double-quoted form
+	// matches disk.go / orphans listing.
+	script := fmt.Sprintf(
+		`rm -f "$HOME/.gh-sr/runners/%s/%s" "$HOME/.gh-sr/runners/%s/%s"; `+
+			"docker update --restart=%s %s 2>/dev/null || true; "+
+			"docker start %s",
+		instanceName, bootstrapFailedMarker,
+		instanceName, dockerdStartFailuresFile,
 		hostshell.PosixSingleQuote(policy),
 		hostshell.PosixSingleQuote(name),
-	))
-	if _, err := h.Run(fmt.Sprintf("docker start %s", name)); err != nil {
+		name,
+	)
+	if _, err := h.Run(script); err != nil {
 		return fmt.Errorf("starting container %s: %w", name, err)
 	}
 	return nil
-}
-
-func clearContainerBootstrapMarkers(h *host.Host, instanceName string) {
-	stateDir := resolveStateDirOrFallback(h, instanceName)
-	_, _ = h.Run(fmt.Sprintf(
-		"rm -f %s %s",
-		hostshell.PosixSingleQuote(stateDir+"/"+bootstrapFailedMarker),
-		hostshell.PosixSingleQuote(stateDir+"/"+dockerdStartFailuresFile),
-	))
 }
 
 // ContainerBootstrapFailed reports whether the runner instance gave up after repeated
@@ -646,15 +662,17 @@ func parseContainerStatusInspectOutput(out string) (local, image, imageRev strin
 //  1. The bootstrap-failed marker (ContainerBootstrapFailed).
 //  2. The docker inspect of the container.
 //
-// The script uses `$HOME/.gh-sr/runners/<instance>` directly so it does not
-// need the separate `echo $HOME` resolveAbsoluteRunnerDir previously did on
-// Linux. The only new status value beyond "not installed" / parsed docker
-// state is "failed" (produced when the bootstrap-failed marker exists).
+// The script assigns `sd="$HOME/.gh-sr/runners/<instance>"` (double-quoted so
+// the remote shell expands $HOME) and does not need the separate `echo $HOME`
+// resolveAbsoluteRunnerDir previously did on Linux. The only new status value
+// beyond "not installed" / parsed docker state is "failed" (produced when the
+// bootstrap-failed marker exists).
 func (m *Manager) containerLocalStatusOneShot(h *host.Host, instanceName string) (string, string, string) {
-	stateDir := hostshell.PosixSingleQuote("$HOME/.gh-sr/runners/" + instanceName)
 	cid := hostshell.PosixSingleQuote(containerName(instanceName))
+	// Assign sd with double quotes so $HOME expands on the remote shell.
+	// PosixSingleQuote("$HOME/...") would freeze a literal "$HOME/..." path.
 	script := fmt.Sprintf(
-		"sd=%s\n"+
+		"sd=\"$HOME/.gh-sr/runners/%s\"\n"+
 			"cid=%s\n"+
 			"if [ -f \"$sd/bootstrap-failed\" ]; then override=failed; else override=; fi\n"+
 			"line=$(docker inspect --format '{{.State.Status}}|{{.Config.Image}}|{{.Image}}' \"$cid\" 2>/dev/null) || line=\"\"\n"+
@@ -670,7 +688,7 @@ func (m *Manager) containerLocalStatusOneShot(h *host.Host, instanceName string)
 			"  else printf '%%s|%%s\\n' \"$line\" \"$rev\"\n"+
 			"  fi\n"+
 			"fi\n",
-		stateDir,
+		instanceName,
 		cid,
 	)
 	out, err := h.Run(script)
