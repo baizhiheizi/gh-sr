@@ -171,8 +171,9 @@ func extractTrailingPercent(s string) float64 {
 	for j > 0 && s[j-1] == ' ' {
 		j--
 	}
-	// Walk back over the digits + at most one '.', then any leading
-	// whitespace (also defensive).
+	// Walk back over digits + at most one '.'. Stop at the first non-digit
+	// so leading whitespace (or '(') is excluded from the ParseFloat slice —
+	// strconv.ParseFloat rejects leading spaces.
 	start := j
 	for start > 0 {
 		c := s[start-1]
@@ -185,9 +186,6 @@ func extractTrailingPercent(s string) float64 {
 			continue
 		}
 		break
-	}
-	for start > 0 && s[start-1] == ' ' {
-		start--
 	}
 	v, err := strconv.ParseFloat(s[start:j], 64)
 	if err != nil {
