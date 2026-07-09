@@ -66,6 +66,168 @@ func TestMeasureDiskUsage_agenticMode(t *testing.T) {
 	}
 }
 
+// TestClearWorkTemp_posixDispatchesToRunnerDir covers the POSIX branch of
+// clearWorkTemp's runOnHostOS dispatch: on a Linux host, the dispatcher
+// must invoke h.Run exactly once with the clearWorkTempPOSIX(...) script
+// (recognisable by the shared `set -e` header) and propagate the runner's
+// exit error verbatim. The previous coverage only exercised the
+// unsupported-OS path, leaving the POSIX callback's host-side error
+// propagation unverified.
+func TestClearWorkTemp_posixDispatchesToRunnerDir(t *testing.T) {
+	t.Parallel()
+	var calls []string
+	mock := &testutil.MockExecutor{
+		RunFn: func(cmd string) (string, error) {
+			calls = append(calls, cmd)
+			return "", nil
+		},
+	}
+	h := diskMockHost("linux", mock)
+	if err := clearWorkTemp(h, "ci-1", false); err != nil {
+		t.Fatalf("clearWorkTemp: %v", err)
+	}
+	if len(calls) != 1 {
+		t.Fatalf("clearWorkTemp POSIX calls = %d, want 1; calls=%v", len(calls), calls)
+	}
+	if !strings.Contains(calls[0], "set -e") {
+		t.Fatalf("clearWorkTemp POSIX script missing set -e: %q", calls[0])
+	}
+	if !strings.Contains(calls[0], "ci-1") {
+		t.Fatalf("clearWorkTemp POSIX script should include the instance name: %q", calls[0])
+	}
+}
+
+// TestClearWorkTemp_posixPropagatesRunnerError pins that clearWorkTemp's
+// POSIX branch bubbles host-side failures up to the caller rather than
+// silently returning nil: the dispatcher in disk.go treats a remote exec
+// error as a fatal prune failure.
+func TestClearWorkTemp_posixPropagatesRunnerError(t *testing.T) {
+	t.Parallel()
+	sentinel := fmt.Errorf("ssh connection refused")
+	mock := &testutil.MockExecutor{RunFn: func(string) (string, error) {
+		return "", sentinel
+	}}
+	h := diskMockHost("linux", mock)
+	err := clearWorkTemp(h, "ci-1", false)
+	if err == nil {
+		t.Fatal("clearWorkTemp POSIX: expected propagated error, got nil")
+	}
+	if !strings.Contains(err.Error(), "ssh connection refused") {
+		t.Fatalf("clearWorkTemp POSIX: error should wrap sentinel, got %v", err)
+	}
+}
+
+// TestClearWorkTemp_windowsBranch pins the Windows-side branch of
+// clearWorkTemp's runOnHostOS dispatch: a PowerShell foreach-with-Test-Path
+// script that targets the same _work/_temp subdirectories. The host shim
+// routes RunShell through Run with a base64 wrapper, so we assert exactly
+// one host invocation carrying the encoded PowerShell payload. Requires a
+// remote addr so IsLocal is false and the wrapper activates.
+func TestClearWorkTemp_windowsBranch(t *testing.T) {
+	t.Parallel()
+	var calls []string
+	mock := &testutil.MockExecutor{
+		RunFn: func(cmd string) (string, error) {
+			calls = append(calls, cmd)
+			return "", nil
+		},
+	}
+	h := host.NewHost("win", config.HostConfig{Addr: "runner@vps", OS: "windows", Arch: "amd64"})
+	h.SetConn(mock)
+	if err := clearWorkTemp(h, "win-ci-1", false); err != nil {
+		t.Fatalf("clearWorkTemp Windows: %v", err)
+	}
+	if len(calls) != 1 {
+		t.Fatalf("clearWorkTemp Windows calls = %d, want 1; calls=%v", len(calls), calls)
+	}
+	if !strings.Contains(calls[0], "powershell") || !strings.Contains(calls[0], "EncodedCommand") {
+		t.Fatalf("clearWorkTemp Windows script must be base64-wrapped via powershell -EncodedCommand: %q", calls[0])
+	}
+}
+
+// TestRemoveDirTree_posixDispatchesOnce pins the POSIX branch of
+// removeDirTree's runOnHostOS dispatch: on Linux the dispatcher must
+// issue exactly one h.Run containing the removeDirTreePOSIX(...) script
+// (recognisable by the shared `set -e` header and docker-exec
+// escalation block) and propagate the runner's exit error verbatim.
+func TestRemoveDirTree_posixDispatchesOnce(t *testing.T) {
+	t.Parallel()
+	var calls []string
+	mock := &testutil.MockExecutor{
+		RunFn: func(cmd string) (string, error) {
+			calls = append(calls, cmd)
+			return "", nil
+		},
+	}
+	h := diskMockHost("linux", mock)
+	if err := removeDirTree(h, "rune-orphan-7"); err != nil {
+		t.Fatalf("removeDirTree POSIX: %v", err)
+	}
+	if len(calls) != 1 {
+		t.Fatalf("removeDirTree POSIX calls = %d, want 1; calls=%v", len(calls), calls)
+	}
+	if !strings.Contains(calls[0], "set -e") {
+		t.Fatalf("removeDirTree POSIX script missing set -e: %q", calls[0])
+	}
+	if !strings.Contains(calls[0], "docker exec") {
+		t.Fatalf("removeDirTree POSIX script should include docker exec escalation: %q", calls[0])
+	}
+	if !strings.Contains(calls[0], "rune-orphan-7") {
+		t.Fatalf("removeDirTree POSIX script should include instance name: %q", calls[0])
+	}
+}
+
+// TestRemoveDirTree_posixPropagatesRunnerError pins that removeDirTree's
+// POSIX branch bubbles host-side failures up to the caller (the prune path
+// uses this error to mark the instance failed in PruneResult.Err).
+func TestRemoveDirTree_posixPropagatesRunnerError(t *testing.T) {
+	t.Parallel()
+	sentinel := fmt.Errorf("ssh connection reset")
+	mock := &testutil.MockExecutor{RunFn: func(string) (string, error) {
+		return "", sentinel
+	}}
+	h := diskMockHost("linux", mock)
+	err := removeDirTree(h, "rune-orphan-7")
+	if err == nil {
+		t.Fatal("removeDirTree POSIX: expected propagated error, got nil")
+	}
+	if !strings.Contains(err.Error(), "ssh connection reset") {
+		t.Fatalf("removeDirTree POSIX: error should wrap sentinel, got %v", err)
+	}
+}
+
+// TestPruneInstance_orphanIncludeOrphans_noAutostart covers the
+// orphan-with-IncludeOrphans branch in PruneInstance when the orphan has
+// NO autostart unit: the branch must report the would-be `remove orphan
+// directory ...` action and skip removeDirTree under --dry-run. RC is nil
+// to flag the instance as orphan; --include-orphans opts in.
+func TestPruneInstance_orphanIncludeOrphans_noAutostart(t *testing.T) {
+	t.Parallel()
+	m := NewManager("")
+	mock := &testutil.MockExecutor{RunFn: func(cmd string) (string, error) {
+		// Autostart helpers probe for known service names; return "no" so
+		// the uninstall skip-path is taken.
+		if strings.Contains(cmd, "&& echo yes || echo no") {
+			return "no\n", nil
+		}
+		return "", nil
+	}}
+	h := diskMockHost("linux", mock)
+	res := m.PruneInstance(h, "host1", "orphan-7", nil, false, PruneOptions{DryRun: true, IncludeOrphans: true})
+	if res.Err != nil {
+		t.Fatalf("dry-run orphan prune: %v", res.Err)
+	}
+	if res.Skipped {
+		t.Fatalf("IncludeOrphans must not skip; got %+v", res)
+	}
+	if len(res.Actions) != 1 {
+		t.Fatalf("orphan prune actions = %d, want 1; got %+v", len(res.Actions), res)
+	}
+	if !strings.Contains(res.Actions[0], "orphan") {
+		t.Fatalf("orphan prune action should mention orphan: %q", res.Actions[0])
+	}
+}
+
 // TestDiskDispatchers_unsupportedHostOS locks in the runOnHostOS fallback for
 // the three dispatchers in disk.go (#229): when h.OS is neither "windows" nor
 // "linux"/"darwin", dirSizes / clearWorkTemp / removeDirTree must all return
