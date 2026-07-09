@@ -7,7 +7,6 @@ package benchstat
 
 import (
 	"bufio"
-	"fmt"
 	"os"
 	"regexp"
 	"sort"
@@ -212,30 +211,50 @@ func HasFail(rows []Row) bool {
 }
 
 // FormatNumber renders a benchmark measurement, dropping decimals on larger
-// numbers so the markdown table stays narrow.
+// numbers so the markdown table stays narrow. Uses a stack buffer sized to the
+// worst-case "%.2f" output (32 bytes is well over the realistic ceiling of
+// ~16 chars for ng/µg-range numbers).
 func FormatNumber(f float64) string {
+	var b [32]byte
 	if f >= 100 {
-		return strconv.FormatFloat(f, 'f', 0, 64)
+		return string(strconv.AppendFloat(b[:0], f, 'f', 0, 64))
 	}
-	return strconv.FormatFloat(f, 'f', 2, 64)
+	return string(strconv.AppendFloat(b[:0], f, 'f', 2, 64))
+}
+
+// formatDeltaTo appends the percent delta of d (with sign) into dst and
+// returns the resulting slice. Single-allocation helper that mirrors the
+// pre-1.21 strconv.AppendFloat pattern; 24 bytes is comfortably above the
+// worst-case "+<16-char>%%\n" length FormatDelta can produce.
+func formatDeltaTo(dst []byte, d float64) []byte {
+	if d == 0 {
+		return append(dst, "0%"...)
+	}
+	if d > 0 {
+		dst = append(dst, '+')
+	}
+	dst = strconv.AppendFloat(dst, d, 'f', 1, 64)
+	return append(dst, '%')
 }
 
 // FormatDelta renders a percent delta with sign.
 func FormatDelta(d float64) string {
-	switch {
-	case d > 0:
-		return fmt.Sprintf("+%.1f%%", d)
-	case d < 0:
-		return fmt.Sprintf("%.1f%%", d)
-	default:
-		return "0%"
-	}
+	var b [24]byte
+	return string(formatDeltaTo(b[:0], d))
 }
 
 // RenderMarkdown returns a human-readable regression report.
 func RenderMarkdown(rows []Row, baseRef, headRef string) string {
+	// Pre-size: header + per-row line. A typical row is ~80 bytes; header is
+	// fixed; summary line is ~80 bytes. Pre-growing avoids repeated
+	// strings.Builder growth reallocations under load.
 	var sb strings.Builder
-	fmt.Fprintf(&sb, "## Benchstat: `%s` → `%s`\n\n", headRef, baseRef)
+	sb.Grow(128 + 96*len(rows))
+	sb.WriteString("## Benchstat: `")
+	sb.WriteString(headRef)
+	sb.WriteString("` → `")
+	sb.WriteString(baseRef)
+	sb.WriteString("`\n\n")
 
 	hasFail, hasWarn := false, false
 	for _, r := range rows {
@@ -260,11 +279,17 @@ func RenderMarkdown(rows []Row, baseRef, headRef string) string {
 	sb.WriteString("|-----------|-----------|----------|---------------|--------|\n")
 
 	for _, r := range rows {
-		status := rowStatus(r.Status)
-		nsCol := metricCell(r, r.HasNs, r.Head.NsPerOp, r.Base.NsPerOp, r.NsD, r.NsF, r.NsW)
-		bCol := metricCell(r, r.HasB, r.Head.BPerOp, r.Base.BPerOp, r.BD, r.BF, r.BW)
-		allCol := metricCell(r, r.HasAll, r.Head.AllocsPerOp, r.Base.AllocsPerOp, r.AllD, r.AllF, r.AllW)
-		fmt.Fprintf(&sb, "| %s | %s | %s | %s | %s |\n", r.Name, nsCol, bCol, allCol, status)
+		sb.WriteString("| ")
+		sb.WriteString(r.Name)
+		sb.WriteString(" | ")
+		writeMetricCell(&sb, r.Status, r.HasNs, r.Head.NsPerOp, r.Base.NsPerOp, r.NsD, r.NsF, r.NsW)
+		sb.WriteString(" | ")
+		writeMetricCell(&sb, r.Status, r.HasB, r.Head.BPerOp, r.Base.BPerOp, r.BD, r.BF, r.BW)
+		sb.WriteString(" | ")
+		writeMetricCell(&sb, r.Status, r.HasAll, r.Head.AllocsPerOp, r.Base.AllocsPerOp, r.AllD, r.AllF, r.AllW)
+		sb.WriteString(" | ")
+		sb.WriteString(rowStatus(r.Status))
+		sb.WriteString(" |\n")
 	}
 
 	sb.WriteString("\n_Thresholds: ns/op ±10%/30%, B/op ±15%/50%, allocs/op ±10%/25% (warn/fail)._\n")
@@ -286,25 +311,39 @@ func rowStatus(s string) string {
 	}
 }
 
-func metricCell(r Row, hasMetric bool, headVal, baseVal, delta float64, fail, warn bool) string {
-	switch r.Status {
+// writeMetricCell appends the rendered metric cell directly to the markdown
+// builder. The shape is "<base> → <head> (<delta>)[ mark]" where:
+//   - base and head go through FormatNumber's zero/2-decimal rule
+//   - delta goes through formatDeltaTo (signed "+X.X%"/"-X.X%"/"0%")
+//   - mark is " 🔥" / " ⚠️" for fail/warn, else ""
+//
+// new/removed short-circuit and the !hasMetric "—" path mirror the public
+// metricCell contract tested in benchstat_test.go.
+func writeMetricCell(sb *strings.Builder, status string, hasMetric bool, headVal, baseVal, delta float64, fail, warn bool) {
+	switch status {
 	case "new":
-		return fmt.Sprintf("— → %s", FormatNumber(headVal))
+		sb.WriteString("— → ")
+		sb.WriteString(FormatNumber(headVal))
+		return
 	case "removed":
-		return fmt.Sprintf("%s → —", FormatNumber(baseVal))
+		sb.WriteString(FormatNumber(baseVal))
+		sb.WriteString(" → —")
+		return
 	}
 	if !hasMetric {
-		return "—"
+		sb.WriteString("—")
+		return
 	}
-	mark := ""
+	sb.WriteString(FormatNumber(baseVal))
+	sb.WriteString(" → ")
+	sb.WriteString(FormatNumber(headVal))
+	sb.WriteString(" (")
+	var b [24]byte
+	sb.Write(formatDeltaTo(b[:0], delta))
+	sb.WriteByte(')')
 	if fail {
-		mark = " 🔥"
+		sb.WriteString(" 🔥")
 	} else if warn {
-		mark = " ⚠️"
+		sb.WriteString(" ⚠️")
 	}
-	return fmt.Sprintf("%s → %s (%s)%s",
-		FormatNumber(baseVal),
-		FormatNumber(headVal),
-		FormatDelta(delta),
-		mark)
 }
