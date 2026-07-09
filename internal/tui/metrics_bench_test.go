@@ -23,6 +23,7 @@ func TestExtractTrailingPercent(t *testing.T) {
 		{"integer_percent", "99.0/100.0 GiB (95.5%)", 95.5},
 		{"bare_percent", "3.2%", 3.2},
 		{"hundred_percent", "100%", 100.0},
+		{"space_before_percent", "95.5 %", 95.5},
 		{"no_number", "err", 0.0},
 		{"dash_placeholder", "-", 0.0},
 		{"unreachable_text", "unreachable", 0.0},
