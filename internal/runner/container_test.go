@@ -1927,12 +1927,16 @@ func TestStartContainer_OneSshRoundTrip(t *testing.T) {
 		t.Fatalf("h.Run calls = %d, want 1 (one chained SSH round-trip); calls=%v", got, calls)
 	}
 	script := calls[0]
-	// Marker cleanup uses the unresolved $HOME form (no separate resolve call).
-	if !strings.Contains(script, "$HOME/.gh-sr/runners/aw-runner-1/bootstrap-failed") {
+	// Marker cleanup uses double-quoted $HOME form so the shell expands it
+	// (PosixSingleQuote would freeze a literal "$HOME/..." path).
+	if !strings.Contains(script, `"$HOME/.gh-sr/runners/aw-runner-1/bootstrap-failed"`) {
 		t.Errorf("script missing bootstrap-failed rm -f; got: %q", script)
 	}
-	if !strings.Contains(script, "$HOME/.gh-sr/runners/aw-runner-1/dockerd-start-failures") {
+	if !strings.Contains(script, `"$HOME/.gh-sr/runners/aw-runner-1/dockerd-start-failures"`) {
 		t.Errorf("script missing dockerd-start-failures rm -f; got: %q", script)
+	}
+	if strings.Contains(script, `'$HOME/.gh-sr/runners/`) {
+		t.Errorf("script must not single-quote $HOME paths (blocks expansion); got: %q", script)
 	}
 	// docker update chained before docker start, with `|| true` so it cannot
 	// block the start. containerBootstrapMaxRetries defaults to 5, so the
