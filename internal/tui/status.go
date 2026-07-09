@@ -11,7 +11,6 @@ import (
 )
 
 func PrintStatusTable(statuses []runner.RunnerStatus) {
-	headers := []string{"INSTANCE", "HOST", "REPO", "MODE", "IMAGE", "BUILD", "LOCAL", "GITHUB", "LABELS"}
 	rows := make([][]string, len(statuses))
 	for i, s := range statuses {
 		rows[i] = runnerStatusCells(s)
@@ -19,20 +18,9 @@ func PrintStatusTable(statuses []runner.RunnerStatus) {
 	PrintTable(os.Stdout, TablePrintOptions{
 		Title:    "Runner Status",
 		EmptyMsg: "No runners found.",
-		Headers:  headers,
+		Headers:  runnerStatusHeaders,
 		Rows:     rows,
-		Colorize: func(col int, cell string) string {
-			switch col {
-			case 5: // BUILD
-				return colorizeImageBuild(cell)
-			case 6: // LOCAL
-				return colorizeLocalStatus(cell)
-			case 7: // GITHUB
-				return colorizeGitHubStatus(cell)
-			default:
-				return cell
-			}
-		},
+		Colorize: runnerStatusColorize,
 	})
 }
 

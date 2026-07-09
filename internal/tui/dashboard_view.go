@@ -107,33 +107,19 @@ func (m *dashboardModel) viewMain() tea.View {
 		return newAltView(b.String())
 	}
 
-	headers := []string{"INSTANCE", "HOST", "REPO", "MODE", "IMAGE", "BUILD", "LOCAL", "GITHUB", "LABELS"}
 	rows := make([][]string, len(m.statuses))
 	for i, s := range m.statuses {
 		rows[i] = runnerStatusCells(s)
 	}
-	widths := table.ColumnWidths(headers, rows)
+	widths := table.ColumnWidths(runnerStatusHeaders, rows)
 
-	colorize := func(col int, cell string) string {
-		switch col {
-		case 5:
-			return colorizeImageBuild(cell)
-		case 6:
-			return colorizeLocalStatus(cell)
-		case 7:
-			return colorizeGitHubStatus(cell)
-		default:
-			return cell
-		}
-	}
-
-	b.WriteString(renderHeader(headers, widths) + "\n")
+	b.WriteString(renderHeader(runnerStatusHeaders, widths) + "\n")
 
 	for i, cells := range rows {
 		if i == m.cursor {
-			b.WriteString(renderHighlightedRow(cells, widths, colorize) + "\n")
+			b.WriteString(renderHighlightedRow(cells, widths, runnerStatusColorize) + "\n")
 		} else {
-			b.WriteString(renderRow(cells, widths, colorize) + "\n")
+			b.WriteString(renderRow(cells, widths, runnerStatusColorize) + "\n")
 		}
 	}
 
