@@ -9,3 +9,21 @@ docs/public/
 docs/resources/
 docs/themes/
 docs/.hugo_build.lock
+
+# `make coverage` (Makefile) writes coverage.out / coverage.html at the repo
+# root. Both are regenerated on every run, large, and not source-controlled.
+coverage.out
+coverage.html
+
+# Local Go test artifacts that escape `go test`'s default tmpdir when the
+# test binary itself is written next to the package (rare, but cheap to
+# guard against).
+*.test
+
+# Editor / IDE scratch — contributors using anything other than the empty
+# default. None of these are required to build or test the project.
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
