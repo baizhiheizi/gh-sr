@@ -14,7 +14,7 @@ CMD_DIR := ./cmd/gh-sr
 
 GIT_TAG := $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 
-.PHONY: all build test bench coverage coverage-html vet fmt tidy ci check clean install uninstall
+.PHONY: all build test bench bench-save coverage coverage-html vet fmt tidy ci check clean install uninstall
 
 all: build
 
@@ -26,6 +26,25 @@ test:
 
 bench:
 	go test ./... -run='^$$' -bench=. -benchmem -count=3
+
+# bench-save runs `make bench` and tees the output to a timestamped file under
+# bench-results/. Pair with `scripts/benchstat` to diff two snapshots:
+#
+#   make bench-save    # → bench-results/bench-<UTC-stamp>.txt (current state)
+#   # ...edit code...
+#   make bench-save    # → bench-results/bench-<UTC-stamp>.txt (after change)
+#   go run scripts/benchstat bench-results/old.txt bench-results/new.txt
+#
+# Override BENCH_COUNT to change the sample size (default 3, matches `make bench`).
+# Override BENCH_RESULTS_DIR to point at a different snapshot directory.
+BENCH_COUNT ?= 3
+BENCH_RESULTS_DIR ?= bench-results
+bench-save:
+	@mkdir -p $(BENCH_RESULTS_DIR)
+	@stamp=$$(date -u +%Y%m%dT%H%M%SZ); \
+	file=$(BENCH_RESULTS_DIR)/bench-$$stamp.txt; \
+	echo "Writing benchmark snapshot to $$file"; \
+	go test ./... -run='^$$' -bench=. -benchmem -count=$(BENCH_COUNT) | tee $$file
 
 # coverage runs the full test suite with coverage and prints the per-package
 # summary plus the project total. Coverage data goes to coverage.out (gitignored
