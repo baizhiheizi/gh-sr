@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"sort"
 	"strings"
 	"testing"
 
@@ -31,9 +32,24 @@ func needsSetupMockHost(t *testing.T, mock *testutil.MockExecutor) *host.Host {
 // answerInstancePresence returns a MockExecutor.RunFn that replies "yes" when
 // the cmd references any of present and "no" for any other; it recognises
 // both the native probe (test -d .../run.sh/.runner) and the container
-// probe (docker inspect .../name).
+// probes (docker inspect per-instance legacy, and the one-shot
+// `docker ps -a --filter name=gh-sr- --format '{{.Names}}' | sed ...`
+// added when container-presence was collapsed into a single round-trip).
 func answerInstancePresence(present map[string]bool) func(string) (string, error) {
 	return func(cmd string) (string, error) {
+		// Container one-shot probe (containersPresentOneShot):
+		// `docker ps -a --filter name=gh-sr- --format '{{.Names}}' | sed ...`
+		// Returns one stripped instance name per line for every present entry.
+		if strings.Contains(cmd, "docker ps -a --filter name=gh-sr-") {
+			var lines []string
+			for inst, ok := range present {
+				if ok {
+					lines = append(lines, inst)
+				}
+			}
+			sort.Strings(lines)
+			return strings.Join(lines, "\n") + "\n", nil
+		}
 		// Container probe: docker inspect --format='{{.Name}}' gh-sr-<name>
 		for inst, ok := range present {
 			if strings.Contains(cmd, "docker inspect") && strings.Contains(cmd, "gh-sr-"+inst+" ") {

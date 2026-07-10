@@ -286,6 +286,44 @@ func containerRunnerPresent(h *host.Host, instanceName string) bool {
 	return ok
 }
 
+// containersPresentOneShot returns which of the requested runner instance names have a
+// Docker container present on the host (running or stopped), doing exactly ONE
+// SSH round-trip regardless of how many instances are queried.
+//
+// This replaces the N-round-trip `containerRunnerPresent` loops in
+// setupContainer and needsSetupContainer when N>=2; for a single instance the
+// dedicated containerRunnerPresent is cheaper (no list parsing). The output
+// is parsed as one name per line; names outside the input set are ignored
+// (host-owned containers whose name happens to share the `gh-sr-` prefix are
+// not relevant and won't affect the result).
+//
+// The `name=gh-sr-` Docker filter is a substring match; we always strip the
+// prefix back off before lookup so we can reason about "is gh-sr-<n> there"
+// with the same semantics containerRunnerPresent had per-instance.
+func containersPresentOneShot(h *host.Host, instanceNames []string) (map[string]bool, error) {
+	present := make(map[string]bool, len(instanceNames))
+	for _, n := range instanceNames {
+		present[n] = false
+	}
+	if len(instanceNames) == 0 {
+		return present, nil
+	}
+	out, err := h.Run(`docker ps -a --filter name=gh-sr- --format '{{.Names}}' | sed 's|^gh-sr-||' | sort -u`)
+	if err != nil {
+		return present, err
+	}
+	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		if _, ok := present[line]; ok {
+			present[line] = true
+		}
+	}
+	return present, nil
+}
+
 // setupContainer builds the gh-sr container runner image (if not already up to date)
 // and creates (but does not start) each runner container.
 func (m *Manager) setupContainer(h *host.Host, rc config.RunnerConfig) error {
@@ -320,8 +358,16 @@ func (m *Manager) setupContainer(h *host.Host, rc config.RunnerConfig) error {
 		fmt.Fprintf(m.out(), "  %s: image already up to date\n", rc.Name)
 	}
 
-	for i, name := range rc.InstanceNames() {
-		if containerRunnerPresent(h, name) {
+	// Batch the per-instance existence probe so a single `gh sr setup` makes
+	// ONE round-trip for presence checks instead of N. Mirrors the
+	// startContainer fold-in (PR #342): correlated I/O belongs in one shell.
+	instanceNames := rc.InstanceNames()
+	present, err := containersPresentOneShot(h, instanceNames)
+	if err != nil {
+		return fmt.Errorf("checking container presence: %w", err)
+	}
+	for i, name := range instanceNames {
+		if present[name] {
 			fmt.Fprintf(m.out(), "  %s: container already exists, skipping\n", name)
 			continue
 		}
@@ -778,9 +824,26 @@ func (m *Manager) rebuildContainerImage(h *host.Host, rc config.RunnerConfig) er
 }
 
 // needsSetupContainer reports whether any instance container is missing.
+//
+// One SSH round-trip via containersPresentOneShot; previously issued up to N
+// round-trips (one per instance) for an early-exit decision.
 func (m *Manager) needsSetupContainer(h *host.Host, rc config.RunnerConfig) bool {
-	for _, name := range rc.InstanceNames() {
-		if !containerRunnerPresent(h, name) {
+	instanceNames := rc.InstanceNames()
+	if len(instanceNames) == 0 {
+		return false
+	}
+	present, err := containersPresentOneShot(h, instanceNames)
+	if err != nil {
+		// Mirror containerRunnerPresent's "absent on error" semantics so a
+		// transient probe failure still surfaces a "setup needed" result
+		// and the caller treats the runner as missing rather than wiping
+		// state. Matches the `ok, _ := RemoteBoolCheck(...)` drop in
+		// containerRunnerPresent and the `_ = ` propagation in
+		// runner_orchestrator_dispatch_test.
+		return true
+	}
+	for _, name := range instanceNames {
+		if !present[name] {
 			return true
 		}
 	}

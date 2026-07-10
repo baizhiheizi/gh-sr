@@ -1049,6 +1049,203 @@ func TestContainerRunnerPresent(t *testing.T) {
 	}
 }
 
+func TestContainersPresentOneShot(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name         string
+		names        []string
+		mockOutput   string
+		mockErr      error
+		want         map[string]bool
+		wantCallOnce bool
+	}{
+		{
+			name:         "all present",
+			names:        []string{"ci-1", "ci-2"},
+			mockOutput:   "ci-1\nci-2\n",
+			want:         map[string]bool{"ci-1": true, "ci-2": true},
+			wantCallOnce: true,
+		},
+		{
+			name:         "one missing",
+			names:        []string{"ci-1", "ci-2"},
+			mockOutput:   "ci-1\n",
+			want:         map[string]bool{"ci-1": true, "ci-2": false},
+			wantCallOnce: true,
+		},
+		{
+			name:         "all missing",
+			names:        []string{"ci-1", "ci-2"},
+			mockOutput:   "\n",
+			want:         map[string]bool{"ci-1": false, "ci-2": false},
+			wantCallOnce: true,
+		},
+		{
+			name:         "host-owned name ignored",
+			names:        []string{"ci-1"},
+			mockOutput:   "ci-1\nother-container\nci-1\n", // duplicate + foreign line
+			want:         map[string]bool{"ci-1": true},
+			wantCallOnce: true,
+		},
+		{
+			name:         "empty names returns empty without ssh",
+			names:        nil,
+			mockOutput:   "",
+			want:         map[string]bool{},
+			wantCallOnce: false, // no SSH round-trip when there's nothing to ask
+		},
+		{
+			name:         "probe error propagated and marks all false",
+			names:        []string{"ci-1", "ci-2"},
+			mockErr:      io.ErrUnexpectedEOF,
+			want:         map[string]bool{"ci-1": false, "ci-2": false},
+			wantCallOnce: true,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			mock := &testutil.MockExecutor{
+				Output: tc.mockOutput,
+				RunErr: tc.mockErr,
+			}
+			h := host.NewHost("h", config.HostConfig{Addr: "local", OS: "linux", Arch: "amd64"})
+			h.SetConn(mock)
+			got, err := containersPresentOneShot(h, tc.names)
+			if tc.mockErr != nil {
+				if err == nil {
+					t.Fatalf("expected error from probe failure")
+				}
+			} else if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if len(got) != len(tc.want) {
+				t.Fatalf("result size: got %d entries %v, want %d %v", len(got), got, len(tc.want), tc.want)
+			}
+			for k, v := range tc.want {
+				if got[k] != v {
+					t.Errorf("present[%q] = %v, want %v (full=%v)", k, got[k], v, got)
+				}
+			}
+			// Negative entries in got that aren't in want are tolerated;
+			// any "true" entry not declared in want would mean the helper
+			// claimed a host-owned container was a runner.
+			for k, v := range got {
+				if _, ok := tc.want[k]; !ok && v {
+					t.Errorf("unexpected present=true for %q (host-owned name leaked through)", k)
+				}
+			}
+			if tc.wantCallOnce {
+				if len(mock.Calls) != 1 {
+					t.Errorf("expected exactly 1 SSH round-trip, got %d: %v", len(mock.Calls), mock.Calls)
+				}
+				if len(mock.Calls) >= 1 && !strings.Contains(mock.Calls[0], "docker ps -a --filter name=gh-sr-") {
+					t.Errorf("unexpected command: %q (want docker ps -a --filter name=gh-sr-)", mock.Calls[0])
+				}
+				if len(mock.Calls) >= 1 && !strings.Contains(mock.Calls[0], "sed") {
+					t.Errorf("unexpected command: %q (want sed prefix-strip)", mock.Calls[0])
+				}
+			} else if len(mock.Calls) != 0 {
+				t.Errorf("expected zero SSH calls when input is empty, got %d: %v", len(mock.Calls), mock.Calls)
+			}
+		})
+	}
+}
+
+// TestSetupContainer_ContainersPresenceOneSshRoundTrip pins the per-instance
+// probe collapse for the multi-instance setup path: with N instances the
+// presence check must be a single SSH round-trip, not N. The mock returns
+// all instances present so setupContainer skips creation and no GitHub token
+// call is required.
+func TestSetupContainer_ContainersPresenceOneSshRoundTrip(t *testing.T) {
+	t.Parallel()
+	ts := httptest.NewServer(releaseHandler("v2.330.0"))
+	defer ts.Close()
+
+	mock := &testutil.MockExecutor{RunFn: func(cmd string) (string, error) {
+		switch {
+		case strings.Contains(cmd, "docker --version"):
+			return "yes", nil
+		case strings.Contains(cmd, "docker info"):
+			return "ok", nil
+		case strings.Contains(cmd, "docker image inspect"):
+			return "yes", nil
+		case strings.Contains(cmd, "docker ps -a --filter name=gh-sr-"):
+			return "multi-1\nmulti-2\nmulti-3\n", nil
+		default:
+			return "", nil
+		}
+	}}
+	h := host.NewHost("h", config.HostConfig{Addr: "runner@vps", OS: "linux", Arch: "amd64"})
+	h.SetConn(mock)
+	m := &Manager{GitHub: NewGitHubClientWithHTTP("pat", ts.Client(), ts.URL)}
+	rc := config.RunnerConfig{
+		Name:       "multi",
+		Repo:       "o/r",
+		Host:       "h",
+		Count:      3,
+		Profile:    "agentic",
+		RunnerMode: config.RunnerModeContainer,
+	}
+	if err := m.setupContainer(h, rc); err != nil {
+		t.Fatalf("setupContainer: %v", err)
+	}
+
+	// Pin exactly one `docker ps -a` call; the previous per-instance
+	// containerRunnerPresent loop would have produced N=3 such calls.
+	var ps int
+	for _, c := range mock.Calls {
+		if strings.Contains(c, "docker ps -a --filter name=gh-sr-") {
+			ps++
+		}
+	}
+	if ps != 1 {
+		t.Errorf("expected exactly 1 one-shot presence call, got %d; calls=%v", ps, mock.Calls)
+	}
+	// Sanity: no per-instance docker inspect probe should remain.
+	for _, c := range mock.Calls {
+		if strings.Contains(c, "docker inspect --format='{{.Name}}'") {
+			t.Errorf("unexpected per-instance docker inspect in setupContainer: %q", c)
+		}
+	}
+}
+
+// TestNeedsSetup_ContainerOneSshRoundTrip pins that needsSetupContainer also
+// drives its loop off the one-shot map: N instances → ONE SSH round-trip,
+// rather than up to N per-instance probes.
+func TestNeedsSetup_ContainerOneSshRoundTrip(t *testing.T) {
+	t.Parallel()
+	m := NewManager("")
+	mock := &testutil.MockExecutor{RunFn: func(cmd string) (string, error) {
+		switch {
+		case strings.Contains(cmd, "docker ps -a --filter name=gh-sr-"):
+			return "ci-1\nci-2\nci-3\nci-4\nci-5\n", nil
+		default:
+			return "", nil
+		}
+	}}
+	h := needsSetupMockHost(t, mock)
+	rc := config.RunnerConfig{
+		Name:       "ci",
+		Repo:       "o/r",
+		Host:       "h",
+		Count:      5,
+		Profile:    "agentic",
+		RunnerMode: config.RunnerModeContainer,
+	}
+	if m.NeedsSetup(h, rc) {
+		t.Fatalf("NeedsSetup = true, want false (all 5 containers present); calls=%v", mock.Calls)
+	}
+	if len(mock.Calls) != 1 {
+		t.Errorf("expected 1 SSH call, got %d: %v", len(mock.Calls), mock.Calls)
+	}
+	if !strings.Contains(mock.Calls[0], "docker ps -a --filter name=gh-sr-") {
+		t.Errorf("expected one-shot probe, got %q", mock.Calls[0])
+	}
+}
+
 func TestContainerImageExists(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
@@ -1306,6 +1503,11 @@ func TestSetupContainer_ensureDockerBeforeImageBuild(t *testing.T) {
 			return "ok", nil
 		case strings.Contains(cmd, "docker image inspect"):
 			return "yes", nil
+		case strings.Contains(cmd, "docker ps -a --filter name=gh-sr-"):
+			// One-shot container presence check: aw-runner-1 already present,
+			// so setupContainer skips createContainerInstance entirely (no
+			// GitHub registration-token call needed).
+			return "aw-runner-1\n", nil
 		case strings.Contains(cmd, "docker inspect --format='{{.Name}}'"):
 			return "yes", nil
 		default:
@@ -1363,6 +1565,12 @@ func TestSetupContainer_emitsBuildProgressMessageWhenImageMissing(t *testing.T) 
 			return "no", nil // image missing → build path
 		case strings.Contains(cmd, "docker build"):
 			return "", nil
+		case strings.Contains(cmd, "docker ps -a --filter name=gh-sr-"):
+			// One-shot container presence check: container present, so
+			// setupContainer skips createContainerInstance entirely (no
+			// GitHub registration-token call needed). The test exercises the
+			// build-progress printout path, not the create path.
+			return "aw-runner-1\n", nil
 		case strings.Contains(cmd, "docker inspect --format='{{.Name}}'"):
 			return "yes", nil
 		default:
