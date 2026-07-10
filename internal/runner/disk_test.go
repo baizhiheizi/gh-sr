@@ -627,3 +627,86 @@ func BenchmarkMeasureDiskUsage_linux(b *testing.B) {
 		_ = MeasureDiskUsage(h, "host1", "ci-1", &rc)
 	}
 }
+
+// TestPosixRunnerDirVar locks the POSIX double-quoted shell escape contract
+// that posixRunnerDirVar feeds into posixScriptHeader (and through it into the
+// disk-prune scripts that `gh sr disk` and `gh sr prune` send to the host).
+// The escape runes — backslash, double-quote, dollar, backtick — must each be
+// neutralised; if any one slips through, the resulting script can break out of
+// the quoted string and execute attacker-controlled content on the host.
+// The refactor that introduced posixInstanceEscaper (see commit
+// repo-assist/perf-posix-dir-var-no-allocs-2026-07-10) replaced a per-call
+// strings.NewReplacer with a shared package-level value; this test guards
+// against accidental shape changes during future edits.
+func TestPosixRunnerDirVar(t *testing.T) {
+	t.Parallel()
+	// Expected output bytes are computed by feeding the input through the
+	// package's posixInstanceEscaper and stitching on the constant prefix
+	// and suffix. The metacharacter escapes mirror strings.NewReplacer's
+	// first-match order: backslash is doubled, then double-quote, dollar,
+	// and backtick each get a leading backslash.
+	cases := []struct {
+		name     string
+		instance string
+		want     string
+	}{
+		{"plain", "ci-1", `dir="$HOME/.gh-sr/runners/ci-1"`},
+		{"with_hyphen", "ci-runner-prod-01", `dir="$HOME/.gh-sr/runners/ci-runner-prod-01"`},
+		// Each metacharacter must be backslash-escaped so it cannot break
+		// out of the surrounding double-quoted string. The expected output
+		// below mirrors what `posixInstanceEscaper.Replace` produces when
+		// run against the input byte sequence (see commit message for the
+		// canonical "before/after" trace).
+		{"backslash", "a\\b", `dir="$HOME/.gh-sr/runners/a\\b"`},
+		{"double_quote", "a\"b", `dir="$HOME/.gh-sr/runners/a\"b"`},
+		{"dollar", "a$b", `dir="$HOME/.gh-sr/runners/a\$b"`},
+		{"backtick", "a`b", "dir=\"$HOME/.gh-sr/runners/a\\`b\""},
+		{"all_meta", "$\"\\`", "dir=\"$HOME/.gh-sr/runners/\\$\\\"\\\\\\`\""},
+	}
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := posixRunnerDirVar(tc.instance)
+			if got != tc.want {
+				t.Fatalf("posixRunnerDirVar(%q):\n  got:  %s\n  want: %s", tc.instance, got, tc.want)
+			}
+			// Defensive: the returned string must always start with the
+			// well-known `dir="$HOME/.gh-sr/runners/` prefix and end with a
+			// closing double-quote; downstream scripts grep for these
+			// anchors when parsing the variable.
+			if !strings.HasPrefix(got, `dir="$HOME/.gh-sr/runners/`) || !strings.HasSuffix(got, `"`) {
+				t.Fatalf("posixRunnerDirVar(%q) shape changed: %s", tc.instance, got)
+			}
+		})
+	}
+}
+
+// TestPosixRunnerDirVar_concurrent exercises the shared posixInstanceEscaper
+// under -race to confirm strings.Replacer.Replace is safe for the concurrent
+// caller pattern (each host.Run call inside the disk-prune path can fire from
+// its own goroutine when a Manager fans out across hosts).
+func TestPosixRunnerDirVar_concurrent(t *testing.T) {
+	t.Parallel()
+	const goroutines = 16
+	const iters = 200
+	done := make(chan error, goroutines)
+	for g := 0; g < goroutines; g++ {
+		g := g
+		go func() {
+			for i := 0; i < iters; i++ {
+				want := `dir="$HOME/.gh-sr/runners/ci-1"`
+				if got := posixRunnerDirVar("ci-1"); got != want {
+					done <- fmt.Errorf("g=%d i=%d: got %q want %q", g, i, got, want)
+					return
+				}
+			}
+			done <- nil
+		}()
+	}
+	for g := 0; g < goroutines; g++ {
+		if err := <-done; err != nil {
+			t.Fatal(err)
+		}
+	}
+}

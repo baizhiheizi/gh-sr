@@ -68,9 +68,28 @@ func SafeRunnerInstanceName(name string) error {
 	return nil
 }
 
+// posixInstanceEscaper escapes an instance name for embedding inside a POSIX
+// double-quoted shell string. The replacement set is the same one that the
+// earlier per-call strings.NewReplacer used; promoting it to a package-level
+// value lets posixRunnerDirVar (called by posixScriptHeader, which is invoked
+// from buildDirSizesPOSIXScript, clearWorkTempPOSIX, removeDirTreePOSIX) skip
+// the per-call Replacer allocation. Replacer.Replace is safe for concurrent
+// use, so a single shared instance is fine.
+var posixInstanceEscaper = strings.NewReplacer(`\`, `\\`, `"`, `\"`, "$", `\$`, "`", "\\`")
+
 func posixRunnerDirVar(instance string) string {
-	inst := strings.NewReplacer(`\`, `\\`, `"`, `\"`, "$", `\$`, "`", "\\`").Replace(instance)
-	return fmt.Sprintf(`dir="$HOME/.gh-sr/runners/%s"`, inst)
+	// Hand-rolled `dir="$HOME/.gh-sr/runners/<escaped>"` avoids the
+	// fmt.Sprintf allocation chain; the literal prefix is constant so we just
+	// concatenate and return. Worst-case output length is the prefix length
+	// (27) plus 2× the input length (every input rune is escaped) — well under
+	// any reasonable cap.
+	const prefix = `dir="$HOME/.gh-sr/runners/`
+	var buf strings.Builder
+	buf.Grow(len(prefix) + 2*len(instance) + 2)
+	buf.WriteString(prefix)
+	buf.WriteString(posixInstanceEscaper.Replace(instance))
+	buf.WriteString(`"`)
+	return buf.String()
 }
 
 func posixScriptHeader(instance string) string {
