@@ -1,3 +1,2 @@
-- [Run notes 2026-07-09 #29047663570](run-2026-07-09-29047663570.md) — current run: tasks 5/8/3; Task 5 #346 (runner-status headers + colorize lambda dedup @ `1a1fb8c`); Task 8 #347 (`internal/strfmt.FmtFloat` shared helper @ `d126f1a`, benchmarks unchanged); Task 3 fallback; #309 rebuilt + Run History trimmed.
-- [Run notes 2026-07-09 #29010395183](run-2026-07-09-29010395183.md) — previous run: tasks 2/4/3; Task 2 #341 (PowerShell Get-ScheduledTask probes, 3 scope options); Task 4 gitignore +18 @ `3019889`; Task 3 fallback; #309 updated + consolidated.
-- [Repo Assist state](state.md) — in-flight work, backlog, verified knowledge (latest: 2026-07-09 #29047663570).
+- [Run notes 2026-07-10 #29102861577](run-2026-07-10-29102861577.md) — current run: tasks 5/9/2; Task 5 `updateFilterList` dedup @ `4fee61e` (+17/−28); Task 9 `extractTrailingPercent` edge cases @ `7364f83` (16 sub-cases, internal/tui 18.4→18.6%); Task 2 fallback (no new human activity on any open issue); #309 rebuilt.
+- [Repo Assist state](state.md) — in-flight work, backlog, verified knowledge (latest: 2026-07-10 #29102861577).
