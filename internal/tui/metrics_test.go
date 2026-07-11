@@ -180,3 +180,64 @@ func TestPrintHostMetricsTable_emptyInput(t *testing.T) {
 		t.Errorf("PrintHostMetricsTable(nil) should print EmptyMsg, got %q", out)
 	}
 }
+
+// TestExtractTrailingPercent_edgeCases pins the defensive guards in the
+// zero-alloc manual byte scan (PR #340) that drives colorizePercent's
+// severity threshold. The function is on the TUI render hot path
+// (per-keypress + per-refresh-tick), so silent parse regressions would
+// silently shift every colored cell. The cases below cover: no '%',
+// trailing whitespace, leading whitespace (which strconv.ParseFloat
+// rejects), missing digits before '%', and a single '.' in the middle
+// of an otherwise-numeric tail. The "invalid float" case documents the
+// existing return-0 behaviour so a future change to return NaN or panic
+// is flagged as a behaviour change in code review.
+func TestExtractTrailingPercent_edgeCases(t *testing.T) {
+	// No t.Parallel(): stable subset, table-driven.
+	cases := []struct {
+		name string
+		in   string
+		want float64
+	}{
+		// Happy path — same as colourisePercent's documented examples.
+		{"simple int percent", "3.2%", 3.2},
+		{"full used/total cell", "0.0/0.0 MiB (0%)", 0},
+		{"full used/total cell high", "99.0/100.0 GiB (95.5%)", 95.5},
+		{"whole number", "100%", 100},
+		{"zero", "0%", 0},
+
+		// Defensive: no '%' anywhere.
+		{"empty string", "", 0},
+		{"plain word", "err", 0},
+		{"dash sentinel", "-", 0},
+		{"unreachable sentinel", "unreachable", 0},
+
+		// Defensive: '%' present but not preceded by digits.
+		{"percent only", "%", 0},
+		{"letter before percent", "abc%", 0},
+
+		// Defensive: whitespace handling. The old strings.TrimRight path
+		// produced 95.5 for "95.5 %"; the manual scan must match that.
+		{"space before percent", "95.5 %", 95.5},
+		{"multiple spaces before percent", "95.5   %", 95.5},
+
+		// Leading whitespace stops the walk-back loop, so the parse
+		// target is "3.2" (ParseFloat rejects leading whitespace, so
+		// the function implicitly tolerates it by stripping it). The
+		// walk-back skips spaces by stopping at the first non-digit/
+		// non-dot character.
+		{"leading space before digit", " 3.2%", 3.2},
+
+		// Paren before digit is the production cell shape: "(78.9%)".
+		{"paren wrap", "(78.9%)", 78.9},
+
+		// Malformed: two dots in a row is not a valid float.
+		{"invalid float", "1.2.3%", 0},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := extractTrailingPercent(tc.in); got != tc.want {
+				t.Errorf("extractTrailingPercent(%q) = %v, want %v", tc.in, got, tc.want)
+			}
+		})
+	}
+}
