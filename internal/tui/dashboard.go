@@ -642,13 +642,21 @@ func (m *dashboardModel) updateFilterMenu(key string) tea.Cmd {
 	return nil
 }
 
-func (m *dashboardModel) updateFilterHost(key string) tea.Cmd {
+// updateFilterList handles the standard esc/j/k/enter navigation over a
+// choices slice and applies the selection via setter. Shared by
+// updateFilterHost and updateFilterRepo, which previously duplicated the
+// same switch (52 lines, byte-identical apart from the choices slice and
+// the target field). Reading the choices slice at call-time (rather than
+// capturing it in the closure) preserves the original behaviour: callers
+// re-enter the filter panel between key presses, so filterHostChoices /
+// filterRepoChoices may have been refreshed.
+func (m *dashboardModel) updateFilterList(key string, choices []string, setter func(string)) tea.Cmd {
 	switch key {
 	case "esc":
 		m.panel = panelMain
 		m.menuCursor = 0
 	case "j", "down":
-		if m.menuCursor < len(m.filterHostChoices)-1 {
+		if m.menuCursor < len(choices)-1 {
 			m.menuCursor++
 		}
 	case "k", "up":
@@ -656,11 +664,11 @@ func (m *dashboardModel) updateFilterHost(key string) tea.Cmd {
 			m.menuCursor--
 		}
 	case "enter":
-		if len(m.filterHostChoices) == 0 {
+		if len(choices) == 0 {
 			m.panel = panelMain
 			return nil
 		}
-		m.tuiHostFilter = m.filterHostChoices[m.menuCursor]
+		setter(choices[m.menuCursor])
 		m.panel = panelMain
 		m.menuCursor = 0
 		m.loading = true
@@ -669,31 +677,12 @@ func (m *dashboardModel) updateFilterHost(key string) tea.Cmd {
 	return nil
 }
 
+func (m *dashboardModel) updateFilterHost(key string) tea.Cmd {
+	return m.updateFilterList(key, m.filterHostChoices, func(v string) { m.tuiHostFilter = v })
+}
+
 func (m *dashboardModel) updateFilterRepo(key string) tea.Cmd {
-	switch key {
-	case "esc":
-		m.panel = panelMain
-		m.menuCursor = 0
-	case "j", "down":
-		if m.menuCursor < len(m.filterRepoChoices)-1 {
-			m.menuCursor++
-		}
-	case "k", "up":
-		if m.menuCursor > 0 {
-			m.menuCursor--
-		}
-	case "enter":
-		if len(m.filterRepoChoices) == 0 {
-			m.panel = panelMain
-			return nil
-		}
-		m.tuiRepoFilter = m.filterRepoChoices[m.menuCursor]
-		m.panel = panelMain
-		m.menuCursor = 0
-		m.loading = true
-		return m.refreshCmd()
-	}
-	return nil
+	return m.updateFilterList(key, m.filterRepoChoices, func(v string) { m.tuiRepoFilter = v })
 }
 
 func (m *dashboardModel) updateHostMetrics(key string) tea.Cmd {
