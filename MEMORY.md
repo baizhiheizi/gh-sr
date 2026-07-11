@@ -1,2 +1,3 @@
-- [Run notes 2026-07-10 #29102861577](run-2026-07-10-29102861577.md) — current run: tasks 5/9/2; Task 5 `updateFilterList` dedup @ `4fee61e` (+17/−28); Task 9 `extractTrailingPercent` edge cases @ `7364f83` (16 sub-cases, internal/tui 18.4→18.6%); Task 2 fallback (no new human activity on any open issue); #309 rebuilt.
-- [Repo Assist state](state.md) — in-flight work, backlog, verified knowledge (latest: 2026-07-10 #29102861577).
+- [Run notes 2026-07-11 #29138731183](run-2026-07-11-29138731183.md) — current run: tasks 10/8/2; Task 10+8 `LoadStr` stack-buffer @ `b43ab41` (+19/−11, BenchmarkLoadStr median 457→361 ns, 24→16 B); Task 2 fallback (no candidate); #341 auto-closed by workflow expiration 2026-07-10.
+- [Run notes 2026-07-10 #29102861577](run-2026-07-10-29102861577.md) — previous run: tasks 5/9/2; Task 5 `updateFilterList` dedup @ `4fee61e` (PR #351 merged 2026-07-11); Task 9 `extractTrailingPercent` edge cases @ `7364f83` (PR #352 merged 2026-07-11); Task 2 fallback.
+- [Repo Assist state](state.md) — in-flight work, backlog, verified knowledge (latest: 2026-07-11 #29138731183).
