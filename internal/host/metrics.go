@@ -57,9 +57,10 @@ func (m HostMetrics) DiskPercent() float64 {
 // 10-host panel that's 10 calls per View(), and the cumulative savings
 // compound across long dashboard sessions.
 //
-// The largest realistic output is around 26 chars (e.g. "99999.99 99999.99
-// 99999.99"); [40]byte holds AppendFloat's worst case (24 chars per float)
-// plus the 2 separator spaces.
+// The largest realistic output is around 17 chars (e.g. "99.99 99.99 99.99");
+// [40]byte holds three AppendFloat outputs plus the 2 separator spaces
+// with room to spare. The buffer is big enough that this function never
+// allocates on the heap for realistic load averages.
 func (m HostMetrics) LoadStr() string {
 	if m.Load1 == 0 && m.Load5 == 0 && m.Load15 == 0 {
 		return "-"
