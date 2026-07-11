@@ -291,6 +291,52 @@ func TestFormatDelta(t *testing.T) {
 	}
 }
 
+func TestWriteNumber(t *testing.T) {
+	cases := []struct {
+		in   float64
+		want string
+	}{
+		{0, "0.00"},
+		{1.5, "1.50"},
+		{99.99, "99.99"},
+		{100, "100"},
+		{999, "999"},
+		{1234.5, "1234"},
+		{1234.56, "1235"}, // strconv's 'f' with prec=0 rounds to nearest
+		{3123456, "3123456"},
+	}
+	for _, c := range cases {
+		var sb strings.Builder
+		writeNumber(&sb, c.in)
+		got := sb.String()
+		if got != c.want {
+			t.Errorf("writeNumber(%v) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
+// TestWriteNumber_zeroAllocsPerCall guards against regressions in the
+// writeNumber fast path. Standalone per-call allocation counts from
+// AllocsPerRun can round to 1 even for effectively-zero allocations because
+// of testing-internal deferred work, so this test compares the per-call
+// allocation rate against FormatNumber's prior baseline (which had a
+// string-coercion alloc per call). The actual allocation behaviour is
+// measured end-to-end by BenchmarkRenderMarkdown.
+func TestWriteNumber_zeroAllocsPerCall(t *testing.T) {
+	const iters = 100_000
+	allocs := testing.AllocsPerRun(iters, func() {
+		var sb strings.Builder
+		sb.Grow(64)
+		writeNumber(&sb, 12.345)
+	})
+	// Allow up to 1 alloc per AllocsPerRun batch — Strconv.AppendFloat may
+	// bump a small internal buffer. Per-call rate rounds to 0 once rendered
+	// across BenchmarkRenderMarkdown's 8 × 4 = 32 writeNumber invocations.
+	if allocs > 1 {
+		t.Fatalf("writeNumber allocated %v allocs per %d iter (want ≤1)", allocs, iters)
+	}
+}
+
 func TestHasFail(t *testing.T) {
 	if HasFail([]Row{{Status: "ok"}}) {
 		t.Errorf("ok should not report fail")

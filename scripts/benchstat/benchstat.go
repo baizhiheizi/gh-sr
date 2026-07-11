@@ -210,16 +210,18 @@ func HasFail(rows []Row) bool {
 	return false
 }
 
-// FormatNumber renders a benchmark measurement, dropping decimals on larger
-// numbers so the markdown table stays narrow. Uses a stack buffer sized to the
-// worst-case "%.2f" output (32 bytes is well over the realistic ceiling of
-// ~16 chars for ng/µg-range numbers).
-func FormatNumber(f float64) string {
+// writeNumber appends a benchmark measurement to the markdown builder,
+// dropping decimals on larger numbers so the table stays narrow. Writes the
+// digits directly to the builder (no intermediate string alloc) using a
+// stack-allocated 32-byte buffer — comfortably above the worst-case
+// "%.2f" ceiling for nanosecond/microsecond-range measurements.
+func writeNumber(sb *strings.Builder, f float64) {
 	var b [32]byte
 	if f >= 100 {
-		return string(strconv.AppendFloat(b[:0], f, 'f', 0, 64))
+		sb.Write(strconv.AppendFloat(b[:0], f, 'f', 0, 64))
+		return
 	}
-	return string(strconv.AppendFloat(b[:0], f, 'f', 2, 64))
+	sb.Write(strconv.AppendFloat(b[:0], f, 'f', 2, 64))
 }
 
 // formatDeltaTo appends the percent delta of d (with sign) into dst and
@@ -313,7 +315,7 @@ func rowStatus(s string) string {
 
 // writeMetricCell appends the rendered metric cell directly to the markdown
 // builder. The shape is "<base> → <head> (<delta>)[ mark]" where:
-//   - base and head go through FormatNumber's zero/2-decimal rule
+//   - base and head go through writeNumber's zero/2-decimal rule
 //   - delta goes through formatDeltaTo (signed "+X.X%"/"-X.X%"/"0%")
 //   - mark is " 🔥" / " ⚠️" for fail/warn, else ""
 //
@@ -323,10 +325,10 @@ func writeMetricCell(sb *strings.Builder, status string, hasMetric bool, headVal
 	switch status {
 	case "new":
 		sb.WriteString("— → ")
-		sb.WriteString(FormatNumber(headVal))
+		writeNumber(sb, headVal)
 		return
 	case "removed":
-		sb.WriteString(FormatNumber(baseVal))
+		writeNumber(sb, baseVal)
 		sb.WriteString(" → —")
 		return
 	}
@@ -334,9 +336,9 @@ func writeMetricCell(sb *strings.Builder, status string, hasMetric bool, headVal
 		sb.WriteString("—")
 		return
 	}
-	sb.WriteString(FormatNumber(baseVal))
+	writeNumber(sb, baseVal)
 	sb.WriteString(" → ")
-	sb.WriteString(FormatNumber(headVal))
+	writeNumber(sb, headVal)
 	sb.WriteString(" (")
 	var b [24]byte
 	sb.Write(formatDeltaTo(b[:0], delta))
