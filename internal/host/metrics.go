@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+
+	"github.com/an-lee/gh-sr/internal/strfmt"
 )
 
 // HostMetrics holds resource usage information for a single host.
@@ -48,21 +50,27 @@ func (m HostMetrics) DiskPercent() float64 {
 }
 
 // LoadStr formats the three load averages as "l1 l5 l15" with 2-decimal
-// precision. strconv.FormatFloat + strings.Builder avoids the per-call
-// reflection/format-string machinery that fmt.Sprintf drags in — this is on
-// the TUI metrics render path and runs once per host per render.
+// precision. strconv.AppendFloat + a stack-allocated byte buffer avoids both
+// the strings.Builder heap allocation the previous implementation had AND the
+// per-call string allocation that strconv.FormatFloat returns. LoadStr is on
+// the TUI metrics render path and runs once per host per render; for a
+// 10-host panel that's 10 calls per View(), and the cumulative savings
+// compound across long dashboard sessions.
+//
+// The largest realistic output is around 26 chars (e.g. "99999.99 99999.99
+// 99999.99"); [40]byte holds AppendFloat's worst case (24 chars per float)
+// plus the 2 separator spaces.
 func (m HostMetrics) LoadStr() string {
 	if m.Load1 == 0 && m.Load5 == 0 && m.Load15 == 0 {
 		return "-"
 	}
-	var b strings.Builder
-	b.Grow(24) // 3 × ~8 chars per float + 2 spaces
-	b.WriteString(strconv.FormatFloat(m.Load1, 'f', 2, 64))
-	b.WriteByte(' ')
-	b.WriteString(strconv.FormatFloat(m.Load5, 'f', 2, 64))
-	b.WriteByte(' ')
-	b.WriteString(strconv.FormatFloat(m.Load15, 'f', 2, 64))
-	return b.String()
+	var buf [40]byte
+	b := strfmt.FmtFloat(buf[:0], m.Load1, 2)
+	b = append(b, ' ')
+	b = strfmt.FmtFloat(b, m.Load5, 2)
+	b = append(b, ' ')
+	b = strfmt.FmtFloat(b, m.Load15, 2)
+	return string(b)
 }
 
 // CollectMetrics gathers resource usage from the host.
