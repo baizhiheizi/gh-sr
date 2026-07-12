@@ -20,12 +20,10 @@ func TestServiceCleanupDryRun(t *testing.T) {
 					return "stale-1\nactive-1\n", nil
 				case strings.Contains(cmd, "for f in \"$HOME/.config/systemd/user/ghsr-runner-\""):
 					return "ghsr-runner-stale-2\n", nil
-				case strings.Contains(cmd, ".config/systemd/user/") && strings.Contains(cmd, "/etc/systemd/system/"):
-					return "user\n", nil
-				case strings.Contains(cmd, "test -d"):
-					return "yes\n", nil
-				case strings.Contains(cmd, "test -f") && strings.Contains(cmd, "svc.sh"):
-					return "no\n", nil
+				case strings.Contains(cmd, "echo D") && strings.Contains(cmd, "echo S"):
+					// Combined Linux orphan-plan probe (orphanLinuxPlanProbe).
+					// Dir present, no svc.sh, user systemd unit detected.
+					return "D\nU\n", nil
 				default:
 					return "", nil
 				}

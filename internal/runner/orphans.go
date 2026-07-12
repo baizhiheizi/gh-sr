@@ -75,6 +75,25 @@ func (m *Manager) PlanOrphanCleanup(h *host.Host, instance string) (OrphanCleanu
 	if err := SafeRunnerInstanceName(instance); err != nil {
 		return plan, err
 	}
+	// Linux-only fast path: the orphan-cleanup probe (autostart kind + svc.sh
+	// presence + directory existence) reads three correlated facts about the
+	// same host state. Folding them into a single shell call collapses 3 SSH
+	// round-trips into 1 per orphan — same win-class as runner.removeContainer
+	// (PR #264), setupContainer/needsSetupContainer (PR #350), and
+	// EnsureHostDocker (PR #269). For ~50 ms SSH latency and K orphans on a
+	// host, this saves 2K × 50 ms = 100 ms × K per `gh sr cleanup` invocation.
+	if h.OS == "linux" {
+		kind, svcSh, dirExists, err := orphanLinuxPlanProbe(h, instance)
+		if err != nil {
+			return plan, err
+		}
+		plan.Autostart = kind != autostart.KindNone || svcSh
+		plan.Directory = dirExists
+		return plan, nil
+	}
+	// Non-Linux fallback: PowerShell (Windows) and launchd (Darwin) probes
+	// already differ enough that batching buys little. Keep the original
+	// per-instance probe ordering.
 	kind, err := autostart.Detect(h, instance)
 	if err != nil {
 		return plan, err
@@ -89,6 +108,61 @@ func (m *Manager) PlanOrphanCleanup(h *host.Host, instance string) (OrphanCleanu
 	}
 	plan.Directory = exists
 	return plan, nil
+}
+
+// orphanLinuxPlanProbe issues one shell call that reports three correlated
+// facts about an orphan instance on Linux: directory existence, svc.sh
+// deployment, and autostart unit kind. Replaces three per-instance
+// round-trips (instanceDirectoryExists + svcShPresent + autostart.Detect)
+// with one. The script intentionally uses a literal "$HOME" prefix and
+// instance-name interpolation (already sanitized by the caller via
+// SafeRunnerInstanceName) so the remote sh performs the expansion.
+//
+// Returned tuple: (kind, hasSvcSh, dirExists, err).
+//
+// kind uses the same labels as the previous autostart.Detect call so the
+// KindNone/KindSystemdUser/KindSystemdSystem contract is preserved.
+func orphanLinuxPlanProbe(h *host.Host, instance string) (autostart.Kind, bool, bool, error) {
+	dir := h.RunnerDir(instance)
+	san, err := autostart.SanitizeInstance(instance)
+	if err != nil {
+		return autostart.KindNone, false, false, err
+	}
+	base := autostart.ServiceBasename(san)
+	userPath := fmt.Sprintf(`"$HOME/.config/systemd/user/%s.service"`, base)
+	sysPath := fmt.Sprintf(`/etc/systemd/system/%s.service`, base)
+	script := fmt.Sprintf(
+		`dir=%s; `+
+			`if [ -d "$dir" ]; then echo D; fi; `+
+			`if [ -f "$dir/svc.sh" ]; then echo S; fi; `+
+			`if [ -f %s ]; then echo U; `+
+			`elif [ -f %s ]; then echo Y; `+
+			`fi`,
+		hostshell.PosixSingleQuote(dir),
+		userPath, sysPath,
+	)
+	out, err := h.Run(script)
+	if err != nil {
+		return autostart.KindNone, false, false, err
+	}
+	var (
+		dirExists bool
+		hasSvcSh  bool
+		kind      = autostart.KindNone
+	)
+	for _, line := range strings.Split(out, "\n") {
+		switch strings.TrimRight(line, "\r\n") {
+		case "D":
+			dirExists = true
+		case "S":
+			hasSvcSh = true
+		case "U":
+			kind = autostart.KindSystemdUser
+		case "Y":
+			kind = autostart.KindSystemdSystem
+		}
+	}
+	return kind, hasSvcSh, dirExists, nil
 }
 
 // CleanupOrphanInstance removes gh-sr autostart and/or the runner directory for an instance
