@@ -1,1 +1,1 @@
-- [Perf Improver state 2026-07](notes.md) — run 25 on 2026-07-12, local commits `e01dbfe` (removeContainer state-dir echo $HOME skip) and `1a426ee` (PlanOrphanCleanup 3→1 SSH probe batch on Linux), both phantom-success awaiting maintainer push; phantom-success pattern now 8-of-14.
+- [Perf Improver state 2026-07](notes.md) — run 26 on 2026-07-13, **PR #359** opened (start/stop svc+autostart 2→1 batch, commit `e749be8`); PR #358 (orphan-plan-batch from run 25) still open (draft, mergeable=unstable).
