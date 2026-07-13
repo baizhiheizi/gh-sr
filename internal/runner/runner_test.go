@@ -1,12 +1,16 @@
 package runner
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/an-lee/gh-sr/internal/config"
+	"github.com/an-lee/gh-sr/internal/host"
+	"github.com/an-lee/gh-sr/internal/testutil"
 )
 
 func TestManager_EnrichWithGitHubStatus(t *testing.T) {
@@ -120,5 +124,93 @@ func TestManager_CleanupOffline(t *testing.T) {
 	}
 	if len(deletePaths) != 1 || deletePaths[0] != "/repos/o/r/actions/runners/10" {
 		t.Fatalf("delete paths: %v", deletePaths)
+	}
+}
+
+// TestManager_Start_OneSshRoundTripPerInstance pins the perf shape of the
+// native Start orchestrator: each instance must contribute exactly one SSH
+// round-trip on the probe path (combined linuxSvcAndAutostartProbe), not
+// two (the old svcShPresent + autostart.Detect pair). The test mocks three
+// instances so a regression that loops back to the legacy two-probe pattern
+// would surface as `probeCount > 3`.
+func TestManager_Start_OneSshRoundTripPerInstance(t *testing.T) {
+	t.Parallel()
+
+	probeCount := 0
+	startCount := 0
+	mock := &testutil.MockExecutor{
+		RunFn: func(cmd string) (string, error) {
+			switch {
+			// Combined probe from linuxSvcAndAutostartProbe — emit "S" so the
+			// svc.sh branch is taken (no GitHub API calls), and so the probe
+			// result is distinguishable from the start cmd below.
+			case strings.Contains(cmd, "svc.sh") && strings.Contains(cmd, ".config/systemd/user/") && strings.Contains(cmd, "/etc/systemd/system/"):
+				probeCount++
+				return "S\n", nil
+			case strings.Contains(cmd, "svc.sh"):
+				startCount++
+				return "", nil
+			default:
+				return "", nil
+			}
+		},
+	}
+	h := host.NewHost("linux", config.HostConfig{OS: "linux", Addr: "local"})
+	h.SetConn(mock)
+
+	m := NewManager("")
+	var buf bytes.Buffer
+	m.Out = &buf
+
+	rc := config.RunnerConfig{Name: "ci", Host: "h", Repo: "o/r", Count: 3}
+	if err := m.Start(h, rc); err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+	if probeCount != 3 {
+		t.Errorf("expected 3 combined-probe round-trips (1 per instance), got %d", probeCount)
+	}
+	if startCount != 3 {
+		t.Errorf("expected 3 start invocations, got %d", startCount)
+	}
+}
+
+// TestManager_Stop_OneSshRoundTripPerInstance mirrors Start: each instance
+// on the native Stop orchestrator must contribute exactly one SSH round-trip
+// on the probe path (combined linuxSvcAndAutostartProbe).
+func TestManager_Stop_OneSshRoundTripPerInstance(t *testing.T) {
+	t.Parallel()
+
+	probeCount := 0
+	stopCount := 0
+	mock := &testutil.MockExecutor{
+		RunFn: func(cmd string) (string, error) {
+			switch {
+			case strings.Contains(cmd, "svc.sh") && strings.Contains(cmd, ".config/systemd/user/") && strings.Contains(cmd, "/etc/systemd/system/"):
+				probeCount++
+				return "", nil
+			case strings.Contains(cmd, ".runner_pid") || strings.Contains(cmd, "systemctl"):
+				stopCount++
+				return "stopped\n", nil
+			default:
+				return "", nil
+			}
+		},
+	}
+	h := host.NewHost("linux", config.HostConfig{OS: "linux", Addr: "local"})
+	h.SetConn(mock)
+
+	m := NewManager("")
+	var buf bytes.Buffer
+	m.Out = &buf
+
+	rc := config.RunnerConfig{Name: "ci", Host: "h", Repo: "o/r", Count: 3}
+	if err := m.Stop(h, rc); err != nil {
+		t.Fatalf("Stop failed: %v", err)
+	}
+	if probeCount != 3 {
+		t.Errorf("expected 3 combined-probe round-trips (1 per instance), got %d", probeCount)
+	}
+	if stopCount != 3 {
+		t.Errorf("expected 3 stop invocations, got %d", stopCount)
 	}
 }

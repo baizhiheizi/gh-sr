@@ -158,8 +158,16 @@ func (m *Manager) Start(h *host.Host, rc config.RunnerConfig) error {
 	}
 
 	for _, name := range rc.InstanceNames() {
+		// One SSH round-trip per instance that answers both "is svc.sh deployed?"
+		// and "which autostart kind is installed?". Replaces the previous
+		// svcShPresent + autostart.Detect pair (2 SSH per instance).
+		hasSvc, kind, derr := linuxSvcAndAutostartProbe(h, name)
+		if derr != nil {
+			return fmt.Errorf("starting %s: %w", name, derr)
+		}
+
 		// Prefer svc.sh for Linux if it's deployed
-		if h.OS == "linux" && svcShPresent(h, name) {
+		if hasSvc {
 			dir := h.RunnerDir(name)
 			// Install the systemd unit first if not already installed (.service file is the marker).
 			cmd := fmt.Sprintf("cd %s && %s\nif [ ! -f .service ]; then $SUDO ./svc.sh install; fi\n$SUDO ./svc.sh start", dir, strings.TrimSpace(sudoPrelude()))
@@ -171,10 +179,6 @@ func (m *Manager) Start(h *host.Host, rc config.RunnerConfig) error {
 			continue
 		}
 
-		kind, derr := autostart.Detect(h, name)
-		if derr != nil {
-			return fmt.Errorf("starting %s: %w", name, derr)
-		}
 		var err error
 		if kind != autostart.KindNone {
 			err = m.startAutostartWithDarwinFallback(h, rc, name)
@@ -188,7 +192,7 @@ func (m *Manager) Start(h *host.Host, rc config.RunnerConfig) error {
 					// Fall back to direct start; autostart install failure is non-fatal.
 				}
 				// Re-detect after install attempt.
-				kind, _ = autostart.Detect(h, name)
+				hasSvc, kind, _ = linuxSvcAndAutostartProbe(h, name)
 			}
 			if kind != autostart.KindNone {
 				err = m.startAutostartWithDarwinFallback(h, rc, name)
@@ -215,8 +219,16 @@ func (m *Manager) Stop(h *host.Host, rc config.RunnerConfig) error {
 	}
 
 	for _, name := range rc.InstanceNames() {
+		// One SSH round-trip per instance that answers both "is svc.sh deployed?"
+		// and "which autostart kind is installed?". Replaces the previous
+		// svcShPresent + autostart.Detect pair (2 SSH per instance).
+		hasSvc, kind, derr := linuxSvcAndAutostartProbe(h, name)
+		if derr != nil {
+			return fmt.Errorf("stopping %s: %w", name, derr)
+		}
+
 		// Prefer svc.sh for Linux if it's deployed
-		if h.OS == "linux" && svcShPresent(h, name) {
+		if hasSvc {
 			dir := h.RunnerDir(name)
 			cmd := fmt.Sprintf("cd %s && %s\n$SUDO ./svc.sh stop", dir, strings.TrimSpace(sudoPrelude()))
 			out, err := h.Run(cmd)
@@ -227,10 +239,6 @@ func (m *Manager) Stop(h *host.Host, rc config.RunnerConfig) error {
 			continue
 		}
 
-		kind, derr := autostart.Detect(h, name)
-		if derr != nil {
-			return fmt.Errorf("stopping %s: %w", name, derr)
-		}
 		var err error
 		if kind != autostart.KindNone {
 			err = autostart.Stop(h, name)

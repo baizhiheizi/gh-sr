@@ -47,6 +47,64 @@ func svcShPresent(h *host.Host, instanceName string) bool {
 	return ok
 }
 
+// linuxSvcAndAutostartProbe runs a single SSH round-trip on Linux that returns
+// whether svc.sh is deployed in the runner directory and the autostart kind
+// for the instance. It replaces the previous pattern of calling
+// `svcShPresent(h, name)` followed by `autostart.Detect(h, name)` (two separate
+// SSH round-trips per instance) on the Start / Stop / removeNativeServices
+// hot paths. Same win-class as orphanLinuxPlanProbe (PR #358), the systemd
+// probe consolidation in autostart.Detect (PR #285), and the per-instance
+// container presence one-shot (PR #350).
+//
+// Markers emitted by the shell on separate lines:
+//
+//	S - $DIR/svc.sh is present
+//	U - user-level systemd unit is installed ($HOME/.config/systemd/user/...service)
+//	Y - system-level systemd unit is installed (/etc/systemd/system/...service)
+//
+// The markers are independent: an instance with both svc.sh and a user unit
+// emits both S and U. The Go-side parser maps the markers back to the
+// (bool, Kind) tuple the call sites expect.
+//
+// On Windows and macOS, where svc.sh is never used, the helper delegates to
+// autostart.Detect only (one SSH round-trip, same as before).
+func linuxSvcAndAutostartProbe(h *host.Host, instanceName string) (svcSh bool, kind autostart.Kind, err error) {
+	if h.OS != "linux" {
+		k, derr := autostart.Detect(h, instanceName)
+		return false, k, derr
+	}
+	san, serr := autostart.SanitizeInstance(instanceName)
+	if serr != nil {
+		return false, autostart.KindNone, serr
+	}
+	base := autostart.ServiceBasename(san)
+	dir := h.RunnerDir(instanceName)
+	userPath := fmt.Sprintf(`"$HOME/.config/systemd/user/%s.service"`, base)
+	sysPath := fmt.Sprintf(`/etc/systemd/system/%s.service`, base)
+	script := fmt.Sprintf(
+		`if [ -f %s/svc.sh ]; then echo S; fi; `+
+			`if [ -f %s ]; then echo U; `+
+			`elif [ -f %s ]; then echo Y; `+
+			`fi`,
+		dir, userPath, sysPath,
+	)
+	out, rerr := h.Run(script)
+	if rerr != nil {
+		return false, autostart.KindNone, rerr
+	}
+	for _, line := range strings.Split(out, "\n") {
+		switch strings.TrimSpace(line) {
+		case "S":
+			svcSh = true
+		case "U":
+			kind = autostart.KindSystemdUser
+		case "Y":
+			kind = autostart.KindSystemdSystem
+		}
+	}
+	return svcSh, kind, nil
+}
+
 // posixSingleQuote and writeRemoteBytes were moved to internal/hostshell.
 // Call sites use hostshell.PosixSingleQuote and hostshell.WriteRemoteBytes directly.
 
@@ -519,13 +577,16 @@ func (m *Manager) removeNative(h *host.Host, rc config.RunnerConfig, instanceNam
 func (m *Manager) removeNativeServices(h *host.Host, instanceName string) {
 	dir := h.RunnerDir(instanceName)
 
-	if h.OS == "linux" && svcShPresent(h, instanceName) {
+	// Combined probe: one SSH round-trip answers both "is svc.sh deployed?" and
+	// "which autostart kind is installed?". Replaces the previous
+	// svcShPresent + autostart.Detect pair (2 SSH per call).
+	hasSvc, kind, _ := linuxSvcAndAutostartProbe(h, instanceName)
+	if hasSvc {
 		uninstallSvcCmd := fmt.Sprintf("cd %s && %s\n$SUDO ./svc.sh uninstall 2>/dev/null || true", dir, strings.TrimSpace(sudoPrelude()))
 		h.Run(uninstallSvcCmd) // Ignore errors - we're removing anyway
 		fmt.Fprintf(m.out(), "  %s: svc.sh service removed\n", instanceName)
 	}
 
-	kind, _ := autostart.Detect(h, instanceName)
 	if err := autostart.Uninstall(h, instanceName); err != nil {
 		fmt.Fprintf(m.out(), "  %s: warning: failed to remove autostart: %v\n", instanceName, err)
 	} else if kind != autostart.KindNone {
