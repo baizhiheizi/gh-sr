@@ -30,8 +30,12 @@ func TestRemoveNativeCleansServicesAndDirectory(t *testing.T) {
 	mock := &testutil.MockExecutor{
 		RunFn: func(cmd string) (string, error) {
 			switch {
-			case strings.Contains(cmd, "test -f") && strings.Contains(cmd, "svc.sh"):
-				return "no\n", nil
+			// Combined linuxSvcAndAutostartProbe (1 SSH round-trip) — must be
+			// matched before the older standalone probe patterns so the mock
+			// sees the new probe shape, not the legacy one.
+			case strings.Contains(cmd, "svc.sh") && strings.Contains(cmd, ".config/systemd/user/") && strings.Contains(cmd, "/etc/systemd/system/"):
+				return "U\n", nil
+			// Standalone autostart.Detect (called internally by Uninstall).
 			case strings.Contains(cmd, ".config/systemd/user/") && strings.Contains(cmd, "/etc/systemd/system/"):
 				return "user\n", nil
 			case strings.Contains(cmd, "systemctl --user disable"):

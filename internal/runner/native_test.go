@@ -8,8 +8,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/an-lee/gh-sr/internal/autostart"
 	"github.com/an-lee/gh-sr/internal/config"
 	"github.com/an-lee/gh-sr/internal/host"
+	"github.com/an-lee/gh-sr/internal/testutil"
 )
 
 func Test_archForGitHub(t *testing.T) {
@@ -386,4 +388,129 @@ func TestNativeRunnerConfigPresent_local(t *testing.T) {
 	if errMissing != nil || okMissing {
 		t.Fatalf("expected not installed: ok=%v err=%v", okMissing, errMissing)
 	}
+}
+
+// TestLinuxSvcAndAutostartProbe pins the combined-probe shape: one SSH
+// round-trip answers both "is svc.sh deployed?" and "which autostart kind is
+// installed?". Each sub-case asserts `calls == 1` to enforce the
+// 1-SSH-round-trip contract that the helper exists to deliver.
+func TestLinuxSvcAndAutostartProbe(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name      string
+		out       string
+		wantSvc   bool
+		wantKind  autostart.Kind
+		wantCalls int
+	}{
+		{"nothing", "", false, autostart.KindNone, 1},
+		{"svc-only", "S\n", true, autostart.KindNone, 1},
+		{"user-only", "U\n", false, autostart.KindSystemdUser, 1},
+		{"system-only", "Y\n", false, autostart.KindSystemdSystem, 1},
+		{"svc-and-user", "S\nU\n", true, autostart.KindSystemdUser, 1},
+		{"svc-and-system", "S\nY\n", true, autostart.KindSystemdSystem, 1},
+		{"user-and-system-keeps-user", "U\n", false, autostart.KindSystemdUser, 1},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			calls := 0
+			mock := &testutil.MockExecutor{
+				RunFn: func(cmd string) (string, error) {
+					calls++
+					// Sanity: combined probe must include both the svc.sh check
+					// and the autostart candidate paths.
+					if !strings.Contains(cmd, "svc.sh") {
+						t.Errorf("combined probe missing svc.sh check: %q", cmd)
+					}
+					if !strings.Contains(cmd, ".config/systemd/user/") {
+						t.Errorf("combined probe missing user unit path: %q", cmd)
+					}
+					if !strings.Contains(cmd, "/etc/systemd/system/") {
+						t.Errorf("combined probe missing system unit path: %q", cmd)
+					}
+					return tc.out, nil
+				},
+			}
+			h := host.NewHost("linux", config.HostConfig{OS: "linux", Addr: "local"})
+			h.SetConn(mock)
+
+			gotSvc, gotKind, err := linuxSvcAndAutostartProbe(h, "ci-1")
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if gotSvc != tc.wantSvc {
+				t.Errorf("svcShPresent: got %v want %v", gotSvc, tc.wantSvc)
+			}
+			if gotKind != tc.wantKind {
+				t.Errorf("autostart.Kind: got %q want %q", gotKind, tc.wantKind)
+			}
+			if calls != tc.wantCalls {
+				t.Errorf("SSH round-trips: got %d want %d (combined probe must be exactly 1)", calls, tc.wantCalls)
+			}
+		})
+	}
+}
+
+// TestLinuxSvcAndAutostartProbe_unsupportedOS confirms non-Linux hosts fall
+// through to autostart.Detect (one SSH round-trip), preserving the prior
+// behaviour for Darwin and Windows.
+func TestLinuxSvcAndAutostartProbe_unsupportedOS(t *testing.T) {
+	t.Parallel()
+
+	t.Run("darwin", func(t *testing.T) {
+		t.Parallel()
+		calls := 0
+		mock := &testutil.MockExecutor{
+			RunFn: func(cmd string) (string, error) {
+				calls++
+				// launchd probe — should NOT include svc.sh
+				if strings.Contains(cmd, "svc.sh") {
+					t.Errorf("darwin probe should not check svc.sh: %q", cmd)
+				}
+				return "", nil
+			},
+		}
+		h := host.NewHost("darwin", config.HostConfig{OS: "darwin", Addr: "local"})
+		h.SetConn(mock)
+		hasSvc, kind, err := linuxSvcAndAutostartProbe(h, "ci-1")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if hasSvc {
+			t.Errorf("darwin should always report svc.sh=false, got true")
+		}
+		if kind != autostart.KindNone {
+			t.Errorf("kind: got %q want None", kind)
+		}
+		if calls != 1 {
+			t.Errorf("darwin path must be 1 SSH round-trip (autostart.Detect), got %d", calls)
+		}
+	})
+
+	t.Run("windows", func(t *testing.T) {
+		t.Parallel()
+		mock := &testutil.MockExecutor{
+			RunFn: func(cmd string) (string, error) {
+				// Detect's PowerShell probe wrapped via h.wrapCommand ends up
+				// routed through h.Run under the hood.
+				return "no", nil
+			},
+		}
+		h := host.NewHost("win", config.HostConfig{OS: "windows", Addr: "local"})
+		h.SetConn(mock)
+		hasSvc, kind, err := linuxSvcAndAutostartProbe(h, "ci-1")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if hasSvc {
+			t.Errorf("windows should always report svc.sh=false, got true")
+		}
+		if kind != autostart.KindNone {
+			t.Errorf("kind: got %q want None", kind)
+		}
+	})
 }
