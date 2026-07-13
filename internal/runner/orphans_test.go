@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/an-lee/gh-sr/internal/autostart"
 	"github.com/an-lee/gh-sr/internal/config"
 	"github.com/an-lee/gh-sr/internal/host"
 	"github.com/an-lee/gh-sr/internal/testutil"
@@ -59,12 +60,9 @@ func TestCleanupOrphanInstanceDryRun(t *testing.T) {
 	mock := &testutil.MockExecutor{
 		RunFn: func(cmd string) (string, error) {
 			switch {
-			case strings.Contains(cmd, ".config/systemd/user/") && strings.Contains(cmd, "/etc/systemd/system/"):
-				return "user\n", nil
-			case strings.Contains(cmd, "test -d"):
-				return "yes\n", nil
-			case strings.Contains(cmd, "test -f") && strings.Contains(cmd, "svc.sh"):
-				return "no\n", nil
+			case strings.Contains(cmd, "echo D") && strings.Contains(cmd, "echo S"):
+				// Combined Linux orphan-plan probe: dir present, no svc.sh, user systemd unit.
+				return "D\nU\n", nil
 			default:
 				return "", nil
 			}
@@ -79,5 +77,61 @@ func TestCleanupOrphanInstanceDryRun(t *testing.T) {
 	}
 	if !plan.Autostart || !plan.Directory {
 		t.Fatalf("plan = %+v", plan)
+	}
+}
+
+// TestOrphanLinuxPlanProbe pins the combined-probe parsing for the Linux
+// orphan-plan path: D (dir), S (svc.sh), U (user systemd unit), Y (system
+// systemd unit) markers are mapped to the matching flags/kind. Asserts a
+// single SSH round-trip per call (the whole point of the consolidation).
+func TestOrphanLinuxPlanProbe(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name     string
+		out      string
+		wantKind autostart.Kind
+		wantSvc  bool
+		wantDir  bool
+	}{
+		{"nothing", "", autostart.KindNone, false, false},
+		{"dir only", "D\n", autostart.KindNone, false, true},
+		{"svc only", "S\n", autostart.KindNone, true, false},
+		{"dir+svc", "S\nD\n", autostart.KindNone, true, true},
+		{"user only", "U\n", autostart.KindSystemdUser, false, false},
+		{"system only", "Y\n", autostart.KindSystemdSystem, false, false},
+		{"all three", "D\nS\nU\n", autostart.KindSystemdUser, true, true},
+		{"all three system", "D\nS\nY\n", autostart.KindSystemdSystem, true, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var calls int
+			mock := &testutil.MockExecutor{
+				RunFn: func(cmd string) (string, error) {
+					if strings.Contains(cmd, "echo D") && strings.Contains(cmd, "echo S") {
+						calls++
+						return tc.out, nil
+					}
+					return "", nil
+				},
+			}
+			h := host.NewHost("linux", config.HostConfig{OS: "linux"})
+			h.SetConn(mock)
+			kind, svc, dir, err := orphanLinuxPlanProbe(h, "old-1")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if calls != 1 {
+				t.Errorf("got %d SSH calls; want 1", calls)
+			}
+			if kind != tc.wantKind {
+				t.Errorf("kind = %q; want %q", kind, tc.wantKind)
+			}
+			if svc != tc.wantSvc {
+				t.Errorf("svc = %v; want %v", svc, tc.wantSvc)
+			}
+			if dir != tc.wantDir {
+				t.Errorf("dir = %v; want %v", dir, tc.wantDir)
+			}
+		})
 	}
 }

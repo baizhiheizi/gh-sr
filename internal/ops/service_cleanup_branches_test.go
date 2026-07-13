@@ -16,6 +16,9 @@ import (
 //   - ls -1 "$HOME/.gh-sr/runners"               → dirs list
 //   - "for f in ...ghsr-runner-" systemd probe    → units list
 //   - systemd-user/system probe                   → "user" / "system" / ""
+//   - combined Linux orphan-plan probe            → D/S/U/Y markers
+//     (PlanOrphanCleanup collapses the three per-instance probes into one
+//     shell call on Linux; see orphanLinuxPlanProbe.)
 //   - test -d DIR                                 → instanceDirectoryExists result
 //   - test -f .../svc.sh                          → svc.sh presence (yes/no)
 //   - systemctl/systemctl --user disable ...     → no-op for dryRun, must succeed for real cleanup
@@ -37,6 +40,23 @@ func serviceCleanupMock(t *testing.T, opts cleanupMockOpts) *testutil.MockExecut
 					return opts.systemdList, nil
 				}
 				return "", nil
+			case strings.Contains(cmd, "echo D") && strings.Contains(cmd, "echo S"):
+				// Combined Linux orphan-plan probe (orphanLinuxPlanProbe).
+				// Returns D/S/U/Y markers per the configured cleanupMockOpts.
+				var out string
+				if opts.dirExists {
+					out += "D\n"
+				}
+				if opts.svcShPresent {
+					out += "S\n"
+				}
+				switch opts.detectKind {
+				case "user":
+					out += "U\n"
+				case "system":
+					out += "Y\n"
+				}
+				return out, nil
 			case strings.Contains(cmd, ".config/systemd/user/") && strings.Contains(cmd, "/etc/systemd/system/"):
 				return opts.detectKind, nil
 			case strings.Contains(cmd, "test -d"):
