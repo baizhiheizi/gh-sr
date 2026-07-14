@@ -210,24 +210,33 @@ func HasFail(rows []Row) bool {
 	return false
 }
 
+// appendFloat is the local benchstat analogue of internal/strfmt.FmtFloat.
+// scripts/benchstat is a //go:build ignore, stdlib-only standalone tool
+// (see bench-compare.yml) and cannot import internal/strfmt, so the 24-byte
+// worst-case rule from internal/strfmt/fmtstr.go is mirrored here. One
+// declaration site keeps writeNumber, appendDelta, and any future caller in
+// lockstep when strconv.AppendFloat's worst case changes.
+func appendFloat(dst []byte, v float64, prec int) []byte {
+	return strconv.AppendFloat(dst, v, 'f', prec, 64)
+}
+
 // writeNumber appends a benchmark measurement to the markdown builder,
 // dropping decimals on larger numbers so the table stays narrow. Writes the
 // digits directly to the builder (no intermediate string alloc) using a
-// stack-allocated 32-byte buffer — comfortably above the worst-case
+// stack-allocated 24-byte buffer — comfortably above the worst-case
 // "%.2f" ceiling for nanosecond/microsecond-range measurements.
 func writeNumber(sb *strings.Builder, f float64) {
-	var b [32]byte
+	var b [24]byte
 	if f >= 100 {
-		sb.Write(strconv.AppendFloat(b[:0], f, 'f', 0, 64))
+		sb.Write(appendFloat(b[:0], f, 0))
 		return
 	}
-	sb.Write(strconv.AppendFloat(b[:0], f, 'f', 2, 64))
+	sb.Write(appendFloat(b[:0], f, 2))
 }
 
-// formatDeltaTo appends the percent delta of d (with sign) into dst and
-// returns the resulting slice. Single-allocation helper that mirrors the
-// pre-1.21 strconv.AppendFloat pattern; 24 bytes is comfortably above the
-// worst-case "+<16-char>%%\n" length FormatDelta can produce.
+// formatDeltaTo appends the signed percent delta of d into dst and returns
+// the resulting slice. Output shape: "+X.X%" / "-X.X%" / "0%". 24 bytes is
+// comfortably above the worst-case output for any reasonable percentage.
 func formatDeltaTo(dst []byte, d float64) []byte {
 	if d == 0 {
 		return append(dst, "0%"...)
@@ -235,14 +244,15 @@ func formatDeltaTo(dst []byte, d float64) []byte {
 	if d > 0 {
 		dst = append(dst, '+')
 	}
-	dst = strconv.AppendFloat(dst, d, 'f', 1, 64)
+	dst = appendFloat(dst, d, 1)
 	return append(dst, '%')
 }
 
-// FormatDelta renders a percent delta with sign.
-func FormatDelta(d float64) string {
+// appendDelta renders the signed percent delta of d directly into sb.
+// Single declaration site for the 24-byte stack buffer used by formatDeltaTo.
+func appendDelta(sb *strings.Builder, d float64) {
 	var b [24]byte
-	return string(formatDeltaTo(b[:0], d))
+	sb.Write(formatDeltaTo(b[:0], d))
 }
 
 // RenderMarkdown returns a human-readable regression report.
@@ -340,8 +350,7 @@ func writeMetricCell(sb *strings.Builder, status string, hasMetric bool, headVal
 	sb.WriteString(" → ")
 	writeNumber(sb, headVal)
 	sb.WriteString(" (")
-	var b [24]byte
-	sb.Write(formatDeltaTo(b[:0], delta))
+	appendDelta(sb, delta)
 	sb.WriteByte(')')
 	if fail {
 		sb.WriteString(" 🔥")
