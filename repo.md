@@ -5,15 +5,14 @@ metadata:
   type: project
 ---
 
-Go module `github.com/an-lee/gh-sr` (remote `baizhiheizi/gh-sr.git`). CLI entry is `cmd/gh-sr/`; implementation under `internal/`.
+Go module `github.com/an-lee/gh-sr` (remote `baizhiheizi/gh-sr.git`). CLI entry is `cmd/gh-sr/`; implementation is under `internal/`.
 
-Coverage snapshot 2026-07-09:
-- `internal/agentic` 81.0%; `internal/autostart` 94.7%; `internal/config` 83.9%; `internal/diskschedule` 88.2%; `internal/doctor` 68.8%; `internal/editor` 53.8%; `internal/host` 59.6%; `internal/hostshell` 89.7%; `internal/hostshell/ps` 60.0%; `internal/ops` 93.6%; `internal/runner` 59.6%; `internal/table` 87.5%; `internal/testutil` 88.2%; `internal/tui` 17.4%; `cmd/gh-sr` 0.0%.
+Coverage snapshot 2026-07-14: `internal/runner` baseline on current `main` was 62.8%; run #29308107521 raises the branch to 63.8%. Current focused functions after the branch tests: `Manager.Start` 53.8%, `Manager.Stop` 42.9%, and `startAutostartWithDarwinFallback` 60%. `setupNative`, `startNativeOnce`, `handleStaleRegistration`, and `dirSizesWindows` remain 0%.
 
-CI (`.github/workflows/ci.yml`) runs `go vet ./...`, `gofmt -l .`, and `go test ./... -race -count=1` on self-hosted linux. Bench job runs `go test ./... -run='^$' -bench=. -benchmem -count=1`.
+CI (`.github/workflows/ci.yml`) runs `go vet ./...`, `gofmt -l .`, and `go test ./... -race -count=1` on self-hosted Linux. Bench job runs `go test ./... -run='^$' -bench=. -benchmem -count=1`. There is local coverage support but no CI coverage profile/artifact.
 
-Maintainer merges test-improver work regularly. By 2026-07-09, prior phantom patch work from 2026-06-30 through 2026-07-04 plus 2026-07-08 (#336) is present on `main`; the 2026-07-09 PR intent #337 phantom'd (patch saved). Monthly issue #306 now tracks the new runner-dispatch PR intent plus the stale duplicate #305.
+Prior Test Improver work through 2026-07-09 is present on `main`: PR #343 (runner dispatcher/disk branches), #336 (diskschedule), #321/#316 (autostart), #311 (runner pure helpers), and #304 (ops Update). Monthly issue #306 is active; #305 remains an open duplicate despite its existing redirect comment.
 
-Phantom PR pattern confirmed (5th consecutive: 2026-06-30, 2026-07-01, plus 2026-07-08 #336 landed anyway, 2026-07-09 #337 phantom): `safeoutputs.create_pull_request` reports success while the PR does not appear in `gh-sr/pulls`. Patch + bundle are always saved to `/tmp/gh-aw/aw-test-assist-*.{patch,bundle}`; the maintainer manually `git am`s when needed.
+Safeoutputs may report only a patch/bundle without a live PR number. Persist the temporary ID, branch, commit, patch, and bundle, then verify GitHub state in a later run rather than claiming a PR exists. Current intent: `#aw_probe`, branch `test-assist/native-start-stop-probe-branches`, commit `bf59188`.
 
-[[commands]] [[testing-notes]] [[backlog]]
+[[commands]] [[testing-notes]] [[backlog]] [[wip]]

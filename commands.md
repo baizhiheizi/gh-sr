@@ -5,7 +5,7 @@ metadata:
   type: reference
 ---
 
-Validated on `test-assist/diskschedule-command-seams` 2026-07-08 against `.github/workflows/ci.yml`.
+Validated on `test-assist/native-start-stop-probe-branches` 2026-07-14 against `.github/workflows/ci.yml`; build, vet, formatting, focused coverage, and full race suite passed.
 
 ```bash
 go build -o gh-sr ./cmd/gh-sr/        # build binary

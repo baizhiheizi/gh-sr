@@ -14,5 +14,7 @@ metadata:
 - For Windows-branch tests in `disk.go`, use a non-local `Addr` (e.g. `runner@vps`) so `host.Host.wrapCommand` activates the `powershell -EncodedCommand` base64 wrapper. Without it the wrapper silently no-ops and the test sees the raw PS script.
 - Gotchas: `t.Setenv` is incompatible with `t.Parallel()`; `config.IsLocalAddr("")` is false; do not lock `connectHostMu` inside a helper that already locked it; use `strings.Count` for torn-write assertions.
 - Full-tree `gofmt -l .` is a CI check. If an unrelated Go file is already non-gofmt, a gofmt-only cleanup may be needed to keep CI green.
+- For lifecycle regressions after combined-probe refactors, use a sequence-aware `MockExecutor.RunFn`: match the combined probe first, then stable command intent for install/re-detect/action. Exact event order is valuable when re-probing is the correctness boundary; avoid matching entire generated shell scripts.
+- CI currently has no coverage profile/artifact step. Local `Makefile` coverage support is adequate; any CI addition should remain non-gating until maintainers choose a threshold policy.
 
 [[repo]] [[commands]] [[backlog]]

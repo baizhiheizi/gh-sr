@@ -5,14 +5,14 @@ metadata:
   type: project
 ---
 
-## Run #28998803505 (2026-07-09)
+## Run #29308107521 (2026-07-14 06:10 UTC)
 
-- Branch `test-assist/runner-orchestrator-dispatch`, commit `4487f30`.
-- Draft PR intent reported by safeoutputs as #337; **phantom PR** (5th consecutive: safeoutputs reported success but the PR did not land in the live repo — see `gh-sr` open PRs at run time: only #338/#339/#340/#342 from other agents present). Patch + bundle saved locally for `git am` recovery.
-- Changed `internal/runner/`: new `runner_orchestrator_dispatch_test.go` (+274 lines, 8 tests) for `Manager.NeedsSetup` (0% → 100%) and `Manager.RebuildImage` (0% → 100%) dispatchers; `disk_test.go` (+162 lines, 6 tests) for `clearWorkTemp` POSIX/Windows branches and `removeDirTree` POSIX branches and `PruneInstance` orphan-with-IncludeOrphans path.
-- Coverage: package **57.6% → 59.6% (+2.0 pp)**; `NeedsSetup` **0% → 100% (gap fully closed)**; `RebuildImage` **0% → 100% (gap fully closed)**; `clearWorkTemp` **50% → 100%**; `removeDirTree` **25% → 50%**; `PruneInstance` **54.1% → 64.9%**.
-- Verified: build, vet, gofmt, full race (15/15 packages pass), package coverage, diff check.
-- Monthly issue #306 updated; the prior #aw_dskpr action item removed because #336 was merged on 2026-07-08.
-- Next: `internal/runner` deep pipelines (`setupNative`/`startNative`, 0%) need seam refactors similar to #336 before unit testing; `EnsureSetup` (runner.go:108, 0%) is now the only uncovered Manager-level dispatcher.
+- Branch `test-assist/native-start-stop-probe-branches`, commit `bf59188`.
+- Draft PR intent `#aw_probe` accepted by safeoutputs; patch `/tmp/gh-aw/aw-test-assist-native-start-stop-probe-branches.patch` (4,689 bytes, 131 lines), bundle `/tmp/gh-aw/aw-test-assist-native-start-stop-probe-branches.bundle` (1,547 bytes). Do not assume a live PR number until a later GitHub read confirms it.
+- Changed `internal/runner/runner_test.go`: two sequence-aware tests cover Manager Start's missing-autostart → install → re-probe → user-systemd start path and Manager Stop's combined-probe user-systemd dispatch. Both assert direct native fallback is not used.
+- Coverage: `internal/runner` **62.8% → 63.8% (+1.0 pp)**; `Manager.Start` **30.8% → 53.8%**; `Manager.Stop` **35.7% → 42.9%**; `startAutostartWithDarwinFallback` **0% → 60%**.
+- Verified: focused tests, build, vet, gofmt, full race suite (all packages pass), package coverage, and diff check.
+- Maintenance check: no open `[test-improver]` PRs before this run; prior 2026-07-09 runner-dispatch work is merged as PR #343. Monthly issue #306 updated; duplicate #305 remains open and is still a maintainer action.
+- Task 6 assessment: shared fixtures are adequate; helper consolidation deferred. Missing non-gating CI coverage artifact support added to backlog.
 
 [[backlog]] [[run-history]]
