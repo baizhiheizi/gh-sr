@@ -262,6 +262,50 @@ func TestHasContainerModeRunners(t *testing.T) {
 	}
 }
 
+// TestHasContainerAgenticRunners pins the helper that gates the per-host
+// inner-AWF hygiene check. It must return true if (and only if) at least
+// one runner on the host uses profile: agentic — which transitively
+// implies container mode via EffectiveRunnerMode — and false for every
+// other combination (native, container-explicit-but-not-agentic, empty).
+func TestHasContainerAgenticRunners(t *testing.T) {
+	t.Parallel()
+	empty := []config.RunnerConfig{}
+	if hasContainerAgenticRunners(empty) {
+		t.Fatal("empty runner list should not trigger agentic container checks")
+	}
+	nativeOnly := []config.RunnerConfig{
+		{Name: "n1", Host: "h1", Repo: "o/r"},
+		{Name: "n2", Host: "h2", Repo: "o/r"},
+	}
+	if hasContainerAgenticRunners(nativeOnly) {
+		t.Fatal("native-only runners should not trigger agentic container checks")
+	}
+	containerExplicitOnly := []config.RunnerConfig{
+		{Name: "c1", Host: "h1", Repo: "o/r", RunnerMode: config.RunnerModeContainer},
+	}
+	if hasContainerAgenticRunners(containerExplicitOnly) {
+		t.Fatal("runner_mode: container without profile: agentic should not trigger agentic hygiene checks")
+	}
+	// Agentic on a different host must not affect the host-scoped decision.
+	agenticOtherHost := []config.RunnerConfig{
+		{Name: "a1", Host: "h2", Repo: "o/r", Profile: "agentic"},
+	}
+	// hasContainerAgenticRunners is host-agnostic — the per-host filtering
+	// happens at the caller (installTargetsForHost). The helper itself
+	// reports "does any runner anywhere use agentic container mode?", so
+	// a runner on another host must still flip it to true.
+	if !hasContainerAgenticRunners(agenticOtherHost) {
+		t.Fatal("profile: agentic on any host should trigger agentic container checks (caller filters per-host)")
+	}
+	mixed := []config.RunnerConfig{
+		{Name: "n1", Host: "h1", Repo: "o/r"},
+		{Name: "a1", Host: "h1", Repo: "o/r", Profile: "agentic"},
+	}
+	if !hasContainerAgenticRunners(mixed) {
+		t.Fatal("mixed list containing an agentic runner should trigger agentic container checks")
+	}
+}
+
 type failIfRunExec struct {
 	t *testing.T
 }
