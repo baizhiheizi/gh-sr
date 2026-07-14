@@ -1,28 +1,42 @@
+---
+name: completed
+description: PRs and outcomes from efficiency-improver runs
+metadata:
+  type: project
+---
+
 # Completed Work
 
-## 2026-07-11 — scripts/benchstat writeNumber direct-to-builder (-95.7% allocs/op) — **DRAFT PR pending**
+## 2026-07-14 — TUI dashboard footerMain Sprintf → package consts — **DRAFT PR pending**
 
-Branch `efficiency/benchstat-formatnumber-write-direct` (46ed29d, amended from f875693). `FormatNumber(f)` returned a string coerced from a stack `[32]byte` slice; `sb.WriteString` copied those bytes back into the builder — one alloc per call. `writeNumber(sb, f)` appends digits via `sb.Write(strconv.AppendFloat(b[:0], …, 64))` and skips the string coercion.
-
-| Bench | Before (PR #345) | After | Δ |
-|---|---|---|---|
-| `BenchmarkRenderMarkdown` | 7,746 ns · 2,800 B · **47 allocs/op** | 4,928 ns · 2,560 B · **2 allocs/op** | **−36.4% / −8.6% / −95.7%** |
-| `BenchmarkFullPipeline` | ~37,000 ns · 25,570 B · 145 allocs | ~30,600 ns · 25,368 B · **100 allocs** | −17.3% / −0.8% / **−31.0%** |
-| `BenchmarkWriteNumber` (new) | n/a | 545 ns · 64 B · 1 allocs | new sentinel for `bench`/`bench-compare` |
-
-`FormatNumber` lowercased to `writeNumber` (no external callers). Added `TestWriteNumber` + `TestWriteNumber_zeroAllocsPerCall` regression guard. 14/14 existing + 2 new tests pass; 17/17 packages OK.
-
-## 2026-07-09 — scripts/benchstat RenderMarkdown (-79.2% allocs/op) — **MERGED PR #345**
+Branch `efficiency/tui-render-sprintf-and-closure` (ef19ba6). Replaced per-View() `fmt.Sprintf` with two package `const` strings (`footerMainIdle`, `footerMainLoading`).
 
 | Bench | Before | After | Δ |
 |---|---|---|---|
-| `BenchmarkRenderMarkdown` | 12,877 ns · 6,205 B · **226 allocs/op** | 6,248 ns · 2,800 B · **47 allocs/op** | **−51.5% / −54.9% / −79.2%** |
-| `BenchmarkFullPipeline` | 42,309 ns · 29,045 B · 324 allocs | 31,427 ns · 25,637 B · 145 allocs | **−25.7% / −11.7% / −55.2%** |
+| `FooterMain/idle` | 7,888 ns · 1,145 B · 11 allocs | 7,263 ns · 1,032 B · 10 allocs | −7.9% / −9.9% / −9.1% |
+| `FooterMain/loading` | 7,873 ns · 1,289 B · 12 allocs | 8,119 ns · 1,144 B · 10 allocs | ~ / −11.2% / −16.7% |
+| `ViewMain` (1 status) | 52,446 ns · 11,487 B · 341 allocs | 53,681 ns · 11,379 B · 340 allocs | ~ / −0.9% / −0.3% |
+
+Added `TestFooterMain_idleAndLoading` + `TestFooterMain_constantsMatch`. Sentinels: `BenchmarkFooterMain`, `BenchmarkViewMain`, `BenchmarkFormatContainerImageBuild`.
+
+**Negative result**: `formatContainerImageBuild` closure already elided by Go escape analysis (0 allocs/op).
+
+16 existing + 3 new tests pass; 17/17 packages OK; race suite OK.
+
+## 2026-07-11 — scripts/benchstat writeNumber direct-to-builder — **PR #357 CLOSED WITHOUT MERGE**
+
+Branch `efficiency/benchstat-formatnumber-write-direct` (46ed29d). `FormatNumber(f) string` → `writeNumber(sb, f)`. RenderMarkdown 47→2 allocs/op (-95.7%); FullPipeline 145→100 allocs/op (-31%); new `BenchmarkWriteNumber` sentinel.
+
+**Outcome**: PR #357 created 2026-07-11 09:57 UTC, **closed without merge 2026-07-11 23:44 UTC**. Patch at `/tmp/gh-aw/aw-efficiency-benchstat-formatnumber-write-direct.patch`.
+
+## 2026-07-09 — scripts/benchstat RenderMarkdown (-79.2% allocs/op) — **MERGED PR #345**
+
+PR #345 (squash-merge). RenderMarkdown 12,877 → 6,248 ns/op, 6,205 → 2,800 B/op, 226 → 47 allocs/op.
 
 ## 2026-07-07 — FormatBytesHuman inline unit suffix (-14.3%) — **MERGED PR #323**
 
-PR #323 (squash-merge 14d1edb). `BenchmarkFormatBytesHuman`: 443.5 → 379.9 ns/op.
+PR #323 (squash-merge 14d1edb). BenchmarkFormatBytesHuman 443.5 → 379.9 ns/op.
 
-## Earlier merged (run-history.md for dates)
+## Earlier merged (full list in run-history.md)
 
-PR #322 doctor fan-out · #226 ContainerImageLayoutRevision · #213 Manager.Status · #203 container SSH (3→1) · #191 extractTrailingPercent · #167 EnrichWithGitHubStatus · #155 FindRunnerForLogs · #146 InstanceNames · #136 dirSizesPOSIX · #128 Validate_Large · #123 FilterRunners · #249 TUI render · TUI metrics (squash 2373126).
+PR #361 · #345 · #322 · #249 · #226 · #213 · #203 · #191 · #167 · #155 · #146 · #136 · #128 · #123 · TUI metrics (squash 2373126).

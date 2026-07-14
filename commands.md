@@ -1,10 +1,9 @@
 ---
 name: commands
 description: Validated build/test/bench commands for the gh-sr Go CLI extension
-metadata: 
+metadata:
   node_type: memory
   type: reference
-  originSessionId: 04e58c81-0a51-4f35-bd75-e67ad9ba414d
 ---
 
 # Build / Test / Benchmark Commands
@@ -21,9 +20,9 @@ metadata:
 - `go vet ./...` — clean (validated, exit0)
 
 ## Benchmark
-- `go test ./internal/ops -bench=. -benchmem -benchtime=Nx` — ops benchmarks (validated)
-- `go test ./internal/config -bench=. -benchmem -benchtime=Nx` — config benchmarks (validated)
-- Bench files: `internal/ops/bench_test.go`, `internal/config/bench_test.go`
+- `go test ./internal/ops -bench=. -benchmem -benchtime=Nx` — ops benchmarks
+- `go test ./internal/config -bench=. -benchmem -benchtime=Nx` — config benchmarks
+- New bench files 2026-07-14: `internal/runner/runner_format_bench_test.go`, `internal/tui/dashboard_view_bench_test.go`
 - Note: shell quoting bug — `2>&1` appended to `-benchtime=10x` becomes `-benchtime=10x2>&1`. Avoid trailing redirection next to flag values.
 
 ## Make targets (Makefile)
