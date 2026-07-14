@@ -44,6 +44,16 @@ func newAltView(s string) tea.View {
 	return v
 }
 
+// Pre-built footer strings: the only difference between the two states is the
+// trailing "  (refreshing…)" indicator. Both literals are immutable and have
+// static lifetimes, so the runtime never has to format them per call — the
+// Sprintf call that used to live here rebuilt the same string on every View()
+// render, paying reflection overhead and one fmt buffer alloc per call.
+const (
+	footerMainIdle    = "\n  j/k: move  enter: runner actions  g: global menu  h: host metrics  f: filters  r: refresh  ?: help  q: quit"
+	footerMainLoading = footerMainIdle + "  (refreshing…)"
+)
+
 // renderMenuItems builds the per-item list shared by every cursor-driven menu
 // panel (action / global / filter / dynamic filter list). The selected item is
 // prefixed with the "  > " marker through selectedStyle; the remaining items
@@ -132,14 +142,10 @@ func (m *dashboardModel) viewMain() tea.View {
 }
 
 func (m *dashboardModel) footerMain() string {
-	loadingIndicator := ""
 	if m.loading {
-		loadingIndicator = "  (refreshing…)"
+		return helpStyle.Render(footerMainLoading)
 	}
-	return helpStyle.Render(fmt.Sprintf(
-		"\n  j/k: move  enter: runner actions  g: global menu  h: host metrics  f: filters  r: refresh  ?: help  q: quit%s",
-		loadingIndicator,
-	))
+	return helpStyle.Render(footerMainIdle)
 }
 
 func helpOverlay() string {
