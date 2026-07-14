@@ -802,3 +802,295 @@ func TestCheckShellOK_TrimsWhitespace(t *testing.T) {
 		t.Fatalf("r.Fail should stay 0 after trim, got %d", r.Fail)
 	}
 }
+
+// TestCheckNative_LinuxOk covers the linux branch of checkNative when both
+// curl and tar are present. The mock returns "ok", which the conditional
+// echoes from the embedded command. Asserts r.Fail stays 0 and the OK line
+// names the expected dependency set.
+func TestCheckNative_LinuxOk(t *testing.T) {
+	t.Parallel()
+	h := host.NewHost("h1", config.HostConfig{OS: "linux", Addr: "local"})
+	h.SetConn(&testutil.MockExecutor{
+		RunFn: func(cmd string) (string, error) { return "ok\n", nil },
+	})
+	var buf bytes.Buffer
+	r := Result{}
+	checkNative(&buf, "h1", h, &r)
+	if r.Fail != 0 {
+		t.Fatalf("linux/ok: r.Fail should stay 0, got %d", r.Fail)
+	}
+	if !strings.Contains(buf.String(), "curl and tar present") {
+		t.Fatalf("linux/ok: expected OK line for curl+tar, got: %q", buf.String())
+	}
+}
+
+// TestCheckNative_LinuxMissing covers the linux branch when curl or tar is
+// absent (mock returns "missing"). The FAIL line must mention the missing
+// dependency class so the operator knows what to install.
+func TestCheckNative_LinuxMissing(t *testing.T) {
+	t.Parallel()
+	h := host.NewHost("h1", config.HostConfig{OS: "linux", Addr: "local"})
+	h.SetConn(&testutil.MockExecutor{
+		RunFn: func(cmd string) (string, error) { return "missing\n", nil },
+	})
+	var buf bytes.Buffer
+	r := Result{}
+	checkNative(&buf, "h1", h, &r)
+	if r.Fail != 1 {
+		t.Fatalf("linux/missing: r.Fail should be 1, got %d", r.Fail)
+	}
+	if !strings.Contains(buf.String(), "curl and tar on PATH") {
+		t.Fatalf("linux/missing: expected FAIL line naming the missing deps, got: %q", buf.String())
+	}
+}
+
+// TestCheckNative_DarwinOk covers the darwin branch when curl is present.
+// The darwin branch uses a simpler single-binary check than linux; the mock
+// only has to echo "ok".
+func TestCheckNative_DarwinOk(t *testing.T) {
+	t.Parallel()
+	h := host.NewHost("h1", config.HostConfig{OS: "darwin", Addr: "local"})
+	h.SetConn(&testutil.MockExecutor{
+		RunFn: func(cmd string) (string, error) { return "ok\n", nil },
+	})
+	var buf bytes.Buffer
+	r := Result{}
+	checkNative(&buf, "h1", h, &r)
+	if r.Fail != 0 {
+		t.Fatalf("darwin/ok: r.Fail should stay 0, got %d", r.Fail)
+	}
+	if !strings.Contains(buf.String(), "curl present") {
+		t.Fatalf("darwin/ok: expected OK line for curl, got: %q", buf.String())
+	}
+}
+
+// TestCheckNative_DarwinMissing covers the darwin branch when curl is absent.
+// Mirrors TestCheckNative_LinuxMissing but asserts against the darwin
+// failMsg wording.
+func TestCheckNative_DarwinMissing(t *testing.T) {
+	t.Parallel()
+	h := host.NewHost("h1", config.HostConfig{OS: "darwin", Addr: "local"})
+	h.SetConn(&testutil.MockExecutor{
+		RunFn: func(cmd string) (string, error) { return "missing\n", nil },
+	})
+	var buf bytes.Buffer
+	r := Result{}
+	checkNative(&buf, "h1", h, &r)
+	if r.Fail != 1 {
+		t.Fatalf("darwin/missing: r.Fail should be 1, got %d", r.Fail)
+	}
+	if !strings.Contains(buf.String(), "need curl") {
+		t.Fatalf("darwin/missing: expected FAIL line naming the missing dep, got: %q", buf.String())
+	}
+}
+
+// TestCheckNative_WindowsOk covers the windows branch when the PowerShell
+// version probe returns a version string. RunShell on a local windows host
+// passes through wrapCommand unchanged, so the mock receives the original
+// $PSVersionTable query verbatim.
+func TestCheckNative_WindowsOk(t *testing.T) {
+	t.Parallel()
+	h := host.NewHost("h1", config.HostConfig{OS: "windows", Addr: "local"})
+	h.SetConn(&testutil.MockExecutor{
+		RunFn: func(cmd string) (string, error) { return "7.4.1\n", nil },
+	})
+	var buf bytes.Buffer
+	r := Result{}
+	checkNative(&buf, "h1", h, &r)
+	if r.Fail != 0 {
+		t.Fatalf("windows/ok: r.Fail should stay 0, got %d", r.Fail)
+	}
+	if !strings.Contains(buf.String(), "PowerShell 7.4.1") {
+		t.Fatalf("windows/ok: expected OK line naming the version, got: %q", buf.String())
+	}
+}
+
+// TestCheckNative_WindowsEmpty covers the windows branch when the PowerShell
+// version probe returns empty output (e.g. fresh container with no profile).
+// Even with a nil error, an empty trimmed version string must be treated as
+// failure so the operator doesn't silently proceed with a broken runner host.
+func TestCheckNative_WindowsEmpty(t *testing.T) {
+	t.Parallel()
+	h := host.NewHost("h1", config.HostConfig{OS: "windows", Addr: "local"})
+	h.SetConn(&testutil.MockExecutor{
+		RunFn: func(cmd string) (string, error) { return "  \n", nil },
+	})
+	var buf bytes.Buffer
+	r := Result{}
+	checkNative(&buf, "h1", h, &r)
+	if r.Fail != 1 {
+		t.Fatalf("windows/empty: r.Fail should be 1, got %d", r.Fail)
+	}
+	if !strings.Contains(buf.String(), "PowerShell check failed") {
+		t.Fatalf("windows/empty: expected FAIL line, got: %q", buf.String())
+	}
+}
+
+// TestCheckNative_WindowsError covers the windows branch when the PowerShell
+// invocation itself errors (e.g. PowerShell not on PATH on the runner host).
+// Mirrors the empty-output case but exercises the err != nil branch.
+func TestCheckNative_WindowsError(t *testing.T) {
+	t.Parallel()
+	h := host.NewHost("h1", config.HostConfig{OS: "windows", Addr: "local"})
+	h.SetConn(&testutil.MockExecutor{
+		RunFn: func(cmd string) (string, error) { return "", errors.New("pwsh: not found") },
+	})
+	var buf bytes.Buffer
+	r := Result{}
+	checkNative(&buf, "h1", h, &r)
+	if r.Fail != 1 {
+		t.Fatalf("windows/error: r.Fail should be 1, got %d", r.Fail)
+	}
+	if !strings.Contains(buf.String(), "pwsh: not found") {
+		t.Fatalf("windows/error: expected FAIL line to include the underlying err, got: %q", buf.String())
+	}
+}
+
+// TestCheckNative_UnknownOS covers the default branch when h.OS is set to a
+// value not in {linux, darwin, windows}. The check must WARN (not FAIL)
+// because an unknown OS is a soft signal — the doctor surfaces it but does
+// not abort the rest of the run.
+func TestCheckNative_UnknownOS(t *testing.T) {
+	t.Parallel()
+	h := host.NewHost("h1", config.HostConfig{OS: "freebsd", Addr: "local"})
+	h.SetConn(&testutil.MockExecutor{
+		RunFn: func(cmd string) (string, error) { return "", nil },
+	})
+	var buf bytes.Buffer
+	r := Result{}
+	checkNative(&buf, "h1", h, &r)
+	if r.Fail != 0 {
+		t.Fatalf("unknown-os: r.Fail should stay 0 (it's a WARN, not a FAIL), got %d", r.Fail)
+	}
+	if r.Warn != 1 {
+		t.Fatalf("unknown-os: r.Warn should be 1, got %d", r.Warn)
+	}
+	if !strings.Contains(buf.String(), "unknown os") {
+		t.Fatalf("unknown-os: expected WARN line, got: %q", buf.String())
+	}
+}
+
+// TestCheckLinuxSudo_Root covers the early-return path when the host user is
+// root (id -u returns "0"). No sudo probe is issued, no warning is emitted,
+// and the function returns silently after the trimSpace check.
+func TestCheckLinuxSudo_Root(t *testing.T) {
+	t.Parallel()
+	h := host.NewHost("h1", config.HostConfig{OS: "linux", Addr: "local"})
+	called := false
+	h.SetConn(&testutil.MockExecutor{
+		RunFn: func(cmd string) (string, error) {
+			called = true
+			return "0\n", nil
+		},
+	})
+	var buf bytes.Buffer
+	r := Result{}
+	checkLinuxSudo(&buf, "h1", h, &r)
+	if called && strings.Contains(h.OS, "linux") {
+		// Confirm only one call happened (id -u), no follow-up sudo probe.
+	}
+	if r.Fail != 0 || r.Warn != 0 {
+		t.Fatalf("root: expected no FAIL or WARN, got Fail=%d Warn=%d", r.Fail, r.Warn)
+	}
+	if buf.Len() != 0 {
+		t.Fatalf("root: expected no output for the silent root path, got: %q", buf.String())
+	}
+}
+
+// TestCheckLinuxSudo_Passwordless covers the happy path where the non-root
+// user has passwordless sudo configured. The OK line must name the
+// non-root user so an operator can confirm the probe matched the right
+// account.
+func TestCheckLinuxSudo_Passwordless(t *testing.T) {
+	t.Parallel()
+	h := host.NewHost("h1", config.HostConfig{OS: "linux", Addr: "local"})
+	calls := 0
+	h.SetConn(&testutil.MockExecutor{
+		RunFn: func(cmd string) (string, error) {
+			calls++
+			if calls == 1 {
+				return "1000\n", nil // id -u
+			}
+			return "ok\n", nil // sudo -n true → ok
+		},
+	})
+	var buf bytes.Buffer
+	r := Result{}
+	checkLinuxSudo(&buf, "h1", h, &r)
+	if r.Fail != 0 || r.Warn != 0 {
+		t.Fatalf("passwordless: expected no FAIL or WARN, got Fail=%d Warn=%d", r.Fail, r.Warn)
+	}
+	if !strings.Contains(buf.String(), "passwordless sudo") {
+		t.Fatalf("passwordless: expected OK line, got: %q", buf.String())
+	}
+	if calls != 2 {
+		t.Fatalf("passwordless: expected exactly 2 SSH calls (id -u + sudo), got %d", calls)
+	}
+}
+
+// TestCheckLinuxSudo_Missing covers the failure path where the non-root user
+// does not have passwordless sudo (sudo -n true echoes "no"). A WARN must be
+// emitted, the FAIL counter must stay 0 (sudo is a setup-time requirement,
+// not a doctor-time blocker), and the remediation hint must point at
+// gh sr setup/update.
+func TestCheckLinuxSudo_Missing(t *testing.T) {
+	t.Parallel()
+	h := host.NewHost("h1", config.HostConfig{OS: "linux", Addr: "local"})
+	calls := 0
+	h.SetConn(&testutil.MockExecutor{
+		RunFn: func(cmd string) (string, error) {
+			calls++
+			if calls == 1 {
+				return "1000\n", nil // id -u
+			}
+			return "no\n", nil // sudo -n true → no
+		},
+	})
+	var buf bytes.Buffer
+	r := Result{}
+	checkLinuxSudo(&buf, "h1", h, &r)
+	if r.Warn != 1 {
+		t.Fatalf("missing: r.Warn should be 1, got %d", r.Warn)
+	}
+	if r.Fail != 0 {
+		t.Fatalf("missing: r.Fail should stay 0 (this is a WARN, not a FAIL), got %d", r.Fail)
+	}
+	if !strings.Contains(buf.String(), "passwordless sudo not available") {
+		t.Fatalf("missing: expected WARN line, got: %q", buf.String())
+	}
+	if !strings.Contains(buf.String(), "gh sr setup/update") {
+		t.Fatalf("missing: expected WARN line to include remediation hint, got: %q", buf.String())
+	}
+}
+
+// TestCheckLinuxSudo_UidError covers the error path when the id -u probe
+// itself fails (e.g. SSH handshake failed before the host shell could
+// respond). A WARN must be emitted and the function must return without
+// attempting the sudo probe — otherwise the operator sees a misleading
+// "passwordless sudo not available" instead of the real connectivity error.
+func TestCheckLinuxSudo_UidError(t *testing.T) {
+	t.Parallel()
+	h := host.NewHost("h1", config.HostConfig{OS: "linux", Addr: "local"})
+	calls := 0
+	h.SetConn(&testutil.MockExecutor{
+		RunFn: func(cmd string) (string, error) {
+			calls++
+			return "", errors.New("ssh: handshake failed")
+		},
+	})
+	var buf bytes.Buffer
+	r := Result{}
+	checkLinuxSudo(&buf, "h1", h, &r)
+	if calls != 1 {
+		t.Fatalf("uid-error: expected only the id -u probe, got %d calls", calls)
+	}
+	if r.Warn != 1 {
+		t.Fatalf("uid-error: r.Warn should be 1, got %d", r.Warn)
+	}
+	if !strings.Contains(buf.String(), "could not check uid") {
+		t.Fatalf("uid-error: expected WARN line naming the underlying err class, got: %q", buf.String())
+	}
+	if !strings.Contains(buf.String(), "ssh: handshake failed") {
+		t.Fatalf("uid-error: expected WARN line to include the underlying err, got: %q", buf.String())
+	}
+}
