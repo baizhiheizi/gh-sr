@@ -1,1 +1,1 @@
-- [Perf Improver state 2026-07](notes.md) — run 26 on 2026-07-13, **PR #359** opened (start/stop svc+autostart 2→1 batch, commit `e749be8`); PR #358 (orphan-plan-batch from run 25) still open (draft, mergeable=unstable).
+- [Perf Improver state 2026-07](notes.md) — run 27 on 2026-07-14, opened parseUnixMetrics zero-alloc PR (commit `9602a91`, phantom-success pending); #358 + #361 confirmed merged on main as `e774249`.
