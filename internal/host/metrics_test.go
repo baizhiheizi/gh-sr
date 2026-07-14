@@ -55,6 +55,38 @@ mem_used_mib=4096`
 	assertFloat(t, "MemTotalMiB", m.MemTotalMiB, 8192)
 }
 
+// TestParseUnixMetrics_LoadMalformed locks the IndexByte-based load
+// parser's tolerance to incomplete load lines. After the zero-alloc refactor
+// of parseUnixMetrics' load case (replacing strings.Fields with two
+// strings.IndexByte calls + three sub-slice ParseFloats), a load line with
+// fewer than three space-separated values must leave the Load fields at
+// their zero value rather than panicking on a negative index.
+func TestParseUnixMetrics_LoadMalformed(t *testing.T) {
+	cases := []struct {
+		name string
+		line string
+	}{
+		{"no spaces", "load=0.50"},
+		{"one space only", "load=0.50 0.40"},
+		{"empty value", "load="},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			raw := "::GH_SR_METRICS_START::\n" + tc.line + "\n::GH_SR_METRICS_END::"
+			var m HostMetrics
+			if err := parseUnixMetrics(raw, &m); err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			// Loads must remain zero on malformed input — the parser
+			// silently skips rather than corrupting m with partial data.
+			if m.Load1 != 0 || m.Load5 != 0 || m.Load15 != 0 {
+				t.Errorf("load fields should stay zero on malformed %q, got %v %v %v",
+					tc.line, m.Load1, m.Load5, m.Load15)
+			}
+		})
+	}
+}
+
 func TestHostMetrics_Percents(t *testing.T) {
 	m := HostMetrics{
 		MemUsedMiB:   3000,

@@ -242,12 +242,25 @@ func parseUnixMetrics(raw string, m *HostMetrics) error {
 		case "disk_used_gib":
 			m.DiskUsedGiB, _ = strconv.ParseFloat(v, 64)
 		case "load":
-			parts := strings.Fields(v)
-			if len(parts) >= 3 {
-				m.Load1, _ = strconv.ParseFloat(parts[0], 64)
-				m.Load5, _ = strconv.ParseFloat(parts[1], 64)
-				m.Load15, _ = strconv.ParseFloat(parts[2], 64)
+			// Parse "l1 l5 l15" as three float64 without allocating a
+			// []string. Two strings.IndexByte calls locate the two
+			// separator spaces; the three ParseFloat inputs are sub-slices
+			// of v (no copy), and ParseFloat does not allocate on success.
+			// parseUnixMetrics runs once per host per TUI metric-refresh
+			// tick; this is the only heap allocation in the function, so
+			// removing it keeps the per-tick parse zero-alloc.
+			first := strings.IndexByte(v, ' ')
+			if first < 0 {
+				continue
 			}
+			rest := v[first+1:]
+			second := strings.IndexByte(rest, ' ')
+			if second < 0 {
+				continue
+			}
+			m.Load1, _ = strconv.ParseFloat(v[:first], 64)
+			m.Load5, _ = strconv.ParseFloat(rest[:second], 64)
+			m.Load15, _ = strconv.ParseFloat(rest[second+1:], 64)
 		case "uptime":
 			m.Uptime = v
 		}
