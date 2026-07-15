@@ -123,46 +123,8 @@ func (m *Manager) PlanOrphanCleanup(h *host.Host, instance string) (OrphanCleanu
 // kind uses the same labels as the previous autostart.Detect call so the
 // KindNone/KindSystemdUser/KindSystemdSystem contract is preserved.
 func orphanLinuxPlanProbe(h *host.Host, instance string) (autostart.Kind, bool, bool, error) {
-	dir := h.RunnerDir(instance)
-	san, err := autostart.SanitizeInstance(instance)
-	if err != nil {
-		return autostart.KindNone, false, false, err
-	}
-	base := autostart.ServiceBasename(san)
-	userPath := fmt.Sprintf(`"$HOME/.config/systemd/user/%s.service"`, base)
-	sysPath := fmt.Sprintf(`/etc/systemd/system/%s.service`, base)
-	script := fmt.Sprintf(
-		`dir=%s; `+
-			`if [ -d "$dir" ]; then echo D; fi; `+
-			`if [ -f "$dir/svc.sh" ]; then echo S; fi; `+
-			`if [ -f %s ]; then echo U; `+
-			`elif [ -f %s ]; then echo Y; `+
-			`fi`,
-		hostshell.PosixSingleQuote(dir),
-		userPath, sysPath,
-	)
-	out, err := h.Run(script)
-	if err != nil {
-		return autostart.KindNone, false, false, err
-	}
-	var (
-		dirExists bool
-		hasSvcSh  bool
-		kind      = autostart.KindNone
-	)
-	for _, line := range strings.Split(out, "\n") {
-		switch strings.TrimRight(line, "\r\n") {
-		case "D":
-			dirExists = true
-		case "S":
-			hasSvcSh = true
-		case "U":
-			kind = autostart.KindSystemdUser
-		case "Y":
-			kind = autostart.KindSystemdSystem
-		}
-	}
-	return kind, hasSvcSh, dirExists, nil
+	result, err := linuxInstanceProbe(h, instance, true)
+	return result.kind, result.svcSh, result.dirExists, err
 }
 
 // CleanupOrphanInstance removes gh-sr autostart and/or the runner directory for an instance

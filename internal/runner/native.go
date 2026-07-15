@@ -73,36 +73,8 @@ func linuxSvcAndAutostartProbe(h *host.Host, instanceName string) (svcSh bool, k
 		k, derr := autostart.Detect(h, instanceName)
 		return false, k, derr
 	}
-	san, serr := autostart.SanitizeInstance(instanceName)
-	if serr != nil {
-		return false, autostart.KindNone, serr
-	}
-	base := autostart.ServiceBasename(san)
-	dir := h.RunnerDir(instanceName)
-	userPath := fmt.Sprintf(`"$HOME/.config/systemd/user/%s.service"`, base)
-	sysPath := fmt.Sprintf(`/etc/systemd/system/%s.service`, base)
-	script := fmt.Sprintf(
-		`if [ -f %s/svc.sh ]; then echo S; fi; `+
-			`if [ -f %s ]; then echo U; `+
-			`elif [ -f %s ]; then echo Y; `+
-			`fi`,
-		dir, userPath, sysPath,
-	)
-	out, rerr := h.Run(script)
-	if rerr != nil {
-		return false, autostart.KindNone, rerr
-	}
-	for _, line := range strings.Split(out, "\n") {
-		switch strings.TrimSpace(line) {
-		case "S":
-			svcSh = true
-		case "U":
-			kind = autostart.KindSystemdUser
-		case "Y":
-			kind = autostart.KindSystemdSystem
-		}
-	}
-	return svcSh, kind, nil
+	result, err := linuxInstanceProbe(h, instanceName, false)
+	return result.svcSh, result.kind, err
 }
 
 // posixSingleQuote and writeRemoteBytes were moved to internal/hostshell.
