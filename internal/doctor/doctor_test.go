@@ -1095,3 +1095,202 @@ func TestCheckLinuxSudo_UidError(t *testing.T) {
 		t.Fatalf("uid-error: expected WARN line to include the underlying err, got: %q", buf.String())
 	}
 }
+
+// TestEnsureDoctorHostOS_PreSetReturns covers the early-return path: when
+// h.OS is non-empty the function must NOT issue a DetectOS probe and must
+// leave h.OS untouched. This pins the contract that pre-populating OS
+// (e.g. from a config file) skips the round-trip.
+func TestEnsureDoctorHostOS_PreSetReturns(t *testing.T) {
+	t.Parallel()
+	h := host.NewHost("h1", config.HostConfig{OS: "linux", Addr: "user@host"})
+	called := false
+	h.SetConn(&testutil.MockExecutor{
+		RunFn: func(cmd string) (string, error) {
+			called = true
+			return "darwin\n", nil
+		},
+	})
+	if err := ensureDoctorHostOS(h, "user@host"); err != nil {
+		t.Fatalf("ensureDoctorHostOS should not error when OS is pre-set, got %v", err)
+	}
+	if called {
+		t.Fatal("ensureDoctorHostOS must not issue a probe when h.OS is pre-set")
+	}
+	if h.OS != "linux" {
+		t.Fatalf("h.OS should remain unchanged, got %q", h.OS)
+	}
+}
+
+// TestEnsureDoctorHostOS_RemoteSuccess covers the remote-addr detection
+// path. When addr is non-local and OS is empty, the function must call
+// host.DetectOS and assign the returned value to h.OS.
+func TestEnsureDoctorHostOS_RemoteSuccess(t *testing.T) {
+	t.Parallel()
+	h := host.NewHost("h1", config.HostConfig{Addr: "user@host"})
+	h.SetConn(&testutil.MockExecutor{
+		RunFn: func(cmd string) (string, error) { return "linux\n", nil },
+	})
+	if err := ensureDoctorHostOS(h, "user@host"); err != nil {
+		t.Fatalf("ensureDoctorHostOS should not error on successful DetectOS, got %v", err)
+	}
+	if h.OS != "linux" {
+		t.Fatalf("h.OS should be 'linux' after DetectOS, got %q", h.OS)
+	}
+}
+
+// TestEnsureDoctorHostOS_RemoteError covers the remote-addr detection
+// failure path. When DetectOS returns an error, the function must
+// propagate it without mutating h.OS — leaving the field empty lets the
+// caller distinguish "detection failed" from "detected as X".
+func TestEnsureDoctorHostOS_RemoteError(t *testing.T) {
+	t.Parallel()
+	h := host.NewHost("h1", config.HostConfig{Addr: "user@host"})
+	h.SetConn(&testutil.MockExecutor{
+		RunFn: func(cmd string) (string, error) {
+			return "", errors.New("ssh: could not resolve hostname")
+		},
+	})
+	err := ensureDoctorHostOS(h, "user@host")
+	if err == nil {
+		t.Fatal("ensureDoctorHostOS should propagate DetectOS errors")
+	}
+	if !strings.Contains(err.Error(), "could not resolve hostname") {
+		t.Fatalf("err should include underlying cause, got %v", err)
+	}
+	if h.OS != "" {
+		t.Fatalf("h.OS must remain empty on DetectOS failure, got %q", h.OS)
+	}
+}
+
+// TestCheckNativeRunnerInstall_Empty covers the no-targets path: when no
+// runners on hostName satisfy the native predicate (or the runners slice is
+// empty), checkNativeRunnerInstall must return silently without touching
+// r.Fail / r.Warn or emitting output. Pins that callers don't accidentally
+// crash on an empty list.
+func TestCheckNativeRunnerInstall_Empty(t *testing.T) {
+	t.Parallel()
+	h := host.NewHost("h1", config.HostConfig{OS: "linux", Addr: "local"})
+	called := false
+	h.SetConn(&testutil.MockExecutor{
+		RunFn: func(cmd string) (string, error) {
+			called = true
+			return "yes\n", nil
+		},
+	})
+	var buf bytes.Buffer
+	r := Result{}
+	checkNativeRunnerInstall(&buf, "h1", h, nil, &r)
+	if called {
+		t.Fatal("checkNativeRunnerInstall must not issue any probes when there are no targets")
+	}
+	if r.Fail != 0 || r.Warn != 0 {
+		t.Fatalf("empty: counters should stay zero, got %+v", r)
+	}
+	if buf.Len() != 0 {
+		t.Fatalf("empty: expected no output, got %q", buf.String())
+	}
+}
+
+// TestCheckNativeRunnerInstall_Installed covers the OK path: when the
+// instance directory has the .runner + run.sh sentinel files (mock echoes
+// 'yes'), the function must emit the OK line and leave r.Fail untouched.
+func TestCheckNativeRunnerInstall_Installed(t *testing.T) {
+	t.Parallel()
+	h := host.NewHost("h1", config.HostConfig{OS: "linux", Addr: "local"})
+	h.SetConn(&testutil.MockExecutor{
+		RunFn: func(cmd string) (string, error) { return "yes\n", nil },
+	})
+	runners := []config.RunnerConfig{
+		{Name: "r", Host: "h1", Repo: "o/r", Count: 1},
+	}
+	var buf bytes.Buffer
+	r := Result{}
+	checkNativeRunnerInstall(&buf, "h1", h, runners, &r)
+	if r.Fail != 0 {
+		t.Fatalf("installed: r.Fail should stay 0, got %d", r.Fail)
+	}
+	if !strings.Contains(buf.String(), "r-1 installed") {
+		t.Fatalf("installed: expected OK line, got: %q", buf.String())
+	}
+}
+
+// TestCheckNativeRunnerInstall_Missing covers the FAIL path: when the
+// instance directory is incomplete (mock echoes 'no'), the function must
+// emit the FAIL line with the setup remediation and increment r.Fail.
+func TestCheckNativeRunnerInstall_Missing(t *testing.T) {
+	t.Parallel()
+	h := host.NewHost("h1", config.HostConfig{OS: "linux", Addr: "local"})
+	h.SetConn(&testutil.MockExecutor{
+		RunFn: func(cmd string) (string, error) { return "no\n", nil },
+	})
+	runners := []config.RunnerConfig{
+		{Name: "r", Host: "h1", Repo: "o/r", Count: 1},
+	}
+	var buf bytes.Buffer
+	r := Result{}
+	checkNativeRunnerInstall(&buf, "h1", h, runners, &r)
+	if r.Fail != 1 {
+		t.Fatalf("missing: r.Fail should be 1, got %d", r.Fail)
+	}
+	if !strings.Contains(buf.String(), "not installed") {
+		t.Fatalf("missing: expected FAIL line, got: %q", buf.String())
+	}
+	if !strings.Contains(buf.String(), "gh sr setup r") {
+		t.Fatalf("missing: expected remediation hint, got: %q", buf.String())
+	}
+}
+
+// TestCheckNativeRunnerInstall_ProbeError covers the probe-error path: when
+// NativeRunnerConfigPresent returns a non-nil err (e.g. SSH handshake
+// failed), the function must emit the FAIL line with the underlying error
+// and increment r.Fail, instead of continuing the loop and reporting
+// confusingly different state per instance.
+func TestCheckNativeRunnerInstall_ProbeError(t *testing.T) {
+	t.Parallel()
+	h := host.NewHost("h1", config.HostConfig{OS: "linux", Addr: "local"})
+	h.SetConn(&testutil.MockExecutor{
+		RunFn: func(cmd string) (string, error) {
+			return "", errors.New("ssh: connection refused")
+		},
+	})
+	runners := []config.RunnerConfig{
+		{Name: "r", Host: "h1", Repo: "o/r", Count: 1},
+	}
+	var buf bytes.Buffer
+	r := Result{}
+	checkNativeRunnerInstall(&buf, "h1", h, runners, &r)
+	if r.Fail != 1 {
+		t.Fatalf("probe-error: r.Fail should be 1, got %d", r.Fail)
+	}
+	if !strings.Contains(buf.String(), "ssh: connection refused") {
+		t.Fatalf("probe-error: expected FAIL line to include underlying err, got: %q", buf.String())
+	}
+}
+
+// TestCheckNativeRunnerInstall_SkipsOtherHosts covers the host-filter path:
+// runners on a different host must be ignored even when they appear in the
+// input slice. Pins the per-host scoping that the rest of the doctor's
+// host-loop relies on.
+func TestCheckNativeRunnerInstall_SkipsOtherHosts(t *testing.T) {
+	t.Parallel()
+	h := host.NewHost("h1", config.HostConfig{OS: "linux", Addr: "local"})
+	called := false
+	h.SetConn(&testutil.MockExecutor{
+		RunFn: func(cmd string) (string, error) {
+			called = true
+			return "yes\n", nil
+		},
+	})
+	runners := []config.RunnerConfig{
+		{Name: "other", Host: "h2", Repo: "o/r", Count: 2},
+	}
+	var buf bytes.Buffer
+	r := Result{}
+	checkNativeRunnerInstall(&buf, "h1", h, runners, &r)
+	if called {
+		t.Fatal("checkNativeRunnerInstall must not probe runners on other hosts")
+	}
+	if r.Fail != 0 || r.Warn != 0 {
+		t.Fatalf("skipped: counters should stay zero, got %+v", r)
+	}
+}
