@@ -1,1 +1,1 @@
-- [Perf Improver state 2026-07](notes.md) — run 27 on 2026-07-14, opened parseUnixMetrics zero-alloc PR (commit `9602a91`, phantom-success pending); #358 + #361 confirmed merged on main as `e774249`.
+- [Perf Improver state 2026-07](notes.md) — run 28 on 2026-07-15, opened removeContainer 3→1 SSH fold (commit `fe2b085`, phantom-success pending); #371 (parseUnixMetrics zero-alloc) MERGED 2026-07-15T10:09:14Z. Phantom-success tally: 10 of 15.
