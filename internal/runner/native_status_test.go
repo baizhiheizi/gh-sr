@@ -32,7 +32,7 @@ func TestStatusNativeServiceError(t *testing.T) {
 	if got != "service error" {
 		t.Fatalf("got %q, want service error", got)
 	}
-	// 1 combined probe + 1 is-active = 2 SSH round-trips (was 4 before the fold).
+	// 1 combined probe + 1 is-active = 2 SSH round-trips (was 3 before the fold).
 	if calls != 2 {
 		t.Fatalf("SSH round-trips: got %d want 2", calls)
 	}
@@ -61,7 +61,7 @@ func TestStatusNativeAutostartActive(t *testing.T) {
 	if got != "running" {
 		t.Fatalf("got %q, want running", got)
 	}
-	// 1 combined probe + 1 is-active = 2 SSH round-trips (was 4 before the fold).
+	// 1 combined probe + 1 is-active = 2 SSH round-trips (was 3 before the fold).
 	if calls != 2 {
 		t.Fatalf("SSH round-trips: got %d want 2", calls)
 	}
@@ -74,8 +74,10 @@ func TestStatusNativeAutostartActive(t *testing.T) {
 // TUI's per-tick metrics.
 func TestStatusNative_LinuxSshRoundTripPins(t *testing.T) {
 	t.Parallel()
+	calls := 0
 	mock := &testutil.MockExecutor{
 		RunFn: func(cmd string) (string, error) {
+			calls++
 			switch {
 			case strings.Contains(cmd, ".config/systemd/user/") && strings.Contains(cmd, "/etc/systemd/system/"):
 				return "U\n", nil
@@ -89,18 +91,6 @@ func TestStatusNative_LinuxSshRoundTripPins(t *testing.T) {
 	h := host.NewHost("linux", config.HostConfig{OS: "linux"})
 	h.SetConn(mock)
 	m := NewManager("")
-	calls := 0
-	mock.RunFn = func(cmd string) (string, error) {
-		calls++
-		switch {
-		case strings.Contains(cmd, ".config/systemd/user/") && strings.Contains(cmd, "/etc/systemd/system/"):
-			return "U\n", nil
-		case strings.Contains(cmd, "is-active"):
-			return "active\n", nil
-		default:
-			return "", nil
-		}
-	}
 	if got := m.statusNative(h, "ci-1"); got != "running" {
 		t.Fatalf("got %q want running", got)
 	}
