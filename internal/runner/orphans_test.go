@@ -100,6 +100,7 @@ func TestOrphanLinuxPlanProbe(t *testing.T) {
 		{"user only", "U\n", autostart.KindSystemdUser, false, false},
 		{"system only", "Y\n", autostart.KindSystemdSystem, false, false},
 		{"all three", "D\nS\nU\n", autostart.KindSystemdUser, true, true},
+		{"crlf", "D\r\nS\r\nY\r\n", autostart.KindSystemdSystem, true, true},
 		{"all three system", "D\nS\nY\n", autostart.KindSystemdSystem, true, true},
 	}
 	for _, tc := range cases {
@@ -109,6 +110,9 @@ func TestOrphanLinuxPlanProbe(t *testing.T) {
 				RunFn: func(cmd string) (string, error) {
 					if strings.Contains(cmd, "echo D") && strings.Contains(cmd, "echo S") {
 						calls++
+						if !strings.Contains(cmd, "[ -d $HOME/") {
+							t.Errorf("directory probe must allow remote $HOME expansion: %q", cmd)
+						}
 						return tc.out, nil
 					}
 					return "", nil

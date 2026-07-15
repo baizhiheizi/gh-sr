@@ -409,6 +409,7 @@ func TestLinuxSvcAndAutostartProbe(t *testing.T) {
 		{"user-only", "U\n", false, autostart.KindSystemdUser, 1},
 		{"system-only", "Y\n", false, autostart.KindSystemdSystem, 1},
 		{"svc-and-user", "S\nU\n", true, autostart.KindSystemdUser, 1},
+		{"crlf", "S\r\nU\r\n", true, autostart.KindSystemdUser, 1},
 		{"svc-and-system", "S\nY\n", true, autostart.KindSystemdSystem, 1},
 		{"user-and-system-keeps-user", "U\n", false, autostart.KindSystemdUser, 1},
 	}
@@ -423,6 +424,9 @@ func TestLinuxSvcAndAutostartProbe(t *testing.T) {
 					calls++
 					// Sanity: combined probe must include both the svc.sh check
 					// and the autostart candidate paths.
+					if strings.Contains(cmd, "echo D") {
+						t.Errorf("native probe should not include directory check: %q", cmd)
+					}
 					if !strings.Contains(cmd, "svc.sh") {
 						t.Errorf("combined probe missing svc.sh check: %q", cmd)
 					}
