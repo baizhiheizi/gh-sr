@@ -1991,13 +1991,13 @@ func TestRebuildContainerImage_chainsStopAndRemovePerInstance(t *testing.T) {
 }
 
 // TestRemoveContainer_chainsStopAndRemove pins the perf shape of the
-// per-instance teardown in removeContainer: `docker stop` and `docker rm -f`
-// must run in a single h.Run call (chained in one shell) instead of as two
-// separate SSH round-trips. Saves N round-trips for an N-instance
-// `gh sr down` / `Remove` (the orchestrator loops over InstanceNames()).
-// The mock deliberately fails the GitHub removal-token lookup so the
-// `docker exec ... config.sh remove` deregister step is skipped, leaving
-// only the chained stop+rm + the final state-dir rm -rf to inspect.
+// per-instance teardown in removeContainer: `docker stop`, `docker rm -f`,
+// and the state-dir `rm -rf` must all run in a single h.Run call (chained in
+// one shell) instead of as three separate SSH round-trips. Saves 2*N
+// round-trips for an N-instance `gh sr down` / `Remove` (the orchestrator
+// loops over InstanceNames()). The mock deliberately fails the GitHub
+// removal-token lookup so the `docker exec ... config.sh remove` deregister
+// step is skipped, leaving only the single chained teardown call to inspect.
 func TestRemoveContainer_chainsStopAndRemove(t *testing.T) {
 	t.Parallel()
 	// GitHub server returns 500 so GetRemovalTokenScoped errors out and
@@ -2028,31 +2028,37 @@ func TestRemoveContainer_chainsStopAndRemove(t *testing.T) {
 		Count:      3,
 	}
 
-	// Call removeContainer for a single instance so the assertion is
-	// exactly "1 chained call + 1 state-dir rm -rf", independent of rc.Count.
+	// Call removeContainer for a single instance so the assertion is exactly
+	// "1 chained call" containing stop+rm+rm-rf, independent of rc.Count.
 	if err := m.removeContainer(h, rc, "aw-runner-1"); err != nil {
 		t.Fatalf("removeContainer: unexpected error: %v", err)
 	}
 
-	// Count chained stop+rm calls, bare stop calls, and bare rm calls.
-	chained := 0
-	bareStop := 0
-	bareRm := 0
+	// All three teardown ops must live inside a single h.Run call.
+	if got := len(calls); got != 1 {
+		t.Fatalf("h.Run calls = %d, want 1 (single SSH round-trip); calls=%v", got, calls)
+	}
+	script := calls[0]
+	if !strings.Contains(script, "docker stop") {
+		t.Errorf("chained script missing `docker stop`; got: %q", script)
+	}
+	if !strings.Contains(script, "docker rm -f") {
+		t.Errorf("chained script missing `docker rm -f`; got: %q", script)
+	}
+	// State-dir rm -rf must ride the same chained shell, using the
+	// unresolved `$HOME/.gh-sr/runners/<inst>` form (double-quoted so the
+	// shell expands `$HOME`). This drops the prior `echo $HOME` resolve.
+	if !strings.Contains(script, `rm -rf "$HOME/.gh-sr/runners/aw-runner-1"`) {
+		t.Errorf("chained script missing state-dir rm -rf in $HOME form; got: %q", script)
+	}
+	if strings.Contains(script, `'$HOME/.gh-sr/runners/`) {
+		t.Errorf("chained script must not single-quote $HOME paths (blocks expansion); got: %q", script)
+	}
+	// No bare `echo $HOME` resolve (we now rely on the shell to expand it).
 	for _, c := range calls {
-		switch {
-		case strings.Contains(c, "docker stop") && strings.Contains(c, "docker rm -f"):
-			chained++
-		case strings.Contains(c, "docker stop "):
-			bareStop++
-		case strings.Contains(c, "docker rm -f"):
-			bareRm++
+		if strings.Contains(c, "echo $HOME") {
+			t.Errorf("removeContainer should not issue a separate `echo $HOME` resolve; calls=%v", calls)
 		}
-	}
-	if chained != 1 {
-		t.Errorf("chained stop+rm calls = %d, want 1 (single SSH round-trip); calls=%v", chained, calls)
-	}
-	if bareStop != 0 || bareRm != 0 {
-		t.Errorf("expected no separate stop/rm calls; got bareStop=%d bareRm=%d; calls=%v", bareStop, bareRm, calls)
 	}
 }
 

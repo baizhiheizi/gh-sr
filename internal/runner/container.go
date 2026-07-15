@@ -631,6 +631,27 @@ func (m *Manager) stopContainer(h *host.Host, instanceName string) error {
 }
 
 // removeContainer stops and removes a runner container plus its state directory.
+//
+// All three teardown operations are chained into a single h.Run so each
+// instance costs one SSH round-trip on Linux instead of three (saves 2
+// round-trips per instance per `gh sr down` / `Remove`):
+//
+//  1. `docker stop <name>` — stop the running container.
+//  2. `docker rm -f <name>` — remove the container (best-effort; trailing
+//     `|| true` so an already-removed container does not abort the chain).
+//  3. `rm -rf "$HOME/.gh-sr/runners/<inst>"` — remove the host state dir.
+//     Uses the unresolved `$HOME/...` form (double-quoted so the shell
+//     expands `$HOME`) so we skip the previous `echo $HOME` resolve that
+//     `resolveStateDirOrFallback` made. Same `$HOME`-form pattern as
+//     startContainer (PR #342) and containerLocalStatusOneShot.
+//
+// All three are best-effort (`|| true` on the rm legs): host-level failures
+// (SSH error) still surface via the wrapping h.Run error return. The
+// pre-fold state-dir failure surfaced as a `warning:` line on stderr;
+// folding the rm into the chained shell makes that warning silent — a
+// pragmatic trade-off since `rm -rf` on a user-owned path essentially
+// never fails, and the chain still returns the SSH-level error if the
+// transport itself breaks.
 func (m *Manager) removeContainer(h *host.Host, rc config.RunnerConfig, instanceName string) error {
 	cName := containerName(instanceName)
 
@@ -642,24 +663,17 @@ func (m *Manager) removeContainer(h *host.Host, rc config.RunnerConfig, instance
 		_, _ = h.Run(DockerExecCommand(cName, inner+" 2>/dev/null || true"))
 	}
 
-	// Stop and remove the container in one shell so each instance costs a
-	// single SSH round-trip instead of two (saves N round-trips for an
-	// N-instance `gh sr down` / `Remove`). Mirrors the same chain in
-	// rebuildContainerImage; `|| true` after rm preserves the previous
-	// best-effort semantics — host-level failures (SSH error) still bubble
-	// up via h.Run.
-	if _, err := h.Run(fmt.Sprintf(
-		"docker stop %s 2>/dev/null; docker rm -f %s 2>/dev/null || true",
-		cName, cName,
-	)); err != nil {
+	// Single SSH round-trip: docker stop + docker rm -f + state-dir rm -rf.
+	// All three are best-effort so the chain returns 0 even when the
+	// container or state dir does not exist. Matches the win-class of
+	// startContainer (PR #342) and rebuildContainerImage (PR #255).
+	script := fmt.Sprintf(
+		"docker stop %s 2>/dev/null; docker rm -f %s 2>/dev/null || true; "+
+			`rm -rf "$HOME/.gh-sr/runners/%s" 2>/dev/null || true`,
+		cName, cName, instanceName,
+	)
+	if _, err := h.Run(script); err != nil {
 		return fmt.Errorf("removing container %s: %w", cName, err)
-	}
-
-	// Remove state directory. Fall back to the unresolved $HOME form if the SSH
-	// resolve fails — rm -rf in the shell will still expand $HOME.
-	stateDir := resolveStateDirOrFallback(h, instanceName)
-	if _, err := h.Run(fmt.Sprintf("rm -rf %s", hostshell.PosixSingleQuote(stateDir))); err != nil {
-		fmt.Fprintf(m.out(), "  %s: warning: failed to remove state dir %s: %v\n", instanceName, stateDir, err)
 	}
 
 	return nil
