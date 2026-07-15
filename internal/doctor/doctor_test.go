@@ -976,18 +976,19 @@ func TestCheckNative_UnknownOS(t *testing.T) {
 func TestCheckLinuxSudo_Root(t *testing.T) {
 	t.Parallel()
 	h := host.NewHost("h1", config.HostConfig{OS: "linux", Addr: "local"})
-	called := false
+	calls := 0
 	h.SetConn(&testutil.MockExecutor{
 		RunFn: func(cmd string) (string, error) {
-			called = true
+			calls++
 			return "0\n", nil
 		},
 	})
 	var buf bytes.Buffer
 	r := Result{}
 	checkLinuxSudo(&buf, "h1", h, &r)
-	if called && strings.Contains(h.OS, "linux") {
-		// Confirm only one call happened (id -u), no follow-up sudo probe.
+	// Root path must issue only id -u; no follow-up sudo probe.
+	if calls != 1 {
+		t.Fatalf("root: expected exactly 1 SSH call (id -u), got %d", calls)
 	}
 	if r.Fail != 0 || r.Warn != 0 {
 		t.Fatalf("root: expected no FAIL or WARN, got Fail=%d Warn=%d", r.Fail, r.Warn)
