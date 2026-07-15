@@ -214,3 +214,112 @@ func TestManager_Stop_OneSshRoundTripPerInstance(t *testing.T) {
 		t.Errorf("expected 3 stop invocations, got %d", stopCount)
 	}
 }
+
+func TestManager_Start_InstallsMissingAutostartThenStartsIt(t *testing.T) {
+	t.Parallel()
+
+	var events []string
+	combinedProbes := 0
+	directStart := false
+	mock := &testutil.MockExecutor{
+		RunFn: func(cmd string) (string, error) {
+			switch {
+			case strings.Contains(cmd, "svc.sh") && strings.Contains(cmd, ".config/systemd/user/") && strings.Contains(cmd, "/etc/systemd/system/"):
+				combinedProbes++
+				if combinedProbes == 1 {
+					events = append(events, "probe-missing")
+					return "", nil
+				}
+				events = append(events, "probe-installed")
+				return "U\n", nil
+			case cmd == `printf %s "$HOME"`:
+				events = append(events, "home")
+				return "/home/runner\n", nil
+			case strings.Contains(cmd, "base64 -d") && strings.Contains(cmd, "ghsr-runner-ci-1.service"):
+				events = append(events, "write-unit")
+				return "", nil
+			case strings.Contains(cmd, "systemctl --user enable ghsr-runner-ci-1.service"):
+				events = append(events, "enable-unit")
+				return "", nil
+			case strings.Contains(cmd, ".config/systemd/user/") && strings.Contains(cmd, "/etc/systemd/system/"):
+				events = append(events, "detect-installed")
+				return "user\n", nil
+			case strings.Contains(cmd, "systemctl --user start ghsr-runner-ci-1.service"):
+				events = append(events, "start-unit")
+				return "", nil
+			case strings.Contains(cmd, ".runner_pid"):
+				directStart = true
+				return "", nil
+			default:
+				return "", nil
+			}
+		},
+	}
+	h := host.NewHost("linux", config.HostConfig{OS: "linux", Addr: "local"})
+	h.SetConn(mock)
+
+	m := NewManager("")
+	var buf bytes.Buffer
+	m.Out = &buf
+	rc := config.RunnerConfig{Name: "ci", Host: "h", Repo: "o/r", Count: 1, Ephemeral: false}
+
+	if err := m.Start(h, rc); err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+	if combinedProbes != 2 {
+		t.Fatalf("combined probes = %d, want 2 (before and after install); calls=%v", combinedProbes, mock.Calls)
+	}
+	wantEvents := "probe-missing,home,write-unit,enable-unit,probe-installed,detect-installed,start-unit"
+	if got := strings.Join(events, ","); got != wantEvents {
+		t.Fatalf("event order = %q, want %q; calls=%v", got, wantEvents, mock.Calls)
+	}
+	if directStart {
+		t.Fatal("Start used the direct runner path after autostart was installed")
+	}
+	if !strings.Contains(buf.String(), "installing autostart for always-on") {
+		t.Fatalf("missing autostart install message: %q", buf.String())
+	}
+}
+
+func TestManager_Stop_UsesAutostartFromCombinedProbe(t *testing.T) {
+	t.Parallel()
+
+	var events []string
+	directStop := false
+	mock := &testutil.MockExecutor{
+		RunFn: func(cmd string) (string, error) {
+			switch {
+			case strings.Contains(cmd, "svc.sh") && strings.Contains(cmd, ".config/systemd/user/") && strings.Contains(cmd, "/etc/systemd/system/"):
+				events = append(events, "combined-probe")
+				return "U\n", nil
+			case strings.Contains(cmd, ".config/systemd/user/") && strings.Contains(cmd, "/etc/systemd/system/"):
+				events = append(events, "detect-installed")
+				return "user\n", nil
+			case strings.Contains(cmd, "systemctl --user stop ghsr-runner-ci-1.service"):
+				events = append(events, "stop-unit")
+				return "", nil
+			case strings.Contains(cmd, ".runner_pid"):
+				directStop = true
+				return "", nil
+			default:
+				return "", nil
+			}
+		},
+	}
+	h := host.NewHost("linux", config.HostConfig{OS: "linux", Addr: "local"})
+	h.SetConn(mock)
+
+	m := NewManager("")
+	rc := config.RunnerConfig{Name: "ci", Host: "h", Repo: "o/r", Count: 1}
+
+	if err := m.Stop(h, rc); err != nil {
+		t.Fatalf("Stop failed: %v", err)
+	}
+	wantEvents := "combined-probe,detect-installed,stop-unit"
+	if got := strings.Join(events, ","); got != wantEvents {
+		t.Fatalf("event order = %q, want %q; calls=%v", got, wantEvents, mock.Calls)
+	}
+	if directStop {
+		t.Fatal("Stop used the direct runner path despite detected autostart")
+	}
+}
