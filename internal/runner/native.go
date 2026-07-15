@@ -579,9 +579,17 @@ func (m *Manager) removeNativeDirectory(h *host.Host, instanceName string) error
 func (m *Manager) statusNative(h *host.Host, instanceName string) string {
 	dir := h.RunnerDir(instanceName)
 
+	// Combined probe: one SSH round-trip answers both "is svc.sh deployed?"
+	// and "which autostart kind is installed?". Replaces the previous
+	// svcShPresent + autostart.Detect pair (2 SSH per call). Same win-class
+	// as Start/Stop/removeNativeServices (PR #361), orphanLinuxPlanProbe
+	// (PR #358), the systemd probe consolidation in autostart.Detect
+	// (PR #285), and the per-instance container presence one-shot (PR #350).
+	hasSvc, kind, _ := linuxSvcAndAutostartProbe(h, instanceName)
+
 	// For svc.sh-managed runners on Linux: read the service name from the .service
 	// marker file written by "svc.sh install" and query systemctl directly.
-	if h.OS == "linux" && svcShPresent(h, instanceName) {
+	if hasSvc {
 		out, err := h.Run(fmt.Sprintf(
 			`svc_file="%s/.service"; `+
 				`if [ -f "$svc_file" ]; then `+
@@ -601,7 +609,7 @@ func (m *Manager) statusNative(h *host.Host, instanceName string) string {
 		}
 	}
 
-	if kind, err := autostart.Detect(h, instanceName); err == nil && kind != autostart.KindNone {
+	if kind != autostart.KindNone {
 		if state, serr := autostart.ServiceActiveState(h, instanceName, kind); serr == nil {
 			switch state {
 			case "active":
