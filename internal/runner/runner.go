@@ -313,8 +313,11 @@ func (m *Manager) Status(h *host.Host, rc config.RunnerConfig) ([]RunnerStatus, 
 			s.Local, s.ContainerImage, s.ContainerImageRevision = m.containerLocalStatusImageAndRevision(h, name)
 			s.ContainerImageBuild = formatContainerImageBuild(s.Local, expectedLayoutRev, s.ContainerImageRevision)
 		} else {
-			s.Local = m.statusNative(h, name)
-			s.ContainerImageBuild = nativeRunnerVersion(h, name)
+			// statusNativeAndVersion folds the .runner-version read into
+			// the same Linux combined probe (V marker), so the per-tick
+			// native path saves one SSH round-trip per instance vs the
+			// previous separate statusNative + nativeRunnerVersion pair.
+			s.Local, s.ContainerImageBuild = statusNativeAndVersion(h, name)
 		}
 		statuses = append(statuses, s)
 	}
