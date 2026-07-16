@@ -18,28 +18,25 @@ import (
 )
 
 // newStatusNativeRunningMock returns a MockExecutor wired so the native
-// statusNative path resolves to "running":
+// statusNativeAndVersion path resolves to ("running", "1.0.0"):
 //
-//   - svc.sh probe returns "no" → svc.sh branch skipped.
-//   - autostart probes (systemd-user / systemd-system) return empty → Detect returns KindNone.
-//   - the final shell cmd (which contains `kill -0`) returns "running".
-//   - nativeRunnerVersion's `cat .runner-version` returns "1.0.0".
+//   - the combined linuxInstanceProbe (`[ -f $dir/svc.sh ...`/`cat .runner-version`)
+//     emits "V1.0.0\n" via the V marker (no S/U/Y markers) → hasSvc=false,
+//     kind=KindNone, version="1.0.0".
+//   - the PID-fallthrough shell (which contains `kill -0`) returns "running".
 //
-// Anything else returns empty, which surfaces in ContainerImageBuild as "-".
+// Pre-fold the mock split the version into a separate `cat .runner-version`
+// SSH and emitted "1.0.0\n" directly. Post-fold the version rides the
+// combined probe, so the mock now emits the V-prefixed form on the probe
+// path; the standalone `cat` SSH is gone.
 func newStatusNativeRunningMock() *testutil.MockExecutor {
 	return &testutil.MockExecutor{
 		RunFn: func(cmd string) (string, error) {
 			switch {
-			case strings.Contains(cmd, "test -f") && strings.Contains(cmd, "svc.sh"):
-				return "no\n", nil
-			case strings.Contains(cmd, "test -f") && strings.Contains(cmd, ".config/systemd/user"):
-				return "", nil
-			case strings.Contains(cmd, "test -f") && strings.Contains(cmd, "/etc/systemd/system"):
-				return "", nil
+			case strings.Contains(cmd, ".runner-version"):
+				return "V1.0.0\n", nil
 			case strings.Contains(cmd, "kill -0"):
 				return "running\n", nil
-			case strings.Contains(cmd, ".runner-version"):
-				return "1.0.0\n", nil
 			default:
 				return "", nil
 			}

@@ -134,10 +134,90 @@ func TestStatusNative_NoSvcNoAutostart(t *testing.T) {
 	}
 }
 
+// TestStatusNativeAndVersion_LinuxVersionFold pins the post-fold contract
+// that statusNativeAndVersion answers BOTH local state and runner version
+// from the linuxInstanceProbe V marker in the same SSH round-trip. Pre-fold
+// the call had to invoke nativeRunnerVersion separately (a second SSH per
+// instance), so on a Count=10 RunnerConfig the per-tick Status loop paid
+// 10 extra round-trips. Post-fold the version rides the combined probe.
+//
+// The combined probe (linuxInstanceProbe) emits a V<version> line when
+// $DIR/.runner-version exists; statusNativeAndVersion parses the V marker
+// into the second return value. The mock below mirrors the production
+// behaviour: one SSH that contains BOTH the "[ -f $dir/svc.sh" path-check
+// AND the `cat $dir/.runner-version` probe returns "V1.0.0\n"; the
+// subsequent PID-fallthrough probe (which contains `kill -0`) returns
+// "running\n"; nothing else should fire.
+func TestStatusNativeAndVersion_LinuxVersionFold(t *testing.T) {
+	t.Parallel()
+	combinedProbeCalls := 0
+	pidProbeCalls := 0
+	mock := &testutil.MockExecutor{
+		RunFn: func(cmd string) (string, error) {
+			switch {
+			case strings.Contains(cmd, ".runner-version"):
+				combinedProbeCalls++
+				return "V1.0.0\n", nil
+			case strings.Contains(cmd, "kill -0"):
+				pidProbeCalls++
+				return "running\n", nil
+			default:
+				return "", nil
+			}
+		},
+	}
+	h := host.NewHost("linux", config.HostConfig{OS: "linux"})
+	h.SetConn(mock)
+
+	local, version := statusNativeAndVersion(h, "ci-1")
+	if local != "running" {
+		t.Fatalf("local: got %q want running", local)
+	}
+	if version != "1.0.0" {
+		t.Fatalf("version: got %q want 1.0.0", version)
+	}
+	if combinedProbeCalls != 1 {
+		t.Fatalf("combined-probe SSH round-trips: got %d want 1 (V marker folded)", combinedProbeCalls)
+	}
+	if pidProbeCalls != 1 {
+		t.Fatalf("pid-probe SSH round-trips: got %d want 1", pidProbeCalls)
+	}
+}
+
+// TestStatusNativeAndVersion_LinuxVersionMissing pins the contract that an
+// absent .runner-version file surfaces as "-" (the prior nativeRunnerVersion
+// default), keeping the TUI BUILD-cell render identical to pre-fold.
+func TestStatusNativeAndVersion_LinuxVersionMissing(t *testing.T) {
+	t.Parallel()
+	mock := &testutil.MockExecutor{
+		RunFn: func(cmd string) (string, error) {
+			switch {
+			case strings.Contains(cmd, "kill -0"):
+				return "stopped\n", nil
+			default:
+				return "", nil
+			}
+		},
+	}
+	h := host.NewHost("linux", config.HostConfig{OS: "linux"})
+	h.SetConn(mock)
+
+	local, version := statusNativeAndVersion(h, "ci-1")
+	if local != "stopped" {
+		t.Fatalf("local: got %q want stopped", local)
+	}
+	if version != "-" {
+		t.Fatalf("version: got %q want -", version)
+	}
+}
+
 // TestStatusNative_DarwinSingleProbe pins the non-Linux path: the helper
 // delegates to autostart.Detect (1 SSH round-trip); svcSh is always false on
 // darwin so the svc.sh branch is skipped. Pre-existing launchd double-check
 // (ServiceActiveState + IsServiceActive) is left for a separate PR.
+// Status() on the non-Linux path additionally issues one version probe
+// (.runner-version), so the total is 1 Detect + 1 launchctl print + 1
+// version = 3 SSH round-trips.
 func TestStatusNative_DarwinSingleProbe(t *testing.T) {
 	t.Parallel()
 	calls := 0
@@ -149,6 +229,8 @@ func TestStatusNative_DarwinSingleProbe(t *testing.T) {
 				return "yes\n", nil
 			case strings.Contains(cmd, "launchctl print"):
 				return "... state = running\n", nil
+			case strings.Contains(cmd, ".runner-version"):
+				return "1.0.0\n", nil
 			default:
 				return "", nil
 			}
@@ -164,3 +246,5 @@ func TestStatusNative_DarwinSingleProbe(t *testing.T) {
 		t.Fatalf("SSH round-trips: got %d want at least 2 (1 Detect + 1 launchctl print)", calls)
 	}
 }
+
+// (helper - skip duplicate below)

@@ -577,18 +577,63 @@ func (m *Manager) removeNativeDirectory(h *host.Host, instanceName string) error
 }
 
 func (m *Manager) statusNative(h *host.Host, instanceName string) string {
+	local, _ := statusNativeAndVersion(h, instanceName)
+	return local
+}
+
+// statusNativeAndVersion returns the local runner state and the
+// .runner-version value for a native (non-container) instance in one shot.
+// On Linux, the combined probe (linuxInstanceProbe) folds the version read
+// into the same SSH round-trip that already reports svc.sh + autostart
+// kind (V marker), so all three responses arrive in one round-trip —
+// strictly N→1 vs the previous "statusNative + nativeRunnerVersion" pair
+// that always paid an extra round-trip for the version (whether the
+// runner was svc.sh-managed, autostart-managed, or direct-started).
+// Same win-class as the svc.sh + autostart fold (PR #361),
+// orphanLinuxPlanProbe (PR #358), the systemd probe consolidation in
+// autostart.Detect (PR #285), and the per-instance container presence
+// one-shot (PR #350). On macOS/Windows the shape is unchanged (separate
+// autostart probe + version probe) — the fold only applies to Linux
+// because that is where the combined probe is in play.
+//
+// Returns "-" for the version when the .runner-version file is missing
+// or unreadable, mirroring the prior nativeRunnerVersion contract so the
+// TUI BUILD cell renders the same dash.
+func statusNativeAndVersion(h *host.Host, instanceName string) (string, string) {
 	dir := h.RunnerDir(instanceName)
 
-	// Combined probe: one SSH round-trip answers both "is svc.sh deployed?"
-	// and "which autostart kind is installed?". Replaces the previous
-	// svcShPresent + autostart.Detect pair (2 SSH per call). Same win-class
-	// as Start/Stop/removeNativeServices (PR #361), orphanLinuxPlanProbe
-	// (PR #358), the systemd probe consolidation in autostart.Detect
-	// (PR #285), and the per-instance container presence one-shot (PR #350).
+	if h.OS == "linux" {
+		result, err := linuxInstanceProbe(h, instanceName, false)
+		if err == nil {
+			local := statusNativeFromProbe(h, instanceName, dir, result)
+			version := result.version
+			if version == "" {
+				version = "-"
+			}
+			return local, version
+		}
+		// Probe error: fall through to the non-Linux two-probe path so a
+		// transient probe failure does not blank the Status row.
+	}
+
+	// Non-Linux / Linux probe-error fallback: the
+	// statusNativeOneshotNonLinux shape is unchanged from the previous
+	// statusNative + nativeRunnerVersion pair. Fold does not apply
+	// because the combined probe is Linux-only.
+	return statusNativeOneshotNonLinux(h, instanceName, dir), nativeRunnerVersion(h, instanceName)
+}
+
+// statusNativeOneshotNonLinux preserves the pre-fold statusNative state
+// machine verbatim for non-Linux hosts (macOS launchd, Windows
+// scheduled-task) and as the fallback when the Linux combined probe
+// errors. Mirrors the original statusNative (svc.sh / autostart.Detect
+// + ServiceActiveState / IsServiceActive / PID-file branches) without
+// any of the new combined-probe machinery — same SSH round-trip count
+// as before so there is no behaviour change on macOS/Windows or on a
+// probe-error fallback for Linux.
+func statusNativeOneshotNonLinux(h *host.Host, instanceName, dir string) string {
 	hasSvc, kind, _ := linuxSvcAndAutostartProbe(h, instanceName)
 
-	// For svc.sh-managed runners on Linux: read the service name from the .service
-	// marker file written by "svc.sh install" and query systemctl directly.
 	if hasSvc {
 		out, err := h.Run(fmt.Sprintf(
 			`svc_file="%s/.service"; `+
@@ -622,10 +667,72 @@ func (m *Manager) statusNative(h *host.Host, instanceName string) string {
 		if err == nil && active {
 			return "running"
 		}
+	}
+
+	return statusNativePIDFile(h, instanceName, dir)
+}
+
+// statusNativeFromProbe reproduces the statusNative branch logic using a
+// pre-fetched linuxInstanceProbeResult. Same win-class as statusNative but
+// avoids re-issuing the combined probe when the caller already has one in
+// hand. The branches match statusNative 1:1 so a change to the state
+// machine must update both call sites in lockstep (the legacy
+// `statusNative` above is the surviving entry point for any caller that
+// only wants the local string).
+func statusNativeFromProbe(h *host.Host, instanceName, dir string, result linuxInstanceProbeResult) string {
+	// For svc.sh-managed runners on Linux: read the service name from the .service
+	// marker file written by "svc.sh install" and query systemctl directly.
+	if result.svcSh {
+		out, err := h.Run(fmt.Sprintf(
+			`svc_file="%s/.service"; `+
+				`if [ -f "$svc_file" ]; then `+
+				`svc=$(cat "$svc_file"); `+
+				`systemctl is-active "$svc" 2>/dev/null || echo inactive; `+
+				`fi`,
+			dir,
+		))
+		if err == nil {
+			state := strings.TrimSpace(out)
+			if state == "active" {
+				return "running"
+			}
+			if state != "" {
+				return "stopped"
+			}
+		}
+	}
+
+	if result.kind != autostart.KindNone {
+		if state, serr := autostart.ServiceActiveState(h, instanceName, result.kind); serr == nil {
+			switch state {
+			case "active":
+				return "running"
+			case "failed", "activating":
+				return "service error"
+			}
+		}
+		active, err := autostart.IsServiceActive(h, instanceName, result.kind)
+		if err == nil && active {
+			return "running"
+		}
 		// Autostart may be installed but the runner was started directly (e.g. macOS
 		// with no GUI session for launchd). Fall through to the PID file check.
 	}
 
+	return statusNativePIDFile(h, instanceName, dir)
+}
+
+// statusNativePIDFile contains the Linux PID-file / Windows Get-Process
+// tail of the statusNative state machine. Extracted so
+// statusNativeAndVersion (Linux path) and the surviving statusNative
+// (non-Linux / fallback path) share a single implementation.
+//
+// On Linux (returns "running"|"stopped"|"not installed"|"unknown") the
+// single SSH call below is the second (and last) round-trip in the
+// statusNativeAndVersion path; the first was the combined
+// linuxInstanceProbe. On Windows it is the only round-trip and returns
+// the same string the previous inline implementation did.
+func statusNativePIDFile(h *host.Host, instanceName, dir string) string {
 	if h.OS == "windows" {
 		cmd := fmt.Sprintf(
 			"%s; if (-not (Test-Path (Join-Path $runnerDir '.runner'))) { Write-Host 'not installed'; exit 0 }; "+
