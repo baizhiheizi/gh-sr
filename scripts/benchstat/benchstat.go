@@ -227,7 +227,7 @@ func writeNumber(sb *strings.Builder, f float64) {
 // formatDeltaTo appends the percent delta of d (with sign) into dst and
 // returns the resulting slice. Single-allocation helper that mirrors the
 // pre-1.21 strconv.AppendFloat pattern; 24 bytes is comfortably above the
-// worst-case "+<16-char>%%\n" length FormatDelta can produce.
+// worst-case formatted delta length.
 func formatDeltaTo(dst []byte, d float64) []byte {
 	if d == 0 {
 		return append(dst, "0%"...)
@@ -237,12 +237,6 @@ func formatDeltaTo(dst []byte, d float64) []byte {
 	}
 	dst = strconv.AppendFloat(dst, d, 'f', 1, 64)
 	return append(dst, '%')
-}
-
-// FormatDelta renders a percent delta with sign.
-func FormatDelta(d float64) string {
-	var b [24]byte
-	return string(formatDeltaTo(b[:0], d))
 }
 
 // RenderMarkdown returns a human-readable regression report.

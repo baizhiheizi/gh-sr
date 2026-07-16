@@ -274,23 +274,6 @@ func TestRenderMarkdown_WarnSummary(t *testing.T) {
 	}
 }
 
-func TestFormatDelta(t *testing.T) {
-	cases := []struct {
-		in   float64
-		want string
-	}{
-		{0, "0%"},
-		{12.5, "+12.5%"},
-		{-7.3, "-7.3%"},
-	}
-	for _, c := range cases {
-		got := FormatDelta(c.in)
-		if got != c.want {
-			t.Errorf("FormatDelta(%v) = %q, want %q", c.in, got, c.want)
-		}
-	}
-}
-
 func TestWriteNumber(t *testing.T) {
 	cases := []struct {
 		in   float64
