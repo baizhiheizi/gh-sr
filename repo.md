@@ -7,7 +7,7 @@ metadata:
 
 Go module `github.com/an-lee/gh-sr` (remote `baizhiheizi/gh-sr.git`). CLI entry is `cmd/gh-sr/`; implementation is under `internal/`.
 
-Coverage snapshot 2026-07-14: `internal/runner` baseline on current `main` was 62.8%; run #29308107521 raises the branch to 63.8%. Current focused functions after the branch tests: `Manager.Start` 53.8%, `Manager.Stop` 42.9%, and `startAutostartWithDarwinFallback` 60%. `setupNative`, `startNativeOnce`, `handleStaleRegistration`, and `dirSizesWindows` remain 0%.
+Coverage snapshot 2026-07-16: `internal/runner` baseline on current `main` was 64.1%; run #29473958530 raises it to 69.7% via 9 new tests in `native_setup_test.go`. Current focused functions: `Manager.Start` 53.8%, `Manager.Stop` 42.9%, `startAutostartWithDarwinFallback` 60%, `setupNative` 73.8%, `startNativeOnce` 56.7%, `handleStaleRegistration` 75.0%, `EnsureSetup` 100.0%. Windows branches of those native helpers and `dirSizesWindows` remain 0%.
 
 CI (`.github/workflows/ci.yml`) runs `go vet ./...`, `gofmt -l .`, and `go test ./... -race -count=1` on self-hosted Linux. Bench job runs `go test ./... -run='^$' -bench=. -benchmem -count=1`. There is local coverage support but no CI coverage profile/artifact.
 

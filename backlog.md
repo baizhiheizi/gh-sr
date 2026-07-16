@@ -7,8 +7,8 @@ metadata:
 
 ## Next priorities
 
-1. **Native setup/recovery pipelines** (`internal/runner` 63.8%) — `setupNative`, `startNativeOnce`, and `handleStaleRegistration` remain at 0%. Prefer a focused seam for stale-registration recovery over wrapper-only `EnsureSetup` coverage; this path has meaningful multi-step failure behavior.
-2. **Windows runner disk/service paths** — `dirSizesWindows` is 0%; Windows `removeDirTree` and multi-marker `removeNativeServices` behavior remain uncovered. Reuse the non-local-address PowerShell wrapper pattern.
+1. **Windows runner branches in `setupNative`/`startNativeOnce`/`handleStaleRegistration`** — Linux covered on 2026-07-16 (run #29473958530) up to 56-100% per function; Windows paths still 0%. Reuse the non-local-address PowerShell wrapper pattern (`Addr: runner@vps` for Windows to trigger `wrapCommand`).
+2. **Windows `dirSizesWindows`** (disk.go:290) — still 0%; covers the `powershell.exe` size-collection branch.
 3. **Coverage infrastructure** — CI runs vet/format/full race but does not generate or retain a coverage profile. A separate non-gating coverage artifact job is reasonable after maintainer agreement; do not add a threshold without a policy.
 4. **`internal/diskschedule` follow-ups** (88.2%) — command/file-write error branches remain, but core lifecycle behavior is covered.
 5. **`internal/tui` rendering** — low priority unless a coverage policy or specific UI regression appears.

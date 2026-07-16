@@ -11,7 +11,14 @@ metadata:
 - Coverage: `internal/runner` 62.8→63.8; Start 30.8→53.8; Stop 35.7→42.9; `startAutostartWithDarwinFallback` 0→60.
 - Verified focused tests, full race suite, build, vet, gofmt, and diff check. Monthly issue #306 updated.
 
+## 2026-07-16 — Run #29473958530
+- Added 9 tests in `internal/runner/native_setup_test.go` covering `setupNative`/`startNativeOnce`/`handleStaleRegistration`/`EnsureSetup` recovery pipeline.
+- Branch `test-assist/native-setup-and-stale-recovery`, commit `dbd34dc`; draft PR intent accepted by safeoutputs; patch + bundle persisted under `/tmp/gh-aw/aw-test-assist-native-setup-and-stale-recovery.*`.
+- Coverage: `internal/runner` 64.1→69.7; setupNative 0→73.8; startNativeOnce 0→56.7; handleStaleRegistration 0→75.0; EnsureSetup 0→100.0.
+- Verified focused tests, full race suite (16 packages pass), build, vet, gofmt, diff check. Prior PR #362 (run #29308107521) was confirmed merged on 2026-07-15; no test-improver PRs currently open.
+
 ## Recent
+- 2026-07-14 native autostart probe branches 62.8→63.8; PR #362 merged.
 - 2026-07-09 runner dispatch/disk branches 57.6→59.6; PR #343 merged.
 - 2026-07-08 diskschedule 14.2→88.2; PR #336 merged.
 - 2026-07-04 autostart Install helpers 84.9→94.7; PR #321 merged.
