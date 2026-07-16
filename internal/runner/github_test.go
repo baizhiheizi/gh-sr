@@ -273,6 +273,102 @@ func TestGitHubClient_actionsURL(t *testing.T) {
 	}
 }
 
+// TestGitHubClient_get_etagCache verifies the If-None-Match / 304 Not Modified
+// round trip: the first GET stores the ETag, the second GET sends
+// If-None-Match, the server returns 304, and we serve the cached body without
+// a second body transfer. Hit-count assertions confirm the server saw one
+// unconditional and one conditional GET — proving the cache actually
+// short-circuited the second request rather than silently re-fetching.
+func TestGitHubClient_get_etagCache(t *testing.T) {
+	t.Parallel()
+	const etag = `"W/abc123"`
+	body := []byte(`{"runners":[{"id":1,"name":"r-1","status":"online","busy":false,"os":"Linux","labels":[]}]}`)
+	var hits int
+	var sawIfNoneMatch bool
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits++
+		if r.Header.Get("If-None-Match") == etag {
+			sawIfNoneMatch = true
+			w.WriteHeader(http.StatusNotModified)
+			return
+		}
+		w.Header().Set("ETag", etag)
+		_, _ = w.Write(body)
+	}))
+	defer ts.Close()
+
+	g := NewGitHubClientWithHTTP("pat", ts.Client(), ts.URL)
+	first, err := g.ListRunnersScoped("repo", "o/r")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(first) != 1 || first[0].Name != "r-1" {
+		t.Fatalf("first call: got %+v", first)
+	}
+
+	second, err := g.ListRunnersScoped("repo", "o/r")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(second) != 1 || second[0].Name != "r-1" {
+		t.Fatalf("second call: got %+v", second)
+	}
+
+	if hits != 2 {
+		t.Errorf("server hits: got %d, want 2", hits)
+	}
+	if !sawIfNoneMatch {
+		t.Error("server never saw If-None-Match header on second call")
+	}
+}
+
+// TestGitHubClient_get_etagRefresh verifies that when the server reports the
+// resource has changed (200 with a new ETag), the client stores the fresh
+// payload and the third call still uses conditional GET semantics against the
+// updated ETag. This guards against an off-by-one where the cache only stores
+// etags but never refreshes the body.
+func TestGitHubClient_get_etagRefresh(t *testing.T) {
+	t.Parallel()
+	var hits int
+	var lastETag string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits++
+		incoming := r.Header.Get("If-None-Match")
+		switch {
+		case hits == 1:
+			w.Header().Set("ETag", `"v1"`)
+			_, _ = w.Write([]byte(`{"runners":[{"id":1,"name":"r-1","status":"online","busy":false,"os":"Linux","labels":[]}]}`))
+		case hits == 2 && incoming == `"v1"`:
+			w.Header().Set("ETag", `"v2"`)
+			_, _ = w.Write([]byte(`{"runners":[{"id":2,"name":"r-2","status":"offline","busy":false,"os":"Linux","labels":[]}]}`))
+		case hits == 3 && incoming == `"v2"`:
+			lastETag = incoming
+			w.WriteHeader(http.StatusNotModified)
+		default:
+			t.Errorf("unexpected request: hit=%d incoming=%q", hits, incoming)
+		}
+	}))
+	defer ts.Close()
+
+	g := NewGitHubClientWithHTTP("pat", ts.Client(), ts.URL)
+	if _, err := g.ListRunnersScoped("repo", "o/r"); err != nil {
+		t.Fatal(err)
+	}
+	second, err := g.ListRunnersScoped("repo", "o/r")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(second) != 1 || second[0].Name != "r-2" {
+		t.Errorf("after refresh, expected r-2, got %+v", second)
+	}
+	if _, err := g.ListRunnersScoped("repo", "o/r"); err != nil {
+		t.Fatal(err)
+	}
+	if lastETag != `"v2"` {
+		t.Errorf("third call If-None-Match: got %q, want %q", lastETag, `"v2"`)
+	}
+}
+
 func TestGitHubClient_GetLatestRunnerVersion_emptyTag(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(releaseResponse{TagName: "v"})

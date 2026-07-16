@@ -18,6 +18,26 @@ type GitHubClient struct {
 	latestVersion     string
 	latestVersionOnce sync.Once
 	latestVersionErr  error
+
+	// getCache memoises successful GET responses by URL together with the
+	// server-supplied ETag. The next call to get() for the same URL sends
+	// If-None-Match; a 304 Not Modified response short-circuits the body
+	// transfer and the downstream json.Unmarshal, both of which would otherwise
+	// run on every TUI 5s refresh tick. The cache is keyed on the full URL so
+	// pagination (?page=N) and scope/target variations coexist without
+	// cross-contamination. Only populated for read endpoints reached through
+	// get(); POST (token) and DELETE (runner removal) are deliberately not
+	// cached because their response semantics are per-call, not idempotent.
+	getCacheMu sync.RWMutex
+	getCache   map[string]getCacheEntry
+}
+
+// getCacheEntry pairs a GitHub ETag with the body bytes returned for that URL.
+// body is treated as read-only after storage; callers receive a defensive copy
+// to keep cached bytes immutable across goroutines that race on the same URL.
+type getCacheEntry struct {
+	etag string
+	body []byte
 }
 
 type GitHubRunner struct {
@@ -62,9 +82,10 @@ func NewGitHubClientWithHTTP(pat string, client *http.Client, apiBase string) *G
 		client = &http.Client{}
 	}
 	return &GitHubClient{
-		pat:     pat,
-		client:  client,
-		apiBase: strings.TrimRight(apiBase, "/"),
+		pat:      pat,
+		client:   client,
+		apiBase:  strings.TrimRight(apiBase, "/"),
+		getCache: make(map[string]getCacheEntry),
 	}
 }
 
@@ -195,17 +216,35 @@ func (g *GitHubClient) setHeaders(req *http.Request) {
 }
 
 func (g *GitHubClient) get(url string) ([]byte, error) {
+	g.getCacheMu.RLock()
+	cached, ok := g.getCache[url]
+	g.getCacheMu.RUnlock()
+
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return nil, err
 	}
 	g.setHeaders(req)
+	if ok && cached.etag != "" {
+		// Conditional GET: GitHub returns 304 Not Modified when the resource
+		// is unchanged, letting us skip the body transfer entirely.
+		req.Header.Set("If-None-Match", cached.etag)
+	}
 
 	resp, err := g.client.Do(req)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNotModified && ok {
+		// Defensive copy: cached.body is shared across goroutines that race
+		// on the same URL during a TUI refresh, and downstream json.Unmarshal
+		// keeps the slice alive for the duration of the parse.
+		out := make([]byte, len(cached.body))
+		copy(out, cached.body)
+		return out, nil
+	}
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -215,6 +254,17 @@ func (g *GitHubClient) get(url string) ([]byte, error) {
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(body))
 	}
+
+	if etag := resp.Header.Get("ETag"); etag != "" {
+		// Store a copy so the cache owns its bytes independent of any future
+		// resp.Body reuse by the http.Client transport.
+		stored := make([]byte, len(body))
+		copy(stored, body)
+		g.getCacheMu.Lock()
+		g.getCache[url] = getCacheEntry{etag: etag, body: stored}
+		g.getCacheMu.Unlock()
+	}
+
 	return body, nil
 }
 
