@@ -1,1 +1,1 @@
-- [Perf Improver state 2026-07](notes.md) — run 29 on 2026-07-17, opened RenderPlain spaces80 slice (commit `129936a`); PR #380 MERGED 2026-07-16 (phantom-success 11 of 15); PR #371 MERGED earlier this series.
+- [Perf Improver state 2026-07](notes.md) — run 30 on 2026-07-17, opened FormatBytesHuman B-branch alloc drop (commit `f8c5f84`); PR #387 (run-29 RenderPlain spaces80) open as draft; PR #380 MERGED 2026-07-16 (phantom-success 11 of 15); PR #371 MERGED earlier this series.
