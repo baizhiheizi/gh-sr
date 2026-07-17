@@ -5,14 +5,14 @@ metadata:
   type: project
 ---
 
-## Run #29473958530 (2026-07-16 05:42 UTC)
+## Run #29557450180 (2026-07-17 19:30 UTC)
 
-- Branch `test-assist/native-setup-and-stale-recovery`, commit `dbd34dc`.
-- Draft PR intent accepted by safeoutputs; patch `/tmp/gh-aw/aw-test-assist-native-setup-and-stale-recovery.patch` (20,059 bytes, 515 lines), bundle `/tmp/gh-aw/aw-test-assist-native-setup-and-stale-recovery.bundle` (5,372 bytes). Verify GitHub PR number in a later run.
-- Added `internal/runner/native_setup_test.go` with 9 tests covering the native setup/recovery pipeline (setupNative / startNativeOnce / handleStaleRegistration / EnsureSetup).
-- Coverage: `internal/runner` **64.1% → 69.7% (+5.6 pp)**; `setupNative` **0% → 73.8%**; `startNativeOnce` **0% → 56.7%**; `handleStaleRegistration` **0% → 75.0%**; `EnsureSetup` **0% → 100.0%**.
+- Branch `test-assist/dirsizes-windows-branch`, commit `6d44d5b`.
+- Draft PR intent accepted by safeoutputs; patch `/tmp/gh-aw/aw-test-assist-dirsizes-windows-branch.patch` (12,349 bytes, 320 lines), bundle `/tmp/gh-aw/aw-test-assist-dirsizes-windows-branch.bundle` (5,855 bytes). Verify GitHub PR number in a later run.
+- Added 6 tests (with 4 subtests) in `internal/runner/disk_test.go` covering the Windows branch of `dirSizes` plus `parseFourInt64s` Windows-emit paths. New helper `decodeEncodedPowerShellCommand` mirrors `host.encodePowerShellScript` (UTF-16LE + base64) so future Windows-branch tests can decode and assert against the real script body.
+- Coverage: `internal/runner` **69.9% → 71.2% (+1.3 pp)**; `dirSizesWindows` **0% → 100.0%**; `dirSizes` (dispatcher) **75% → 100%**; `parseFourInt64s` **62.5% → 85.0%**.
 - Verified: focused tests, build, vet, gofmt, full race suite (all 16 packages pass), package coverage, and diff check.
-- Prior PR #362 (run #29308107521) merged on 2026-07-15 — confirms prior intent #aw_probe made it through; no test-improver PRs currently open on `main`.
-- Task 6 assessment: shared fixtures (`answerInstancePresence`, `setupNativeGitHubServer`, `setupNativeLinuxHost`) are reusable; no infrastructure gaps to flag this run.
+- Prior PR #381 (run #29473958530) confirmed merged on `main` (commit `c6e3fe0`); no test-improver PRs currently open on `main`.
+- Task 6 assessment: `decodeEncodedPowerShellCommand` helper is reusable for the next round of Windows-branch tests; no infrastructure gaps to flag this run.
 
 [[backlog]] [[run-history]]
