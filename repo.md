@@ -7,7 +7,7 @@ metadata:
 
 Go module `github.com/an-lee/gh-sr` (remote `baizhiheizi/gh-sr.git`). CLI entry is `cmd/gh-sr/`; implementation is under `internal/`.
 
-Coverage snapshot 2026-07-17: `internal/runner` baseline on current `main` was 69.9%; run #29557450180 raises it to 71.2% via 6 tests (4 subtests) in `disk_test.go`. Current focused functions: `dirSizesWindows` 100.0%, `dirSizes` 100.0%, `parseFourInt64s` 85.0%, `setupNative` 73.8%, `startNativeOnce` 56.7%, `handleStaleRegistration` 75.0%, `EnsureSetup` 100.0%. Windows branches in `setupNative`/`startNativeOnce`/`handleStaleRegistration`/`stopNative`/`removeNative` remain 0% — only `dirSizesWindows` is now covered.
+Coverage snapshot 2026-07-18: `internal/runner` baseline on current `main` is 69.9%; current branch `test-assist/manager-remove-status-logs-orchestrators` (commit `2af02ce`) raises it to 72.7% via 8 tests in `runner_remove_status_logs_test.go`. New focused functions: `Manager.Remove` 85.7%, `Manager.Status` 100.0%, `Manager.Logs` 100.0%. PR #388 (run #29557450180, dirSizesWindows) is still open as draft.
 
 CI (`.github/workflows/ci.yml`) runs `go vet ./...`, `gofmt -l .`, and `go test ./... -race -count=1` on self-hosted Linux. Bench job runs `go test ./... -run='^$' -bench=. -benchmem -count=1`. There is local coverage support but no CI coverage profile/artifact.
 

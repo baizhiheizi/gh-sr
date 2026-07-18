@@ -5,14 +5,14 @@ metadata:
   type: project
 ---
 
-## Run #29557450180 (2026-07-17 19:30 UTC)
+## Run #29631854277 (2026-07-18 05:55 UTC)
 
-- Branch `test-assist/dirsizes-windows-branch`, commit `6d44d5b`.
-- Draft PR intent accepted by safeoutputs; patch `/tmp/gh-aw/aw-test-assist-dirsizes-windows-branch.patch` (12,349 bytes, 320 lines), bundle `/tmp/gh-aw/aw-test-assist-dirsizes-windows-branch.bundle` (5,855 bytes). Verify GitHub PR number in a later run.
-- Added 6 tests (with 4 subtests) in `internal/runner/disk_test.go` covering the Windows branch of `dirSizes` plus `parseFourInt64s` Windows-emit paths. New helper `decodeEncodedPowerShellCommand` mirrors `host.encodePowerShellScript` (UTF-16LE + base64) so future Windows-branch tests can decode and assert against the real script body.
-- Coverage: `internal/runner` **69.9% → 71.2% (+1.3 pp)**; `dirSizesWindows` **0% → 100.0%**; `dirSizes` (dispatcher) **75% → 100%**; `parseFourInt64s` **62.5% → 85.0%**.
-- Verified: focused tests, build, vet, gofmt, full race suite (all 16 packages pass), package coverage, and diff check.
-- Prior PR #381 (run #29473958530) confirmed merged on `main` (commit `c6e3fe0`); no test-improver PRs currently open on `main`.
-- Task 6 assessment: `decodeEncodedPowerShellCommand` helper is reusable for the next round of Windows-branch tests; no infrastructure gaps to flag this run.
+- Branch `test-assist/manager-remove-status-logs-orchestrators`, commit `2af02ce`.
+- Draft PR intent accepted; patch + bundle at `/tmp/gh-aw/aw-test-assist-manager-remove-status-logs-orchestrators.{patch,bundle}`.
+- 8 tests in `internal/runner/runner_remove_status_logs_test.go` covering the three top-level `Manager` orchestrators at 0%.
+- Coverage: `internal/runner` **69.9% → 72.7% (+2.8 pp)**; `Manager.Remove` **0% → 85.7%**; `Manager.Status` **0% → 100%**; `Manager.Logs` **0% → 100%**.
+- Verified: focused tests (8/8 PASS), build, vet, gofmt, full race suite (all 16 packages pass).
+- Prior PR #381 confirmed merged on `main` (commit `c6e3fe0`). Prior-run PR #388 (dirSizesWindows) is still open as draft with `agentic-threat-detected` label.
+- Monthly Activity issue #306 updated to reflect this run; #305 still pending close.
 
 [[backlog]] [[run-history]]

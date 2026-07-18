@@ -5,16 +5,16 @@ metadata:
   type: project
 ---
 
+## 2026-07-18 — Run 29631854277
+- 8 tests in `internal/runner/runner_remove_status_logs_test.go` for `Manager.Remove` / `Manager.Status` / `Manager.Logs`.
+- Branch `test-assist/manager-remove-status-logs-orchestrators`, commit `2af02ce`. PR intent persisted; verify remote in next run.
+- Coverage: `internal/runner` 69.9→72.7 (+2.8 pp); Manager.Remove 0→85.7; Manager.Status 0→100; Manager.Logs 0→100.
+
 ## 2026-07-17 — Run 29557450180
-- 6 tests (4 subtests) in `internal/runner/disk_test.go` covering `dirSizesWindows`, `dirSizes` Windows dispatch, `parseFourInt64s` Windows-emit paths.
-- Branch `test-assist/dirsizes-windows-branch`, commit `6d44d5b`; patch + bundle persisted at `/tmp/gh-aw/aw-test-assist-dirsizes-windows-branch.{patch,bundle}`.
-- New helper `decodeEncodedPowerShellCommand` (UTF-16LE + base64) mirrors `host.encodePowerShellScript`.
-- Coverage: `internal/runner` 69.9→71.2; `dirSizesWindows` 0→100; `dirSizes` 75→100; `parseFourInt64s` 62.5→85.
+- 6 tests (4 subtests) covering `dirSizesWindows` / `dirSizes` Windows dispatch / `parseFourInt64s`. PR #388 open as draft (agentic-threat-detected).
 
 ## 2026-07-16 — Run #29473958530
-- 9 tests in `internal/runner/native_setup_test.go` covering `setupNative`/`startNativeOnce`/`handleStaleRegistration`/`EnsureSetup`.
-- Branch `test-assist/native-setup-and-stale-recovery`, commit `dbd34dc`. PR #381 merged (commit `c6e3fe0`).
-- Coverage: `internal/runner` 64.1→69.7; setupNative 0→73.8; startNativeOnce 0→56.7; handleStaleRegistration 0→75; EnsureSetup 0→100.
+- 9 tests for `setupNative` / `startNativeOnce` / `handleStaleRegistration` / `EnsureSetup`. PR #381 merged (commit `c6e3fe0`).
 
 ## Earlier
 - 2026-07-14: Manager Start/Stop probe branches; PR #362 merged.
@@ -24,7 +24,6 @@ metadata:
 - 2026-07-03: autostart Start/Stop/Status/Uninstall; PR #316 merged.
 - 2026-07-02: runner pure helpers; PR #311 merged.
 - 2026-07-01: ops Update; PR #304 merged.
-- Older: #296, #293, #280, #270, #256, #242, #233, #224/#216, #200, #189, #178, #168, #156, #147.
 - Monthly: #4 Apr, #69 May, #109 June closed; #306 July active; #305 July duplicate still open.
 
 [[wip]] [[backlog]]
