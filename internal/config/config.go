@@ -68,7 +68,17 @@ const (
 	maxContainerRunnerAptPkgNameLen    = 200
 )
 
-var debianPackageNamePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9+.-]*$`)
+var (
+	debianPackageNamePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9+.-]*$`)
+	runnerNamePattern        = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]*$`)
+)
+
+func validateRunnerName(name string) error {
+	if !runnerNamePattern.MatchString(name) {
+		return fmt.Errorf("runner name %q is invalid; use letters, numbers, dots, underscores, or hyphens, starting with a letter or number", name)
+	}
+	return nil
+}
 
 func validateContainerRunnerImage(img *ContainerRunnerImageConfig) error {
 	if img == nil {
@@ -477,6 +487,9 @@ func (c *Config) Validate() error {
 	for _, r := range c.Runners {
 		if r.Name == "" {
 			return fmt.Errorf("runner name is required")
+		}
+		if err := validateRunnerName(r.Name); err != nil {
+			return err
 		}
 		if r.Repo == "" && r.Org == "" {
 			return fmt.Errorf("runner %q: repo or org is required", r.Name)

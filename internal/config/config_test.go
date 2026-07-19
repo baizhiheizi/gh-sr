@@ -857,6 +857,46 @@ func TestValidate_runnerMode_container_valid(t *testing.T) {
 	}
 }
 
+func TestValidate_runnerNameTokens(t *testing.T) {
+	t.Parallel()
+
+	t.Run("valid slug characters", func(t *testing.T) {
+		t.Parallel()
+		cfg := Config{
+			Hosts:   map[string]HostConfig{"h": {Addr: "local", OS: "linux", Arch: "amd64"}},
+			Runners: []RunnerConfig{{Name: "ci_runner.1-prod", Repo: "o/r", Host: "h"}},
+		}
+		if err := cfg.Validate(); err != nil {
+			t.Fatalf("unexpected error for valid runner name: %v", err)
+		}
+	})
+
+	invalid := []string{
+		"ci runner",
+		"../ci",
+		"ci;rm",
+		"ci$(touch-pwned)",
+		"ci`touch-pwned`",
+	}
+	for _, name := range invalid {
+		name := name
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			cfg := Config{
+				Hosts:   map[string]HostConfig{"h": {Addr: "local", OS: "linux", Arch: "amd64"}},
+				Runners: []RunnerConfig{{Name: name, Repo: "o/r", Host: "h"}},
+			}
+			err := cfg.Validate()
+			if err == nil {
+				t.Fatal("expected error for unsafe runner name")
+			}
+			if !strings.Contains(err.Error(), "runner name") {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		})
+	}
+}
+
 func TestValidate_duplicateRunnerInstanceNames(t *testing.T) {
 	t.Parallel()
 	cfg := Config{
