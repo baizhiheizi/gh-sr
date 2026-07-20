@@ -3,7 +3,7 @@ on:
   permissions:
     pull-requests: read
   reaction: eyes
-  schedule: daily
+  schedule: daily around 2:00 utc+8
   steps:
     - env:
         GH_TOKEN: ${{ github.token }}

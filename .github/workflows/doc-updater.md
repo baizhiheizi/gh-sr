@@ -2,7 +2,7 @@
 on:
   permissions:
     pull-requests: read
-  schedule: daily
+  schedule: daily around 1:00 utc+8
   steps:
     - env:
         GH_TOKEN: ${{ github.token }}
