@@ -7,8 +7,8 @@ permissions:
   issues: read
   pull-requests: read
 imports:
-- shared/engine-minimax.md
-- shared/runtime.md
+  - shared/engine-deepseek.md
+  - shared/runtime.md
 safe-outputs:
   report-failure-as-issue: false
   create-issue:
@@ -16,15 +16,15 @@ safe-outputs:
     expires: 2d
     group: true
     labels:
-    - code-quality
-    - automated-analysis
+      - code-quality
+      - automated-analysis
     max: 3
     title-prefix: "[duplicate-code] "
 description: Identifies duplicate code patterns across the codebase and suggests refactoring opportunities
 name: Duplicate Code Detector
 runs-on:
-- self-hosted
-- linux
+  - self-hosted
+  - linux
 runs-on-slim: self-hosted
 source: githubnext/agentics/workflows/duplicate-code-detector.md@1c6668b751c51af8571f01204ceffb19362e0f66
 timeout-minutes: 15
@@ -53,6 +53,7 @@ Detect and report code duplication by:
 ### 1. Changed Files Analysis
 
 Identify and analyze modified files:
+
 - Determine files changed in the recent commits using `git log` and `git diff`
 - Focus on source code files (programming language files)
 - **Exclude test files** from analysis (files matching patterns: `*_test.*`, `*.test.*`, `*.spec.*`, `test_*.*`, or located in directories named `test`, `tests`, `__tests__`, or `spec`)
@@ -66,6 +67,7 @@ Identify and analyze modified files:
 Apply analysis to find duplicates:
 
 **Pattern Search**:
+
 - Search for duplication indicators using grep and code search:
   - Similar function signatures
   - Repeated logic blocks
@@ -75,6 +77,7 @@ Apply analysis to find duplicates:
 - Identify structural similarities in code organization
 
 **Semantic Analysis**:
+
 - Compare code blocks for logical similarity beyond textual matching
 - Identify different implementations of the same functionality
 - Look for copy-paste patterns with minor variations
@@ -84,12 +87,14 @@ Apply analysis to find duplicates:
 Assess findings to identify true code duplication:
 
 **Duplication Types**:
+
 - **Exact Duplication**: Identical code blocks in multiple locations
 - **Structural Duplication**: Same logic with minor variations (different variable names, etc.)
 - **Functional Duplication**: Different implementations of the same functionality
 - **Copy-Paste Programming**: Similar code blocks that could be extracted into shared utilities
 
 **Assessment Criteria**:
+
 - **Severity**: Amount of duplicated code (lines of code, number of occurrences)
 - **Impact**: Where duplication occurs (critical paths, frequently called code)
 - **Maintainability**: How duplication affects code maintainability
@@ -100,12 +105,14 @@ Assess findings to identify true code duplication:
 Create separate issues for each distinct duplication pattern found (maximum 3 patterns per run). Each pattern should get its own issue to enable focused remediation.
 
 **When to Create Issues**:
+
 - Only create issues if significant duplication is found (threshold: >10 lines of duplicated code OR 3+ instances of similar patterns)
 - **Create one issue per distinct duplication pattern** - do NOT bundle multiple patterns in a single issue
 - Limit to the top 3 most significant patterns if more are found
 - Use the `create_issue` tool from safe-outputs MCP **once for each pattern**
 
 **Issue Contents for Each Pattern**:
+
 - **Executive Summary**: Brief description of this specific duplication pattern
 - **Duplication Details**: Specific locations and code blocks for this pattern only
 - **Severity Assessment**: Impact and maintainability concerns for this pattern
@@ -144,10 +151,10 @@ Create separate issues for each distinct duplication pattern found (maximum 3 pa
 
 For each distinct duplication pattern found, create a separate issue using this structure:
 
-````markdown
+`````markdown
 # 🔍 Duplicate Code Detected: [Pattern Name]
 
-*Analysis of commit ${{ github.event.head_commit.id }}*
+_Analysis of commit ${{ github.event.head_commit.id }}_
 
 **Assignee**: @copilot
 
@@ -158,15 +165,17 @@ For each distinct duplication pattern found, create a separate issue using this 
 ## Duplication Details
 
 ### Pattern: [Description]
+
 - **Severity**: High/Medium/Low
 - **Occurrences**: [Number of instances]
 - **Locations**:
   - `path/to/file1.ext` (lines X-Y)
   - `path/to/file2.ext` (lines A-B)
 - **Code Sample**:
-  ````[language]
+  ```[language]
   [Example of duplicated code]
-  ````
+  ```
+`````
 
 ## Impact Analysis
 
@@ -199,7 +208,8 @@ For each distinct duplication pattern found, create a separate issue using this 
 - **Detection Method**: Semantic code analysis
 - **Commit**: ${{ github.event.head_commit.id }}
 - **Analysis Date**: [timestamp]
-````
+
+```
 
 ## Operational Guidelines
 
@@ -230,3 +240,4 @@ For each distinct duplication pattern found, create a separate issue using this 
 - Use descriptive titles that clearly identify the specific pattern (e.g., "Duplicate Code: Error Handling Pattern in Parser Module")
 
 **Objective**: Improve code quality by identifying and reporting meaningful code duplication that impacts maintainability. Focus on actionable findings that enable automated or manual refactoring.
+```

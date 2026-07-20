@@ -5,28 +5,28 @@ on:
   reaction: eyes
   schedule: daily
   steps:
-  - env:
-      GH_TOKEN: ${{ github.token }}
-    id: check
-    run: |
-      MAX_OPEN_PRS=8
-      if [[ "$GITHUB_EVENT_NAME" != "schedule" ]]; then exit 0; fi
-      COUNT=$(gh pr list --repo "$GITHUB_REPOSITORY" --state open --search 'in:title "[efficiency-improver]"' --json number --jq 'length' 2>/dev/null || echo 0)
-      [[ "$COUNT" -lt "$MAX_OPEN_PRS" ]]
+    - env:
+        GH_TOKEN: ${{ github.token }}
+      id: check
+      run: |
+        MAX_OPEN_PRS=8
+        if [[ "$GITHUB_EVENT_NAME" != "schedule" ]]; then exit 0; fi
+        COUNT=$(gh pr list --repo "$GITHUB_REPOSITORY" --state open --search 'in:title "[efficiency-improver]"' --json number --jq 'length' 2>/dev/null || echo 0)
+        [[ "$COUNT" -lt "$MAX_OPEN_PRS" ]]
   workflow_dispatch: null
 permissions: read-all
 if: needs.pre_activation.outputs.check_result == 'success'
 network:
   allowed:
-  - defaults
-  - dotnet
-  - node
-  - python
-  - rust
-  - java
+    - defaults
+    - dotnet
+    - node
+    - python
+    - rust
+    - java
 imports:
-- shared/engine-minimax.md
-- shared/runtime.md
+  - shared/engine-deepseek.md
+  - shared/runtime.md
 safe-outputs:
   report-failure-as-issue: false
   add-comment:
@@ -35,17 +35,17 @@ safe-outputs:
     target: "*"
   create-issue:
     labels:
-    - automation
-    - efficiency
-    - green-software
+      - automation
+      - efficiency
+      - green-software
     max: 4
     title-prefix: "[efficiency-improver] "
   create-pull-request:
     draft: true
     labels:
-    - automation
-    - efficiency
-    - green-software
+      - automation
+      - efficiency
+      - green-software
     max: 3
     title-prefix: "[efficiency-improver] "
   push-to-pull-request-branch:
@@ -59,8 +59,8 @@ description: |
   energy efficiency improvements. Its north-star KPI is reducing the energy consumption and
   computational footprint of the codebase. Always methodical, measurement-driven, and mindful of trade-offs.
 runs-on:
-- self-hosted
-- linux
+  - self-hosted
+  - linux
 runs-on-slim: self-hosted
 source: githubnext/agentics/workflows/efficiency-improver.md@1c6668b751c51af8571f01204ceffb19362e0f66
 timeout-minutes: 60
@@ -68,7 +68,7 @@ tools:
   bash: true
   github:
     toolsets:
-    - all
+      - all
   repo-memory: true
   web-fetch: null
 ---
@@ -93,12 +93,12 @@ Always be:
 
 **Reduce energy consumption and computational footprint.** Every task, measurement, and recommendation should be evaluated against this goal. Proxy metrics include:
 
-| Proxy Metric | Rationale |
-|---|---|
-| **Execution time (wall clock)** | Faster code generally uses less energy |
-| **CPU cycles / instruction count** | Lower CPU usage = less power draw |
-| **Memory allocation** | Less memory churn = less energy on GC and DRAM refresh |
-| **Network transfer size** | Fewer bytes transferred = less energy across the full stack |
+| Proxy Metric                       | Rationale                                                   |
+| ---------------------------------- | ----------------------------------------------------------- |
+| **Execution time (wall clock)**    | Faster code generally uses less energy                      |
+| **CPU cycles / instruction count** | Lower CPU usage = less power draw                           |
+| **Memory allocation**              | Less memory churn = less energy on GC and DRAM refresh      |
+| **Network transfer size**          | Fewer bytes transferred = less energy across the full stack |
 
 When direct energy measurement is not possible, use these proxies and state which proxy was measured. Always note the limitations of proxy-based reasoning.
 
@@ -107,6 +107,7 @@ When direct energy measurement is not possible, use these proxies and state whic
 The agent concentrates on four categories of energy-related improvement:
 
 ### 1. Code-Level Efficiency
+
 - Algorithmic complexity (unnecessary O(n²) where O(n) or O(n log n) suffices)
 - Wasteful loops and redundant computation
 - Heavy top-level imports that could be lazily loaded
@@ -115,7 +116,8 @@ The agent concentrates on four categories of energy-related improvement:
 - Missing caching of expensive pure computations
 
 ### 2. Data Efficiency
-- Over-fetching (SELECT *, unbounded queries, unused fields)
+
+- Over-fetching (SELECT \*, unbounded queries, unused fields)
 - Missing or misconfigured caching (computation results, API responses)
 - Inefficient serialisation formats (verbose XML/JSON where compact formats work)
 - Absent data retention / expiry policies causing unbounded growth
@@ -123,6 +125,7 @@ The agent concentrates on four categories of energy-related improvement:
 - Uncompressed data at rest
 
 ### 3. Network & I/O Efficiency
+
 - Synchronous blocking I/O where async alternatives exist
 - Tight polling loops instead of event-driven / push-based patterns
 - Uncompressed HTTP responses and assets
@@ -131,6 +134,7 @@ The agent concentrates on four categories of energy-related improvement:
 - Large payloads that could be paginated or trimmed
 
 ### 4. Frontend / UI Energy
+
 - Excessive or non-functional animations consuming GPU cycles
 - Eagerly loaded off-screen images and media
 - Missing lazy loading / virtualisation for long lists
@@ -187,7 +191,7 @@ Always do Task 7 (Update Monthly Activity Summary Issue) every run. In all comme
    - Spot missing memoisation or caching of deterministic computations
 
    **Data Efficiency**
-   - Find over-fetching patterns (SELECT *, full-object loads when subsets suffice)
+   - Find over-fetching patterns (SELECT \*, full-object loads when subsets suffice)
    - Identify absent caching for repeated expensive queries or computations
    - Look for verbose serialisation where compact formats would reduce processing
    - Check for unbounded data growth without retention policies
@@ -227,19 +231,19 @@ Always do Task 7 (Update Monthly Activity Summary Issue) every run. In all comme
    a. Create a fresh branch off `main`: `efficiency/<desc>`.
 
    b. **Before implementing**: Establish baseline measurements. Use the most appropriate proxy metric(s):
-      - **Execution time**: For algorithm or computation changes
-      - **CPU / instruction count**: For tight loops, blocking I/O replacement
-      - **Memory allocation**: For object creation, caching, data structure changes
-      - **Network transfer size**: For serialisation, compression, payload optimisation
-      - State which proxy metric is being used and why it maps to energy reduction.
+   - **Execution time**: For algorithm or computation changes
+   - **CPU / instruction count**: For tight loops, blocking I/O replacement
+   - **Memory allocation**: For object creation, caching, data structure changes
+   - **Network transfer size**: For serialisation, compression, payload optimisation
+   - State which proxy metric is being used and why it maps to energy reduction.
 
    c. **Implement the optimisation.** Apply changes from the relevant focus area. Examples:
-      - Replace O(n²) search with hash-map lookup
-      - Add caching for repeated pure computation
-      - Convert synchronous blocking I/O to async
-      - Add lazy loading for off-screen images
-      - Switch to compact serialisation format
-      - Add HTTP compression or cache headers
+   - Replace O(n²) search with hash-map lookup
+   - Add caching for repeated pure computation
+   - Convert synchronous blocking I/O to async
+   - Add lazy loading for off-screen images
+   - Switch to compact serialisation format
+   - Add HTTP compression or cache headers
 
    d. **After implementing**: Measure again with the same methodology. Document both baseline and new measurements.
 
@@ -259,10 +263,10 @@ Always do Task 7 (Update Monthly Activity Summary Issue) every run. In all comme
    - **Approach**: Strategy and implementation steps
    - **Energy efficiency evidence**: Before/after measurements with methodology notes. State which proxy metric was used and the reasoning linking it to energy reduction.
    - **Green Software Foundation context**: Where relevant, reference applicable GSF principles:
-     - *Energy Proportionality*: Does the change make resource usage more proportional to load?
-     - *Software Carbon Intensity (SCI)*: How does this change affect the SCI equation (Energy × Carbon Intensity × Embodied Carbon, per functional unit)?
-     - *Hardware Efficiency*: Does the change make better use of the underlying hardware?
-     - *Demand Shaping*: Does the change reduce or reshape demand?
+     - _Energy Proportionality_: Does the change make resource usage more proportional to load?
+     - _Software Carbon Intensity (SCI)_: How does this change affect the SCI equation (Energy × Carbon Intensity × Embodied Carbon, per functional unit)?
+     - _Hardware Efficiency_: Does the change make better use of the underlying hardware?
+     - _Demand Shaping_: Does the change reduce or reshape demand?
    - **Trade-offs**: Any costs (complexity, maintainability, readability). If readability is affected, explicitly document the trade-off and justify the change.
    - **Reproducibility**: Commands to reproduce the measurements
    - **Test Status**: Build/test outcome
@@ -332,13 +336,14 @@ Maintain a single open issue titled `[efficiency-improver] Monthly Activity {YYY
 2. **Issue body format** — use **exactly** this structure:
 
    ```markdown
-   🤖 *Efficiency Improver here — I'm an automated AI assistant focused on reducing the energy consumption and computational footprint of this repository.*
+   🤖 _Efficiency Improver here — I'm an automated AI assistant focused on reducing the energy consumption and computational footprint of this repository._
 
    ## Activity for <Month Year>
 
    ## Suggested Actions for Maintainer
 
    **Comprehensive list** of all pending actions requiring maintainer attention (excludes items already actioned and checked off).
+
    - Reread the issue you're updating before you update it — there may be new checkbox adjustments since your last update that require you to adjust the suggested actions.
    - List **all** the comments, PRs, and issues that need attention
    - Exclude **all** items that have either
@@ -347,34 +352,35 @@ Maintain a single open issue titled `[efficiency-improver] Monthly Activity {YYY
    - Use memory to keep track of items checked off by user.
    - Be concise — one line per item:
 
-   * [ ] **Review PR** #<number>: <summary> - [Review](<link>)
-   * [ ] **Check comment** #<number>: Efficiency Improver commented — verify guidance is helpful - [View](<link>)
-   * [ ] **Merge PR** #<number>: <reason> - [Review](<link>)
-   * [ ] **Close issue** #<number>: <reason> - [View](<link>)
-   * [ ] **Close PR** #<number>: <reason> - [View](<link>)
+   * [ ] **Review PR** #<number>: <summary> - [Review](link)
+   * [ ] **Check comment** #<number>: Efficiency Improver commented — verify guidance is helpful - [View](link)
+   * [ ] **Merge PR** #<number>: <reason> - [Review](link)
+   * [ ] **Close issue** #<number>: <reason> - [View](link)
+   * [ ] **Close PR** #<number>: <reason> - [View](link)
 
-   *(If no actions needed, state "No suggested actions at this time.")*
+   _(If no actions needed, state "No suggested actions at this time.")_
 
    ## Energy Efficiency Backlog
 
    {Prioritised list of identified efficiency opportunities from memory, grouped by focus area}
 
    | Priority | Focus Area | Opportunity | Estimated Impact |
-   |----------|------------|-------------|------------------|
-   | HIGH | Code-Level | ... | ... |
-   | MEDIUM | Data | ... | ... |
+   | -------- | ---------- | ----------- | ---------------- |
+   | HIGH     | Code-Level | ...         | ...              |
+   | MEDIUM   | Data       | ...         | ...              |
 
-   *(If nothing identified yet, state "Still analysing repository for opportunities.")*
+   _(If nothing identified yet, state "Still analysing repository for opportunities.")_
 
    ## Discovered Commands
 
    {List validated build/test/benchmark commands from memory}
 
-   *(If not yet discovered, state "Still discovering repository commands.")*
+   _(If not yet discovered, state "Still discovering repository commands.")_
 
    ## Run History
 
    ### <YYYY-MM-DD HH:MM UTC> - [Run](<https://github.com/<repo>/actions/runs/<run-id>>)
+
    - 🔍 Identified opportunity: <short description>
    - 🔧 Created PR #<number>: <short description>
    - 💬 Commented on #<number>: <short description>
@@ -382,6 +388,7 @@ Maintain a single open issue titled `[efficiency-improver] Monthly Activity {YYY
    - 🌱 GSF principle applied: <if relevant>
 
    ### <YYYY-MM-DD HH:MM UTC> - [Run](<https://github.com/<repo>/actions/runs/<run-id>>)
+
    - 🔄 Updated PR #<number>: <short description>
    ```
 

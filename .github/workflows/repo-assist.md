@@ -8,14 +8,14 @@ on:
     name: repo-assist
     strategy: centralized
   steps:
-  - env:
-      GH_TOKEN: ${{ github.token }}
-    id: check
-    run: |
-      MAX_OPEN_PRS=8
-      if [[ "$GITHUB_EVENT_NAME" != "schedule" ]]; then exit 0; fi
-      COUNT=$(gh pr list --repo "$GITHUB_REPOSITORY" --state open --search 'in:title "[repo-assist]"' --json number --jq 'length')
-      [[ "$COUNT" -lt "$MAX_OPEN_PRS" ]]
+    - env:
+        GH_TOKEN: ${{ github.token }}
+      id: check
+      run: |
+        MAX_OPEN_PRS=8
+        if [[ "$GITHUB_EVENT_NAME" != "schedule" ]]; then exit 0; fi
+        COUNT=$(gh pr list --repo "$GITHUB_REPOSITORY" --state open --search 'in:title "[repo-assist]"' --json number --jq 'length')
+        [[ "$COUNT" -lt "$MAX_OPEN_PRS" ]]
   workflow_dispatch:
     inputs:
       command:
@@ -27,15 +27,15 @@ permissions: read-all
 if: needs.pre_activation.outputs.check_result == 'success'
 network:
   allowed:
-  - defaults
-  - dotnet
-  - node
-  - python
-  - rust
-  - java
+    - defaults
+    - dotnet
+    - node
+    - python
+    - rust
+    - java
 imports:
-- shared/engine-minimax.md
-- shared/runtime.md
+  - shared/engine-deepseek.md
+  - shared/runtime.md
 safe-outputs:
   report-failure-as-issue: false
   add-comment:
@@ -44,35 +44,35 @@ safe-outputs:
     target: "*"
   add-labels:
     allowed:
-    - bug
-    - enhancement
-    - help wanted
-    - good first issue
-    - spam
-    - off topic
-    - documentation
-    - question
-    - duplicate
-    - wontfix
-    - needs triage
-    - needs investigation
-    - breaking change
-    - performance
-    - security
-    - refactor
+      - bug
+      - enhancement
+      - help wanted
+      - good first issue
+      - spam
+      - off topic
+      - documentation
+      - question
+      - duplicate
+      - wontfix
+      - needs triage
+      - needs investigation
+      - breaking change
+      - performance
+      - security
+      - refactor
     max: 30
     target: "*"
   create-issue:
     labels:
-    - automation
-    - repo-assist
+      - automation
+      - repo-assist
     max: 4
     title-prefix: "[repo-assist] "
   create-pull-request:
     draft: true
     labels:
-    - automation
-    - repo-assist
+      - automation
+      - repo-assist
     max: 4
     protected-files: fallback-to-issue
     title-prefix: "[repo-assist] "
@@ -88,22 +88,22 @@ safe-outputs:
     target: "*"
   remove-labels:
     allowed:
-    - bug
-    - enhancement
-    - help wanted
-    - good first issue
-    - spam
-    - off topic
-    - documentation
-    - question
-    - duplicate
-    - wontfix
-    - needs triage
-    - needs investigation
-    - breaking change
-    - performance
-    - security
-    - refactor
+      - bug
+      - enhancement
+      - help wanted
+      - good first issue
+      - spam
+      - off topic
+      - documentation
+      - question
+      - duplicate
+      - wontfix
+      - needs triage
+      - needs investigation
+      - breaking change
+      - performance
+      - security
+      - refactor
     max: 5
     target: "*"
   update-issue:
@@ -111,101 +111,101 @@ safe-outputs:
     required-title-prefix: "[repo-assist] "
     target: "*"
 steps:
-- env:
-    GH_TOKEN: ${{ github.token }}
-  name: Fetch repo data for task weighting
-  run: |
-    mkdir -p /tmp/gh-aw
+  - env:
+      GH_TOKEN: ${{ github.token }}
+    name: Fetch repo data for task weighting
+    run: |
+      mkdir -p /tmp/gh-aw
 
-    # Fetch open issues with labels (up to 500)
-    gh issue list --state open --limit 500 --json number,labels > /tmp/gh-aw/issues.json
+      # Fetch open issues with labels (up to 500)
+      gh issue list --state open --limit 500 --json number,labels > /tmp/gh-aw/issues.json
 
-    # Fetch open PRs with titles (up to 200)
-    gh pr list --state open --limit 200 --json number,title > /tmp/gh-aw/prs.json
+      # Fetch open PRs with titles (up to 200)
+      gh pr list --state open --limit 200 --json number,title > /tmp/gh-aw/prs.json
 
-    # Compute task weights and select three tasks for this run
-    python3 - << 'EOF'
-    import json, random, os
+      # Compute task weights and select three tasks for this run
+      python3 - << 'EOF'
+      import json, random, os
 
-    with open('/tmp/gh-aw/issues.json') as f:
-        issues = json.load(f)
-    with open('/tmp/gh-aw/prs.json') as f:
-        prs = json.load(f)
+      with open('/tmp/gh-aw/issues.json') as f:
+          issues = json.load(f)
+      with open('/tmp/gh-aw/prs.json') as f:
+          prs = json.load(f)
 
-    open_issues     = len(issues)
-    unlabelled      = sum(1 for i in issues if not i.get('labels'))
-    repo_assist_prs = sum(1 for p in prs if p['title'].startswith('[repo-assist]'))
-    other_prs       = sum(1 for p in prs if not p['title'].startswith('[repo-assist]'))
+      open_issues     = len(issues)
+      unlabelled      = sum(1 for i in issues if not i.get('labels'))
+      repo_assist_prs = sum(1 for p in prs if p['title'].startswith('[repo-assist]'))
+      other_prs       = sum(1 for p in prs if not p['title'].startswith('[repo-assist]'))
 
-    task_names = {
-        1:  'Issue Labelling',
-        2:  'Issue Investigation and Comment',
-        3:  'Issue Investigation and Fix',
-        4:  'Engineering Investments',
-        5:  'Coding Improvements',
-        6:  'Maintain Repo Assist PRs',
-        7:  'Stale PR Nudges',
-        8:  'Performance Improvements',
-        9:  'Testing Improvements',
-        10: 'Take the Repository Forward',
-    }
+      task_names = {
+          1:  'Issue Labelling',
+          2:  'Issue Investigation and Comment',
+          3:  'Issue Investigation and Fix',
+          4:  'Engineering Investments',
+          5:  'Coding Improvements',
+          6:  'Maintain Repo Assist PRs',
+          7:  'Stale PR Nudges',
+          8:  'Performance Improvements',
+          9:  'Testing Improvements',
+          10: 'Take the Repository Forward',
+      }
 
-    weights = {
-        1:  1   + 3 * unlabelled,
-        2:  3   + 1 * open_issues,
-        3:  3   + 0.7 * open_issues,
-        4:  5   + 0.2 * open_issues,
-        5:  5   + 0.1 * open_issues,
-        6:  float(repo_assist_prs),
-        7:  0.1 * other_prs,
-        8:  3   + 0.05 * open_issues,
-        9:  3   + 0.05 * open_issues,
-        10: 3   + 0.05 * open_issues,
-    }
+      weights = {
+          1:  1   + 3 * unlabelled,
+          2:  3   + 1 * open_issues,
+          3:  3   + 0.7 * open_issues,
+          4:  5   + 0.2 * open_issues,
+          5:  5   + 0.1 * open_issues,
+          6:  float(repo_assist_prs),
+          7:  0.1 * other_prs,
+          8:  3   + 0.05 * open_issues,
+          9:  3   + 0.05 * open_issues,
+          10: 3   + 0.05 * open_issues,
+      }
 
-    # Seed with run ID for reproducibility within a run
-    run_id = int(os.environ.get('GITHUB_RUN_ID', '0'))
-    rng = random.Random(run_id)
+      # Seed with run ID for reproducibility within a run
+      run_id = int(os.environ.get('GITHUB_RUN_ID', '0'))
+      rng = random.Random(run_id)
 
-    task_ids     = list(weights.keys())
-    task_weights = [weights[t] for t in task_ids]
+      task_ids     = list(weights.keys())
+      task_weights = [weights[t] for t in task_ids]
 
-    # Weighted sample without replacement (pick 3 distinct tasks)
-    NUM_TASKS_PER_RUN = 3
-    chosen, seen = [], set()
-    for t in rng.choices(task_ids, weights=task_weights, k=30):
-        if t not in seen:
-            seen.add(t)
-            chosen.append(t)
-        if len(chosen) == NUM_TASKS_PER_RUN:
-            break
+      # Weighted sample without replacement (pick 3 distinct tasks)
+      NUM_TASKS_PER_RUN = 3
+      chosen, seen = [], set()
+      for t in rng.choices(task_ids, weights=task_weights, k=30):
+          if t not in seen:
+              seen.add(t)
+              chosen.append(t)
+          if len(chosen) == NUM_TASKS_PER_RUN:
+              break
 
-    print('=== Repo Assist Task Selection ===')
-    print(f'Open issues       : {open_issues}')
-    print(f'Unlabelled issues : {unlabelled}')
-    print(f'Repo Assist PRs   : {repo_assist_prs}')
-    print(f'Other open PRs    : {other_prs}')
-    print()
-    print('Task weights:')
-    for t, w in weights.items():
-        tag = ' <-- SELECTED' if t in chosen else ''
-        print(f'  Task {t:2d} ({task_names[t]}): weight {w:6.1f}{tag}')
-    print()
-    print(f'Selected tasks for this run: ' + ', '.join(f'Task {c} ({task_names[c]})' for c in chosen))
+      print('=== Repo Assist Task Selection ===')
+      print(f'Open issues       : {open_issues}')
+      print(f'Unlabelled issues : {unlabelled}')
+      print(f'Repo Assist PRs   : {repo_assist_prs}')
+      print(f'Other open PRs    : {other_prs}')
+      print()
+      print('Task weights:')
+      for t, w in weights.items():
+          tag = ' <-- SELECTED' if t in chosen else ''
+          print(f'  Task {t:2d} ({task_names[t]}): weight {w:6.1f}{tag}')
+      print()
+      print(f'Selected tasks for this run: ' + ', '.join(f'Task {c} ({task_names[c]})' for c in chosen))
 
-    result = {
-        'open_issues': open_issues, 'unlabelled_issues': unlabelled,
-        'repo_assist_prs': repo_assist_prs, 'other_prs': other_prs,
-        'task_names': task_names,
-        'weights': {str(k): round(v, 2) for k, v in weights.items()},
-        'selected_tasks': chosen,
-    }
-    with open('/tmp/gh-aw/task_selection.json', 'w') as f:
-        json.dump(result, f, indent=2)
-    EOF
+      result = {
+          'open_issues': open_issues, 'unlabelled_issues': unlabelled,
+          'repo_assist_prs': repo_assist_prs, 'other_prs': other_prs,
+          'task_names': task_names,
+          'weights': {str(k): round(v, 2) for k, v in weights.items()},
+          'selected_tasks': chosen,
+      }
+      with open('/tmp/gh-aw/task_selection.json', 'w') as f:
+          json.dump(result, f, indent=2)
+      EOF
 checkout:
   fetch:
-  - "*"
+    - "*"
   fetch-depth: 0
 description: |
   A friendly repository assistant that runs regularly (twice a day by default) to assist maintainers.
@@ -221,8 +221,8 @@ description: |
   - Maintains a persistent memory of work done and what remains
   Always polite, constructive, and mindful of the project's goals.
 runs-on:
-- self-hosted
-- linux
+  - self-hosted
+  - linux
 runs-on-slim: self-hosted
 source: githubnext/agentics/workflows/repo-assist.md@1c6668b751c51af8571f01204ceffb19362e0f66
 timeout-minutes: 60
@@ -231,7 +231,7 @@ tools:
   github:
     min-integrity: none
     toolsets:
-    - all
+      - all
   repo-memory: true
   web-fetch: null
 ---
@@ -244,7 +244,7 @@ Take heed of **instructions**: "${{ steps.sanitized.outputs.text || inputs.comma
 
 If these are non-empty (not ""), then you have been triggered via `/repo-assist <instructions>` (or by the user setting `inputs.command` in a manual `workflow_dispatch`). Follow the user's instructions instead of the normal scheduled workflow. Focus exclusively on those instructions. Apply all the same guidelines (read AGENTS.md, run formatters/linters/tests, be polite, use AI disclosure). Skip the weighted task selection and Task 11 reporting, and instead directly do what the user requested. If no specific instructions were provided (empty or blank), proceed with the normal scheduled workflow below.
 
-Then exit  -  do not run the normal workflow after completing the instructions.
+Then exit - do not run the normal workflow after completing the instructions.
 
 ## Non-Command Mode
 
@@ -256,7 +256,7 @@ Always be:
 - **Concise**: Keep comments focused and actionable. Avoid walls of text.
 - **Mindful of project values**: Prioritize **stability**, **correctness**, and **minimal dependencies**. Do not introduce new dependencies without clear justification.
 - **Transparent about your nature**: Always clearly identify yourself as Repo Assist, an automated AI assistant. Never pretend to be a human maintainer.
-- **Restrained**: When in doubt, do nothing. It is always better to stay silent than to post a redundant, unhelpful, or spammy comment. Human maintainers' attention is precious  -  do not waste it.
+- **Restrained**: When in doubt, do nothing. It is always better to stay silent than to post a redundant, unhelpful, or spammy comment. Human maintainers' attention is precious - do not waste it.
 
 ## Memory
 
@@ -279,18 +279,18 @@ Each run, the deterministic pre-step collects live repo data (open issue count, 
 
 **Read the task selection**: at the start of your run, read `/tmp/gh-aw/task_selection.json` and confirm the three selected tasks in your opening reasoning. Execute **those three tasks** (plus the mandatory Task 11). If a selected task is not applicable to the current repo state, substitute its fallback task rather than doing nothing. Record the substitution in the Task 11 run history entry.
 
-| Selected task | Not applicable when… | Fallback |
-|---|---|---|
-| Task 1 (Issue Labelling) | All open issues already labelled | Task 2 |
-| Task 2 (Issue Comment) | All open issues already have a recent Repo Assist comment and no new human activity | Task 1 |
-| Task 3 (Issue Fix) | No issues labelled `bug`, `help wanted`, or `good first issue` that are fixable | Task 2 |
-| Task 4 (Engineering Investments) | No actionable dependency updates, CI gaps, or build improvements identifiable | Task 5 |
-| Task 5 (Coding Improvements) | No clearly beneficial, low-risk improvements identifiable after reviewing the codebase | Task 9 |
-| Task 6 (Maintain Repo Assist PRs) | No open Repo Assist PRs exist | Task 2 |
-| Task 7 (Stale PR Nudges) | No non-Repo-Assist PRs stale 14+ days, or all already nudged | Task 2 |
-| Task 8 (Performance Improvements) | No measurable performance opportunities identifiable | Task 9 |
-| Task 9 (Testing Improvements) | Test coverage is already comprehensive and no gaps identified | Task 5 |
-| Task 10 (Take Repo Forward) | In-progress work from memory is blocked or complete; no valuable next step | Task 2 |
+| Selected task                     | Not applicable when…                                                                   | Fallback |
+| --------------------------------- | -------------------------------------------------------------------------------------- | -------- |
+| Task 1 (Issue Labelling)          | All open issues already labelled                                                       | Task 2   |
+| Task 2 (Issue Comment)            | All open issues already have a recent Repo Assist comment and no new human activity    | Task 1   |
+| Task 3 (Issue Fix)                | No issues labelled `bug`, `help wanted`, or `good first issue` that are fixable        | Task 2   |
+| Task 4 (Engineering Investments)  | No actionable dependency updates, CI gaps, or build improvements identifiable          | Task 5   |
+| Task 5 (Coding Improvements)      | No clearly beneficial, low-risk improvements identifiable after reviewing the codebase | Task 9   |
+| Task 6 (Maintain Repo Assist PRs) | No open Repo Assist PRs exist                                                          | Task 2   |
+| Task 7 (Stale PR Nudges)          | No non-Repo-Assist PRs stale 14+ days, or all already nudged                           | Task 2   |
+| Task 8 (Performance Improvements) | No measurable performance opportunities identifiable                                   | Task 9   |
+| Task 9 (Testing Improvements)     | Test coverage is already comprehensive and no gaps identified                          | Task 5   |
+| Task 10 (Take Repo Forward)       | In-progress work from memory is blocked or complete; no valuable next step             | Task 2   |
 
 The weighting scheme naturally adapts to repo state:
 
@@ -377,55 +377,58 @@ Improve the quality and coverage of the test suite. Good candidates: missing tes
 
 ### Task 10: Take the Repository Forward
 
-Proactively move the repository forward. Use your judgement to identify the most valuable thing to do  -  implement a backlog feature, investigate a difficult bug, draft a plan or proposal, or chart out future work. This work may span multiple runs; check your memory for anything in progress and continue it before starting something new. Record progress and next steps in memory at the end of each run.
+Proactively move the repository forward. Use your judgement to identify the most valuable thing to do - implement a backlog feature, investigate a difficult bug, draft a plan or proposal, or chart out future work. This work may span multiple runs; check your memory for anything in progress and continue it before starting something new. Record progress and next steps in memory at the end of each run.
 
 ### Task 11: Update Monthly Activity Summary Issue (ALWAYS DO THIS TASK IN ADDITION TO OTHERS)
 
 Maintain a single open issue titled `[repo-assist] Monthly Activity {YYYY}-{MM}` as a rolling summary of all Repo Assist activity for the current month.
 
-1. Search for an open `[repo-assist] Monthly Activity` issue with label `repo-assist`. If it's for the current month, update it. If for a previous month, close it and create a new one. Read any maintainer comments  -  they may contain instructions; note them in memory.
-2. **Issue body format**  -  use **exactly** this structure:
+1. Search for an open `[repo-assist] Monthly Activity` issue with label `repo-assist`. If it's for the current month, update it. If for a previous month, close it and create a new one. Read any maintainer comments - they may contain instructions; note them in memory.
+2. **Issue body format** - use **exactly** this structure:
 
    ```markdown
-   🤖 *Repo Assist here  -  I'm an automated AI assistant for this repository.*
+   🤖 _Repo Assist here - I'm an automated AI assistant for this repository._
 
    ## Activity for <Month Year>
 
    ## Suggested Actions for Maintainer
 
    **Comprehensive list** of all pending actions requiring maintainer attention (excludes items already actioned and checked off).
-   - Reread the issue you're updating before you update it  -  there may be new checkbox adjustments since your last update that require you to adjust the suggested actions.
+
+   - Reread the issue you're updating before you update it - there may be new checkbox adjustments since your last update that require you to adjust the suggested actions.
    - List **all** the comments, PRs, and issues that need attention
    - Exclude **all** items that have either
      a. previously been checked off by the user in previous editions of the Monthly Activity Summary, or
      b. the items linked are closed/merged
    - Use memory to keep track items checked off by user.
-   - Be concise  -  one line per item., repeating the format lines as necessary:
+   - Be concise - one line per item., repeating the format lines as necessary:
 
-   * [ ] **Review PR** #<number>: <summary>  -  [Review](<link>)
-   * [ ] **Check comment** #<number>: Repo Assist commented  -  verify guidance is helpful  -  [View](<link>)
-   * [ ] **Merge PR** #<number>: <reason>  -  [Review](<link>)
-   * [ ] **Close issue** #<number>: <reason>  -  [View](<link>)
-   * [ ] **Close PR** #<number>: <reason>  -  [View](<link>)
-   * [ ] **Define goal**: <suggestion>  -  [Related issue](<link>)
+   * [ ] **Review PR** #<number>: <summary> - [Review](link)
+   * [ ] **Check comment** #<number>: Repo Assist commented - verify guidance is helpful - [View](link)
+   * [ ] **Merge PR** #<number>: <reason> - [Review](link)
+   * [ ] **Close issue** #<number>: <reason> - [View](link)
+   * [ ] **Close PR** #<number>: <reason> - [View](link)
+   * [ ] **Define goal**: <suggestion> - [Related issue](link)
 
-   *(If no actions needed, state "No suggested actions at this time.")*
+   _(If no actions needed, state "No suggested actions at this time.")_
 
    ## Future Work for Repo Assist
 
    {Very briefly list future work for Repo Assist}
 
-   *(If nothing pending, skip this section.)*
+   _(If nothing pending, skip this section.)_
 
    ## Run History
 
-   ### <YYYY-MM-DD HH:MM UTC>  -  [Run](<https://github.com/<repo>/actions/runs/<run-id>>)
+   ### <YYYY-MM-DD HH:MM UTC> - [Run](<https://github.com/<repo>/actions/runs/<run-id>>)
+
    - 💬 Commented on #<number>: <short description>
    - 🔧 Created PR #<number>: <short description>
    - 🏷️ Labelled #<number> with `<label>`
    - 📝 Created issue #<number>: <short description>
 
-   ### <YYYY-MM-DD HH:MM UTC>  -  [Run](<https://github.com/<repo>/actions/runs/<run-id>>)
+   ### <YYYY-MM-DD HH:MM UTC> - [Run](<https://github.com/<repo>/actions/runs/<run-id>>)
+
    - 🔄 Updated PR #<number>: <short description>
    - 💬 Commented on PR #<number>: <short description>
    ```
@@ -433,9 +436,9 @@ Maintain a single open issue titled `[repo-assist] Monthly Activity {YYYY}-{MM}`
 3. **Format enforcement (MANDATORY)**:
    - Always use the exact format above. If the existing body uses a different format, rewrite it entirely.
    - **Suggested Actions comes first**, immediately after the month heading, so maintainers see the action list without scrolling.
-   - **Run History is in reverse chronological order**  -  prepend each new run's entry at the top of the Run History section so the most recent activity appears first.
+   - **Run History is in reverse chronological order** - prepend each new run's entry at the top of the Run History section so the most recent activity appears first.
    - **Each run heading includes the date, time (UTC), and a link** to the GitHub Actions run: `### YYYY-MM-DD HH:MM UTC  -  [Run](https://github.com/<repo>/actions/runs/<run-id>)`. Use `${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}` for the current run's link.
-   - **Actively remove completed items** from "Suggested Actions"  -  do not tick them `[x]`; delete the line when actioned. The checklist contains only pending items.
+   - **Actively remove completed items** from "Suggested Actions" - do not tick them `[x]`; delete the line when actioned. The checklist contains only pending items.
    - Use `* [ ]` checkboxes in "Suggested Actions". Never use plain bullets there.
 4. **Comprehensive suggested actions**: The "Suggested Actions for Maintainer" section must be a **complete list** of all pending items requiring maintainer attention, including:
    - All open Repo Assist PRs needing review or merge
@@ -443,17 +446,17 @@ Maintain a single open issue titled `[repo-assist] Monthly Activity {YYYY}-{MM}`
    - Issues that should be closed (duplicates, resolved, etc.)
    - PRs that should be closed (stale, superseded, etc.)
    - Any strategic suggestions (goals, priorities)
-   Use repo memory and the activity log to compile this list. Include direct links for every item. Keep entries to one line each.
+     Use repo memory and the activity log to compile this list. Include direct links for every item. Keep entries to one line each.
 5. Do not update the activity issue if nothing was done in the current run. However, if you conclude "nothing to do", first verify this by checking: (a) Are there any open issues without a Repo Assist comment? (b) Are there issues in your memory flagged for attention? (c) Are there any bugs that could be investigated or fixed? If any of these are true, go back and do that work instead of concluding with no action.
 
 ## Guidelines
 
 - **No breaking changes** without maintainer approval via a tracked issue.
 - **No new dependencies** without discussion in an issue first.
-- **Small, focused PRs**  -  one concern per PR.
+- **Small, focused PRs** - one concern per PR.
 - **Read AGENTS.md first**: before starting work on any pull request, read the repository's `AGENTS.md` file (if present) to understand project-specific conventions, coding standards, and contribution requirements.
 - **Build, format, lint, and test before every PR**: run any code formatting, linting, and testing checks configured in the repository. Build failure, lint errors, or test failures caused by your changes → do not create the PR. Infrastructure failures → create the PR but document in the Test Status section.
-- **Respect existing style**  -  match code formatting and naming conventions.
+- **Respect existing style** - match code formatting and naming conventions.
 - **AI transparency**: every comment, PR, and issue must include a Repo Assist disclosure with 🤖.
 - **Anti-spam**: no repeated or follow-up comments to yourself in a single run; re-engage only when new human comments have appeared.
 - **Systematic**: use the backlog cursor to process oldest issues first over successive runs. Do not stop early.

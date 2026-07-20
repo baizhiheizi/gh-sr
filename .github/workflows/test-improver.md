@@ -8,28 +8,28 @@ on:
     name: test-assist
     strategy: centralized
   steps:
-  - env:
-      GH_TOKEN: ${{ github.token }}
-    id: check
-    run: |
-      MAX_OPEN_PRS=8
-      if [[ "$GITHUB_EVENT_NAME" != "schedule" ]]; then exit 0; fi
-      COUNT=$(gh pr list --repo ${{ github.repository }} --state open --search 'in:title "[test-improver]"' --json number --jq 'length' 2>/dev/null || echo 0)
-      [[ "$COUNT" -lt "$MAX_OPEN_PRS" ]]
+    - env:
+        GH_TOKEN: ${{ github.token }}
+      id: check
+      run: |
+        MAX_OPEN_PRS=8
+        if [[ "$GITHUB_EVENT_NAME" != "schedule" ]]; then exit 0; fi
+        COUNT=$(gh pr list --repo ${{ github.repository }} --state open --search 'in:title "[test-improver]"' --json number --jq 'length' 2>/dev/null || echo 0)
+        [[ "$COUNT" -lt "$MAX_OPEN_PRS" ]]
   workflow_dispatch: null
 permissions: read-all
 if: needs.pre_activation.outputs.check_result == 'success'
 network:
   allowed:
-  - defaults
-  - dotnet
-  - node
-  - python
-  - rust
-  - java
+    - defaults
+    - dotnet
+    - node
+    - python
+    - rust
+    - java
 imports:
-- shared/engine-minimax.md
-- shared/runtime.md
+  - shared/engine-deepseek.md
+  - shared/runtime.md
 safe-outputs:
   report-failure-as-issue: false
   add-comment:
@@ -38,15 +38,15 @@ safe-outputs:
     target: "*"
   create-issue:
     labels:
-    - automation
-    - testing
+      - automation
+      - testing
     max: 4
     title-prefix: "[test-improver] "
   create-pull-request:
     draft: true
     labels:
-    - automation
-    - testing
+      - automation
+      - testing
     max: 4
     protected-files: fallback-to-issue
     title-prefix: "[test-improver] "
@@ -69,8 +69,8 @@ description: |
   - Updates a monthly activity summary for maintainer visibility
   Always thoughtful, quality-focused, and mindful of test maintainability.
 runs-on:
-- self-hosted
-- linux
+  - self-hosted
+  - linux
 runs-on-slim: self-hosted
 source: githubnext/agentics/workflows/test-improver.md@1c6668b751c51af8571f01204ceffb19362e0f66
 timeout-minutes: 30
@@ -78,7 +78,7 @@ tools:
   bash: true
   github:
     toolsets:
-    - all
+      - all
   repo-memory: true
   web-fetch: null
 ---
@@ -183,12 +183,12 @@ Always do Task 7 (Update Monthly Activity Summary Issue) every run. In all comme
    c. **Before implementing**: Run existing tests, generate coverage baseline if relevant (using existing coverage pipeline when available).
 
    d. Implement the testing improvement. Consider approaches like:
-      - **New tests for complex untested code**: Focus on meaningful coverage for code with real logic
-      - **Edge case tests**: Error conditions, boundary values, null/empty inputs
-      - **Regression tests**: Prevent specific bugs from recurring
-      - **Integration tests**: Verify components work together
-      - **Test refactoring**: Improve clarity, reduce brittleness, add helpers
-      - **Flaky test fixes**: Stabilize unreliable tests
+   - **New tests for complex untested code**: Focus on meaningful coverage for code with real logic
+   - **Edge case tests**: Error conditions, boundary values, null/empty inputs
+   - **Regression tests**: Prevent specific bugs from recurring
+   - **Integration tests**: Verify components work together
+   - **Test refactoring**: Improve clarity, reduce brittleness, add helpers
+   - **Flaky test fixes**: Stabilize unreliable tests
 
    e. **Run all tests**: Ensure new tests pass and existing tests still pass.
 
@@ -275,13 +275,14 @@ Maintain a single open issue titled `[test-improver] Monthly Activity {YYYY}-{MM
 2. **Issue body format** - use **exactly** this structure:
 
    ```markdown
-   🤖 *Test Improver here - I'm an automated AI assistant focused on improving tests for this repository.*
+   🤖 _Test Improver here - I'm an automated AI assistant focused on improving tests for this repository._
 
    ## Activity for <Month Year>
 
    ## Suggested Actions for Maintainer
 
    **Comprehensive list** of all pending actions requiring maintainer attention (excludes items already actioned and checked off).
+
    - Reread the issue you're updating before you update it - there may be new checkbox adjustments since your last update that require you to adjust the suggested actions.
    - List **all** the comments, PRs, and issues that need attention
    - Exclude **all** items that have either
@@ -290,41 +291,43 @@ Maintain a single open issue titled `[test-improver] Monthly Activity {YYYY}-{MM
    - Use memory to keep track of items checked off by user.
    - Be concise - one line per item:
 
-   * [ ] **Review PR** #<number>: <summary> - [Review](<link>)
-   * [ ] **Check comment** #<number>: Test Improver commented - verify guidance is helpful - [View](<link>)
-   * [ ] **Merge PR** #<number>: <reason> - [Review](<link>)
-   * [ ] **Close issue** #<number>: <reason> - [View](<link>)
-   * [ ] **Close PR** #<number>: <reason> - [View](<link>)
+   * [ ] **Review PR** #<number>: <summary> - [Review](link)
+   * [ ] **Check comment** #<number>: Test Improver commented - verify guidance is helpful - [View](link)
+   * [ ] **Merge PR** #<number>: <reason> - [Review](link)
+   * [ ] **Close issue** #<number>: <reason> - [View](link)
+   * [ ] **Close PR** #<number>: <reason> - [View](link)
 
-   *(If no actions needed, state "No suggested actions at this time.")*
+   _(If no actions needed, state "No suggested actions at this time.")_
 
    ## Maintainer Priorities
 
    {Any priorities or preferences noted from maintainer comments - quote relevant feedback}
 
-   *(If none noted yet, state "No specific priorities communicated yet.")*
+   _(If none noted yet, state "No specific priorities communicated yet.")_
 
    ## Testing Opportunities Backlog
 
    {Brief list of identified testing opportunities from memory, prioritized by value}
 
-   *(If nothing identified yet, state "Still analyzing repository for opportunities.")*
+   _(If nothing identified yet, state "Still analyzing repository for opportunities.")_
 
    ## Discovered Commands
 
    {List validated build/test/coverage commands from memory}
 
-   *(If not yet discovered, state "Still discovering repository commands.")*
+   _(If not yet discovered, state "Still discovering repository commands.")_
 
    ## Run History
 
    ### <YYYY-MM-DD HH:MM UTC> - [Run](<https://github.com/<repo>/actions/runs/<run-id>>)
+
    - 🔍 Identified opportunity: <short description>
    - 🔧 Created PR #<number>: <short description>
    - 💬 Commented on #<number>: <short description>
    - 📊 Coverage: <brief finding>
 
    ### <YYYY-MM-DD HH:MM UTC> - [Run](<https://github.com/<repo>/actions/runs/<run-id>>)
+
    - 🔄 Updated PR #<number>: <short description>
    ```
 
