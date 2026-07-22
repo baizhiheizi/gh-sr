@@ -897,6 +897,34 @@ func TestValidate_runnerNameTokens(t *testing.T) {
 	}
 }
 
+func TestValidate_runnerNameAutostartCollisions(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		first  string
+		second string
+	}{
+		{first: "ci.foo", second: "ci-foo"},
+		{first: "ci_runner", second: "ci-runner"},
+		{first: "ci--runner", second: "ci-runner"},
+		{first: "ci-", second: "ci"},
+	} {
+		t.Run(tc.first+"_"+tc.second, func(t *testing.T) {
+			t.Parallel()
+			cfg := Config{
+				Hosts: map[string]HostConfig{"h": {Addr: "local", OS: "linux", Arch: "amd64"}},
+				Runners: []RunnerConfig{
+					{Name: tc.first, Repo: "o/one", Host: "h"},
+					{Name: tc.second, Repo: "o/two", Host: "h"},
+				},
+			}
+			err := cfg.Validate()
+			if err == nil || !strings.Contains(err.Error(), "autostart name sanitization") {
+				t.Fatalf("expected autostart collision error, got %v", err)
+			}
+		})
+	}
+}
+
 func TestValidate_duplicateRunnerInstanceNames(t *testing.T) {
 	t.Parallel()
 	cfg := Config{
