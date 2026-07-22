@@ -70,6 +70,71 @@ const (
 
 var debianPackageNamePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9+.-]*$`)
 
+func validateRunnerName(name string) error {
+	if name == "" || !isASCIIAlphaNumeric(name[0]) {
+		return fmt.Errorf("runner name %q is invalid; use letters, numbers, dots, underscores, or hyphens, starting with a letter or number", name)
+	}
+	for i := 1; i < len(name); i++ {
+		c := name[i]
+		if !isASCIIAlphaNumeric(c) && c != '_' && c != '.' && c != '-' {
+			return fmt.Errorf("runner name %q is invalid; use letters, numbers, dots, underscores, or hyphens, starting with a letter or number", name)
+		}
+	}
+	return nil
+}
+
+func isASCIIAlphaNumeric(c byte) bool {
+	return c >= 'A' && c <= 'Z' || c >= 'a' && c <= 'z' || c >= '0' && c <= '9'
+}
+
+func runnerNameNeedsAutostartNormalization(name string) bool {
+	for i := 0; i < len(name); i++ {
+		switch name[i] {
+		case '.', '_':
+			return true
+		case '-':
+			if i == len(name)-1 || (i+1 < len(name) && name[i+1] == '-') {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func normalizeRunnerInstanceName(name string) string {
+	var b strings.Builder
+	b.Grow(len(name))
+	previousDash := false
+	for i := 0; i < len(name); i++ {
+		c := name[i]
+		if c == '.' || c == '_' {
+			c = '-'
+		}
+		if c == '-' {
+			if previousDash {
+				continue
+			}
+			previousDash = true
+		} else {
+			previousDash = false
+		}
+		b.WriteByte(c)
+	}
+	return b.String()
+}
+
+type runnerInstanceOwner struct {
+	runnerName   string
+	instanceName string
+}
+
+func runnerInstanceConflictError(host string, current, previous runnerInstanceOwner) error {
+	if current.instanceName == previous.instanceName {
+		return fmt.Errorf("runner instance %q is defined more than once on host %q (runners %q and %q); runner names must be unique per host", current.instanceName, host, previous.runnerName, current.runnerName)
+	}
+	return fmt.Errorf("runner instance %q on host %q conflicts with %q after autostart name sanitization; choose a different runner name", current.instanceName, host, previous.instanceName)
+}
+
 func validateContainerRunnerImage(img *ContainerRunnerImageConfig) error {
 	if img == nil {
 		return nil
@@ -473,10 +538,21 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("at least one runner must be defined")
 	}
 
+	needsAutostartNormalization := false
+	for _, r := range c.Runners {
+		if runnerNameNeedsAutostartNormalization(r.Name) {
+			needsAutostartNormalization = true
+			break
+		}
+	}
 	instanceOwners := make(map[string]string)
+	var autostartOwners map[string]runnerInstanceOwner
 	for _, r := range c.Runners {
 		if r.Name == "" {
 			return fmt.Errorf("runner name is required")
+		}
+		if err := validateRunnerName(r.Name); err != nil {
+			return err
 		}
 		if r.Repo == "" && r.Org == "" {
 			return fmt.Errorf("runner %q: repo or org is required", r.Name)
@@ -522,13 +598,51 @@ func (c *Config) Validate() error {
 		}
 		host := r.Host
 		name := r.Name
+		if !needsAutostartNormalization {
+			for j := 1; j <= count; j++ {
+				inst := name + "-" + strconv.Itoa(j)
+				key := host + "\x00" + inst
+				if prev, ok := instanceOwners[key]; ok {
+					return fmt.Errorf("runner instance %q is defined more than once on host %q (runners %q and %q); runner names must be unique per host", inst, host, prev, r.Name)
+				}
+				instanceOwners[key] = r.Name
+			}
+			continue
+		}
+
 		for j := 1; j <= count; j++ {
 			inst := name + "-" + strconv.Itoa(j)
+			owner := runnerInstanceOwner{runnerName: r.Name, instanceName: inst}
 			key := host + "\x00" + inst
 			if prev, ok := instanceOwners[key]; ok {
 				return fmt.Errorf("runner instance %q is defined more than once on host %q (runners %q and %q); runner names must be unique per host", inst, host, prev, r.Name)
 			}
+			if autostartOwners != nil {
+				if prev, ok := autostartOwners[key]; ok {
+					return runnerInstanceConflictError(host, owner, prev)
+				}
+			}
 			instanceOwners[key] = r.Name
+			if autostartOwners != nil {
+				autostartOwners[key] = owner
+			}
+
+			if runnerNameNeedsAutostartNormalization(name) {
+				if autostartOwners == nil {
+					autostartOwners = make(map[string]runnerInstanceOwner, len(instanceOwners)+1)
+					for rawKey, runnerName := range instanceOwners {
+						_, previousInstance, _ := strings.Cut(rawKey, "\x00")
+						autostartOwners[rawKey] = runnerInstanceOwner{runnerName: runnerName, instanceName: previousInstance}
+					}
+				}
+				normalizedKey := host + "\x00" + normalizeRunnerInstanceName(inst)
+				if normalizedKey != key {
+					if prev, ok := autostartOwners[normalizedKey]; ok {
+						return runnerInstanceConflictError(host, owner, prev)
+					}
+					autostartOwners[normalizedKey] = owner
+				}
+			}
 		}
 	}
 
