@@ -580,15 +580,17 @@ func pruneInnerDockerCache(h *host.Host, containerName string) error {
 // strconv.AppendFloat + stack-allocated byte buffer + inline unit-suffix
 // bytes avoids the two allocations the previous `string(AppendFloat(...)) +
 // " GiB"` chain dragged in (one for the string coercion, one for the concat).
-// Writing the unit suffix directly into the buffer collapses to a single
-// allocation on the GiB/MiB/KiB branches.
+// The default B branch mirrors the same pattern with strconv.AppendInt instead
+// of `strconv.FormatInt(b, 10) + " B"`, dropping its 2-allocs to 1.
 //
 // Called 5× per row by ops.PrintDiskUsage and once per host by doctor
 // DiskEntry rendering, so the per-call alloc drop compounds across listings
 // with many instances.
 //
 // The largest realistic output is "9999.9 GiB" (10 chars); [24]byte holds
-// AppendFloat's worst case (~24 chars) plus the 4-char unit suffix.
+// AppendFloat's worst case (~24 chars) plus the 4-char unit suffix. The B
+// branch needs at most ~3 bytes for a 0-999 value plus " B", comfortably under
+// [16]byte.
 func FormatBytesHuman(b int64) string {
 	if b < 0 {
 		b = 0
@@ -613,6 +615,9 @@ func FormatBytesHuman(b int64) string {
 		out = append(out, ' ', 'K', 'i', 'B')
 		return string(out)
 	default:
-		return strconv.FormatInt(b, 10) + " B"
+		var sbuf [16]byte
+		out := strconv.AppendInt(sbuf[:0], b, 10)
+		out = append(out, ' ', 'B')
+		return string(out)
 	}
 }
