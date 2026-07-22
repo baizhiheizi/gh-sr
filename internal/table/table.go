@@ -85,17 +85,38 @@ func RenderPlain(opts Options) string {
 	return b.String()
 }
 
+// spaces80 is a 80-space string used by appendRowPlain to right-pad cells
+// without allocating per cell. The maximum realistic column width in the
+// gh-sr renderers (FormatHostMetrics, PrintHostMetricsTable, disk-usage
+// tables) is well under 80 bytes, so slicing into spaces80 covers every
+// observed cell without ever needing strings.Repeat. If a caller ever
+// exceeds 80, appendRowPlain falls back to strings.Repeat for the excess.
+const spaces80 = "                                                                                " // 80 spaces
+
 // appendRowPlain writes one padded row (without a trailing newline) to b.
 // Inlining the right-pad as builder writes is a 1-alloc drop per cell vs
-// fmt.Fprintf's format-string parser + reflection.
+// fmt.Fprintf's format-string parser + reflection. Slicing into spaces80
+// for the right-pad spaces drops the strings.Repeat allocation that the
+// previous version paid per padded cell — RenderPlain runs once per
+// TUI host-metrics refresh tick, and most cells in that table are
+// shorter than their column width, so the per-cell Repeat savings
+// compound across long dashboard sessions.
 func appendRowPlain(b *strings.Builder, cells []string, widths []int) {
 	for i, cell := range cells {
 		if i >= len(widths) {
 			break
 		}
 		b.WriteString(cell)
-		if len(cell) < widths[i] {
-			b.WriteString(strings.Repeat(" ", widths[i]-len(cell)))
+		pad := widths[i] - len(cell)
+		if pad > 0 {
+			if pad <= len(spaces80) {
+				b.WriteString(spaces80[:pad])
+			} else {
+				// Defensive: pad > 80 has never been observed in the
+				// gh-sr renderers, but stay correct if a future caller
+				// exceeds the spaces80 budget.
+				b.WriteString(strings.Repeat(" ", pad))
+			}
 		}
 		b.WriteString("  ")
 	}
