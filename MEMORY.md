@@ -1,2 +1,3 @@
-- [Run notes 2026-07-26 #30218669368](run-2026-07-26-30218669368.md) — current run: tasks 4/9/10; Task 9 PR #391 tui dashboard helpers @ `1a192ed` (18.9% → 23.8%); Task 4 CI tidy-check prototype reverted pre-push on maintainer signal (no PR); #309 updated.
-- [Repo Assist state](state.md) — in-flight work, backlog, verified knowledge (latest: 2026-07-26 #30218669368).
+- [Run notes 2026-07-27 #30303841146](run-2026-07-27-30303841146.md) — current run: tasks 2/4/3; no PR; comment on #384 suggesting close (detector expired, 3/3 sub-issues closed); #309 updated.
+- [Run notes 2026-07-26 #30218669368](run-2026-07-26-30218669368.md) — tasks 4/9/10; Task 9 PR #391 tui dashboard helpers @ `1a192ed` (18.9% → 23.8%); Task 4 CI tidy-check prototype reverted pre-push on maintainer signal (no PR); #309 updated.
+- [Repo Assist state](state.md) — in-flight work, backlog, verified knowledge (latest: 2026-07-27 #30303841146).
