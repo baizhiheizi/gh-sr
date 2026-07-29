@@ -1,4 +1,5 @@
-- [Run notes 2026-07-28 #30396984918](run-2026-07-28-30396984918.md) — current run: tasks 2/4/8; no PR/comment; per-host disk usage batching candidate recorded; #309 updated.
+- [Run notes 2026-07-29 #30487911560](run-2026-07-29-30487911560.md) — current run: tasks 2/1/5; no PR/comment; three duplicate-code refactor candidates (#392/#393/#394) reviewed and deferred pending round-trip-reduction win.
+- [Run notes 2026-07-28 #30396984918](run-2026-07-28-30396984918.md) — tasks 2/4/8; no PR/comment; per-host disk usage batching candidate recorded; #309 updated.
 - [Run notes 2026-07-27 #30303841146](run-2026-07-27-30303841146.md) — tasks 2/4/3; no PR; comment on #384 suggesting close.
-- [Run notes 2026-07-26 #30218669368](run-2026-07-26-30218669368.md) — tasks 4/9/10; PR #391 TUI dashboard helpers; CI tidy-check prototype reverted pre-push.
-- [Repo Assist state](state.md) — in-flight work, backlog, verified knowledge (latest: 2026-07-28 #30396984918).
+- [Repo Assist state](state.md) — in-flight work, backlog, verified knowledge (latest: 2026-07-29 #30487911560).
+- Earlier run history (2026-07-07 through 2026-07-26) is preserved in git history and the issue edit log of #309.
