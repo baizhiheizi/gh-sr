@@ -1,4 +1,3 @@
-- [Run notes 2026-07-30 #30579864305](run-2026-07-30-30579864305.md) — current run: tasks 2/10/5; no PR/comment; disk-usage N+1 SSH candidate re-verified; duplicate-code sub-issues #392/#393/#394 auto-closed.
-- [Run notes 2026-07-29 #30487911560](run-2026-07-29-30487911560.md) — tasks 2/1/5; no PR/comment; three duplicate-code refactor candidates (#392/#393/#394) reviewed and deferred pending round-trip-reduction win.
-- [Repo Assist state](state.md) — in-flight work, backlog, verified knowledge (latest: 2026-07-30 #30579864305).
-- Earlier run history (2026-07-07 through 2026-07-28) is preserved in git history and the issue edit log of #309.
+- [Run notes 2026-08-01 #30716573580](run-2026-08-01-30716573580.md) — tasks 9/3/2; doctor container-install diagnostics 0%→100%; draft PR queued; August summary created and July #309 closed.
+- [Repo Assist state](state.md) — in-flight work, backlog, maintainer signals, and verified contracts (latest: 2026-08-01 #30716573580).
+- Earlier run history is preserved in git history and the monthly activity issue edit log; durable conclusions are consolidated in `state.md`.

@@ -1,18 +1,24 @@
 ---
 name: repo-assist-state
-description: Repo Assist persistent state — in-flight work, backlog, verified knowledge (latest: 2026-07-30 #30579864305)
+description: Repo Assist persistent state — in-flight work, backlog, verified knowledge (latest: 2026-08-01 #30716573580)
 metadata:
   type: project
 ---
 
-# Repo Assist state — 2026-07-30 (run 30579864305)
+# Repo Assist state — 2026-08-01 (run 30716573580)
 
-## Last run — Tasks 2, 10, 5
+## Last run — Tasks 9, 3, 2
 
-- **Task 2** — no new comment: no human activity after #132/#384 comments; #148/#214 are automation logs, #373 parked, sibling monthly summaries skipped, duplicate-code sub-issues #392/#393/#394 auto-closed today (Jul 30 10:27 PM UTC) — engagement would have been noise.
-- **Task 10** — re-verified the disk-usage N+1 SSH batching candidate at `internal/ops/disk.go:102-144`. Aligns with maintainer's PR #365 close signal (user-visible round-trip reduction). Memory guard requires maintainer approval before opening a PR; kept as pending **Define goal** item in #309.
-- **Task 5** — three duplicate-code refactor candidates (#392 svc.sh, #393 windowsRunnerScript, #394 Severity) re-reviewed; remain deferred (DRY-only, no measurable user-visible benefit). No new low-risk improvement identified this run.
-- **Task 11** — #309 rewritten in exact required format and updated with this run.
+- **Task 9** — added seven focused/table-driven tests for `doctor.checkContainerRunnerInstall` in `internal/doctor/doctor_test.go`. Covered no-target, bootstrap-failed, missing/error/stopped container, failed inner dockerd/registration, healthy output, severity counters, remediation text, and terminal-probe short-circuiting. Coverage: function 0% → 100%; `internal/doctor` 77.7% → 85.3%.
+- **Task 3** — fell back to Task 2: no open issue carried `bug`, `help wanted`, or `good first issue`; no confident issue fix was available.
+- **Task 2** — scanned #373, #384, #132, and the remaining automation/monthly issues. No new human activity followed Repo Assist's comments; no duplicate comment posted.
+- **Task 11** — safeoutputs accepted creation of August summary `#aw_aug26` and closure of July summary #309. August summary forward-references draft PR `#aw_doc_tst`.
+
+## In-flight output
+
+- Branch `repo-assist/test-doctor-container-install-2026-08-01`, commit `78c16b5`.
+- Draft PR transaction is to use temporary ID `#aw_doc_tst`; verify the resulting PR number and state next run before doing follow-up work.
+- Verification passed: focused doctor tests, `go build ./...`, `go vet ./...`, full gofmt check, `go test -race ./...`, and `git diff --check`.
 
 ## Maintainer close signals
 
@@ -22,18 +28,19 @@ metadata:
 
 ## Tracking
 
-- **Issue-comment cursor:** #373. Resume oldest-open scan from #373, then #384 and wrap to #132.
-- **Comments made:** #132 (2026-06-09), #208 (2026-07-08, now closed), #359/#360/#368/#369/#370 (2026-07-15, now closed), #384 (2026-07-27). Re-engage only after new human activity.
-- **Open Repo Assist PRs:** none.
+- **Issue-comment cursor:** #148. The 2026-08-01 scan reached the end (#373/#384), wrapped through #132, and found no new human activity.
+- **Comments made:** #132 (2026-06-09), #208 (2026-07-08, closed), #359/#360/#368/#369/#370 (2026-07-15, closed), #384 (2026-07-27). Re-engage only after new human activity.
+- **Open Repo Assist PRs:** safeoutput transaction `#aw_doc_tst` pending application; verify live state next run.
 
 ## Backlog
 
 - **#132** storage — on hold pending loop-mount persistence choice.
-- **#305** duplicate Test Improver monthly summary; maintainer action to close remains in #309.
+- **#305** duplicate Test Improver monthly summary; maintainer action to close remains in August summary.
 - **#373** protected `.git-blame-ignore-revs`/README patch — awaiting human decision.
-- **#384** detector expired; sub-issues #392/#393/#394 auto-closed on Jul 30 2026; parent ready to close per #309.
-- **Performance candidate:** batch disk usage listing/measurement per host only after maintainer approval; benchmark or assert remote-call reduction. File a fresh issue (rather than reusing #384's sub-issues) once maintainer signals appetite.
-- **#309** Monthly Activity.
+- **#384** detector expired and all six sub-issues (#383/#385/#386/#392/#393/#394) are closed; parent ready to close.
+- **Performance candidate:** batch disk usage listing/measurement per host only after maintainer approval; benchmark or assert remote-call reduction. File a fresh issue once maintainer signals appetite.
+- **Testing candidate:** `doctor.checkContainerAgenticInnerHygiene` remains 0% covered; act only if tests protect meaningful user-facing diagnostics without brittle probe over-mocking.
+- **Monthly Activity:** August summary transaction `#aw_aug26`; July #309 closure accepted by safeoutputs.
 
 ## Verified contracts
 
@@ -41,4 +48,4 @@ metadata:
 - **Quoting:** `strconv.Quote` for docker args; `hostshell.PosixSingleQuote`/`PowerShellSingleQuote` for shell snippets.
 - **Round-trip bar:** favor strict N→1 production remote-call folds with tests; reject allocation-only edits without user-visible impact.
 - **AllocsPerRun contract:** panics with "AllocsPerRun called during parallel test" when combined with `t.Parallel()`.
-- **Coverage:** tui 23.8%, hostshell/ps 60%, host 66.2%, runner 71.6% as last measured.
+- **Coverage after 2026-08-01 tests:** doctor 85.3%, tui 23.8%, hostshell/ps 60%, host 66.2%, runner 71.4%.
