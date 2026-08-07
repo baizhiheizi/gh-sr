@@ -5,14 +5,14 @@ metadata:
   type: project
 ---
 
-## Run #29631854277 (2026-07-18 05:55 UTC)
+## Run #31209652644 (2026-08-07 19:03 UTC)
 
-- Branch `test-assist/manager-remove-status-logs-orchestrators`, commit `2af02ce`.
-- Draft PR intent accepted; patch + bundle at `/tmp/gh-aw/aw-test-assist-manager-remove-status-logs-orchestrators.{patch,bundle}`.
-- 8 tests in `internal/runner/runner_remove_status_logs_test.go` covering the three top-level `Manager` orchestrators at 0%.
-- Coverage: `internal/runner` **69.9% → 72.7% (+2.8 pp)**; `Manager.Remove` **0% → 85.7%**; `Manager.Status` **0% → 100%**; `Manager.Logs` **0% → 100%**.
-- Verified: focused tests (8/8 PASS), build, vet, gofmt, full race suite (all 16 packages pass).
-- Prior PR #381 confirmed merged on `main` (commit `c6e3fe0`). Prior-run PR #388 (dirSizesWindows) is still open as draft with `agentic-threat-detected` label.
-- Monthly Activity issue #306 updated to reflect this run; #305 still pending close.
+- Branch `test-assist/manager-remove-status-logs-v2`, commit `20c5ca7`.
+- Draft PR intent accepted; patch + bundle at `/tmp/gh-aw/aw-test-assist-manager-remove-status-logs-v2.{patch,bundle}`.
+- 10 tests in `internal/runner/runner_remove_status_logs_test.go` covering the three top-level `Manager` orchestrators at 0%.
+- Coverage: `internal/runner` **73.7% → 76.4% (+2.7 pp)**; `Manager.Remove` / `Manager.Status` / `Manager.Logs` **0% → 100% each**.
+- Verified: focused tests (10/10 PASS with `-race`), build, vet, gofmt, full race suite (all 16 packages pass).
+- 2026-07-18 run's branch (`test-assist/manager-remove-status-logs-orchestrators`, commit `2af02ce`) did NOT survive — commit absent from `main` history; same work re-implemented from scratch on `test-assist/manager-remove-status-logs-v2`.
+- New August Monthly Activity issue created (label `testing`); previous July issues #305/#306 cannot be read due to integrity filter but should be closed in next run if still open.
 
 [[backlog]] [[run-history]]

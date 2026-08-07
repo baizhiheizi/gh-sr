@@ -5,14 +5,14 @@ metadata:
   type: project
 ---
 
-Go module `github.com/an-lee/gh-sr` (remote `baizhiheizi/gh-sr.git`). CLI entry is `cmd/gh-sr/`; implementation is under `internal/`.
+Go module `github.com/an-lee/gh-sr` (remote `baizhiheizi.git`). CLI entry is `cmd/gh-sr/`; implementation is under `internal/`.
 
-Coverage snapshot 2026-07-18: `internal/runner` baseline on current `main` is 69.9%; current branch `test-assist/manager-remove-status-logs-orchestrators` (commit `2af02ce`) raises it to 72.7% via 8 tests in `runner_remove_status_logs_test.go`. New focused functions: `Manager.Remove` 85.7%, `Manager.Status` 100.0%, `Manager.Logs` 100.0%. PR #388 (run #29557450180, dirSizesWindows) is still open as draft.
+Coverage snapshot 2026-08-07 on `main`: `internal/runner` 73.7%. After branch `test-assist/manager-remove-status-logs-v2` (commit `20c5ca7`, draft PR intent), `internal/runner` is 76.4% (+2.7 pp); `Manager.Remove` / `Manager.Status` / `Manager.Logs` all 0% → 100% each via 10 tests in `runner_remove_status_logs_test.go`. PR #402 (perf-disk-usage-batch-ssh) merged into `main` 2026-08-07.
 
-CI (`.github/workflows/ci.yml`) runs `go vet ./...`, `gofmt -l .`, and `go test ./... -race -count=1` on self-hosted Linux. Bench job runs `go test ./... -run='^$' -bench=. -benchmem -count=1`. There is local coverage support but no CI coverage profile/artifact.
+Prior test-improver PRs merged into `main`: #381 (setupNative/startNativeOnce/handleStaleRecovery), #362 (Manager Start/Stop probe branches), #343 (runner dispatcher/disk), #336 (diskschedule), #321/#316 (autostart), #311 (runner pure helpers), #304 (ops Update), #388 (dirSizesWindows).
 
-Prior Test Improver work through 2026-07-17 is present on `main`: PR #381 (setupNative/startNativeOnce/handleStaleRecovery), #362 (Manager Start/Stop probe branches), #343 (runner dispatcher/disk branches), #336 (diskschedule), #321/#316 (autostart), #311 (runner pure helpers), and #304 (ops Update). Monthly issues: #306 (July, active), #305 (July duplicate, still open despite redirect).
+CI (`.github/workflows/ci.yml`) runs `go vet ./...`, `gofmt -l .`, and `go test ./... -race -count=1` on self-hosted Linux. There is no CI coverage profile/artifact step.
 
-Safeoutputs may report only a patch/bundle without a live PR number. Persist the temporary ID, branch, commit, patch, and bundle, then verify GitHub state in a later run rather than claiming a PR exists. Current intent: branch `test-assist/dirsizes-windows-branch`, commit `6d44d5b`, patch `/tmp/gh-aw/aw-test-assist-dirsizes-windows-branch.patch` (12,349 bytes, 320 lines), bundle `/tmp/gh-aw/aw-test-assist-dirsizes-windows-branch.bundle` (5,855 bytes).
+Safeoutputs may report only a patch/bundle without a live PR number. Persist the temporary ID, branch, commit, patch, and bundle, then verify GitHub state in a later run. Current intent: branch `test-assist/manager-remove-status-logs-v2`, commit `20c5ca7`, patch `/tmp/gh-aw/aw-test-assist-manager-remove-status-logs-v2.patch` (19,801 bytes, 568 lines), bundle `/tmp/gh-aw/aw-test-assist-manager-remove-status-logs-v2.bundle` (5,935 bytes).
 
 [[commands]] [[testing-notes]] [[backlog]] [[wip]]
