@@ -1,3 +1,4 @@
+- [Run notes 2026-08-07 #31135682079](run-2026-08-07-31135682079.md) — tasks 3/10/5; disk-usage N+1 SSH fold (12→6 on 3-host 9-instance fleet); pruneInnerDockerCache 0%→100%; draft PR #aw_diskperf.
 - [Run notes 2026-08-01 #30716573580](run-2026-08-01-30716573580.md) — tasks 9/3/2; doctor container-install diagnostics 0%→100%; draft PR queued; August summary created and July #309 closed.
-- [Repo Assist state](state.md) — in-flight work, backlog, maintainer signals, and verified contracts (latest: 2026-08-01 #30716573580).
+- [Repo Assist state](state.md) — in-flight work, backlog, maintainer signals, and verified contracts (latest: 2026-08-07 #31135682079).
 - Earlier run history is preserved in git history and the monthly activity issue edit log; durable conclusions are consolidated in `state.md`.
