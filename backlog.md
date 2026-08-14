@@ -7,12 +7,11 @@ metadata:
 
 ## Next priorities
 
-1. **Windows runner branches in `setupNative`/`startNativeOnce`/`handleStaleRegistration`/`stopNative`/`removeNative`** — Linux covered 2026-07-16 (run #29473958530) up to 56-100% per function; Windows paths still 0%. Reuse the non-local-address PowerShell wrapper pattern (`Addr: runner@vps` triggers `host.Host.wrapCommand`) and the `decodeEncodedPowerShellCommand` helper from disk_test.go (UTF-16LE + base64) so tests can decode and assert against the real script body.
-2. **`internal/tui` rendering** (23.8%) — low priority unless a coverage policy or specific UI regression appears.
-3. **`internal/diskschedule` follow-ups** (88.2%) — command/file-write error branches remain, but core lifecycle behavior is covered.
-4. **`internal/host` connection/auth** (66.2%) — `connection.go` SSH auth methods (0%) require real SSH transport; out of scope for in-process tests.
-5. **`internal/hostshell/ps`** (60.0%) — `Exec`/`CombinedOutput` 0% but require PowerShell runtime; Windows-only.
-6. **Coverage infrastructure** — CI runs vet/format/full race but does not generate or retain a coverage profile. A separate non-gating coverage artifact job is reasonable after maintainer agreement; do not add a threshold without a policy.
+1. **`internal/tui` rendering** (23.8%) — low priority unless a coverage policy or specific UI regression appears.
+2. **`internal/diskschedule` follow-ups** (88.2%) — command/file-write error branches remain, but core lifecycle behavior is covered.
+3. **`internal/host` connection/auth** (66.2%) — `connection.go` SSH auth methods (0%) require real SSH transport; out of scope for in-process tests.
+4. **`internal/hostshell/ps`** (60.0%) — `Exec`/`CombinedOutput` 0% but require PowerShell runtime; Windows-only.
+5. **Coverage infrastructure** — CI runs vet/format/full race but does not generate or retain a coverage profile. A separate non-gating coverage artifact job is reasonable after maintainer agreement; do not add a threshold without a policy.
 
 ## Reusable patterns
 

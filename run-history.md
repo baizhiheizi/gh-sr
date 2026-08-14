@@ -5,6 +5,11 @@ metadata:
   type: project
 ---
 
+## 2026-08-14 — Run 31831183885
+- 11 tests in `internal/runner/native_windows_branch_test.go` covering Windows branches of `setupNative` / `startNativeOnce` / `handleStaleRegistration` / `stopNative` / `removeNative` / `removeNativeDirectory`.
+- Branch `test-assist/native-windows-branches-v2`, commit `be279d5`. Draft PR intent recorded.
+- Coverage: `internal/runner` 76.4→80.9 (+4.5 pp); Windows branches of the above functions 0→100.
+
 ## 2026-08-07 — Run 31209652644
 - 10 tests in `internal/runner/runner_remove_status_logs_test.go` for `Manager.Remove` / `Manager.Status` / `Manager.Logs` + `Manager.Out` fallback.
 - Branch `test-assist/manager-remove-status-logs-v2`, commit `20c5ca7`. Draft PR intent recorded.

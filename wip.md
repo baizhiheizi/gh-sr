@@ -5,14 +5,14 @@ metadata:
   type: project
 ---
 
-## Run #31209652644 (2026-08-07 19:03 UTC)
+## Run #31831183885 (2026-08-14 19:13 UTC)
 
-- Branch `test-assist/manager-remove-status-logs-v2`, commit `20c5ca7`.
-- Draft PR intent accepted; patch + bundle at `/tmp/gh-aw/aw-test-assist-manager-remove-status-logs-v2.{patch,bundle}`.
-- 10 tests in `internal/runner/runner_remove_status_logs_test.go` covering the three top-level `Manager` orchestrators at 0%.
-- Coverage: `internal/runner` **73.7% → 76.4% (+2.7 pp)**; `Manager.Remove` / `Manager.Status` / `Manager.Logs` **0% → 100% each**.
-- Verified: focused tests (10/10 PASS with `-race`), build, vet, gofmt, full race suite (all 16 packages pass).
-- 2026-07-18 run's branch (`test-assist/manager-remove-status-logs-orchestrators`, commit `2af02ce`) did NOT survive — commit absent from `main` history; same work re-implemented from scratch on `test-assist/manager-remove-status-logs-v2`.
-- New August Monthly Activity issue created (label `testing`); previous July issues #305/#306 cannot be read due to integrity filter but should be closed in next run if still open.
+- Branch `test-assist/native-windows-branches-v2`, commit `be279d5`.
+- Draft PR intent accepted; patch + bundle at `/tmp/gh-aw/aw-test-assist-native-windows-branches-v2.{patch,bundle}`.
+- 11 tests in `internal/runner/native_windows_branch_test.go` covering the Windows branches (0% → 100%) of `setupNative` / `startNativeOnce` / `handleStaleRegistration` / `stopNative` / `removeNative` / `removeNativeDirectory`.
+- Coverage: `internal/runner` **76.4% → 80.9% (+4.5 pp)**.
+- Verified: focused tests (11/11 PASS with `-race`), build, vet, gofmt, full race suite (all 16 packages pass).
+- Backlog priority #1 (Windows runner branches) cleared; next priority is `internal/tui` (23.8%) if a coverage policy emerges. Existing pattern: presence probe's `Write-Output 'yes'/'no'` is the unique disambiguator against start/stop scripts that use `Write-Host`.
+- August Monthly Activity issue (#404) updated with this run's progress.
 
 [[backlog]] [[run-history]]
