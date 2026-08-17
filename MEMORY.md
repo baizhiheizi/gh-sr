@@ -1,3 +1,3 @@
-- [Run notes 2026-08-15 #31904369347](run-2026-08-15-31904369347.md) — tasks 8/3→2/10; clear+prune single-SSH fold; draft PR `aw-repo-assist-perf-clear-and-prune-single-ssh-2026-08-15`.
-- [Repo Assist state](state.md) — in-flight work, backlog, maintainer signals, and verified contracts (latest: 2026-08-15 #31904369347).
+- [Run notes 2026-08-17 #32061927225](run-2026-08-17-32061927225.md) — tasks 2/4/3; sh -c wrap fix for PR #411 (supersedes PR #412); sandbox proxy.golang.org TLS failure documented.
+- [Repo Assist state](state.md) — in-flight work, backlog, maintainer signals, and verified contracts (latest: 2026-08-17 #32061927225).
 - Earlier run history is preserved in git history and the monthly activity issue edit log (#396); durable conclusions are consolidated in `state.md`.
