@@ -1,41 +1,33 @@
-# Repo Assist state — 2026-08-17 (run 32061927225)
+# Repo Assist state — 2026-08-18 (run 32178043544)
 
-## Last run — Tasks 2, 4, 3
+## Last run — Tasks 2, 3, 5
 
-- **Task 2** — Investigation surfaced that the 2026-08-15 clear+prune fold (PR #411) introduced a critical bug. cursor[bot]'s PR #412 caught the same defect in the pre-fold standalone function (which PR #411 removes). Posted a brief comment on PR #411 explaining the fix and supersession.
-- **Task 3** — Pushed follow-up commit `e16c0df` to PR #411 wrapping the folded prune script in `sh -c '<script>'` (the same fix PR #412 applies to the standalone variant). Added `TestClearWorkTempPOSIX_containerPruneCache_wrapsPruneScriptInSh_c` to pin the `sh -c '\n` boundary.
-- **Task 4** — No actionable Dependabot alerts or unprotected engineering work. `proxy.golang.org` was failing with `SSL_ERROR_SYSCALL` in the sandbox, so speculative CI/dependency changes without build/test verification were not safe to commit.
-- **Task 11** — Updated #396 monthly activity with this run's entry, the PR #411 fix, and the suggested supersession of PR #412.
+- **Task 2** — Verified open issues / PRs. No new comment warranted. PR #411 (a8a5d42) + #413 (e16c0df stacked on #411) stable, waiting for review.
+- **Task 3** — No bug-labelled / `help wanted` / `good first issue` items to fix; PR #411 already structurally pinned.
+- **Task 5** — Searched `internal/{hostshell,strfmt,tui,ops,runner}` + `cmd/gh-sr/main.go` for low-risk improvements. Nothing surfaced; codebase is well-factored.
+- **Task 11** — Updated #396 monthly activity with this run's entry and maintained suggested-actions list (PR #411, #413, #412 supersession, #384 close, #373 scope decision, #132 hold).
 
 ## In-flight output
 
-- Branch `repo-assist/perf-clear-and-prune-single-ssh-2026-08-15-56e2a2a81aaae1f1`, commits `a8a5d42` + `e16c0df`.
-- Safeoutput transactions:
-  - Push: `aw-repo-assist-perf-clear-and-prune-single-ssh-2026-08-15-56e2a2a81aaae1f1.patch`.
-  - PR comment: `#aw_LklYJ3xY` on PR #411.
-  - Issue update: full body replace on #396.
+- Branch `repo-assist/perf-clear-and-prune-single-ssh-2026-08-15-56e2a2a81aaae1f1` — commits `a8a5d42` + `e16c0df` (the `sh -c '<script>'` wrap). PR #411 (head = a8a5d42) + PR #413 (head = e16c0df, stacked on #411).
+- Safeoutput transactions from prior run: `aw-repo-assist-perf-clear-and-prune-single-ssh-2026-08-15-56e2a2a81aaae1f1.patch`, `#aw_LklYJ3xY` (PR #411 comment), update on #396.
 
 ## Backlog
 
 - **#132** storage — on hold pending loop-mount persistence choice.
 - **#305** duplicate Test Improver summary — maintainer close.
-- **#373** `.git-blame-ignore-revs` — awaiting human decision.
-- **#384** expired detector group — 9/9 sub-issues closed; close.
-- **#410** test-improver's `native-windows-branches-v2` draft PR — not Repo Assist's PR; will leave for that automation.
-- **#412** cursor[bot]'s draft PR — superseded by the `e16c0df` follow-up on PR #411; suggested close in #396's suggested actions.
+- **#373** `.git-blame-ignore-revs` — blocked by README.md protected-file push guard; needs maintainer scope decision.
+- **#384** Duplicate Code group — 9/9 sub-issues closed (100%); close.
+- **#410** test-improver's `native-windows-branches-v2` draft PR — not Repo Assist's PR; leave.
+- **#412** cursor[bot]'s draft PR — superseded by `e16c0df` on PR #411's branch; suggested close.
 
 ## Verified contracts
 
-- **Protected:** `go.mod`, `go.sum`, `CHANGELOG.md`, `.github/workflows/{ci,bench-compare}.yml`.
-- **sh -c wrap placement:** `innerCmd := "sh -c " + hostshell.PosixSingleQuote(pruneInnerDockerCacheScript(containerName))` runs **before** the `DockerExecCommand` concatenation, so the rendered docker exec is `docker exec "name" sh -c '<script>'`.
-- **Wrapper prefix preserved:** the `|| { echo "inner docker cache prune in <name>: failed" >&2; exit 1; }` outer wrapper still emits the pre-fold descriptive prefix when the inner exec fails.
-- **Test pinned:** the new test checks for the `sh -c '\n` literal sequence, which only the wrapped variant emits — a future refactor that drops the wrap fails the test loudly.
-- **PR #412 supersession:** PR #412's diff applies to the standalone `pruneInnerDockerCache` function which PR #411 removes. Either PR #412 no-ops against PR #411's tree, or it conflicts at that line; either way the fix is preserved in `e16c0df`.
+- **PR #411 / #413 relationship preserved.** PR #411 head = `a8a5d42`, base = main `dc6c9c5`. PR #413 head = `e16c0df`, base = PR #411's branch. Merging #411 first (or squash-merging #411's branch which has both commits) both preserve the fix.
+- **sh -c wrap placement:** `innerCmd := "sh -c " + hostshell.PosixSingleQuote(pruneInnerDockerCacheScript(containerName))` runs **before** the `DockerExecCommand` concatenation.
+- **Test pinned:** `TestClearWorkTempPOSIX_containerPruneCache_wrapsPruneScriptInSh_c` checks for the `sh -c '\n` literal sequence — only the wrapped variant emits it.
 
 ## Sandbox status
 
-- `proxy.golang.org` reachable via HEAD but actual ZIP downloads fail with `SSL_ERROR_SYSCALL` (TLS handshake timeout). Lock files cached locally; no `.zip` modules present. `go build`/`go test` could not be exercised this run. Documented in the PR comment and #396.
-
-## Coverage tooling
-
-- `make coverage` still surfaces `internal/tui` (23.8%) and `internal/hostshell/ps` (60.0%) as the lowest actionable targets.
+- `proxy.golang.org` reachable; `go vet ./...` clean, `go test ./... -count=1` all 16 packages PASS. The previous `SSL_ERROR_SYSCALL` failure (runs 31904369347, 32061927225) is no longer reproducible.
+- Coverage tooling: `make coverage` still surfaces `internal/tui` (23.8%) and `internal/hostshell/ps` (60.0%) as the lowest actionable targets.
