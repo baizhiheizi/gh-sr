@@ -7,7 +7,7 @@ metadata:
 
 # Work in Progress
 
-- **Draft PR pending (2026-07-14)**: branch `efficiency/tui-render-sprintf-and-closure` (commit ef19ba6). Title: `[efficiency-improver] perf(tui): hoist dashboard footer strings to constants — drop per-View() Sprintf`. FooterMain/idle: 11→10 allocs/op; FooterMain/loading: 12→10 allocs/op; ViewMain: 341→340 allocs/op. Patch at `/tmp/gh-aw/aw-efficiency-tui-render-sprintf-and-closure.patch`.
+- **Draft PR via safeoutputs (2026-08-19)**: branch `efficiency/tui-footermain-consts` (commit 2747f3c). Title: `[efficiency-improver] perf(tui): hoist dashboard footer strings to constants — drop per-View() Sprintf`. FooterMain/idle: 5,803→0.21 ns, 11→0 allocs (-100%); FooterMain/loading: 6,545→0.21 ns, 12→0 allocs (-100%); ViewMain: 40,454→39,058 ns, 333→322 allocs (-3.3%). Patch at `/tmp/gh-aw/aw-efficiency-tui-footermain-consts.patch`. Bundle at `/tmp/gh-aw/aw-efficiency-tui-footermain-consts.bundle`. PR number not yet verified — MCP github guard unavailable after PR creation.
 
 ## Re-apply candidate
 
@@ -19,5 +19,5 @@ metadata:
 
 ## Open issues
 
-- Issue #324 (monthly activity): update_issue budget exhausted 2026-07-14 (1/1 used; truncated body call counted). **Next run must update #324 cleanly.**
+- Monthly activity issue: MCP github server unavailable 2026-08-19 — cannot list/read/update existing issue or create new one. PR was created via safeoutputs successfully, but the post-PR read for monthly update is blocked. **Next run must retry** and update/close the monthly issue cleanly.
 - Issue #132: btrfs/reflink design — HIGH per-host disk + pull energy; still open since 2026-06-15.

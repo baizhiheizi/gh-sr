@@ -7,36 +7,26 @@ metadata:
 
 # Completed Work
 
-## 2026-07-14 — TUI dashboard footerMain Sprintf → package consts — **DRAFT PR pending**
+## 2026-08-19 — TUI dashboard footerMain Sprintf → package vars — **DRAFT PR via safeoutputs (pending number)**
 
-Branch `efficiency/tui-render-sprintf-and-closure` (ef19ba6). Replaced per-View() `fmt.Sprintf` with two package `const` strings (`footerMainIdle`, `footerMainLoading`).
+Branch `efficiency/tui-footermain-consts` (2747f3c). Per-View() `fmt.Sprintf` → 2 package `var` strings.
 
 | Bench | Before | After | Δ |
 |---|---|---|---|
-| `FooterMain/idle` | 7,888 ns · 1,145 B · 11 allocs | 7,263 ns · 1,032 B · 10 allocs | −7.9% / −9.9% / −9.1% |
-| `FooterMain/loading` | 7,873 ns · 1,289 B · 12 allocs | 8,119 ns · 1,144 B · 10 allocs | ~ / −11.2% / −16.7% |
-| `ViewMain` (1 status) | 52,446 ns · 11,487 B · 341 allocs | 53,681 ns · 11,379 B · 340 allocs | ~ / −0.9% / −0.3% |
+| `FooterMain/idle` | 5,803 ns · 1,145 B · 11 allocs | 0.21 ns · 0 B · 0 allocs | −100% all |
+| `FooterMain/loading` | 6,545 ns · 1,289 B · 12 allocs | 0.21 ns · 0 B · 0 allocs | −100% all |
+| `ViewMain/one_status` | 40,454 ns · 11,189 B · 333 allocs | 39,058 ns · 10,003 B · 322 allocs | −3.3% allocs |
 
-Added `TestFooterMain_idleAndLoading` + `TestFooterMain_constantsMatch`. Sentinels: `BenchmarkFooterMain`, `BenchmarkViewMain`, `BenchmarkFormatContainerImageBuild`.
+Added `TestFooterMain_idleAndLoading` (ANSI-stripped pin). Sentinels `BenchmarkFooterMain`, `BenchmarkViewMain`. 17/17 packages OK; race suite OK. MCP github unavailable post-PR — number unverified.
 
-**Negative result**: `formatContainerImageBuild` closure already elided by Go escape analysis (0 allocs/op).
+## 2026-07-14 — Same optimization, weaker win (const vs var) — **BRANCH LOST**
 
-16 existing + 3 new tests pass; 17/17 packages OK; race suite OK.
+Branch `efficiency/tui-render-sprintf-and-closure` (ef19ba6). FooterMain/idle: 11→10 allocs; FooterMain/loading: 12→10 allocs. Negative result: `formatContainerImageBuild` closure already elided. Re-implemented 2026-08-19 with `var` (lipgloss returns non-const string).
 
-## 2026-07-11 — scripts/benchstat writeNumber direct-to-builder — **PR #357 CLOSED WITHOUT MERGE**
+## 2026-07-11 — scripts/benchstat writeNumber — **PR #357 CLOSED WITHOUT MERGE**
 
-Branch `efficiency/benchstat-formatnumber-write-direct` (46ed29d). `FormatNumber(f) string` → `writeNumber(sb, f)`. RenderMarkdown 47→2 allocs/op (-95.7%); FullPipeline 145→100 allocs/op (-31%); new `BenchmarkWriteNumber` sentinel.
+PR #357 (46ed29d). RenderMarkdown 47→2 allocs/op (-95.7%). Closed 2026-07-11 23:44 UTC. Re-apply candidate.
 
-**Outcome**: PR #357 created 2026-07-11 09:57 UTC, **closed without merge 2026-07-11 23:44 UTC**. Patch at `/tmp/gh-aw/aw-efficiency-benchstat-formatnumber-write-direct.patch`.
+## Merged PRs (backlog highlights)
 
-## 2026-07-09 — scripts/benchstat RenderMarkdown (-79.2% allocs/op) — **MERGED PR #345**
-
-PR #345 (squash-merge). RenderMarkdown 12,877 → 6,248 ns/op, 6,205 → 2,800 B/op, 226 → 47 allocs/op.
-
-## 2026-07-07 — FormatBytesHuman inline unit suffix (-14.3%) — **MERGED PR #323**
-
-PR #323 (squash-merge 14d1edb). BenchmarkFormatBytesHuman 443.5 → 379.9 ns/op.
-
-## Earlier merged (full list in run-history.md)
-
-PR #361 · #345 · #322 · #249 · #226 · #213 · #203 · #191 · #167 · #155 · #146 · #136 · #128 · #123 · TUI metrics (squash 2373126).
+- #345 RenderMarkdown rewrite (-79.2%); #323 FormatBytesHuman (-14.3%); #322 doctor fanout (6→1 SSH); #361 Start/Stop combined; #226 ContainerImageLayoutRevision hoist (-85%); #213 Manager.Status hoist; #203 container SSH 3→1; #191 extractTrailingPercent (-88%); #167 EnrichWithGitHubStatus; #155 FindRunnerForLogs (-86%); #146 InstanceNames; #136 dirSizesPOSIX; #128 Validate_Large; #123 FilterRunners; #249 TUI render; TUI metrics squash 2373126.

@@ -9,7 +9,7 @@ metadata:
 
 | Priority | Focus | Opportunity | Impact |
 |----------|-------|-------------|--------|
-| ⏳ | Code | TUI `dashboardModel.footerMain` per-View() `fmt.Sprintf` → package consts. FooterMain/idle: 11→10 allocs/op, -9.9% bytes; FooterMain/loading: 12→10 allocs/op, -11.2% bytes. Draft PR pending (branch `efficiency/tui-render-sprintf-and-closure`, commit ef19ba6). | LOW/MED |
+| ✅ | Code | TUI `dashboardModel.footerMain` per-View() `fmt.Sprintf` → package `var` strings (2 states). FooterMain/idle: 5,803→0.21 ns, 11→0 allocs (-100%); FooterMain/loading: 6,545→0.21 ns, 12→0 allocs (-100%); ViewMain/one_status: 40,454→39,058 ns, 333→322 allocs (-3.3%). PR via safeoutputs (pending number). | HIGH |
 | TBD | Net | TUI refresh polling (5s) — `EnrichWithGitHubStatus` fires K parallel `ListRunnersScoped`. ETag cache. | TBD |
 | TBD | Net | Audit repeated `gh run` calls for batching | TBD |
 | LOW | Code | `diskschedule.parseAtTime` uses `fmt.Sscanf` — cold-path | LOW |
@@ -18,7 +18,7 @@ metadata:
 | LOW | Code | `ValidateContainerPrereqs` parallelization | ~150ms |
 | LOW | Code | `agentic.FormatRemediation` 4× `fmt.Fprintf(&sb, …)` reflection — cold-path | LOW |
 | ❌ | Code | `scripts/benchstat` writeNumber direct-to-builder — **47 → 2 allocs/op (-95.7%)** RenderMarkdown; FullPipeline 145→100 allocs/op (-31%). **PR #357 closed without merge 2026-07-11 23:44 UTC** — re-apply on fresh branch if close was stylistic. | HIGH |
-| MED | Infra | Sentinels added 2026-07-14: `BenchmarkFooterMain`, `BenchmarkViewMain`, `BenchmarkFormatContainerImageBuild`. `BenchmarkWriteNumber` added 2026-07-11 (PR #357 closed). | Regression detection |
+| MED | Infra | Sentinels: `BenchmarkFooterMain`, `BenchmarkViewMain`, `BenchmarkFormatContainerImageBuild`, `BenchmarkWriteNumber` (PR #357 closed). | Regression detection |
 | MED | Storage | Issue #132 — btrfs loop + reflink seed for shared inner Docker cache | HIGH per-host disk + pull energy |
 
 ## Recently closed (merged)
