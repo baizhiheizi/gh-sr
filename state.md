@@ -1,33 +1,35 @@
-# Repo Assist state — 2026-08-18 (run 32178043544)
+# Repo Assist state — 2026-08-19 (run 32294364720)
 
-## Last run — Tasks 2, 3, 5
+## Last run — Tasks 3, 6, 5
 
-- **Task 2** — Verified open issues / PRs. No new comment warranted. PR #411 (a8a5d42) + #413 (e16c0df stacked on #411) stable, waiting for review.
-- **Task 3** — No bug-labelled / `help wanted` / `good first issue` items to fix; PR #411 already structurally pinned.
-- **Task 5** — Searched `internal/{hostshell,strfmt,tui,ops,runner}` + `cmd/gh-sr/main.go` for low-risk improvements. Nothing surfaced; codebase is well-factored.
-- **Task 11** — Updated #396 monthly activity with this run's entry and maintained suggested-actions list (PR #411, #413, #412 supersession, #384 close, #373 scope decision, #132 hold).
+- **Task 3** — PR #411 was merge-conflicted because `bdb2bf8` (Merge PR #412 / `7394b08`) had landed on main since the last PR build. Rebased onto current main, resolved both conflict sites, and pushed follow-up commit `0d90703` fixing the test container-name mismatch (`gh-sr-my-1` → `gh-sr-ci-1`) in the fold-aware prune tests.
+- **Task 6** — PR #411 is back in a clean, ready-to-review state with both the fold (`a8a5d42`), the sh -c wrap (`e16c0df`), the rebase (`95b92bc` + `75baf15`), and the test fix (`0d90703`) on top of current main.
+- **Task 5** — New PR #415 covers `Host.Upload` wrapper (`internal/host` coverage 66.2% → 67.9%; Host.Upload line 92: 0.0% → 83.3%). Low-risk coverage improvement via `SetConn` injection.
+- **Task 11** — Updated #396 monthly activity with this run's entry, the rebased+fixed PR #411, the new PR #415, and the maintained suggested-actions list (PR #411, #415, #412 close, #384 close, #373 scope decision, #132 hold).
 
 ## In-flight output
 
-- Branch `repo-assist/perf-clear-and-prune-single-ssh-2026-08-15-56e2a2a81aaae1f1` — commits `a8a5d42` + `e16c0df` (the `sh -c '<script>'` wrap). PR #411 (head = a8a5d42) + PR #413 (head = e16c0df, stacked on #411).
-- Safeoutput transactions from prior run: `aw-repo-assist-perf-clear-and-prune-single-ssh-2026-08-15-56e2a2a81aaae1f1.patch`, `#aw_LklYJ3xY` (PR #411 comment), update on #396.
+- Branch `repo-assist/perf-clear-and-prune-single-ssh-2026-08-15-56e2a2a81aaae1f1` — commits `a8a5d42` + `e16c0df` (rebased as `95b92bc` + `75baf15`) + `0d90703` (test fix).
+- Branch `repo-assist/test-host-upload-wrapper-2026-08-19` — commit `bbad15d` (PR creation queued).
+- Safeoutput transactions: PR #411 branch push, new PR #415 creation, #396 full-body update.
 
 ## Backlog
 
 - **#132** storage — on hold pending loop-mount persistence choice.
 - **#305** duplicate Test Improver summary — maintainer close.
-- **#373** `.git-blame-ignore-revs` — blocked by README.md protected-file push guard; needs maintainer scope decision.
-- **#384** Duplicate Code group — 9/9 sub-issues closed (100%); close.
+- **#373** `.git-blame-ignore-revs` — awaiting human decision on whether to drop the README edit.
+- **#384** expired detector group — 9/9 sub-issues closed; close.
 - **#410** test-improver's `native-windows-branches-v2` draft PR — not Repo Assist's PR; leave.
-- **#412** cursor[bot]'s draft PR — superseded by `e16c0df` on PR #411's branch; suggested close.
+- **#412** cursor[bot]'s draft PR — landed via main (`7394b08`); close.
+- **#414** efficiency-improver's TUI footer hoist PR — not Repo Assist's PR; leave.
 
 ## Verified contracts
 
-- **PR #411 / #413 relationship preserved.** PR #411 head = `a8a5d42`, base = main `dc6c9c5`. PR #413 head = `e16c0df`, base = PR #411's branch. Merging #411 first (or squash-merging #411's branch which has both commits) both preserve the fix.
-- **sh -c wrap placement:** `innerCmd := "sh -c " + hostshell.PosixSingleQuote(pruneInnerDockerCacheScript(containerName))` runs **before** the `DockerExecCommand` concatenation.
-- **Test pinned:** `TestClearWorkTempPOSIX_containerPruneCache_wrapsPruneScriptInSh_c` checks for the `sh -c '\n` literal sequence — only the wrapped variant emits it.
+- **PR #411 conflict resolution correctness:** the standalone `pruneInnerDockerCache` function PR #412 patched was removed by the fold; rebasing preserves the fold's removal while keeping `7394b08`'s in-tree fix irrelevant (it lives on a function that no longer exists). The fix is preserved because the folded script itself uses `sh -c '<script>'` — `e16c0df` ensured that.
+- **Test assertion correctness:** `gh-sr-ci-1` matches the container name produced by `runner.ContainerDockerName("ci-1")` (the test uses instance `ci-1` directly via `PruneInstance(h, "host1", "ci-1", ...)`). The pre-fix assertions could never match because they were checking the wrong string.
+- **PR #411/#413/#412 relationship:** #412 is now closed (landed via main as `7394b08`); #413 is closed (the stacked review PR was redundant once the fix landed); #411 carries the fold + wrap + rebase + test fix on top of current main.
 
 ## Sandbox status
 
-- `proxy.golang.org` reachable; `go vet ./...` clean, `go test ./... -count=1` all 16 packages PASS. The previous `SSL_ERROR_SYSCALL` failure (runs 31904369347, 32061927225) is no longer reproducible.
-- Coverage tooling: `make coverage` still surfaces `internal/tui` (23.8%) and `internal/hostshell/ps` (60.0%) as the lowest actionable targets.
+- `proxy.golang.org` reachable; `go vet ./...` clean, `go test ./... -count=1` all 16 packages PASS, `go test -race ./... -count=1` all 16 packages PASS.
+- Coverage tooling: `make coverage` still surfaces `internal/tui` (23.8%) and `internal/hostshell/ps` (60.0%) as the lowest actionable targets after this run's `internal/host` improvement (66.2% → 67.9%).

@@ -1,4 +1,5 @@
+- [Run notes 2026-08-19 #32294364720](run-2026-08-19-32294364720.md) — tasks 3/6/5; PR #411 rebased onto main (conflict from #412/7394b08 landing), test fix for gh-sr-my-1→gh-sr-ci-1, new PR #415 covers Host.Upload wrapper.
 - [Run notes 2026-08-18 #32178043544](run-2026-08-18-32178043544.md) — tasks 2/3/5; verification run; PR #411/#413 stable; no new work committed; sandbox proxy.golang.org TLS handshake recovered.
 - [Run notes 2026-08-17 #32061927225](run-2026-08-17-32061927225.md) — tasks 2/4/3; sh -c wrap fix for PR #411 (supersedes PR #412); sandbox proxy.golang.org TLS failure documented.
-- [Repo Assist state](state.md) — in-flight work, backlog, maintainer signals, and verified contracts (latest: 2026-08-17 #32061927225).
+- [Repo Assist state](state.md) — in-flight work, backlog, maintainer signals, and verified contracts (latest: 2026-08-19 #32294364720).
 - Earlier run history is preserved in git history and the monthly activity issue edit log (#396); durable conclusions are consolidated in `state.md`.
