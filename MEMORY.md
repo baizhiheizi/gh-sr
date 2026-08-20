@@ -1,1 +1,1 @@
-- [Perf Improver state 2026-07](notes.md) — run 31 on 2026-07-30, opened containersPresentOneShot SplitSeq alloc drop (commit `56df245`); PRs #389 (run-30 FormatBytesHuman B-branch) and #387 (run-29 RenderPlain spaces80) MERGED 2026-07-22; 12+ of 15 phantom-success branches merged by maintainer.
+- [Perf Improver state 2026-08](notes.md) — run 56 on 2026-08-20, opened FormatHostMetrics builder-direct render (commit `982ea3f`); PRs #389, #387 (run-30/29) MERGED 2026-07-22; PR #395 (run-31) MERGED 2026-07-31; 13 of 16 phantom-success branches merged.
