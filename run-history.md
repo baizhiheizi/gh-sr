@@ -5,9 +5,14 @@ metadata:
   type: project
 ---
 
+## 2026-08-21 — Run 32514567250
+- 11 tests in `internal/runner/environment_orchestrators_test.go` for `ContainerEnvironment.Provision` / `Start` / `Reset` / `Destroy`.
+- Branch `test-assist/environment-orchestrators`, commit `93b4217`. Draft PR intent recorded.
+- Coverage: `internal/runner` 81.2→82.1 (+0.9 pp); Provision/Start/Reset/Destroy 0→100 each.
+
 ## 2026-08-14 — Run 31831183885
 - 11 tests in `internal/runner/native_windows_branch_test.go` covering Windows branches of `setupNative` / `startNativeOnce` / `handleStaleRegistration` / `stopNative` / `removeNative` / `removeNativeDirectory`.
-- Branch `test-assist/native-windows-branches-v2`, commit `be279d5`. Draft PR intent recorded.
+- Branch `test-assist/native-windows-branches-v2`, commit `be279d5`. PR #410 merged 2026-08-19.
 - Coverage: `internal/runner` 76.4→80.9 (+4.5 pp); Windows branches of the above functions 0→100.
 
 ## 2026-08-07 — Run 31209652644
@@ -32,6 +37,6 @@ metadata:
 - 2026-07-03: autostart Start/Stop/Status/Uninstall; PR #316 merged.
 - 2026-07-02: runner pure helpers; PR #311 merged.
 - 2026-07-01: ops Update; PR #304 merged.
-- Monthly: #4 Apr, #69 May, #109 June, #306/#305 July closed-or-superseded; August issue opened by 2026-08-07 run.
+- Monthly: #4 Apr, #69 May, #109 June, #306/#305 July closed-or-superseded; #404 August 2026 still open.
 
 [[wip]] [[backlog]]
