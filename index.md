@@ -1,1 +1,1 @@
-- [Run notes 2026-09-05](notes.md) — Repo Assist run notes, backlog cursor, future-work ideas.
+- [Run notes 2026-09-09](notes.md) — Repo Assist run notes, backlog cursor, future-work ideas. safeoutputs CLI gotcha: `update_issue 462 .` consumes budget without forwarding stdin; use `issue_number` inside the JSON payload.
