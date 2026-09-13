@@ -5,6 +5,7 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"path"
 	"regexp"
 	"runtime"
 	"strconv"
@@ -65,6 +66,19 @@ type CacheConfig struct {
 	URLOverride string `yaml:"url_override,omitempty"`
 }
 
+// ContainerToolcacheEntry is one tool-cache bake item: a tarball URL extracted
+// into Dir (relative to the image tool cache root /home/runner/.toolcache).
+// Complete is the optional path of the "already installed" marker setup-ruby
+// & co. look for, relative to the same root; it defaults to "<Dir>.complete".
+// Set it when the archive extracts into a parent of the tool dir — e.g. the
+// ruby-builder tarballs ship a top-level x64/ wrapper, so Dir is "Ruby/<ver>"
+// and Complete is "Ruby/<ver>/x64.complete".
+type ContainerToolcacheEntry struct {
+	URL      string `yaml:"url"`
+	Dir      string `yaml:"dir"`
+	Complete string `yaml:"complete,omitempty"`
+}
+
 // ContainerRunnerImageConfig controls optional customization of the locally built
 // gh-sr/agentic-runner Docker image (runner_mode: container).
 type ContainerRunnerImageConfig struct {
@@ -76,6 +90,16 @@ type ContainerRunnerImageConfig struct {
 	// ExtraAptPackages lists additional Debian package names to install in the
 	// image at build time (Ubuntu main archive only in v1).
 	ExtraAptPackages []string `yaml:"extra_apt_packages,omitempty"`
+	// Toolcache lists tool tarballs pre-extracted into the image tool cache at
+	// build time (runner_mode: container). Each entry downloads URL and extracts
+	// it into /home/runner/.toolcache/<Dir>, then writes the sibling
+	// "<Dir>.complete" marker that setup-ruby & co. treat as "already installed"
+	// so they skip their runtime download — which is unreliable from networks
+	// with flaky egress to GitHub release hosts (same failure class as the
+	// dropped dl.google.com chrome bake). Runtime installs keep working for
+	// anything not listed here. Changing this list changes the image layout
+	// revision, so existing containers need `gh sr rebuild <name>`.
+	Toolcache []ContainerToolcacheEntry `yaml:"toolcache,omitempty"`
 	// MTU optionally forces the Docker network MTU for runner_mode: container — both the
 	// outer runner container's egress interface and the inner dockerd bridge. Leave unset
 	// (0) to auto-detect the host's egress MTU, which fixes the common reduced-MTU case
@@ -112,6 +136,8 @@ const (
 const (
 	maxContainerRunnerExtraAptPackages = 256
 	maxContainerRunnerAptPkgNameLen    = 200
+	maxContainerRunnerToolcacheEntries = 64
+	maxContainerRunnerToolcacheURLLen  = 2048
 )
 
 var debianPackageNamePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9+.-]*$`)
@@ -223,27 +249,94 @@ func validateContainerRunnerImage(img *ContainerRunnerImageConfig) error {
 	if err := validateDockerImageRef("container_runner_image.base_image", img.BaseImage); err != nil {
 		return err
 	}
-	if len(img.ExtraAptPackages) == 0 {
+	if len(img.ExtraAptPackages) > 0 {
+		if len(img.ExtraAptPackages) > maxContainerRunnerExtraAptPackages {
+			return fmt.Errorf("container_runner_image.extra_apt_packages: at most %d entries allowed (got %d)",
+				maxContainerRunnerExtraAptPackages, len(img.ExtraAptPackages))
+		}
+		for i, raw := range img.ExtraAptPackages {
+			p := strings.TrimSpace(raw)
+			if p == "" {
+				return fmt.Errorf("container_runner_image.extra_apt_packages[%d]: empty package name", i)
+			}
+			if len(p) > maxContainerRunnerAptPkgNameLen {
+				return fmt.Errorf("container_runner_image.extra_apt_packages[%d]: package name too long (max %d characters)",
+					i, maxContainerRunnerAptPkgNameLen)
+			}
+			if !debianPackageNamePattern.MatchString(p) {
+				return fmt.Errorf("container_runner_image.extra_apt_packages[%d]: invalid package name %q (use lowercase Debian package tokens: [a-z0-9+.-])", i, p)
+			}
+		}
+	}
+	return validateContainerToolcache(img.Toolcache)
+}
+
+// validateContainerToolcache checks the tool-cache bake list: https-only URLs,
+// relative traversal-free dirs (the bake extracts into
+// /home/runner/.toolcache/<dir> and writes <dir>.complete), and no two entries
+// targeting the same dir.
+func validateContainerToolcache(entries []ContainerToolcacheEntry) error {
+	if len(entries) == 0 {
 		return nil
 	}
-	if len(img.ExtraAptPackages) > maxContainerRunnerExtraAptPackages {
-		return fmt.Errorf("container_runner_image.extra_apt_packages: at most %d entries allowed (got %d)",
-			maxContainerRunnerExtraAptPackages, len(img.ExtraAptPackages))
+	if len(entries) > maxContainerRunnerToolcacheEntries {
+		return fmt.Errorf("container_runner_image.toolcache: at most %d entries allowed (got %d)",
+			maxContainerRunnerToolcacheEntries, len(entries))
 	}
-	for i, raw := range img.ExtraAptPackages {
-		p := strings.TrimSpace(raw)
-		if p == "" {
-			return fmt.Errorf("container_runner_image.extra_apt_packages[%d]: empty package name", i)
+	seenDirs := make(map[string]struct{}, len(entries))
+	for i, e := range entries {
+		field := fmt.Sprintf("container_runner_image.toolcache[%d]", i)
+		rawURL := strings.TrimSpace(e.URL)
+		if rawURL == "" {
+			return fmt.Errorf("%s.url: empty URL", field)
 		}
-		if len(p) > maxContainerRunnerAptPkgNameLen {
-			return fmt.Errorf("container_runner_image.extra_apt_packages[%d]: package name too long (max %d characters)",
-				i, maxContainerRunnerAptPkgNameLen)
+		if len(rawURL) > maxContainerRunnerToolcacheURLLen {
+			return fmt.Errorf("%s.url: URL too long (max %d characters)", field, maxContainerRunnerToolcacheURLLen)
 		}
-		if !debianPackageNamePattern.MatchString(p) {
-			return fmt.Errorf("container_runner_image.extra_apt_packages[%d]: invalid package name %q (use lowercase Debian package tokens: [a-z0-9+.-])", i, p)
+		if !strings.HasPrefix(rawURL, "https://") {
+			return fmt.Errorf("%s.url: must be an https:// URL (got %q)", field, rawURL)
 		}
+		if u, err := url.Parse(rawURL); err != nil || u.Host == "" {
+			return fmt.Errorf("%s.url: invalid URL %q", field, rawURL)
+		}
+		if strings.ContainsAny(rawURL, " \t\r\n") {
+			return fmt.Errorf("%s.url: URL must not contain whitespace", field)
+		}
+		dir, err := validateToolcacheDir(e.Dir)
+		if err != nil {
+			return fmt.Errorf("%s.dir: %w", field, err)
+		}
+		if e.Complete != "" {
+			if _, err := validateToolcacheDir(e.Complete); err != nil {
+				return fmt.Errorf("%s.complete: %w", field, err)
+			}
+		}
+		if _, dup := seenDirs[dir]; dup {
+			return fmt.Errorf("%s.dir: duplicate dir %q (each entry must target a distinct dir)", field, dir)
+		}
+		seenDirs[dir] = struct{}{}
 	}
 	return nil
+}
+
+// validateToolcacheDir enforces a relative, normalized, traversal-free path
+// under the tool cache root: no leading '/', no '.' or '..' segments, no
+// backslashes or whitespace, and already in canonical form (path.Clean(id) == id).
+func validateToolcacheDir(dir string) (string, error) {
+	d := strings.TrimSpace(dir)
+	if d == "" {
+		return "", fmt.Errorf("empty dir")
+	}
+	if len(d) > maxContainerRunnerAptPkgNameLen {
+		return "", fmt.Errorf("dir too long (max %d characters)", maxContainerRunnerAptPkgNameLen)
+	}
+	if strings.ContainsAny(d, "\\ \t\r\n") {
+		return "", fmt.Errorf("dir %q must be a relative path using '/' separators without whitespace", d)
+	}
+	if path.IsAbs(d) || path.Clean(d) != d || d == ".." || strings.HasPrefix(d, "../") || d == "." {
+		return "", fmt.Errorf("dir %q must be relative and must not contain '.' or '..' segments", d)
+	}
+	return d, nil
 }
 
 // CacheEnabled reports whether the per-host cache server should be deployed
@@ -319,6 +412,17 @@ func (c *Config) ContainerRunnerImageExtraAptPackages() []string {
 	}
 	out := make([]string, len(c.ContainerRunnerImage.ExtraAptPackages))
 	copy(out, c.ContainerRunnerImage.ExtraAptPackages)
+	return out
+}
+
+// ContainerRunnerImageToolcache returns a copy of the tool-cache bake list for
+// the container runner image build.
+func (c *Config) ContainerRunnerImageToolcache() []ContainerToolcacheEntry {
+	if c == nil {
+		return nil
+	}
+	out := make([]ContainerToolcacheEntry, len(c.ContainerRunnerImage.Toolcache))
+	copy(out, c.ContainerRunnerImage.Toolcache)
 	return out
 }
 

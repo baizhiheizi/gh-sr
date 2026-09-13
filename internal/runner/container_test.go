@@ -136,33 +136,64 @@ func TestContainerRunnerImageTag(t *testing.T) {
 	t.Parallel()
 	fork := DefaultForkRunnerImage
 	base := AgenticRunnerImageTag + ":2.337.0"
-	if got := ContainerRunnerImageTag(fork, nil); got != base {
+	if got := ContainerRunnerImageTag(fork, nil, nil); got != base {
 		t.Errorf("empty extras: got %q want %q", got, base)
 	}
-	if got := ContainerRunnerImageTag(fork, []string{}); got != base {
+	if got := ContainerRunnerImageTag(fork, []string{}, nil); got != base {
 		t.Errorf("empty slice: got %q want %q", got, base)
 	}
-	a := ContainerRunnerImageTag(fork, []string{"sqlite3", "ffmpeg"})
-	b := ContainerRunnerImageTag(fork, []string{"ffmpeg", "sqlite3"})
+	a := ContainerRunnerImageTag(fork, []string{"sqlite3", "ffmpeg"}, nil)
+	b := ContainerRunnerImageTag(fork, []string{"ffmpeg", "sqlite3"}, nil)
 	if a != b {
 		t.Errorf("order should not matter: %q vs %q", a, b)
 	}
-	if want := base + "-x908d9db2"; a != want {
+	if want := base + "-x658af759"; a != want {
 		t.Errorf("tag with extras: got %q want %q", a, want)
 	}
-	dup := ContainerRunnerImageTag(fork, []string{"curl", "curl"})
-	once := ContainerRunnerImageTag(fork, []string{"curl"})
+	dup := ContainerRunnerImageTag(fork, []string{"curl", "curl"}, nil)
+	once := ContainerRunnerImageTag(fork, []string{"curl"}, nil)
 	if dup != once {
 		t.Errorf("duplicates should be ignored: got %q vs %q", dup, once)
+	}
+	// Toolcache entries participate in the tag suffix too (a changed bake list
+	// must trigger a rebuild), and entry order must not matter.
+	toolcache := []config.ContainerToolcacheEntry{
+		{URL: "https://example.com/ruby.tar.gz", Dir: "Ruby/4.0.5/x64"},
+	}
+	if got := ContainerRunnerImageTag(fork, nil, toolcache); got != base+"-xd59d010e" {
+		t.Errorf("tag with toolcache: got %q want %q", got, base+"-xd59d010e")
+	}
+	withComplete := []config.ContainerToolcacheEntry{
+		{URL: "https://example.com/ruby.tar.gz", Dir: "Ruby/4.0.5", Complete: "Ruby/4.0.5/x64.complete"},
+	}
+	if got := ContainerRunnerImageTag(fork, nil, withComplete); got == ContainerRunnerImageTag(fork, nil, []config.ContainerToolcacheEntry{
+		{URL: "https://example.com/ruby.tar.gz", Dir: "Ruby/4.0.5"},
+	}) {
+		t.Error("a changed complete path must change the tag")
+	}
+	reordered := []config.ContainerToolcacheEntry{
+		{URL: "https://example.com/node.tar.gz", Dir: "node/24.20.0/x64"},
+		{URL: "https://example.com/ruby.tar.gz", Dir: "Ruby/4.0.5/x64"},
+	}
+	flipped := []config.ContainerToolcacheEntry{
+		{URL: "https://example.com/ruby.tar.gz", Dir: "Ruby/4.0.5/x64"},
+		{URL: "https://example.com/node.tar.gz", Dir: "node/24.20.0/x64"},
+	}
+	if got := ContainerRunnerImageTag(fork, nil, reordered); got != ContainerRunnerImageTag(fork, nil, flipped) {
+		t.Errorf("toolcache order should not matter: %q vs %q", got, ContainerRunnerImageTag(fork, nil, flipped))
+	}
+	both := ContainerRunnerImageTag(fork, []string{"sqlite3", "ffmpeg"}, toolcache)
+	if both != base+"-xe417eab0" {
+		t.Errorf("tag with extras+toolcache: got %q want %q", both, base+"-xe417eab0")
 	}
 	// A base_image bump must change the local tag (that is what triggers a rebuild):
 	// digest pins shorten to "d" + first 12 digest chars; untagged refs map to "latest".
 	digest := fork[:strings.LastIndex(fork, ":")] + "@sha256:" + strings.Repeat("ab", 32)
-	if got := ContainerRunnerImageTag(digest, nil); got != AgenticRunnerImageTag+":dabababababab" {
+	if got := ContainerRunnerImageTag(digest, nil, nil); got != AgenticRunnerImageTag+":dabababababab" {
 		t.Errorf("digest-pinned base: got %q, want %q", got, AgenticRunnerImageTag+":dabababababab")
 	}
 	untagged := "ghcr.io/falcondev-oss/actions-runner"
-	if got := ContainerRunnerImageTag(untagged, nil); got != AgenticRunnerImageTag+":latest" {
+	if got := ContainerRunnerImageTag(untagged, nil, nil); got != AgenticRunnerImageTag+":latest" {
 		t.Errorf("untagged base: got %q, want %q", got, AgenticRunnerImageTag+":latest")
 	}
 }
@@ -501,6 +532,19 @@ func TestAgenticRunnerDockerfileSymlinksHostedToolCache(t *testing.T) {
 	if !strings.Contains(agenticRunnerEntrypoint, `RUNNER_TOOL_CACHE="/home/runner/.toolcache"`) {
 		t.Fatal("entrypoint must keep RUNNER_TOOL_CACHE at /home/runner/.toolcache so the AWF mount guard continues to pass")
 	}
+	// The toolcache bake step must COPY the manifest (always present, even empty)
+	// and write the marker setup-ruby treats as "already installed" — default
+	// <dir>.complete, overridable per entry via the third manifest field.
+	for _, want := range []string{
+		"COPY toolcache-extra.txt /tmp/toolcache-extra.txt",
+		`[ -n "$complete" ] || complete="$dir.complete"`,
+		`touch "/home/runner/.toolcache/$complete"`,
+		"--retry-all-errors",
+	} {
+		if !strings.Contains(agenticRunnerDockerfile, want) {
+			t.Fatalf("Dockerfile should contain toolcache bake step: missing %q", want)
+		}
+	}
 }
 
 // TestAgenticRunnerEntrypointPinsMTU verifies the entrypoint pins the inner-bridge
@@ -671,9 +715,9 @@ func TestDockerCreateEnvLineIf(t *testing.T) {
 func TestBuildAgenticRunnerImageCmdShape(t *testing.T) {
 	t.Parallel()
 	baseImage := DefaultForkRunnerImage
-	imageTag := ContainerRunnerImageTag(baseImage, nil)
+	imageTag := ContainerRunnerImageTag(baseImage, nil, nil)
 	ghVer := "vtest"
-	rev := ContainerImageLayoutRevision(ghVer, baseImage, nil)
+	rev := ContainerImageLayoutRevision(ghVer, baseImage, nil, nil)
 	labelRev := hostshell.PosixSingleQuote(dockerLabelImageRevision + "=" + rev)
 	labelCLI := hostshell.PosixSingleQuote(dockerLabelCLIVersion + "=" + ghVer)
 
@@ -715,6 +759,29 @@ func TestEmbedTextForRemoteWriteStripsCR(t *testing.T) {
 	want := "automake\nbuild-essential\nGHSR_E0F\n"
 	if got := embedTextForRemoteWrite(in); got != want {
 		t.Fatalf("embedTextForRemoteWrite() = %q, want %q", got, want)
+	}
+}
+
+func TestContainerToolcacheExtraFile(t *testing.T) {
+	t.Parallel()
+	if got := containerToolcacheExtraFile(nil); got != "" {
+		t.Fatalf("nil list should render empty file body, got %q", got)
+	}
+	entries := []config.ContainerToolcacheEntry{
+		{URL: "https://example.com/node.tar.gz", Dir: "node/24.20.0/x64"},
+		{URL: "https://example.com/ruby.tar.gz", Dir: "Ruby/4.0.5", Complete: "Ruby/4.0.5/x64.complete"},
+	}
+	// Lines are "<url> <dir> [complete]" (the Dockerfile bake reads them with
+	// `read -r url dir complete`), sorted by dir so the fingerprint is
+	// order-independent; the third field only appears when Complete is set.
+	want := "https://example.com/ruby.tar.gz Ruby/4.0.5 Ruby/4.0.5/x64.complete\n" +
+		"https://example.com/node.tar.gz node/24.20.0/x64\n"
+	if got := containerToolcacheExtraFile(entries); got != want {
+		t.Fatalf("containerToolcacheExtraFile() =\n%q\nwant\n%q", got, want)
+	}
+	flipped := []config.ContainerToolcacheEntry{entries[1], entries[0]}
+	if got := containerToolcacheExtraFile(flipped); got != want {
+		t.Fatalf("entry order must not change the rendered file, got %q", got)
 	}
 }
 
@@ -874,22 +941,34 @@ func TestContainerLocalStatusImageAndRevision_one_ssh_round_trip(t *testing.T) {
 func TestContainerImageLayoutRevision_stable(t *testing.T) {
 	t.Parallel()
 	base := DefaultForkRunnerImage
-	a := ContainerImageLayoutRevision("1.0.0", base, []string{"curl"})
-	b := ContainerImageLayoutRevision("1.0.0", base, []string{"curl"})
+	a := ContainerImageLayoutRevision("1.0.0", base, []string{"curl"}, nil)
+	b := ContainerImageLayoutRevision("1.0.0", base, []string{"curl"}, nil)
 	if a != b {
 		t.Fatalf("expected stable revision, %q vs %q", a, b)
 	}
 	if len(a) != 12 {
 		t.Fatalf("expected 12 hex chars, got %q len %d", a, len(a))
 	}
-	if c := ContainerImageLayoutRevision("1.0.0", base, []string{"git"}); c == a {
+	if c := ContainerImageLayoutRevision("1.0.0", base, []string{"git"}, nil); c == a {
 		t.Fatal("different extras should change revision")
 	}
-	if c := ContainerImageLayoutRevision("1.0.0", "ghcr.io/falcondev-oss/actions-runner:9.9.9", []string{"curl"}); c == a {
+	if c := ContainerImageLayoutRevision("1.0.0", "ghcr.io/falcondev-oss/actions-runner:9.9.9", []string{"curl"}, nil); c == a {
 		t.Fatal("a different base image should change revision")
 	}
-	if c := ContainerImageLayoutRevision("1.0.1", base, []string{"curl"}); c == a {
+	if c := ContainerImageLayoutRevision("1.0.1", base, []string{"curl"}, nil); c == a {
 		t.Fatal("a different gh-sr version should change revision")
+	}
+	if c := ContainerImageLayoutRevision("1.0.0", base, []string{"curl"}, []config.ContainerToolcacheEntry{
+		{URL: "https://example.com/ruby.tar.gz", Dir: "Ruby/4.0.5/x64"},
+	}); c == a {
+		t.Fatal("a different toolcache bake list should change revision")
+	}
+	if c := ContainerImageLayoutRevision("1.0.0", base, []string{"curl"}, []config.ContainerToolcacheEntry{
+		{URL: "https://example.com/ruby.tar.gz", Dir: "Ruby/4.0.5/x64"},
+	}); c != ContainerImageLayoutRevision("1.0.0", base, []string{"curl"}, []config.ContainerToolcacheEntry{
+		{URL: "https://example.com/ruby.tar.gz", Dir: "Ruby/4.0.5/x64"},
+	}) {
+		t.Fatal("identical toolcache lists should produce identical revisions")
 	}
 }
 
@@ -1660,7 +1739,7 @@ func TestManager_resolveContainerImageInputs(t *testing.T) {
 	if baseImage != DefaultForkRunnerImage {
 		t.Errorf("baseImage: got %q, want %q", baseImage, DefaultForkRunnerImage)
 	}
-	wantTag := ContainerRunnerImageTag(DefaultForkRunnerImage, []string{"sqlite3", "ffmpeg"})
+	wantTag := ContainerRunnerImageTag(DefaultForkRunnerImage, []string{"sqlite3", "ffmpeg"}, nil)
 	if imageTag != wantTag {
 		t.Errorf("imageTag: got %q, want %q", imageTag, wantTag)
 	}
@@ -1671,7 +1750,7 @@ func TestManager_resolveContainerImageInputs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolveContainerImageInputs(override): %v", err)
 	}
-	if base2 != "ghcr.io/falcondev-oss/actions-runner:9.9.9" || tag2 != ContainerRunnerImageTag("ghcr.io/falcondev-oss/actions-runner:9.9.9", nil) {
+	if base2 != "ghcr.io/falcondev-oss/actions-runner:9.9.9" || tag2 != ContainerRunnerImageTag("ghcr.io/falcondev-oss/actions-runner:9.9.9", nil, nil) {
 		t.Errorf("override: got (%q, %q)", base2, tag2)
 	}
 

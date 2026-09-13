@@ -104,6 +104,32 @@ RUN mkdir -p /usr/local/lib/docker/cli-plugins /tmp/compose \
 RUN mkdir -p /home/runner/.toolcache && chown runner:runner /home/runner/.toolcache \
     && ln -s /home/runner/.toolcache /opt/hostedtoolcache
 
+# Optional tool-cache bake (runners.yml container_runner_image.toolcache; empty
+# file = no-op). Each line is "<tarball-url> <dir> [complete]" — paths relative
+# to /home/runner/.toolcache. The tarball is extracted as-is into <dir> and a
+# zero-byte marker is written at <complete> (default "<dir>.complete") —
+# setup-ruby & co. treat that marker as "already installed" and skip their
+# runtime download (GitHub-hosted images pre-seed rubies the same way). The
+# explicit form matters for self-wrapping archives: ruby-builder tarballs ship
+# a top-level x64/, so their entry is dir "Ruby/<ver>" + complete
+# "Ruby/<ver>/x64.complete", yielding Ruby/<ver>/x64/bin/ruby.
+# Downloads retry hard: build egress rides the same flaky upstream that breaks
+# job-time downloads, but here a failure is loud and attended (gh sr rebuild
+# can simply be re-run) instead of surfacing as repeated unattended CI failures —
+# the same trade-off that retired the dl.google.com chrome bake.
+COPY toolcache-extra.txt /tmp/toolcache-extra.txt
+RUN while read -r url dir complete; do \
+        [ -n "$url" ] || continue; \
+        [ -n "$complete" ] || complete="$dir.complete"; \
+        curl -fsSL --retry 8 --retry-all-errors --retry-delay 20 --connect-timeout 20 "$url" -o /tmp/toolcache.tar.gz \
+        && mkdir -p "/home/runner/.toolcache/$dir" "/home/runner/.toolcache/$(dirname "$complete")" \
+        && tar -xzf /tmp/toolcache.tar.gz -C "/home/runner/.toolcache/$dir" \
+        && touch "/home/runner/.toolcache/$complete" \
+        && chown -R runner:runner "/home/runner/.toolcache/$dir" "/home/runner/.toolcache/$complete" \
+        || exit 1; \
+    done < /tmp/toolcache-extra.txt \
+    && rm -f /tmp/toolcache-extra.txt /tmp/toolcache.tar.gz
+
 # Optional extra apt packages (from runners.yml; empty file skips this step)
 COPY apt-packages-extra.txt /tmp/apt-packages-extra.txt
 RUN apt-get update \

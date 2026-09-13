@@ -259,7 +259,7 @@ func TestManagerStatus_containerPopulatesImageAndBuild(t *testing.T) {
 		GhSrVersion: "1.2.3",
 		Out:         io.Discard,
 	}
-	expected := ContainerImageLayoutRevision(m.GhSrVersion, m.containerImageBaseImage(), m.containerImageExtraApt())
+	expected := ContainerImageLayoutRevision(m.GhSrVersion, m.containerImageBaseImage(), m.containerImageExtraApt(), m.containerImageToolcache())
 	mock := &testutil.MockExecutor{
 		RunFn: func(cmd string) (string, error) {
 			// containerLocalStatusOneShot runs its full pipeline as one

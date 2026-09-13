@@ -38,9 +38,9 @@ const (
 
 // ContainerImageLayoutRevision returns a short hex fingerprint of the embedded
 // container image layout (Dockerfile, apt manifest, entrypoint, job hooks), the
-// fork base image ref, gh-sr CLI version, and extra apt package list. It changes
-// when any of those inputs change.
-func ContainerImageLayoutRevision(ghSrVersion, baseImage string, extraApt []string) string {
+// fork base image ref, gh-sr CLI version, and the extra apt package + toolcache
+// bake lists. It changes when any of those inputs change.
+func ContainerImageLayoutRevision(ghSrVersion, baseImage string, extraApt []string, toolcache []config.ContainerToolcacheEntry) string {
 	if ghSrVersion == "" {
 		ghSrVersion = "unknown"
 	}
@@ -54,6 +54,7 @@ func ContainerImageLayoutRevision(ghSrVersion, baseImage string, extraApt []stri
 		b.WriteString(p)
 		b.WriteByte('\n')
 	}
+	b.WriteString(containerToolcacheExtraFile(toolcache))
 	b.WriteString(agenticRunnerDockerfile)
 	b.WriteString(agenticRunnerAptPackagesCore)
 	b.WriteString(agenticRunnerEntrypoint)
@@ -85,18 +86,53 @@ func containerRunnerImageExtraSorted(extra []string) []string {
 
 // ContainerRunnerImageTag returns the Docker image reference for the container runner
 // built on top of baseImage (e.g. gh-sr/agentic-runner:2.337.0 or
-// gh-sr/agentic-runner:2.337.0-xa1b2c3d when extras are set). The local tag derives
-// from the base image's tag so a base_image bump in runners.yml produces a new local
-// tag and triggers a rebuild.
-func ContainerRunnerImageTag(baseImage string, extraApt []string) string {
+// gh-sr/agentic-runner:2.337.0-xa1b2c3d when extras or toolcache entries are set).
+// The local tag derives from the base image's tag so a base_image bump in
+// runners.yml produces a new local tag and triggers a rebuild.
+func ContainerRunnerImageTag(baseImage string, extraApt []string, toolcache []config.ContainerToolcacheEntry) string {
 	base := fmt.Sprintf("%s:%s", AgenticRunnerImageTag, baseImageTag(baseImage))
 	sorted := containerRunnerImageExtraSorted(extraApt)
-	if len(sorted) == 0 {
+	extra := ""
+	if len(sorted) > 0 {
+		extra = strings.Join(sorted, "\n") + "\n"
+	}
+	toolcacheFile := containerToolcacheExtraFile(toolcache)
+	if extra == "" && toolcacheFile == "" {
 		return base
 	}
-	sum := sha256.Sum256([]byte(strings.Join(sorted, "\n")))
+	sum := sha256.Sum256([]byte(extra + toolcacheFile))
 	suffix := hex.EncodeToString(sum[:])[:8]
 	return base + "-x" + suffix
+}
+
+// containerToolcacheExtraFile renders the toolcache bake list as the
+// toolcache-extra.txt build-context file body: one "<url> <dir>" line per entry,
+// sorted by dir then URL for a deterministic fingerprint. Returns "" when the
+// list is empty (the caller then truncates the file instead of writing it).
+func containerToolcacheExtraFile(entries []config.ContainerToolcacheEntry) string {
+	if len(entries) == 0 {
+		return ""
+	}
+	sorted := make([]config.ContainerToolcacheEntry, len(entries))
+	copy(sorted, entries)
+	slices.SortFunc(sorted, func(a, b config.ContainerToolcacheEntry) int {
+		if c := strings.Compare(a.Dir, b.Dir); c != 0 {
+			return c
+		}
+		return strings.Compare(a.URL, b.URL)
+	})
+	var b strings.Builder
+	for _, e := range sorted {
+		b.WriteString(e.URL)
+		b.WriteByte(' ')
+		b.WriteString(e.Dir)
+		if e.Complete != "" {
+			b.WriteByte(' ')
+			b.WriteString(e.Complete)
+		}
+		b.WriteByte('\n')
+	}
+	return b.String()
 }
 
 // baseImageTag extracts the tag/digest portion of a container image reference for
@@ -992,7 +1028,7 @@ func (m *Manager) rebuildContainerImage(h *host.Host, rc config.RunnerConfig) er
 	_, _ = h.Run(fmt.Sprintf("docker rmi -f %s 2>/dev/null || true", hostshell.PosixSingleQuote(imageTag)))
 
 	fmt.Fprintf(m.out(), "  %s: building container runner image %s (this may take several minutes)...\n", rc.Name, imageTag)
-	if err := buildAgenticRunnerImage(h, imageTag, baseImage, m.GhSrVersion, m.containerImageExtraApt()); err != nil {
+	if err := buildAgenticRunnerImage(h, imageTag, baseImage, m.GhSrVersion, m.containerImageExtraApt(), m.containerImageToolcache()); err != nil {
 		return fmt.Errorf("building container runner image: %w", err)
 	}
 	fmt.Fprintf(m.out(), "  %s: image built: %s\n", rc.Name, imageTag)
@@ -1056,7 +1092,7 @@ func containerImageExists(h *host.Host, imageTag string) (bool, error) {
 // API round-trip is needed here and the build works offline.
 func (m *Manager) resolveContainerImageInputs(h *host.Host) (baseImage, imageTag string, err error) {
 	baseImage = m.containerImageBaseImage()
-	imageTag = ContainerRunnerImageTag(baseImage, m.containerImageExtraApt())
+	imageTag = ContainerRunnerImageTag(baseImage, m.containerImageExtraApt(), m.containerImageToolcache())
 	return baseImage, imageTag, nil
 }
 
@@ -1086,7 +1122,7 @@ func (m *Manager) buildRunnerImageIfMissing(h *host.Host, imageTag, baseImage st
 	if onBuild != nil {
 		onBuild()
 	}
-	if err := buildAgenticRunnerImage(h, imageTag, baseImage, m.GhSrVersion, m.containerImageExtraApt()); err != nil {
+	if err := buildAgenticRunnerImage(h, imageTag, baseImage, m.GhSrVersion, m.containerImageExtraApt(), m.containerImageToolcache()); err != nil {
 		return false, fmt.Errorf("building container runner image: %w", err)
 	}
 	return true, nil
@@ -1104,7 +1140,7 @@ func embedTextForRemoteWrite(s string) string {
 // buildAgenticRunnerImage uploads the embedded Dockerfile+entrypoint+hooks to the
 // host and builds the image via `docker build`, with baseImage (the fork runner
 // image ref) passed through as the FORK_RUNNER_IMAGE build-arg.
-func buildAgenticRunnerImage(h *host.Host, imageTag, baseImage, ghSrVersion string, extraApt []string) error {
+func buildAgenticRunnerImage(h *host.Host, imageTag, baseImage, ghSrVersion string, extraApt []string, toolcache []config.ContainerToolcacheEntry) error {
 	buildDir := "/tmp/gh-sr-agentic-runner-build"
 
 	// Write the 6 build-context files via the shared helpers. writeRemoteHeredocFile
@@ -1131,6 +1167,19 @@ func buildAgenticRunnerImage(h *host.Host, imageTag, baseImage, ghSrVersion stri
 		}
 	}
 
+	// toolcache-extra.txt feeds the Dockerfile bake step (COPYed unconditionally,
+	// so it must always exist). One "<url> <dir>" line per entry; empty (truncated)
+	// when no bake is configured.
+	toolcacheFile := containerToolcacheExtraFile(toolcache)
+	toolcachePath := buildDir + "/toolcache-extra.txt"
+	if toolcacheFile == "" {
+		if _, err := h.Run(formatEmptyRemoteFile(toolcachePath)); err != nil {
+			return fmt.Errorf("writing %s: %w", toolcachePath, err)
+		}
+	} else if err := writeRemoteHeredocFile(h, toolcachePath, toolcacheFile); err != nil {
+		return err
+	}
+
 	if err := writeRemoteHeredocExecutable(h, buildDir+"/entrypoint.sh", agenticRunnerEntrypoint); err != nil {
 		return err
 	}
@@ -1150,7 +1199,7 @@ func buildAgenticRunnerImage(h *host.Host, imageTag, baseImage, ghSrVersion stri
 	}
 
 	// Build (stamp labels so gh sr status can compare layout to this binary).
-	rev := ContainerImageLayoutRevision(ghSrVersion, baseImage, extraApt)
+	rev := ContainerImageLayoutRevision(ghSrVersion, baseImage, extraApt, toolcache)
 	labelRev := hostshell.PosixSingleQuote(dockerLabelImageRevision + "=" + rev)
 	labelCLI := hostshell.PosixSingleQuote(dockerLabelCLIVersion + "=" + ghSrVersion)
 	buildCmd := fmt.Sprintf(
