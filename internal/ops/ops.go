@@ -151,6 +151,7 @@ func applyContainerImageExtras(mgr *runner.Manager, cfg *config.Config) {
 	if cfg == nil {
 		mgr.ContainerImageBaseImage = ""
 		mgr.ContainerImageExtraApt = nil
+		mgr.ContainerImageToolcache = nil
 		mgr.ContainerMTU = 0
 		mgr.ContainerDockerdStartTimeout = 0
 		mgr.ContainerBootstrapMaxRetries = 0
@@ -160,6 +161,7 @@ func applyContainerImageExtras(mgr *runner.Manager, cfg *config.Config) {
 	}
 	mgr.ContainerImageBaseImage = cfg.ContainerRunnerImageBaseImage()
 	mgr.ContainerImageExtraApt = cfg.ContainerRunnerImageExtraAptPackages()
+	mgr.ContainerImageToolcache = cfg.ContainerRunnerImageToolcache()
 	mgr.ContainerMTU = cfg.ContainerRunnerImageMTU()
 	mgr.ContainerDockerdStartTimeout = cfg.ContainerRunnerImageDockerdStartTimeout()
 	mgr.ContainerBootstrapMaxRetries = cfg.ContainerRunnerImageBootstrapMaxRetries()

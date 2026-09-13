@@ -1026,6 +1026,77 @@ func TestValidate_containerRunnerImage_extraApt_tooMany(t *testing.T) {
 	}
 }
 
+func TestValidate_containerRunnerImage_toolcache(t *testing.T) {
+	t.Parallel()
+	valid := ContainerToolcacheEntry{
+		URL: "https://github.com/ruby/ruby-builder/releases/download/ruby-4.0.5/ruby-4.0.5-ubuntu-24.04-x64.tar.gz",
+		Dir: "Ruby/4.0.5/x64",
+	}
+	cases := []struct {
+		name    string
+		entries []ContainerToolcacheEntry
+		wantErr bool
+	}{
+		{"nil list", nil, false},
+		{"valid entry", []ContainerToolcacheEntry{valid}, false},
+		{"nested dir", []ContainerToolcacheEntry{{URL: "https://example.com/t.tar.gz", Dir: "a/b/c"}}, false},
+		{"valid complete", []ContainerToolcacheEntry{{URL: "https://example.com/r.tar.gz", Dir: "Ruby/4.0.5", Complete: "Ruby/4.0.5/x64.complete"}}, false},
+		{"traversal complete", []ContainerToolcacheEntry{{URL: "https://example.com/t.tar.gz", Dir: "Ruby/4.0.5", Complete: "../x64.complete"}}, true},
+		{"absolute complete", []ContainerToolcacheEntry{{URL: "https://example.com/t.tar.gz", Dir: "Ruby/4.0.5", Complete: "/Ruby/x64.complete"}}, true},
+		{"http rejected", []ContainerToolcacheEntry{{URL: "http://example.com/t.tar.gz", Dir: "Ruby/x64"}}, true},
+		{"no scheme", []ContainerToolcacheEntry{{URL: "example.com/t.tar.gz", Dir: "Ruby/x64"}}, true},
+		{"empty url", []ContainerToolcacheEntry{{URL: "  ", Dir: "Ruby/x64"}}, true},
+		{"url without host", []ContainerToolcacheEntry{{URL: "https://", Dir: "Ruby/x64"}}, true},
+		{"url with space", []ContainerToolcacheEntry{{URL: "https://example.com/a b.tar.gz", Dir: "Ruby/x64"}}, true},
+		{"empty dir", []ContainerToolcacheEntry{{URL: "https://example.com/t.tar.gz", Dir: ""}}, true},
+		{"absolute dir", []ContainerToolcacheEntry{{URL: "https://example.com/t.tar.gz", Dir: "/opt/Ruby"}}, true},
+		{"traversal dir", []ContainerToolcacheEntry{{URL: "https://example.com/t.tar.gz", Dir: "../Ruby"}}, true},
+		{"dot segment dir", []ContainerToolcacheEntry{{URL: "https://example.com/t.tar.gz", Dir: "Ruby/./x64"}}, true},
+		{"trailing slash dir", []ContainerToolcacheEntry{{URL: "https://example.com/t.tar.gz", Dir: "Ruby/x64/"}}, true},
+		{"backslash dir", []ContainerToolcacheEntry{{URL: "https://example.com/t.tar.gz", Dir: `Ruby\4.0.5`}}, true},
+		{"space in dir", []ContainerToolcacheEntry{{URL: "https://example.com/t.tar.gz", Dir: "Ruby 4/x64"}}, true},
+		{"duplicate dirs", []ContainerToolcacheEntry{
+			{URL: "https://example.com/a.tar.gz", Dir: "Ruby/x64"},
+			{URL: "https://example.com/b.tar.gz", Dir: "Ruby/x64"},
+		}, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			cfg := Config{
+				Hosts:   map[string]HostConfig{"h": {Addr: "local", OS: "linux", Arch: "amd64"}},
+				Runners: []RunnerConfig{{Name: "r", Repo: "o/r", Host: "h"}},
+				ContainerRunnerImage: ContainerRunnerImageConfig{
+					Toolcache: tc.entries,
+				},
+			}
+			err := cfg.Validate()
+			if tc.wantErr && err == nil {
+				t.Fatalf("%s: expected error, got nil", tc.name)
+			}
+			if !tc.wantErr && err != nil {
+				t.Fatalf("%s: unexpected error: %v", tc.name, err)
+			}
+		})
+	}
+}
+
+func TestValidate_containerRunnerImage_toolcache_tooMany(t *testing.T) {
+	t.Parallel()
+	entries := make([]ContainerToolcacheEntry, maxContainerRunnerToolcacheEntries+1)
+	for i := range entries {
+		entries[i] = ContainerToolcacheEntry{URL: fmt.Sprintf("https://example.com/t%d.tar.gz", i), Dir: fmt.Sprintf("d%d", i)}
+	}
+	cfg := Config{
+		Hosts:                map[string]HostConfig{"h": {Addr: "local", OS: "linux", Arch: "amd64"}},
+		Runners:              []RunnerConfig{{Name: "r", Repo: "o/r", Host: "h"}},
+		ContainerRunnerImage: ContainerRunnerImageConfig{Toolcache: entries},
+	}
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected error when toolcache exceeds max")
+	}
+}
+
 func TestValidate_containerRunnerImage_mtu(t *testing.T) {
 	t.Parallel()
 	cases := []struct {

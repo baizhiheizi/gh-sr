@@ -95,6 +95,7 @@ runners:
 
 - `count: N` gives N isolated runner containers (`gh-sr-my-agentic-1` … `-N`) — that is your same-host concurrency. No port or label juggling is required.
 - Optional extra image packages: set a global `container_runner_image.extra_apt_packages` list (Debian package names) in `runners.yml`; the image tag gains a suffix so Docker rebuilds.
+- Optional tool-cache bake: set a global `container_runner_image.toolcache` list (`url` + `dir`) to pre-extract tool tarballs (e.g. a `ruby-builder` release) into the image tool cache with the `.complete` marker setup actions look for — jobs then skip the runtime download entirely. Useful on networks where GitHub release downloads fail intermittently; see the config reference.
 - Reduced-MTU networks (cloud overlay / VPN / nested virt) are handled automatically — `gh sr` detects the host egress MTU and pins the container's inner/outer Docker MTU to it. Override with `container_runner_image.mtu` only when the host NIC hides a smaller path MTU (see §4).
 
 ### Pointing workflows at the runner
@@ -168,7 +169,7 @@ Applying the setting to existing runners requires recreating their containers (`
 
 - **Docker CE** (the inner `dockerd` for DinD) — the daemon starts exactly once at container boot, with no baked daemon.json beyond an MTU pin when the host needs one. The runner user (uid 1001) is in the base image's `docker` group, so gh-aw's MCP gateway can mount and use `/var/run/docker.sock` without sudo.
 - **Node.js LTS** (accelerates first jobs; the compiler still emits its own `setup-node`), **zstd** (actions/cache archives), **gh**, and the `extra_apt_packages` you configure.
-- **Tool cache relocation**: `RUNNER_TOOL_CACHE=/home/runner/.toolcache` (an officially supported non-`/opt` path) with an `/opt/hostedtoolcache` symlink, so legacy setup actions keep working while gh-aw's `buildToolCacheMountSettings` mounts the real path read-only into agent sandboxes.
+- **Tool cache relocation**: `RUNNER_TOOL_CACHE=/home/runner/.toolcache` (an officially supported non-`/opt` path) with an `/opt/hostedtoolcache` symlink, so legacy setup actions keep working while gh-aw's `buildToolCacheMountSettings` mounts the real path read-only into agent sandboxes. The `container_runner_image.toolcache` config list pre-extracts tool tarballs (with their `.complete` markers) into this cache at build time, so setup actions skip runtime downloads.
 - **Per-job reset hooks** at `/opt/gh-sr/hooks/job-started.sh` and `/opt/gh-sr/hooks/job-completed.sh`, wired via the runner `.env`.
 - **Cache wiring**: when the per-host cache server is enabled (default), `CUSTOM_ACTIONS_RESULTS_URL` is injected so `actions/cache` hits the local server (see [Local Actions cache](local-cache.md)).
 - **MTU pinning** for hosts whose egress path MTU is below 1500 (cloud overlays like GCP's 1460, VPN/WireGuard, nested virtualisation). At `docker create` time `gh sr` detects the host's primary egress-interface MTU and injects it as `GH_SR_HOST_MTU`; `entrypoint.sh` writes a minimal `daemon.json` (`mtu` only) and pins the outer container's `eth0` — both strictly before the single `dockerd` start. This makes TCP advertise a matching MSS in both directions so large packets fit.

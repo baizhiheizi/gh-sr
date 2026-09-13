@@ -15,6 +15,6 @@ import (
 func BenchmarkContainerImageLayoutRevision(b *testing.B) {
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
-		_ = ContainerImageLayoutRevision("dev", DefaultForkRunnerImage, []string{"git", "curl", "jq"})
+		_ = ContainerImageLayoutRevision("dev", DefaultForkRunnerImage, []string{"git", "curl", "jq"}, nil)
 	}
 }

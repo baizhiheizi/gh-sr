@@ -25,6 +25,10 @@ type Manager struct {
 	// ContainerImageExtraApt is global extra apt packages for the gh-sr/agentic-runner
 	// image (from runners.yml container_runner_image). Set by ops before container setup.
 	ContainerImageExtraApt []string
+	// ContainerImageToolcache is the global tool-cache bake list for the
+	// gh-sr/agentic-runner image (from runners.yml container_runner_image.toolcache).
+	// Set by ops before container setup.
+	ContainerImageToolcache []config.ContainerToolcacheEntry
 	// ContainerImageBaseImage is the base (fork) runner image the gh-sr/agentic-runner
 	// image derives FROM (from runners.yml container_runner_image.base_image). Empty
 	// means the DefaultForkRunnerImage constant; see containerImageBaseImage().
@@ -90,6 +94,14 @@ func (m *Manager) containerImageExtraApt() []string {
 		return nil
 	}
 	return m.ContainerImageExtraApt
+}
+
+// containerImageToolcache returns the configured tool-cache bake list (nil-safe).
+func (m *Manager) containerImageToolcache() []config.ContainerToolcacheEntry {
+	if m == nil {
+		return nil
+	}
+	return m.ContainerImageToolcache
 }
 
 // containerImageBaseImage returns the configured fork base image, defaulting to
@@ -322,7 +334,7 @@ func (m *Manager) Status(h *host.Host, rc config.RunnerConfig) ([]RunnerStatus, 
 
 	var expectedLayoutRev string
 	if isContainer {
-		expectedLayoutRev = ContainerImageLayoutRevision(m.GhSrVersion, m.containerImageBaseImage(), m.containerImageExtraApt())
+		expectedLayoutRev = ContainerImageLayoutRevision(m.GhSrVersion, m.containerImageBaseImage(), m.containerImageExtraApt(), m.containerImageToolcache())
 	}
 
 	names := rc.InstanceNames()
