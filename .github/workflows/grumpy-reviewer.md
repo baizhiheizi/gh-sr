@@ -35,15 +35,15 @@ runs-on:
 runs-on-slim:
   - self-hosted
   - agentic
-source: githubnext/agentics/workflows/grumpy-reviewer.md@1c6668b751c51af8571f01204ceffb19362e0f66
 timeout-minutes: 10
 tools:
   cache-memory: true
   github:
-    lockdown: true
+    min-integrity: approved
     toolsets:
       - pull_requests
       - repos
+source: githubnext/agentics/workflows/grumpy-reviewer.md@4bc8419fad05e6b032741cbfd189986700bcf71c
 ---
 
 # Grumpy Code Reviewer 🔥

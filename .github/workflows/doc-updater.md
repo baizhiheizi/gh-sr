@@ -4,9 +4,9 @@ on:
     pull-requests: read
   schedule: weekly on monday around 1:00 utc+8
   steps:
-    - env:
+    - id: check
+      env:
         GH_TOKEN: ${{ github.token }}
-      id: check
       run: |
         MAX_OPEN_PRS=8
         if [[ "$GITHUB_EVENT_NAME" != "schedule" ]]; then exit 0; fi
@@ -51,7 +51,6 @@ runs-on:
 runs-on-slim:
   - self-hosted
   - agentic
-source: githubnext/agentics/workflows/doc-updater.md@1c6668b751c51af8571f01204ceffb19362e0f66
 timeout-minutes: 30
 tools:
   bash: true
@@ -59,6 +58,7 @@ tools:
   github:
     toolsets:
       - default
+source: githubnext/agentics/workflows/doc-updater.md@4bc8419fad05e6b032741cbfd189986700bcf71c
 ---
 
 # Documentation Updater

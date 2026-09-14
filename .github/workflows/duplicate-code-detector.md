@@ -32,7 +32,7 @@ runs-on:
 runs-on-slim:
   - self-hosted
   - agentic
-source: githubnext/agentics/workflows/duplicate-code-detector.md@1c6668b751c51af8571f01204ceffb19362e0f66
+source: githubnext/agentics/workflows/duplicate-code-detector.md@4bc8419fad05e6b032741cbfd189986700bcf71c
 timeout-minutes: 15
 ---
 

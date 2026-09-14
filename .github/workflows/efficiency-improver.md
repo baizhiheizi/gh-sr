@@ -5,9 +5,9 @@ on:
   reaction: eyes
   schedule: weekly on wednesday around 2:00 utc+8
   steps:
-    - env:
+    - id: check
+      env:
         GH_TOKEN: ${{ github.token }}
-      id: check
       run: |
         MAX_OPEN_PRS=8
         if [[ "$GITHUB_EVENT_NAME" != "schedule" ]]; then exit 0; fi
@@ -68,7 +68,6 @@ runs-on:
 runs-on-slim:
   - self-hosted
   - agentic
-source: githubnext/agentics/workflows/efficiency-improver.md@1c6668b751c51af8571f01204ceffb19362e0f66
 timeout-minutes: 60
 tools:
   bash: true
@@ -77,6 +76,7 @@ tools:
       - all
   repo-memory: true
   web-fetch: null
+source: githubnext/agentics/workflows/efficiency-improver.md@4bc8419fad05e6b032741cbfd189986700bcf71c
 ---
 
 # Efficiency Improver
