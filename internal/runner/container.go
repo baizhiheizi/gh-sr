@@ -106,9 +106,10 @@ func ContainerRunnerImageTag(baseImage string, extraApt []string, toolcache []co
 }
 
 // containerToolcacheExtraFile renders the toolcache bake list as the
-// toolcache-extra.txt build-context file body: one "<url> <dir>" line per entry,
-// sorted by dir then URL for a deterministic fingerprint. Returns "" when the
-// list is empty (the caller then truncates the file instead of writing it).
+// toolcache-extra.txt build-context file body: one "<url> <dir> [complete]
+// [strip]" line per entry, sorted by dir then URL for a deterministic
+// fingerprint. Returns "" when the list is empty (the caller then truncates
+// the file instead of writing it).
 func containerToolcacheExtraFile(entries []config.ContainerToolcacheEntry) string {
 	if len(entries) == 0 {
 		return ""
@@ -129,6 +130,14 @@ func containerToolcacheExtraFile(entries []config.ContainerToolcacheEntry) strin
 		if e.Complete != "" {
 			b.WriteByte(' ')
 			b.WriteString(e.Complete)
+		}
+		// The fourth field only appears when strip is set, so legacy
+		// 3-field-only lists render byte-identically (and fingerprint
+		// identically) to pre-strip output; the bake loop defaults a
+		// missing/empty fourth field to 0.
+		if e.Strip != 0 {
+			b.WriteByte(' ')
+			b.WriteString(strconv.Itoa(e.Strip))
 		}
 		b.WriteByte('\n')
 	}

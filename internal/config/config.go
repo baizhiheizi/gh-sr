@@ -73,10 +73,17 @@ type CacheConfig struct {
 // Set it when the archive extracts into a parent of the tool dir — e.g. the
 // ruby-builder tarballs ship a top-level x64/ wrapper, so Dir is "Ruby/<ver>"
 // and Complete is "Ruby/<ver>/x64.complete".
+// Strip is the optional tar --strip-components count (default 0): set it to 1
+// when the archive wraps everything in a single top-level version directory
+// the consumer's probe path must not see — e.g. an Adoptium JDK tarball
+// (jdk-<v>+<b>/) with Dir "jdk-temurin-17" then extracts as a bare tool dir.
 type ContainerToolcacheEntry struct {
 	URL      string `yaml:"url"`
 	Dir      string `yaml:"dir"`
 	Complete string `yaml:"complete,omitempty"`
+	// Strip is the tar --strip-components count applied at extraction
+	// (0 = extract the archive as-is). Bounded 0–16.
+	Strip int `yaml:"strip,omitempty"`
 }
 
 // ContainerRunnerImageConfig controls optional customization of the locally built
@@ -138,6 +145,9 @@ const (
 	maxContainerRunnerAptPkgNameLen    = 200
 	maxContainerRunnerToolcacheEntries = 64
 	maxContainerRunnerToolcacheURLLen  = 2048
+	// maxContainerRunnerToolcacheStripComponents caps the per-entry tar
+	// --strip-components count (GNU tar's own documented sane upper bound).
+	maxContainerRunnerToolcacheStripComponents = 16
 )
 
 var debianPackageNamePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9+.-]*$`)
@@ -310,6 +320,10 @@ func validateContainerToolcache(entries []ContainerToolcacheEntry) error {
 			if _, err := validateToolcacheDir(e.Complete); err != nil {
 				return fmt.Errorf("%s.complete: %w", field, err)
 			}
+		}
+		if e.Strip < 0 || e.Strip > maxContainerRunnerToolcacheStripComponents {
+			return fmt.Errorf("%s.strip: must be between 0 and %d (got %d)",
+				field, maxContainerRunnerToolcacheStripComponents, e.Strip)
 		}
 		if _, dup := seenDirs[dir]; dup {
 			return fmt.Errorf("%s.dir: duplicate dir %q (each entry must target a distinct dir)", field, dir)

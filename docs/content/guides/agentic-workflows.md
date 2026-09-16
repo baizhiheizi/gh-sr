@@ -95,7 +95,7 @@ runners:
 
 - `count: N` gives N isolated runner containers (`gh-sr-my-agentic-1` … `-N`) — that is your same-host concurrency. No port or label juggling is required.
 - Optional extra image packages: set a global `container_runner_image.extra_apt_packages` list (Debian package names) in `runners.yml`; the image tag gains a suffix so Docker rebuilds.
-- Optional tool-cache bake: set a global `container_runner_image.toolcache` list (`url` + `dir`) to pre-extract tool tarballs (e.g. a `ruby-builder` release) into the image tool cache with the `.complete` marker setup actions look for — jobs then skip the runtime download entirely. Useful on networks where GitHub release downloads fail intermittently; see the config reference.
+- Optional tool-cache bake: set a global `container_runner_image.toolcache` list (`url` + `dir`, optional `complete`/`strip`) to pre-extract tool tarballs (`tar.gz` or `tar.xz` — e.g. a `ruby-builder` release, a Flutter SDK, or an Adoptium JDK) into the image tool cache with the `.complete` marker setup actions look for — jobs then skip the runtime download entirely. Useful on networks where GitHub release downloads fail intermittently; see the config reference.
 - Reduced-MTU networks (cloud overlay / VPN / nested virt) are handled automatically — `gh sr` detects the host egress MTU and pins the container's inner/outer Docker MTU to it. Override with `container_runner_image.mtu` only when the host NIC hides a smaller path MTU (see §4).
 
 ### Pointing workflows at the runner

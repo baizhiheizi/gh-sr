@@ -171,6 +171,22 @@ func TestContainerRunnerImageTag(t *testing.T) {
 	}) {
 		t.Error("a changed complete path must change the tag")
 	}
+	// The strip field serializes into the bake list the tag suffix folds, so
+	// adding or changing it must change the tag (that is what makes existing
+	// deployments report stale until `gh sr rebuild`).
+	withStrip := []config.ContainerToolcacheEntry{
+		{URL: "https://example.com/jdk.tar.gz", Dir: "jdk-temurin-17", Strip: 1},
+	}
+	if got := ContainerRunnerImageTag(fork, nil, withStrip); got == ContainerRunnerImageTag(fork, nil, []config.ContainerToolcacheEntry{
+		{URL: "https://example.com/jdk.tar.gz", Dir: "jdk-temurin-17"},
+	}) {
+		t.Error("a changed strip count must change the tag")
+	}
+	if got := ContainerRunnerImageTag(fork, nil, withStrip); got == ContainerRunnerImageTag(fork, nil, []config.ContainerToolcacheEntry{
+		{URL: "https://example.com/jdk.tar.gz", Dir: "jdk-temurin-17", Strip: 2},
+	}) {
+		t.Error("a different strip count must change the tag")
+	}
 	reordered := []config.ContainerToolcacheEntry{
 		{URL: "https://example.com/node.tar.gz", Dir: "node/24.20.0/x64"},
 		{URL: "https://example.com/ruby.tar.gz", Dir: "Ruby/4.0.5/x64"},
@@ -195,6 +211,31 @@ func TestContainerRunnerImageTag(t *testing.T) {
 	untagged := "ghcr.io/falcondev-oss/actions-runner"
 	if got := ContainerRunnerImageTag(untagged, nil, nil); got != AgenticRunnerImageTag+":latest" {
 		t.Errorf("untagged base: got %q, want %q", got, AgenticRunnerImageTag+":latest")
+	}
+}
+
+// TestContainerImageLayoutRevision_toolcacheStrip asserts the layout
+// fingerprint folds the serialized bake list including the strip field: a
+// non-zero (or changed) strip count changes the revision — which is what makes
+// `gh sr status` report BUILD stale after a bake-list edit, since
+// Manager.Status compares this revision against the revision recorded on the
+// deployed container.
+func TestContainerImageLayoutRevision_toolcacheStrip(t *testing.T) {
+	t.Parallel()
+	fork := DefaultForkRunnerImage
+	entry := func(strip int) []config.ContainerToolcacheEntry {
+		return []config.ContainerToolcacheEntry{
+			{URL: "https://example.com/jdk.tar.gz", Dir: "jdk-temurin-17", Strip: strip},
+		}
+	}
+	noStrip := ContainerImageLayoutRevision("dev", fork, nil, entry(0))
+	strip1 := ContainerImageLayoutRevision("dev", fork, nil, entry(1))
+	strip2 := ContainerImageLayoutRevision("dev", fork, nil, entry(2))
+	if noStrip == strip1 {
+		t.Fatal("adding strip must change the layout revision")
+	}
+	if strip1 == strip2 {
+		t.Fatal("a different strip count must change the layout revision")
 	}
 }
 
@@ -770,18 +811,27 @@ func TestContainerToolcacheExtraFile(t *testing.T) {
 	entries := []config.ContainerToolcacheEntry{
 		{URL: "https://example.com/node.tar.gz", Dir: "node/24.20.0/x64"},
 		{URL: "https://example.com/ruby.tar.gz", Dir: "Ruby/4.0.5", Complete: "Ruby/4.0.5/x64.complete"},
+		{URL: "https://example.com/jdk.tar.gz", Dir: "jdk-temurin-17", Strip: 1},
 	}
-	// Lines are "<url> <dir> [complete]" (the Dockerfile bake reads them with
-	// `read -r url dir complete`), sorted by dir so the fingerprint is
-	// order-independent; the third field only appears when Complete is set.
+	// Lines are "<url> <dir> [complete] [strip]" (the Dockerfile bake reads
+	// them with `read -r url dir complete strip`), sorted by dir so the
+	// fingerprint is order-independent; the third field only appears when
+	// Complete is set, the fourth only when Strip is non-zero.
 	want := "https://example.com/ruby.tar.gz Ruby/4.0.5 Ruby/4.0.5/x64.complete\n" +
+		"https://example.com/jdk.tar.gz jdk-temurin-17 1\n" +
 		"https://example.com/node.tar.gz node/24.20.0/x64\n"
 	if got := containerToolcacheExtraFile(entries); got != want {
 		t.Fatalf("containerToolcacheExtraFile() =\n%q\nwant\n%q", got, want)
 	}
-	flipped := []config.ContainerToolcacheEntry{entries[1], entries[0]}
+	flipped := []config.ContainerToolcacheEntry{entries[1], entries[0], entries[2]}
 	if got := containerToolcacheExtraFile(flipped); got != want {
 		t.Fatalf("entry order must not change the rendered file, got %q", got)
+	}
+	// Legacy entries (no Complete, no Strip) must render exactly as they did
+	// before the strip field existed: existing bake lists keep their fingerprint.
+	legacy := []config.ContainerToolcacheEntry{{URL: "https://example.com/node.tar.gz", Dir: "node/24.20.0/x64"}}
+	if got, want := containerToolcacheExtraFile(legacy), "https://example.com/node.tar.gz node/24.20.0/x64\n"; got != want {
+		t.Fatalf("legacy 2-field line changed: got %q, want %q", got, want)
 	}
 }
 
