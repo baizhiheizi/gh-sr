@@ -67,4 +67,6 @@ tar
 uidmap
 unzip
 wget
+# decompressor for toolcache bake entries ending in .tar.xz (e.g. Flutter)
+xz-utils
 zstd
