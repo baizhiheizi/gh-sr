@@ -796,7 +796,7 @@ func wrapLines(s string, width int) []string {
 		width = 80
 	}
 	var out []string
-	for _, line := range strings.Split(s, "\n") {
+	for line := range strings.SplitSeq(s, "\n") {
 		rest := line
 		for len(rest) > width {
 			out = append(out, rest[:width])
