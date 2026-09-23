@@ -721,14 +721,15 @@ func FormatRemediation(failure PrereqFailure) string {
 	}
 	sb.WriteString(failure.Message)
 	sb.WriteString("\n\n")
-	lines := strings.Split(failure.Remediation, "\n")
-	for i, line := range lines {
+	i := 0
+	for line := range strings.SplitSeq(failure.Remediation, "\n") {
 		if i == 0 {
 			sb.WriteString("  To fix:\n")
 		}
 		sb.WriteString("    ")
 		sb.WriteString(line)
 		sb.WriteString("\n")
+		i++
 	}
 	return sb.String()
 }
