@@ -1,0 +1,1 @@
+- [Efficiency Improver state](state.md) — last run summary, discovered commands, validated optimization patterns, and backlog for baizhiheizi/gh-sr
