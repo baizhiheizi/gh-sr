@@ -1,6 +1,9 @@
 package tui
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 // rowSamples mimics the column count of the runner-status table (9 columns).
 // A typical TUI session renders this many cells per row × one row per host on
@@ -61,5 +64,41 @@ func BenchmarkRenderHighlightedRow(b *testing.B) {
 		for _, s := range rowSamples {
 			_ = renderHighlightedRow(s.cells, s.widths, colorizePassthrough)
 		}
+	}
+}
+
+// productionRowSample mirrors BenchmarkViewMain's dashboard state: one row
+// with the same per-cell contents the production runnerStatusColorize will
+// transform (LOCAL="running" and GITHUB="online" hit the styled branches).
+var productionRowSample = struct {
+	cells  []string
+	widths []int
+}{
+	cells:  []string{"runner-1", "host1.example", "o/r1", "container", "gh-sr/agentic-runner:2.320.0", "-", "running", "online", "self-hosted,linux,x64"},
+	widths: []int{8, 16, 8, 9, 28, 1, 8, 7, 21},
+}
+
+// BenchmarkRenderHighlightedRowProduction colors the same way the dashboard
+// does: each cell goes through runnerStatusColorize (the production colorize),
+// so the styled branches (LOCAL, GITHUB) actually invoke statusRunning.Render
+// / statusOnline.Render on top of the per-cell padding+background render.
+// This is the closest microbench analogue to the cursor-row of viewMain().
+func BenchmarkRenderHighlightedRowProduction(b *testing.B) {
+	var sb strings.Builder
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		renderHighlightedRowInto(&sb, productionRowSample.cells, productionRowSample.widths, runnerStatusColorize)
+		sb.Reset()
+	}
+}
+
+// BenchmarkRenderRowProduction is the non-highlighted counterpart of
+// BenchmarkRenderHighlightedRowProduction for side-by-side comparison.
+func BenchmarkRenderRowProduction(b *testing.B) {
+	var sb strings.Builder
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		renderRowInto(&sb, productionRowSample.cells, productionRowSample.widths, runnerStatusColorize)
+		sb.Reset()
 	}
 }
