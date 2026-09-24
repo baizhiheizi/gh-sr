@@ -31,11 +31,24 @@ All 7 tasks completed in a single run (fresh repo, no prior state).
 - ✅ Task 6 (Measurement infra): added `internal/runner/runner_probe_bench_test.go` (5 sub-benches covering healthy/inner-down/user-systemd/system-systemd/with-dir cases). Side-effect of Task 3.
 - ✅ Task 7 (Monthly summary): updating issue #459 this run — removes merged PR #458 action item, adds new SplitSeq probe PR action item, prepends run history entry.
 
+## 2026-09-24 (run_id 36067889544) — Fourth perf-improver run
+
+Took the **TUI render low-alloc** path (backlog item #1 / item #2 from prior runs). The remaining `strings.Split(out, "\n")` offenders flagged at run 3 (`autostart.go`, `agentic.go`, `lockfiles.go`, `main.go`, `tui/dashboard.go:799` `wrapLines`) are all legitimate slice-index uses (or are now covered by the efficiency-improver's PR #498), so the SplitSeq backlog is closed from perf-improver's perspective.
+
+- ✅ Task 1 (Discover commands): re-validated `go build`, `gofmt -l .`, `go vet` all OK. Commands in [[perf-improver-commands]] still current. Note that `go.mod` requires `go >= 1.26.0`; use `GOTOOLCHAIN=auto` so the toolchain auto-fetches.
+- ✅ Task 2 (Identify opportunities): picked up at top of [[perf-improver-opportunities]]. Profiled `BenchmarkViewMain/one_status` (322 allocs/op, 96% from lipgloss internals). Decided to attack the ~5% of allocs under our control (intermediate `strings.Builder` + `b.String()` copy inside `renderRow` / `renderHighlightedRow`, and `+ "\n"` string concats in `viewMain` / `viewHostMetrics`). Backlog updated; item #1 partially de-risked, item #2 (cell padding) still speculative.
+- ✅ Task 3 (Implement improvements): opened draft PR `[perf-improver] perf(tui): drop per-row builder copy + "+ "\n"" concats in viewMain` on branch `perf-assist/tui-render-low-alloc` (commit `e287cde`). See [[perf-improver-work]] for full benchmark table.
+- ✅ Task 4 (Maintain PRs): prior PRs #458 and #463 are MERGED. The only outstanding automation-labelled PR in the repo is efficiency-improver's #498 (out of scope). No perf-improver PRs needed maintenance.
+- ✅ Task 5 (Comment on perf issues): no open performance-labelled issues besides the Monthly Activity issue.
+- ✅ Task 6 (Measurement infra): added two production-colorize benchmarks in `internal/tui/table_bench_test.go` so future TUI render changes can be measured against the real `runnerStatusColorize` path. Side-effect of Task 3. No infra work otherwise.
+- ✅ Task 7 (Monthly summary): updating issue #459 this run — appends new run-history entry, references the new draft PR.
+
 ## Backlog cursor for next run
 
 Pick up at the top of [[perf-improver-opportunities]]:
 
-1. **View() alloc reduction in TUI dashboard** — HIGH impact, HIGH risk. Needs more analysis to find a safe cache key.
-2. **renderRow / renderHighlightedRow cell padding** — MEDIUM impact, LOW risk. Speculative.
-3. **Periodic SplitSeq grep** — quick sweep each run to catch new offenders.
+1. **View() alloc reduction — remaining lipgloss cost** — was HIGH/HIGH; now MEDIUM/MEDIUM after this run's *Into variants closed the caller-side alloc opportunities. The remaining ~95% is inside `lipgloss.Style.Render` (line-wrapping `strings.Split`, ANSI byte-buffer growth). Options left: cache rendered lines keyed on input hash; replace `Width()` chain; emit ANSI directly for static-color cells. HIGH risk, only attempt if a future run wants to push further.
+2. **renderRow / renderHighlightedRow cell padding** — MEDIUM impact, LOW risk. Still speculative. Worth profiling after the *Into variants are merged to see whether padding-skip still gives measurable savings on top.
+3. **Periodic SplitSeq grep** — DONE for current code; worth re-running if new code lands.
 4. **Manager.Status further per-instance optimization** — LOW priority.
+5. **New TUI render target**: the `viewScroll` (`m.scrollLines[i]` loop in `dashboard_view.go`) also uses the `b.WriteString("  " + m.scrollLines[i] + "\n")` shape and would benefit from the same `WriteByte('\n')` split pattern. Quick, low-risk follow-up if a future run wants a small additional win.
