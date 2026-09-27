@@ -76,16 +76,20 @@ func (m *dashboardModel) viewMain() tea.View {
 		filterParts = append(filterParts, "repo="+m.tuiRepoFilter)
 	}
 	if len(filterParts) == 0 {
-		b.WriteString(helpStyle.Render("  Filters: (none)  — press f to change") + "\n")
+		b.WriteString(helpStyle.Render("  Filters: (none)  — press f to change"))
+		b.WriteByte('\n')
 	} else {
-		b.WriteString(helpStyle.Render("  Filters: "+strings.Join(filterParts, "  ")) + "\n")
+		b.WriteString(helpStyle.Render("  Filters: " + strings.Join(filterParts, "  ")))
+		b.WriteByte('\n')
 	}
 
 	if m.busy && m.busyOp != "" {
-		b.WriteString(statusUnknown.Render("  … "+m.busyOp+" in progress") + "\n")
+		b.WriteString(statusUnknown.Render("  … " + m.busyOp + " in progress"))
+		b.WriteByte('\n')
 	}
 	if m.toast != "" {
-		b.WriteString(statusOnline.Render("  "+m.toast) + "\n")
+		b.WriteString(statusOnline.Render("  " + m.toast))
+		b.WriteByte('\n')
 	}
 	b.WriteString("\n")
 
@@ -95,14 +99,16 @@ func (m *dashboardModel) viewMain() tea.View {
 	}
 
 	if m.lastErr != "" {
-		b.WriteString(statusStopped.Render("  Error: "+m.lastErr) + "\n\n")
+		b.WriteString(statusStopped.Render("  Error: " + m.lastErr))
+		b.WriteString("\n\n")
 	}
 
 	if len(m.statuses) == 0 {
 		b.WriteString("  No runners in view (check filters or config).\n")
 		b.WriteString(m.footerMain())
 		if m.showHelp {
-			b.WriteString("\n" + helpOverlay())
+			b.WriteByte('\n')
+			b.WriteString(helpOverlay())
 		}
 		return newAltView(b.String())
 	}
@@ -113,19 +119,22 @@ func (m *dashboardModel) viewMain() tea.View {
 	}
 	widths := table.ColumnWidths(runnerStatusHeaders, rows)
 
-	b.WriteString(renderHeader(runnerStatusHeaders, widths) + "\n")
+	b.WriteString(renderHeader(runnerStatusHeaders, widths))
+	b.WriteByte('\n')
 
 	for i, cells := range rows {
 		if i == m.cursor {
-			b.WriteString(renderHighlightedRow(cells, widths, runnerStatusColorize) + "\n")
+			renderHighlightedRowInto(&b, cells, widths, runnerStatusColorize)
 		} else {
-			b.WriteString(renderRow(cells, widths, runnerStatusColorize) + "\n")
+			renderRowInto(&b, cells, widths, runnerStatusColorize)
 		}
+		b.WriteByte('\n')
 	}
 
 	b.WriteString(m.footerMain())
 	if m.showHelp {
-		b.WriteString("\n" + helpOverlay())
+		b.WriteByte('\n')
+		b.WriteString(helpOverlay())
 	}
 
 	return newAltView(b.String())
@@ -260,10 +269,12 @@ func (m *dashboardModel) viewHostMetrics() tea.View {
 
 		widths := table.ColumnWidths(hostMetricsHeaders, rows)
 
-		b.WriteString(renderHeader(hostMetricsHeaders, widths) + "\n")
+		b.WriteString(renderHeader(hostMetricsHeaders, widths))
+		b.WriteByte('\n')
 
 		for _, row := range rows {
-			b.WriteString(renderRow(row, widths, hostMetricsColorize) + "\n")
+			renderRowInto(&b, row, widths, hostMetricsColorize)
+			b.WriteByte('\n')
 		}
 	}
 

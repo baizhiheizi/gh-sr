@@ -89,8 +89,24 @@ func renderHeader(headers []string, widths []int) string {
 // renderRow builds one styled row line. colorize(col, cell) may return the
 // cell unchanged or a styled string; if nil, cells are rendered as-is.
 // Padding matches renderHeader (widths[j]+2).
+//
+// The path that matters here is the in-memory copy of cells + their styled
+// forms: lipgloss.Style.Render builds a string per cell (with internal
+// bytes.Buffer growth) and the per-row builder needs one final allocation
+// for b.String(). Hot render loops such as viewMain avoid both copy-costs
+// by calling renderRowInto directly into the parent's builder.
 func renderRow(cells []string, widths []int, colorize func(col int, cell string) string) string {
 	var b strings.Builder
+	renderRowInto(&b, cells, widths, colorize)
+	return b.String()
+}
+
+// renderRowInto appends the styled cells of one row to b. Same per-cell
+// semantics as renderRow but writes to a caller-supplied builder so the row
+// can be embedded in a larger output (e.g. viewMain) without paying for a
+// trailing strings.Builder grow + b.String() copy just to be concatenated
+// with "\n" by the caller.
+func renderRowInto(b *strings.Builder, cells []string, widths []int, colorize func(col int, cell string) string) {
 	for j, cell := range cells {
 		styled := cell
 		if colorize != nil {
@@ -98,7 +114,6 @@ func renderRow(cells []string, widths []int, colorize func(col int, cell string)
 		}
 		b.WriteString(cellStyle.Width(widths[j] + 2).Render(styled))
 	}
-	return b.String()
 }
 
 // renderHighlightedRow builds a styled row with the cursor-row background
@@ -106,8 +121,16 @@ func renderRow(cells []string, widths []int, colorize func(col int, cell string)
 // visually-distinct "selected row" block, so we keep it per-cell (not a single
 // wrapper) to match the original viewMain behavior. colorize behaves as in
 // renderRow.
+//
+// renderHighlightedRowInto is the builder-appending counterpart used by the
+// hot viewMain path.
 func renderHighlightedRow(cells []string, widths []int, colorize func(col int, cell string) string) string {
 	var b strings.Builder
+	renderHighlightedRowInto(&b, cells, widths, colorize)
+	return b.String()
+}
+
+func renderHighlightedRowInto(b *strings.Builder, cells []string, widths []int, colorize func(col int, cell string) string) {
 	for j, cell := range cells {
 		styled := cell
 		if colorize != nil {
@@ -118,5 +141,4 @@ func renderHighlightedRow(cells []string, widths []int, colorize func(col int, c
 			Background(lipgloss.Color("8")).
 			Render(styled))
 	}
-	return b.String()
 }
