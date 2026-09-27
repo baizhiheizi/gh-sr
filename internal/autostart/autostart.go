@@ -393,6 +393,26 @@ type StatusRow struct {
 	Detail   string // active/inactive, etc.
 }
 
+// formatLaunchdDetail renders the launchd `print` output captured by
+// runActiveCheck into the human-readable string Status surfaces in the
+// `installed (launchd): ...` row. It preserves the original `| head -n 5`
+// post-pipe behavior: only the first 5 lines of the launchd print are
+// considered, then the kept lines are joined with spaces and trimmed.
+//
+// Walking with strings.SplitSeq lets us stop after 5 lines without paying
+// the cost of materialising the full launchd output slice first. The
+// destination is pre-sized to 5 so the append path is allocation-free.
+func formatLaunchdDetail(out string) string {
+	lines := make([]string, 0, 5)
+	for line := range strings.SplitSeq(out, "\n") {
+		lines = append(lines, line)
+		if len(lines) == 5 {
+			break
+		}
+	}
+	return strings.TrimSpace(strings.Join(lines, " "))
+}
+
 // Status describes autostart and service state for a runner instance (native only).
 func Status(h *host.Host, hostName, instance, mode string) (StatusRow, error) {
 	row := StatusRow{Instance: instance, Host: hostName, Mode: mode}
@@ -428,14 +448,7 @@ func Status(h *host.Host, hostName, instance, mode string) (StatusRow, error) {
 		return row, nil
 
 	case KindLaunchd:
-		// Preserve the original `| head -n 5` post-pipe behavior: cap to
-		// first 5 lines of launchd output before flattening newlines to
-		// spaces (runActiveCheck returns the full launchd print).
-		lines := strings.Split(out, "\n")
-		if len(lines) > 5 {
-			lines = lines[:5]
-		}
-		row.Detail = "installed (launchd): " + strings.TrimSpace(strings.Join(lines, " "))
+		row.Detail = "installed (launchd): " + formatLaunchdDetail(out)
 		return row, nil
 
 	case KindWindowsTask:
