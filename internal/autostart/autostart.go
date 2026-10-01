@@ -278,110 +278,25 @@ func Uninstall(h *host.Host, instance string) error {
 	if kind == KindNone {
 		return nil
 	}
-
-	switch kind {
-	case KindSystemdUser:
-		_, err := h.Run(systemdDisableUserScript(base))
-		return err
-
-	case KindSystemdSystem:
-		_, err := h.Run(systemdDisableSystemScript(base))
-		return err
-
-	case KindLaunchd:
-		label := LaunchdLabel(san)
-		cmd := LaunchdBootoutScript(hostshell.PosixSingleQuote(label), label+".plist")
-		_, err := h.Run(cmd)
-		return err
-
-	case KindWindowsTask:
-		name := WindowsTaskName(san)
-		ps := fmt.Sprintf(
-			`Unregister-ScheduledTask -TaskName %s -Confirm:$false -ErrorAction SilentlyContinue`,
-			hostshell.PowerShellSingleQuote(name),
-		)
-		_, err := h.RunShell(ps)
-		return err
-
-	default:
-		return nil
-	}
+	return dispatchAction(h, kind, san, base, actionUninstall)
 }
 
 // Start launches the autostart-backed runner (systemd / launchd / scheduled task).
 func Start(h *host.Host, instance string) error {
-	kind, san, base, err := resolveAutostartTarget(h, instance)
+	kind, san, base, err := resolveInstalledTarget(h, instance)
 	if err != nil {
 		return err
 	}
-	if kind == KindNone {
-		return fmt.Errorf("autostart is not installed for %s", instance)
-	}
-
-	switch kind {
-	case KindSystemdUser:
-		_, err := h.Run("systemctl --user start " + base + ".service")
-		return err
-	case KindSystemdSystem:
-		script := sudoPrelude() + fmt.Sprintf(`
-$SUDO systemctl start %s.service
-`, base)
-		_, err := h.Run(script)
-		return err
-	case KindLaunchd:
-		label := LaunchdLabel(san)
-		home, herr := remoteHome(h)
-		if herr != nil {
-			return herr
-		}
-		plistPath := home + "/Library/LaunchAgents/" + label + ".plist"
-		cmd := launchdActivateScript(hostshell.PosixSingleQuote(label), hostshell.PosixSingleQuote(plistPath), label+".plist", false)
-		_, err := h.Run(cmd)
-		return err
-	case KindWindowsTask:
-		name := WindowsTaskName(san)
-		ps := fmt.Sprintf(`Start-ScheduledTask -TaskName %s`, hostshell.PowerShellSingleQuote(name))
-		_, err := h.RunShell(ps)
-		return err
-	default:
-		return fmt.Errorf("unknown autostart kind %q", kind)
-	}
+	return dispatchAction(h, kind, san, base, actionStart)
 }
 
 // Stop stops the autostart-backed runner without removing the unit.
 func Stop(h *host.Host, instance string) error {
-	kind, san, base, err := resolveAutostartTarget(h, instance)
+	kind, san, base, err := resolveInstalledTarget(h, instance)
 	if err != nil {
 		return err
 	}
-	if kind == KindNone {
-		return fmt.Errorf("autostart is not installed for %s", instance)
-	}
-
-	switch kind {
-	case KindSystemdUser:
-		_, err := h.Run("systemctl --user stop " + base + ".service")
-		return err
-	case KindSystemdSystem:
-		script := sudoPrelude() + fmt.Sprintf(`
-$SUDO systemctl stop %s.service
-`, base)
-		_, err := h.Run(script)
-		return err
-	case KindLaunchd:
-		label := LaunchdLabel(san)
-		cmd := fmt.Sprintf(`UID=$(id -u); LABEL=%s; for _DOMAIN in %s; do launchctl bootout "$_DOMAIN/$LABEL" 2>/dev/null || true; done`,
-			hostshell.PosixSingleQuote(label), launchdDomainList())
-		_, err := h.Run(cmd)
-		return err
-	case KindWindowsTask:
-		name := WindowsTaskName(san)
-		ps := fmt.Sprintf(`Stop-ScheduledTask -TaskName %s -ErrorAction SilentlyContinue`, hostshell.PowerShellSingleQuote(name))
-		_, err := h.RunShell(ps)
-		return err
-	default:
-		return fmt.Errorf("unknown autostart kind %q", kind)
-	}
+	return dispatchAction(h, kind, san, base, actionStop)
 }
 
 // StatusRow is one line of `gh sr service status` output.
@@ -438,23 +353,12 @@ func Status(h *host.Host, hostName, instance, mode string) (StatusRow, error) {
 		return row, nil
 	}
 
-	switch kind {
-	case KindSystemdUser:
-		row.Detail = "installed (user): " + strings.TrimSpace(out)
-		return row, nil
-
-	case KindSystemdSystem:
-		row.Detail = "installed (system): " + strings.TrimSpace(out)
-		return row, nil
-
-	case KindLaunchd:
-		row.Detail = "installed (launchd): " + formatLaunchdDetail(out)
-		return row, nil
-
-	case KindWindowsTask:
-		row.Detail = "installed (task): " + strings.TrimSpace(out)
-		return row, nil
+	// kindLabel already maps each kind to the "user"/"system"/"launchd"/"task"
+	// label; only launchd needs its print output flattened differently.
+	detail := strings.TrimSpace(out)
+	if kind == KindLaunchd {
+		detail = formatLaunchdDetail(out)
 	}
-
+	row.Detail = "installed (" + kindLabel(kind) + "): " + detail
 	return row, nil
 }
