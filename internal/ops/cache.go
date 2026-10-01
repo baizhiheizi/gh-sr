@@ -49,23 +49,21 @@ func cacheTargets(w io.Writer, cfg *config.Config, filterHost string) ([]string,
 	return hosts, nil
 }
 
-// CacheDeploy ensures the per-host cache server container exists and runs.
-func CacheDeploy(w io.Writer, cfg *config.Config, filterHost string) error {
+// forEachCacheHost runs fn for each target host sequentially with the shared
+// lifecycle every cache orchestrator repeats: banner → connect → fn → close.
+// Connect and fn errors are fail-fast (the loop aborts and the error
+// propagates), matching the pre-existing per-orchestrator loops. fn receives
+// the effective cache settings (nil when the cache is disabled in
+// runners.yml) so it can render the per-host disabled note itself.
+func forEachCacheHost(w io.Writer, cfg *config.Config, hosts []string, bannerVerb string, fn func(w io.Writer, h *host.Host, s *cache.Settings) error) error {
 	s := cacheSettings(cfg)
-	if s == nil {
-		return fmt.Errorf("cache is disabled in runners.yml (cache.enabled: false); enable it or remove the setting")
-	}
-	hosts, err := cacheTargets(w, cfg, filterHost)
-	if err != nil {
-		return err
-	}
 	for _, name := range hosts {
-		writeHostBanner(w, "Deploying cache on "+name, cfg.Hosts[name].Addr)
+		writeHostBanner(w, bannerVerb+" on "+name, cfg.Hosts[name].Addr)
 		h, err := connectHostFn(name, cfg.Hosts[name])
 		if err != nil {
 			return err
 		}
-		err = cache.Ensure(w, h, *s)
+		err = fn(w, h, s)
 		h.Close()
 		if err != nil {
 			return err
@@ -74,32 +72,38 @@ func CacheDeploy(w io.Writer, cfg *config.Config, filterHost string) error {
 	return nil
 }
 
-// CacheStatus reports the per-host cache server state, health, and storage.
-func CacheStatus(w io.Writer, cfg *config.Config, filterHost string) error {
-	s := cacheSettings(cfg)
+// CacheDeploy ensures the per-host cache server container exists and runs.
+func CacheDeploy(w io.Writer, cfg *config.Config, filterHost string) error {
+	if cacheSettings(cfg) == nil {
+		return fmt.Errorf("cache is disabled in runners.yml (cache.enabled: false); enable it or remove the setting")
+	}
 	hosts, err := cacheTargets(w, cfg, filterHost)
 	if err != nil {
 		return err
 	}
-	for _, name := range hosts {
-		writeHostBanner(w, "Cache status on "+name, cfg.Hosts[name].Addr)
-		h, err := connectHostFn(name, cfg.Hosts[name])
-		if err != nil {
-			return err
-		}
+	return forEachCacheHost(w, cfg, hosts, "Deploying cache", func(w io.Writer, h *host.Host, s *cache.Settings) error {
+		return cache.Ensure(w, h, *s)
+	})
+}
+
+// CacheStatus reports the per-host cache server state, health, and storage.
+func CacheStatus(w io.Writer, cfg *config.Config, filterHost string) error {
+	hosts, err := cacheTargets(w, cfg, filterHost)
+	if err != nil {
+		return err
+	}
+	return forEachCacheHost(w, cfg, hosts, "Cache status", func(w io.Writer, h *host.Host, s *cache.Settings) error {
 		if s == nil {
 			fmt.Fprintf(w, "  cache: disabled in runners.yml\n")
-			h.Close()
-			continue
+			return nil
 		}
 		info, err := cache.Inspect(h, *s)
-		h.Close()
 		if err != nil {
 			return err
 		}
 		printCacheStatus(w, info)
-	}
-	return nil
+		return nil
+	})
 }
 
 func printCacheStatus(w io.Writer, info cache.StatusInfo) {
@@ -121,55 +125,32 @@ func printCacheStatus(w io.Writer, info cache.StatusInfo) {
 
 // CachePrune deletes all cache entries on every target host (best-effort per host).
 func CachePrune(w io.Writer, cfg *config.Config, filterHost string) error {
-	s := cacheSettings(cfg)
 	hosts, err := cacheTargets(w, cfg, filterHost)
 	if err != nil {
 		return err
 	}
-	for _, name := range hosts {
-		writeHostBanner(w, "Pruning cache on "+name, cfg.Hosts[name].Addr)
-		h, err := connectHostFn(name, cfg.Hosts[name])
-		if err != nil {
-			return err
-		}
+	return forEachCacheHost(w, cfg, hosts, "Pruning cache", func(w io.Writer, h *host.Host, s *cache.Settings) error {
 		if s == nil {
 			fmt.Fprintf(w, "  cache: disabled in runners.yml\n")
-			h.Close()
-			continue
+			return nil
 		}
-		err = cache.Prune(w, h, *s)
-		h.Close()
-		if err != nil {
-			return err
-		}
-	}
-	return nil
+		return cache.Prune(w, h, *s)
+	})
 }
 
 // CacheRemove uninstalls the cache server; purgeData also deletes stored cache
 // data. Runner removal (gh sr remove) never touches the cache — this command
 // is the only uninstall path.
 func CacheRemove(w io.Writer, cfg *config.Config, filterHost string, purgeData bool) error {
-	s := cacheSettings(cfg)
 	hosts, err := cacheTargets(w, cfg, filterHost)
 	if err != nil {
 		return err
 	}
-	for _, name := range hosts {
-		writeHostBanner(w, "Removing cache on "+name, cfg.Hosts[name].Addr)
-		h, err := connectHostFn(name, cfg.Hosts[name])
-		if err != nil {
-			return err
-		}
+	return forEachCacheHost(w, cfg, hosts, "Removing cache", func(w io.Writer, h *host.Host, s *cache.Settings) error {
 		var settings cache.Settings
 		if s != nil {
 			settings = *s
 		}
-		err = cache.Remove(w, h, settings, purgeData)
-		h.Close()
-		if err != nil {
-			return err
-		}
-	}
-	return nil
+		return cache.Remove(w, h, settings, purgeData)
+	})
 }

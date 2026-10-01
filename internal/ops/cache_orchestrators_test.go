@@ -3,6 +3,7 @@ package ops
 import (
 	"bytes"
 	"errors"
+	"io"
 	"strings"
 	"testing"
 
@@ -544,6 +545,57 @@ func TestCachePrune(t *testing.T) {
 		err := CachePrune(&buf, cfg, "")
 		if !errors.Is(err, sentinel) {
 			t.Fatalf("got %v; want wrap of sentinel", err)
+		}
+	})
+}
+
+// TestForEachCacheHost covers the shared lifecycle helper itself: banner
+// before connect (per the CacheDeploy contract), fail-fast on connect error,
+// and fail-fast on fn error after closing the host.
+func TestForEachCacheHost(t *testing.T) {
+	t.Parallel()
+
+	t.Run("fn error aborts remaining hosts", func(t *testing.T) {
+		t.Parallel()
+		var h2Calls int
+		installMockConnectHost(t, map[string]host.Executor{
+			"h1": &testutil.MockExecutor{},
+			"h2": &testutil.MockExecutor{RunFn: func(string) (string, error) { h2Calls++; return "", nil }},
+		})
+		sentinel := errors.New("action failed")
+		var buf bytes.Buffer
+		err := forEachCacheHost(&buf, cfgWithLocalHost("h1", "h2"), []string{"h1", "h2"}, "Testing",
+			func(_ io.Writer, _ *host.Host, _ *cache.Settings) error { return sentinel })
+		if !errors.Is(err, sentinel) {
+			t.Fatalf("got %v; want %v", err, sentinel)
+		}
+		out := buf.String()
+		if !strings.Contains(out, "Testing on h1") {
+			t.Errorf("missing first banner; got %q", out)
+		}
+		if strings.Contains(out, "Testing on h2") {
+			t.Errorf("fn error must abort the loop before host 2; got %q", out)
+		}
+		if h2Calls != 0 {
+			t.Errorf("h2 touched %d times; want 0", h2Calls)
+		}
+	})
+
+	t.Run("banner precedes connect failure", func(t *testing.T) {
+		t.Parallel()
+		sentinel := errors.New("ssh handshake failed")
+		installFailingConnectHost(t, sentinel)
+		var buf bytes.Buffer
+		err := forEachCacheHost(&buf, cfgWithLocalHost("h1"), []string{"h1"}, "Testing",
+			func(_ io.Writer, _ *host.Host, _ *cache.Settings) error {
+				t.Error("fn must not run when connect fails")
+				return nil
+			})
+		if !errors.Is(err, sentinel) {
+			t.Fatalf("got %v; want %v", err, sentinel)
+		}
+		if !strings.Contains(buf.String(), "Testing on h1") {
+			t.Errorf("banner must print before connect; got %q", buf.String())
 		}
 	})
 }
