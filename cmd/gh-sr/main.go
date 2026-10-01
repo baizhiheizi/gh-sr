@@ -177,6 +177,35 @@ func runRunnerCmd(op func(io.Writer, *config.Config, *runner.Manager, string, st
 	}
 }
 
+// runCacheCmd is the cache-subcommand analogue of runRunnerCmd: a cobra
+// RunE that loads the config and forwards to an ops function taking the
+// package-level filterHost flag. Commands with extra flags (e.g.
+// cache remove --purge-data) wrap their ops call in a closure.
+func runCacheCmd(op func(io.Writer, *config.Config, string) error) func(*cobra.Command, []string) error {
+	return func(cmd *cobra.Command, _ []string) error {
+		cfg, err := loadConfig()
+		if err != nil {
+			return err
+		}
+		return op(cmd.OutOrStdout(), cfg, filterHost)
+	}
+}
+
+// runServiceCmd is the service-subcommand analogue of runRunnerCmd: a cobra
+// RunE that loads the config and forwards to an ops function taking the
+// package-level filterHost / filterRepo flags plus the positional args.
+// Commands with extra flags (e.g. service install --system) wrap their ops
+// call in a closure.
+func runServiceCmd(op func(io.Writer, *config.Config, string, string, []string) error) func(*cobra.Command, []string) error {
+	return func(cmd *cobra.Command, args []string) error {
+		cfg, err := loadConfig()
+		if err != nil {
+			return err
+		}
+		return op(cmd.OutOrStdout(), cfg, filterHost, filterRepo, args)
+	}
+}
+
 func initCmd() *cobra.Command {
 	var force bool
 	var quick bool
@@ -696,13 +725,7 @@ func cacheStatusCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "status",
 		Short: "Show cache server state, health, and storage per host",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, err := loadConfig()
-			if err != nil {
-				return err
-			}
-			return ops.CacheStatus(cmd.OutOrStdout(), cfg, filterHost)
-		},
+		RunE:  runCacheCmd(ops.CacheStatus),
 	}
 }
 
@@ -710,13 +733,7 @@ func cacheDeployCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "deploy",
 		Short: "Deploy (or start) the cache server container on hosts",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, err := loadConfig()
-			if err != nil {
-				return err
-			}
-			return ops.CacheDeploy(cmd.OutOrStdout(), cfg, filterHost)
-		},
+		RunE:  runCacheCmd(ops.CacheDeploy),
 	}
 }
 
@@ -724,13 +741,7 @@ func cachePruneCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "prune",
 		Short: "Delete all cache entries via the management API (best-effort)",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, err := loadConfig()
-			if err != nil {
-				return err
-			}
-			return ops.CachePrune(cmd.OutOrStdout(), cfg, filterHost)
-		},
+		RunE:  runCacheCmd(ops.CachePrune),
 	}
 }
 
@@ -742,13 +753,9 @@ func cacheRemoveCmd() *cobra.Command {
 		Long: `Stops and removes the gh-sr-cache container. With --purge-data, also deletes
 the storage directory (all cached data plus the generated management key).
 Runner removal (gh sr remove) never touches the cache.`,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, err := loadConfig()
-			if err != nil {
-				return err
-			}
-			return ops.CacheRemove(cmd.OutOrStdout(), cfg, filterHost, purgeData)
-		},
+		RunE: runCacheCmd(func(w io.Writer, cfg *config.Config, filterHost string) error {
+			return ops.CacheRemove(w, cfg, filterHost, purgeData)
+		}),
 	}
 	cmd.Flags().BoolVar(&purgeData, "purge-data", false, "also delete the cache storage directory (all cached data)")
 	return cmd
@@ -1013,53 +1020,33 @@ func serviceCmd() *cobra.Command {
 		Use:   "install [runner-names...]",
 		Short: "Install autostart for native runners (all or filtered)",
 		Long:  "Writes systemd user units (Linux), LaunchAgents (macOS), or a logon scheduled task (Windows), then enables and starts them." + serviceLongHelp,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, err := loadConfig()
-			if err != nil {
-				return err
-			}
-			return ops.ServiceInstall(cmd.OutOrStdout(), cfg, filterHost, filterRepo, args, system)
-		},
+		RunE: runServiceCmd(func(w io.Writer, cfg *config.Config, filterHost, filterRepo string, args []string) error {
+			return ops.ServiceInstall(w, cfg, filterHost, filterRepo, args, system)
+		}),
 	}
 	install.Flags().BoolVar(&system, "system", false, "Linux only: install systemd unit under /etc/systemd/system (passwordless sudo or root SSH)")
 	uninstall := &cobra.Command{
 		Use:   "uninstall [runner-names...]",
 		Short: "Remove autostart definitions installed by gh sr",
 		Long:  "Stops and removes systemd units, LaunchAgents, or scheduled tasks created by gh sr service install." + serviceLongHelp,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, err := loadConfig()
-			if err != nil {
-				return err
-			}
-			return ops.ServiceUninstall(cmd.OutOrStdout(), cfg, filterHost, filterRepo, args)
-		},
+		RunE:  runServiceCmd(ops.ServiceUninstall),
 	}
 	status := &cobra.Command{
 		Use:   "status [runner-names...]",
 		Short: "Show autostart state per runner instance",
 		Long:  "Reports whether gh sr autostart is installed and the service state." + serviceLongHelp,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, err := loadConfig()
-			if err != nil {
-				return err
-			}
-			return ops.ServiceStatus(cmd.OutOrStdout(), cfg, filterHost, filterRepo, args)
-		},
+		RunE:  runServiceCmd(ops.ServiceStatus),
 	}
+	var dryRun bool
 	cleanup := &cobra.Command{
 		Use:   "cleanup",
 		Short: "Remove orphan runner services and directories not in runners.yml",
 		Long:  "Finds gh-sr autostart units and runner directories under ~/.gh-sr/runners that are not listed in runners.yml — for example after a rename or manual config edit — and removes them." + serviceLongHelp,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, err := loadConfig()
-			if err != nil {
-				return err
-			}
-			dryRun, _ := cmd.Flags().GetBool("dry-run")
-			return ops.ServiceCleanup(cmd.OutOrStdout(), cfg, filterHost, dryRun)
-		},
+		RunE: runServiceCmd(func(w io.Writer, cfg *config.Config, filterHost, filterRepo string, _ []string) error {
+			return ops.ServiceCleanup(w, cfg, filterHost, dryRun)
+		}),
 	}
-	cleanup.Flags().Bool("dry-run", false, "Report orphan services and directories without removing them")
+	cleanup.Flags().BoolVar(&dryRun, "dry-run", false, "Report orphan services and directories without removing them")
 	cmd.AddCommand(install, uninstall, status, cleanup)
 	return cmd
 }
