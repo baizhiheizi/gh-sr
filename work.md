@@ -13,9 +13,11 @@ metadata:
 
 ## Completed
 
-### 2026-09-24 (run 4) — TUI render low-alloc (PR draft, branch `perf-assist/tui-render-low-alloc`)
+### 2026-09-24 (run 4) — TUI render low-alloc (PR #502 — MERGED 2026-09-27)
 
-**PR opened**: `[perf-improver] perf(tui): drop per-row builder copy + "+ "\n"" concats in viewMain` (draft, commit `e287cde`).
+**PR opened**: `[perf-improver] perf(tui): drop per-row builder copy + "+ "\n"" concats in viewMain` (draft, branch `perf-assist/tui-render-low-alloc`, commit `e287cde`).
+
+**Status**: Merged by maintainer 2026-09-27T23:42:55Z (closed_at and merged_at identical).
 
 **Change**: `internal/tui/table.go` — added `renderRowInto` / `renderHighlightedRowInto` (builder-appending variants of `renderRow` / `renderHighlightedRow`). The original functions now delegate to the `*Into` variants and remain thin wrappers so `PrintTable` / `PrintStatusTable` callers (`fmt.Fprintln`) are unchanged. `internal/tui/dashboard_view.go` — `viewMain` and `viewHostMetrics` switched to call `renderRowInto` / `renderHighlightedRowInto` directly against their own `strings.Builder`, followed by a single `b.WriteByte('\n')` instead of `+ "\n"` concat. Other `b.WriteString(<styled> + "\n")` patterns in the same file split into separate `WriteString` + `WriteByte('\n')` pairs.
 
@@ -28,6 +30,8 @@ metadata:
 | time    | 35-53k ns/op               | 36-52k ns/op                              | within noise |
 
 The byte saving is more meaningful than the alloc drop because eliminating the inner `b.String()` copy drops a ~600 byte heap allocation per viewMain call (the inner builder's final length-and-copy). Lipgloss's internal allocations are unchanged.
+
+**Post-merge confirmation (run 5, 2026-10-01)**: `BenchmarkViewMain/one_status` on `main` reads 36,719 ns/op, 9,451 B/op, 315 allocs/op — matches the PR's measured numbers. No regressions from the maintainer's intervening refactors (#510 dispatchAction, #509 forEachCacheHost, #508 fanOutHosts, #511 statusNativeState).
 
 **New bench file entries**: `internal/tui/table_bench_test.go` gained `BenchmarkRenderHighlightedRowProduction` and `BenchmarkRenderRowProduction` — both run the production `runnerStatusColorize` callback (so styled branches like `statusRunning.Render` / `statusOnline.Render` actually fire) instead of the prior `colorizePassthrough`. Future TUI render changes can measure against the real colorize path.
 
@@ -49,7 +53,7 @@ The byte saving is more meaningful than the alloc drop because eliminating the i
 
 **PR opened**: `[perf-improver] perf(runner): use SplitSeq for per-instance probe parsers on Status path` (draft, branch `perf-assist/runner-probes-splitseq`, commit b1ffe5b).
 
-**Status**: Merged by maintainer between run 2 and run 3.
+**Status**: Merged by maintainer 2026-09-27T23:42:47Z.
 
 **Change**: `internal/runner/container.go` (`ProbeDinDContainerReadiness`) and `internal/runner/linux_instance_probe.go` (`linuxInstanceProbe`) switched from `strings.Split` to `strings.SplitSeq`. These were the last two `strings.Split(out, "\n")` callers on the Status hot path.
 
@@ -75,3 +79,5 @@ The byte saving is more meaningful than the alloc drop because eliminating the i
 - Lipgloss's `Style.Render` does its own internal `termenv.Style` allocation per call regardless of how the caller pre-builds the `Style` (e.g. hoisting `Background(...)` out of an inner loop has no measurable impact). Optimizations on the TUI render path therefore must attack caller-side concat/builder patterns, not the intermediate `Style`.
 - The `renderRow` / `renderHighlightedRow` `+ "\n"` concat pattern is the same shape across many helpers; once one panel (`viewMain`) is converted to a builder-into-builder pattern, the win can be applied to `viewHostMetrics` and any future panel that uses the same table-render primitives.
 - A focus on byte savings (not just alloc count) often reveals larger GC wins — eliminating one intermediate `strings.Builder.String()` copy of ~600 bytes per `viewMain` call is more impactful than dropping several small per-cell allocations.
+- Mechanical follow-up fixes (e.g. the `viewScroll` `+ "\n"` concat) are best deferred when the maintainer is in a refactor-consolidation phase — the PR churn isn't worth a 1-line change. Schedule such cleanups for quieter weeks.
+- `BenchmarkEnrichFromScopeRunners` is the largest remaining non-lipgloss alloc hotspot (420 allocs/op at 200 statuses, dominated by `name+"-"+strconv.Itoa(j)` key construction). Possible optimizations: (a) build a per-scope `map[string]GitHubRunner` (trades +alloc for -CPU on big configs only); (b) cache `rcByInstance` across `EnrichWithGitHubStatus` calls with cfg-change detection (higher complexity, larger payoff). Both need a fresh bench pass before committing.
