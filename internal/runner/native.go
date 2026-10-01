@@ -634,7 +634,29 @@ func statusNativeAndVersion(h *host.Host, instanceName string) (string, string) 
 // probe-error fallback for Linux.
 func statusNativeOneshotNonLinux(h *host.Host, instanceName, dir string) string {
 	hasSvc, kind, _ := linuxSvcAndAutostartProbe(h, instanceName)
+	return statusNativeState(h, instanceName, dir, hasSvc, kind)
+}
 
+// statusNativeFromProbe runs the same state machine as
+// statusNativeOneshotNonLinux over a pre-fetched linuxInstanceProbeResult,
+// avoiding a second combined probe when the caller already has one in hand.
+func statusNativeFromProbe(h *host.Host, instanceName, dir string, result linuxInstanceProbeResult) string {
+	return statusNativeState(h, instanceName, dir, result.svcSh, result.kind)
+}
+
+// statusNativeState is the single copy of the native status state machine:
+// svc.sh systemd probe → autostart ServiceActiveState/IsServiceActive →
+// PID-file fallback. Both entry points above feed it, so a change here can
+// no longer drift between the probe-shape variants (the duplication this
+// replaces had to be updated in lockstep — see the former comment on
+// statusNativeFromProbe).
+//
+// For svc.sh-managed runners the service name is read from the .service
+// marker file written by "svc.sh install" and queried via systemctl.
+// Autostart may be installed but the runner started directly (e.g. macOS
+// with no GUI session for launchd), which is why a non-matching autostart
+// state falls through to the PID file check rather than reporting stopped.
+func statusNativeState(h *host.Host, instanceName, dir string, hasSvc bool, kind autostart.Kind) string {
 	if hasSvc {
 		out, err := h.Run(fmt.Sprintf(
 			`svc_file="%s/.service"; `+
@@ -668,56 +690,6 @@ func statusNativeOneshotNonLinux(h *host.Host, instanceName, dir string) string 
 		if err == nil && active {
 			return "running"
 		}
-	}
-
-	return statusNativePIDFile(h, instanceName, dir)
-}
-
-// statusNativeFromProbe reproduces the statusNative branch logic using a
-// pre-fetched linuxInstanceProbeResult. Same win-class as statusNative but
-// avoids re-issuing the combined probe when the caller already has one in
-// hand. The branches match statusNative 1:1 so a change to the state
-// machine must update both call sites in lockstep (the legacy
-// `statusNative` above is the surviving entry point for any caller that
-// only wants the local string).
-func statusNativeFromProbe(h *host.Host, instanceName, dir string, result linuxInstanceProbeResult) string {
-	// For svc.sh-managed runners on Linux: read the service name from the .service
-	// marker file written by "svc.sh install" and query systemctl directly.
-	if result.svcSh {
-		out, err := h.Run(fmt.Sprintf(
-			`svc_file="%s/.service"; `+
-				`if [ -f "$svc_file" ]; then `+
-				`svc=$(cat "$svc_file"); `+
-				`systemctl is-active "$svc" 2>/dev/null || echo inactive; `+
-				`fi`,
-			dir,
-		))
-		if err == nil {
-			state := strings.TrimSpace(out)
-			if state == "active" {
-				return "running"
-			}
-			if state != "" {
-				return "stopped"
-			}
-		}
-	}
-
-	if result.kind != autostart.KindNone {
-		if state, serr := autostart.ServiceActiveState(h, instanceName, result.kind); serr == nil {
-			switch state {
-			case "active":
-				return "running"
-			case "failed", "activating":
-				return "service error"
-			}
-		}
-		active, err := autostart.IsServiceActive(h, instanceName, result.kind)
-		if err == nil && active {
-			return "running"
-		}
-		// Autostart may be installed but the runner was started directly (e.g. macOS
-		// with no GUI session for launchd). Fall through to the PID file check.
 	}
 
 	return statusNativePIDFile(h, instanceName, dir)
