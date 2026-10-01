@@ -5,13 +5,32 @@ import (
 	"io"
 	"sort"
 	"strings"
-	"sync"
 
 	"github.com/an-lee/gh-sr/internal/cache"
 	"github.com/an-lee/gh-sr/internal/config"
+	"github.com/an-lee/gh-sr/internal/host"
 	"github.com/an-lee/gh-sr/internal/runner"
 	"github.com/an-lee/gh-sr/internal/table"
 )
+
+// skippedHosts returns the names of hosts fanOutHosts could not connect to,
+// sorted for deterministic error messages.
+func skippedHosts[T any](results []fanoutResult[T]) []string {
+	var skipped []string
+	for _, r := range results {
+		if r.ConnectErr != nil {
+			skipped = append(skipped, r.Name)
+		}
+	}
+	sort.Strings(skipped)
+	return skipped
+}
+
+// connectError aggregates unreachable host names into the error surfaced by
+// the disk orchestrators.
+func connectError(skipped []string) error {
+	return fmt.Errorf("cannot connect to host(s): %s", strings.Join(skipped, ", "))
+}
 
 // DiskPruneOptions configures PruneDisk.
 type DiskPruneOptions struct {
@@ -90,97 +109,75 @@ func CollectDiskUsage(w io.Writer, cfg *config.Config, mgr *runner.Manager, filt
 	statusMaps := diskStatusMapsFrom(statuses)
 	groups := groupRunnersByHost(runners)
 
-	type hostResult struct {
-		entries []runner.DiskUsageEntry
-		err     error
-	}
+	results := fanOutHosts(w, cfg, groups, func(w io.Writer, h *host.Host, g hostGroup) ([]runner.DiskUsageEntry, error) {
+		hcfg := cfg.Hosts[g.name]
+		seen := make(map[string]struct{})
+		configured := configuredInstancesOnHost(g.runners)
+		rcByInstance := rcByInstanceForHost(g.runners, g.name)
 
-	results := make([]hostResult, len(groups))
-	var wg sync.WaitGroup
-	var wMu sync.Mutex
-	var skippedHosts []string
+		// Build the full set of instance names to measure (configured +
+		// orphan). One batched SSH round-trip per host — replaces the
+		// 1 ListRunnerInstanceDirs + len(instances) MeasureDiskUsage
+		// pattern that previously paid N+1 SSH round-trips per host.
+		instances := make([]string, 0, len(rcByInstance)+4)
+		for inst := range configured {
+			seen[inst] = struct{}{}
+			instances = append(instances, inst)
+		}
 
-	for i, g := range groups {
-		wg.Add(1)
-		go func(i int, g hostGroup) {
-			defer wg.Done()
-			hcfg := cfg.Hosts[g.name]
-			h, err := connectHostFn(g.name, hcfg)
-			if err != nil {
-				if w != nil {
-					wMu.Lock()
-					fmt.Fprintf(w, "Warning: cannot connect to %s: %v\n", g.name, err)
-					skippedHosts = append(skippedHosts, g.name)
-					wMu.Unlock()
-				}
-				return
+		diskDirs, err := runner.ListRunnerInstanceDirs(h)
+		if err != nil {
+			return nil, err
+		}
+		for _, inst := range diskDirs {
+			if _, ok := seen[inst]; ok {
+				continue
 			}
-			defer h.Close()
+			seen[inst] = struct{}{}
+			instances = append(instances, inst)
+		}
 
-			seen := make(map[string]struct{})
-			configured := configuredInstancesOnHost(g.runners)
-			rcByInstance := rcByInstanceForHost(g.runners, g.name)
+		entries := runner.MeasureDiskUsageBatch(h, g.name, instances, rcByInstance)
+		var out []runner.DiskUsageEntry
+		for _, inst := range instances {
+			entry := entries[inst]
+			key := diskHostInstanceKey(g.name, inst)
+			entry.Busy = statusMaps.busy[key]
+			entry.Remote = statusMaps.remote[key]
+			out = append(out, entry)
+		}
 
-			// Build the full set of instance names to measure (configured +
-			// orphan). One batched SSH round-trip per host — replaces the
-			// 1 ListRunnerInstanceDirs + len(instances) MeasureDiskUsage
-			// pattern that previously paid N+1 SSH round-trips per host.
-			instances := make([]string, 0, len(rcByInstance)+4)
-			for inst := range configured {
-				seen[inst] = struct{}{}
-				instances = append(instances, inst)
-			}
+		// Host-level entry for the local cache server storage (Linux only —
+		// the cache container is only deployed there).
+		if s := cacheSettings(cfg); s != nil && hcfg.OS == "linux" {
+			path, bytes, mErr := cache.MeasureStorage(h, *s)
+			out = append(out, runner.DiskUsageEntry{
+				Host:       g.name,
+				Instance:   cache.ContainerName,
+				Path:       path,
+				Mode:       "cache",
+				TotalBytes: bytes,
+				Err:        mErr,
+			})
+		}
+		return out, nil
+	})
 
-			diskDirs, listErr := runner.ListRunnerInstanceDirs(h)
-			if listErr != nil {
-				results[i].err = listErr
-				return
-			}
-			for _, inst := range diskDirs {
-				if _, ok := seen[inst]; ok {
-					continue
-				}
-				seen[inst] = struct{}{}
-				instances = append(instances, inst)
-			}
-
-			entries := runner.MeasureDiskUsageBatch(h, g.name, instances, rcByInstance)
-			for _, inst := range instances {
-				entry := entries[inst]
-				key := diskHostInstanceKey(g.name, inst)
-				entry.Busy = statusMaps.busy[key]
-				entry.Remote = statusMaps.remote[key]
-				results[i].entries = append(results[i].entries, entry)
-			}
-
-			// Host-level entry for the local cache server storage (Linux only —
-			// the cache container is only deployed there).
-			if s := cacheSettings(cfg); s != nil && hcfg.OS == "linux" {
-				path, bytes, mErr := cache.MeasureStorage(h, *s)
-				results[i].entries = append(results[i].entries, runner.DiskUsageEntry{
-					Host:       g.name,
-					Instance:   cache.ContainerName,
-					Path:       path,
-					Mode:       "cache",
-					TotalBytes: bytes,
-					Err:        mErr,
-				})
-			}
-		}(i, g)
-	}
-	wg.Wait()
-
-	if len(skippedHosts) > 0 {
-		sort.Strings(skippedHosts)
-		return nil, fmt.Errorf("cannot connect to host(s): %s", strings.Join(skippedHosts, ", "))
+	if w != nil {
+		// Historical contract: the skip list was only populated when a writer
+		// was attached, so nil-writer callers get partial results instead of
+		// an aggregated connect error. Preserve that gate.
+		if skipped := skippedHosts(results); len(skipped) > 0 {
+			return nil, connectError(skipped)
+		}
 	}
 
 	var all []runner.DiskUsageEntry
 	for _, r := range results {
-		if r.err != nil {
-			return nil, r.err
+		if r.Err != nil {
+			return nil, r.Err
 		}
-		all = append(all, r.entries...)
+		all = append(all, r.Val...)
 	}
 
 	sort.Slice(all, func(i, j int) bool {
@@ -215,96 +212,64 @@ func PruneDisk(w io.Writer, cfg *config.Config, mgr *runner.Manager, filterHost,
 		IncludeOrphans: opts.IncludeOrphans,
 	}
 
-	type hostResult struct {
-		results []runner.PruneResult
-		err     error
-	}
+	results := fanOutHosts(w, cfg, groups, func(w io.Writer, h *host.Host, g hostGroup) ([]runner.PruneResult, error) {
+		configured := configuredInstancesOnHost(g.runners)
+		rcByInstance := rcByInstanceForHost(g.runners, g.name)
 
-	out := make([]hostResult, len(groups))
-	var wg sync.WaitGroup
-	var wMu sync.Mutex
-	var skippedHosts []string
-
-	for i, g := range groups {
-		wg.Add(1)
-		go func(i int, g hostGroup) {
-			defer wg.Done()
-			hcfg := cfg.Hosts[g.name]
-			h, err := connectHostFn(g.name, hcfg)
+		var targets []string
+		for inst := range configured {
+			targets = append(targets, inst)
+		}
+		if opts.IncludeOrphans {
+			diskDirs, err := runner.ListRunnerInstanceDirs(h)
 			if err != nil {
-				if w != nil {
-					wMu.Lock()
-					fmt.Fprintf(w, "Warning: cannot connect to %s: %v\n", g.name, err)
-					skippedHosts = append(skippedHosts, g.name)
-					wMu.Unlock()
-				}
-				return
+				return nil, err
 			}
-			defer h.Close()
-
-			configured := configuredInstancesOnHost(g.runners)
-			rcByInstance := rcByInstanceForHost(g.runners, g.name)
-
-			var targets []string
-			for inst := range configured {
-				targets = append(targets, inst)
-			}
-			if opts.IncludeOrphans {
-				diskDirs, listErr := runner.ListRunnerInstanceDirs(h)
-				if listErr != nil {
-					out[i].err = listErr
-					return
-				}
-				for _, inst := range diskDirs {
-					if _, ok := configured[inst]; !ok {
-						targets = append(targets, inst)
-					}
+			for _, inst := range diskDirs {
+				if _, ok := configured[inst]; !ok {
+					targets = append(targets, inst)
 				}
 			}
-			sort.Strings(targets)
+		}
+		sort.Strings(targets)
 
-			for _, inst := range targets {
-				rc := rcByInstance[inst]
-				key := diskHostInstanceKey(g.name, inst)
-				busy := statusMaps.busy[key]
-				if rc != nil && !statusMaps.githubKnown[key] && !opts.Force {
-					res := runner.PruneResult{
-						Instance: inst,
-						Host:     g.name,
-						Skipped:  true,
-						Reason:   "GitHub status unknown (use --force)",
-					}
-					out[i].results = append(out[i].results, res)
-					if w != nil {
-						wMu.Lock()
-						printPruneResult(w, res, opts.DryRun)
-						wMu.Unlock()
-					}
-					continue
+		var out []runner.PruneResult
+		for _, inst := range targets {
+			rc := rcByInstance[inst]
+			key := diskHostInstanceKey(g.name, inst)
+			busy := statusMaps.busy[key]
+			if rc != nil && !statusMaps.githubKnown[key] && !opts.Force {
+				res := runner.PruneResult{
+					Instance: inst,
+					Host:     g.name,
+					Skipped:  true,
+					Reason:   "GitHub status unknown (use --force)",
 				}
-				res := mgr.PruneInstance(h, g.name, inst, rc, busy, runnerOpts)
-				out[i].results = append(out[i].results, res)
-				if w != nil {
-					wMu.Lock()
-					printPruneResult(w, res, opts.DryRun)
-					wMu.Unlock()
-				}
+				out = append(out, res)
+				printPruneResult(w, res, opts.DryRun)
+				continue
 			}
-		}(i, g)
-	}
-	wg.Wait()
+			res := mgr.PruneInstance(h, g.name, inst, rc, busy, runnerOpts)
+			out = append(out, res)
+			printPruneResult(w, res, opts.DryRun)
+		}
+		return out, nil
+	})
 
-	if len(skippedHosts) > 0 {
-		sort.Strings(skippedHosts)
-		return nil, fmt.Errorf("cannot connect to host(s): %s", strings.Join(skippedHosts, ", "))
+	if w != nil {
+		// See CollectDiskUsage: nil-writer callers skip the aggregated
+		// connect error (pre-existing contract).
+		if skipped := skippedHosts(results); len(skipped) > 0 {
+			return nil, connectError(skipped)
+		}
 	}
 
 	var all []runner.PruneResult
-	for _, r := range out {
-		if r.err != nil {
-			return nil, r.err
+	for _, r := range results {
+		if r.Err != nil {
+			return nil, r.Err
 		}
-		all = append(all, r.results...)
+		all = append(all, r.Val...)
 	}
 	if err := pruneResultsError(all); err != nil {
 		return all, err

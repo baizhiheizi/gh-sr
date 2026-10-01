@@ -88,6 +88,59 @@ func resolveAndFilter(w io.Writer, cfg *config.Config, filterHost, filterRepo st
 	return config.FilterRunners(cfg, filterHost, filterRepo, nameArgs), nil
 }
 
+// fanoutResult is one host's outcome from fanOutHosts: either ConnectErr is
+// set (fn was never invoked for that host) or Val/Err carry fn's result.
+type fanoutResult[T any] struct {
+	Name       string
+	ConnectErr error
+	Val        T
+	Err        error
+}
+
+// fanOutHosts connects to every group's host concurrently (one goroutine per
+// group), runs fn against the connected host, and returns results in group
+// order. A connect failure emits the package-standard warning line to w and
+// records the error in the result's ConnectErr without invoking fn; callers
+// decide how to surface that (skip, synthesise rows, aggregate an error).
+// Writes to w are serialised; pass nil to discard output. The connect factory
+// is captured before spawning so tests that swap connectHostFn see a
+// consistent view for the whole call.
+func fanOutHosts[T any](
+	w io.Writer,
+	cfg *config.Config,
+	groups []hostGroup,
+	fn func(w io.Writer, h *host.Host, g hostGroup) (T, error),
+) []fanoutResult[T] {
+	var out io.Writer = io.Discard
+	if w != nil {
+		out = &lockedWriter{w: w}
+	}
+
+	connect := connectHostFn
+
+	results := make([]fanoutResult[T], len(groups))
+	var wg sync.WaitGroup
+	for i, g := range groups {
+		wg.Add(1)
+		go func(i int, g hostGroup) {
+			defer wg.Done()
+			results[i].Name = g.name
+			h, err := connect(g.name, cfg.Hosts[g.name])
+			if err != nil {
+				results[i].ConnectErr = err
+				fmt.Fprintf(out, "Warning: cannot connect to %s: %v\n", g.name, err)
+				return
+			}
+			defer h.Close()
+			val, err := fn(out, h, g)
+			results[i].Val = val
+			results[i].Err = err
+		}(i, g)
+	}
+	wg.Wait()
+	return results
+}
+
 // runPerHostParallel groups runners by host and executes fn for each runner concurrently
 // across hosts. Within each host group runners are processed sequentially using a single
 // SSH connection, reducing connection overhead from O(N_runners) to O(N_hosts).
@@ -407,65 +460,41 @@ func CollectStatus(w io.Writer, cfg *config.Config, mgr *runner.Manager, filterH
 	// Group runners by host, preserving original order for deterministic output.
 	groups := groupRunnersByHost(runners)
 
-	type groupResult struct {
-		statuses []runner.RunnerStatus
-		err      error
-	}
-	results := make([]groupResult, len(groups))
-
-	var wg sync.WaitGroup
-	var wMu sync.Mutex // guards writes to w
-
-	for i, g := range groups {
-		wg.Add(1)
-		go func(i int, g hostGroup) {
-			defer wg.Done()
-			hcfg := cfg.Hosts[g.name]
-			h, err := connectHostFn(g.name, hcfg)
+	results := fanOutHosts(w, cfg, groups, func(w io.Writer, h *host.Host, g hostGroup) ([]runner.RunnerStatus, error) {
+		var statuses []runner.RunnerStatus
+		for _, rc := range g.runners {
+			s, err := mgr.Status(h, rc)
 			if err != nil {
-				if w != nil {
-					wMu.Lock()
-					fmt.Fprintf(w, "Warning: cannot connect to %s: %v\n", g.name, err)
-					wMu.Unlock()
-				}
-				var unreachable []runner.RunnerStatus
-				for _, rc := range g.runners {
-					for _, name := range rc.InstanceNames() {
-						unreachable = append(unreachable, runner.RunnerStatus{
-							Instance:            name,
-							Host:                rc.Host,
-							Repo:                rc.DisplayTarget(),
-							Mode:                "native",
-							Local:               "unreachable",
-							ContainerImageBuild: "-",
-						})
-					}
-				}
-				results[i] = groupResult{statuses: unreachable}
-				return
+				return nil, err
 			}
-			defer h.Close()
-
-			var statuses []runner.RunnerStatus
-			for _, rc := range g.runners {
-				s, err := mgr.Status(h, rc)
-				if err != nil {
-					results[i] = groupResult{err: err}
-					return
-				}
-				statuses = append(statuses, s...)
-			}
-			results[i] = groupResult{statuses: statuses}
-		}(i, g)
-	}
-	wg.Wait()
+			statuses = append(statuses, s...)
+		}
+		return statuses, nil
+	})
 
 	var allStatuses []runner.RunnerStatus
-	for _, r := range results {
-		if r.err != nil {
-			return nil, r.err
+	for i, r := range results {
+		if r.ConnectErr != nil {
+			// An unreachable host must not abort the sweep: synthesise one
+			// "unreachable" row per instance so the TUI still lists them.
+			for _, rc := range groups[i].runners {
+				for _, name := range rc.InstanceNames() {
+					allStatuses = append(allStatuses, runner.RunnerStatus{
+						Instance:            name,
+						Host:                rc.Host,
+						Repo:                rc.DisplayTarget(),
+						Mode:                "native",
+						Local:               "unreachable",
+						ContainerImageBuild: "-",
+					})
+				}
+			}
+			continue
 		}
-		allStatuses = append(allStatuses, r.statuses...)
+		if r.Err != nil {
+			return nil, r.Err
+		}
+		allStatuses = append(allStatuses, r.Val...)
 	}
 
 	mgr.EnrichWithGitHubStatus(allStatuses, cfg)
