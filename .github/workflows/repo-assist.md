@@ -82,7 +82,7 @@ safe-outputs:
       - repo-assist
     max: 4
     protected-files:
-      policy: request_review
+      policy: request-review
       exclude:
         - CHANGELOG.md
         - README.md
