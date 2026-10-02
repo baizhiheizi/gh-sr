@@ -3,7 +3,7 @@ module github.com/an-lee/gh-sr
 go 1.26.0
 
 require (
-	charm.land/bubbletea/v2 v2.0.9
+	charm.land/bubbletea/v2 v2.0.10
 	github.com/charmbracelet/lipgloss v1.1.1-0.20250404203927-76690c660834
 	github.com/cli/go-gh/v2 v2.16.1
 	github.com/spf13/cobra v1.10.2
