@@ -23,16 +23,24 @@ gh sr disk                 # Show per-instance disk usage under ~/.gh-sr/runners
 gh sr disk prune           # Reclaim disk on idle runners (use --yes to execute)
 gh sr disk schedule install   # Daily automatic disk prune on this machine
 gh sr update [names...]    # Update runner binary (remove + setup + start)
+gh sr rebuild [names...]   # Rebuild container runner image and restart containers (container-mode only)
 gh sr service install [--system] [names...]   # Native: OS autostart (systemd / launchd / task)
 gh sr service uninstall [names...]            # Remove gh sr-installed autostart
 gh sr service status [names...]               # Autostart + unit state (container: policy note)
+gh sr cache status         # Cache server state, image, health, storage per host
+gh sr cache deploy         # Deploy (or start) the cache server container on hosts
+gh sr cache prune          # Delete all cache entries via the management API (best-effort)
+gh sr cache remove [--purge-data]  # Stop and remove the cache server container
 gh sr config path          # Print resolved config and ~/.gh-sr/env paths
 gh sr config show          # Print resolved configuration (token source summarized)
 gh sr config edit          # Edit resolved runners.yml in $VISUAL / $EDITOR
 gh sr config edit-env      # Edit ~/.gh-sr/env in $VISUAL / $EDITOR
 gh sr config validate      # Validate config (exit 0 if OK)
 gh sr dashboard            # Same as bare gh sr: launch interactive TUI dashboard
+gh sr version              # Print gh sr version
 ```
+
+Use `gh sr add host <name> <addr>` and `gh sr add runner <name>` to add new hosts and runners to an existing `runners.yml` from the CLI (see the [Quick start](#quick-start-sequence) below).
 
 The dashboard includes live status, per-runner actions (setup, up, down, restart, update, logs), global actions (doctor, cleanup, show/validate/edit config and env), and host/repo filters. Press `h` to open the host metrics panel (CPU, memory, disk, load, uptime) or `?` for the full key map.
 
@@ -126,4 +134,45 @@ gh sr disk schedule uninstall
 - `gh sr cleanup` removes **offline GitHub registrations** only — it does not free disk. Use `gh sr disk prune` for workspace cleanup.
 - `gh sr doctor` warns when any instance directory exceeds 50 GiB (including orphan dirs).
 - `gh sr disk schedule install` runs on **this machine** (where you run gh), not on runner hosts. Ensure `gh` is on PATH, `gh auth login` is done, and `~/.gh-sr/env` contains any tokens needed for remote hosts. On Linux headless servers, run `loginctl enable-linger $USER` so the systemd user timer runs without an interactive login. SSH keys for remote hosts must be available to the scheduled job's user environment.
+
+## Cache server
+
+When `cache.enabled` is not `false` in `runners.yml`, `gh sr` deploys a per-host local GitHub Actions cache server (`falcondev-oss/github-actions-cache-server`, one `gh-sr-cache` container per Linux host) so container runners serve `actions/cache` traffic from the host instead of GitHub's shared cache service. Artifacts and other non-cache traffic still pass through to GitHub, so safe-outputs and cross-host artifact transfer keep working.
+
+The server is deployed automatically before container runner setup/start; the `cache` subcommands exist to inspect it, reclaim storage, or uninstall it:
+
+```bash
+gh sr cache status             # State, image, health probe, du per host
+gh sr cache deploy             # Start the cache server (idempotent)
+gh sr cache prune              # Delete all cache entries via the management API (best-effort)
+gh sr cache remove             # Stop and remove the gh-sr-cache container
+gh sr cache remove --purge-data  # Also delete the storage directory (all cached data + generated management key)
+```
+
+**Notes:**
+
+- `gh sr remove <name>` (per-runner removal) **never** deletes the cache container. `gh sr cache remove` is the only uninstall path.
+- `--purge-data` deletes the storage directory and the generated management API key. Run this **before** re-deploying with a fresh key, or when retiring a host entirely.
+- The cache server runs on Linux only (Windows/macOS container runners fall back to GitHub's shared cache automatically; see [Configuration — `cache:` section](configuration.md#cache-per-host-local-actions-cache-server)).
+- Tune the server with `cache.port`, `cache.bind_addr`, `cache.retention_days`, `cache.max_size_bytes`, `cache.max_usage_percent`, and `cache.url_override` in `runners.yml`. `cache.image` lets you pin a specific tag or digest for reproducible deploys.
+
+## Rebuild (container-mode runners)
+
+`gh sr rebuild [names...]` rebuilds the `gh-sr/agentic-runner` Docker image from the embedded sources (the same image for every `runner_mode: container` runner, agentic or not), recreates the runner containers, and starts them. The image embeds the global `container_runner_image.extra_apt_packages` and `container_runner_image.toolcache` from your config (see the [agentic workflows guide](https://an-lee.github.io/gh-sr/guides/agentic-workflows/)).
+
+```bash
+gh sr rebuild                # Rebuild every container-mode runner
+gh sr rebuild backend-1      # Rebuild a single runner
+```
+
+**When to run it:**
+
+- You changed `container_runner_image.base_image`, the tag, or any of the embedded image sources — `doctor` flags a stale image fingerprint.
+- You added or changed `container_runner_image.extra_apt_packages` / `container_runner_image.toolcache` in `runners.yml`.
+
+**Notes:**
+
+- Runner state (the `.runner` registration file, work directories, and Docker layer cache inside the container) is preserved across the rebuild, so runners stay registered with GitHub and do not consume a new registration token.
+- `runner_mode: native` runners are silently skipped (no error).
+- Changes that affect the container runtime (MTU, dockerd start timeout, bootstrap retry count, ...) take effect at container-create time, so a rebuild is required to pick them up.
 
