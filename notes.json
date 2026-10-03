@@ -23,19 +23,25 @@
       "area": "dependencies",
       "checked_at": "2026-10-02",
       "result": "acted",
-      "follow_up": "Bundle PR recorded on branch repo-assist/eng-bundle-deps-2026-10-02 (commit b65d5dc, 5 files +10/-10) covering #512, #513, #514. Previous attempt (#515) failed at git push; retry built on current main (61de160)."
+      "follow_up": "Bundle PR #520 (commit d4ded34, branch repo-assist/eng-bundle-deps-2026-10-02) covers #512, #513, #514. Supersedes #515. Awaiting maintainer merge."
     },
     {
       "area": "tests",
-      "checked_at": "2026-09-29",
-      "result": "no_actionable",
-      "follow_up": "test-improver merged #503 (cache orchestrator branch coverage) 2026-09-27."
+      "checked_at": "2026-10-03",
+      "result": "acted",
+      "follow_up": "Filled LoadFromPath and SettingsFromConfig coverage gap on branch repo-assist/test-config-coverage-2026-10-03 (commit ae487f4). coverage config 85.2% -> 85.9%, cache 88.0% -> 89.5%. test-improver merged #503 and #518 covering doctor cache orchestrator + reachability."
+    },
+    {
+      "area": "qa",
+      "checked_at": "2026-10-03",
+      "result": "acted",
+      "follow_up": "Filled docs gap for cache subcommands + rebuild + version + add on branch repo-assist/docs-commands-2026-10-03 (commit 30f3002). Hugo content only."
     },
     {
       "area": "repo_assist_prs",
-      "checked_at": "2026-10-02",
+      "checked_at": "2026-10-03",
       "result": "acted",
-      "follow_up": "Bundle PR recorded (commit b65d5dc). Issue #515 closing this run as superseded; #462 already closed last run."
+      "follow_up": "Bundle PR #520 still awaiting merge. Two new PRs just created via safeoutputs on local branches (test-config-coverage-2026-10-03, docs-commands-2026-10-03) — pending downstream git push + PR open."
     }
   ],
   "completed_actions": [],
