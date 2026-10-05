@@ -153,7 +153,7 @@ gh sr cache remove --purge-data  # Also delete the storage directory (all cached
 
 - `gh sr remove <name>` (per-runner removal) **never** deletes the cache container. `gh sr cache remove` is the only uninstall path.
 - `--purge-data` deletes the storage directory and the generated management API key. Run this **before** re-deploying with a fresh key, or when retiring a host entirely.
-- The cache server runs on Linux only (Windows/macOS container runners fall back to GitHub's shared cache automatically; see [Configuration — `cache:` section](configuration.md#cache-per-host-local-actions-cache-server)).
+- The cache server runs on Linux only (Windows/macOS container runners fall back to GitHub's shared cache automatically; see [Configuration — `cache:` section](configuration.md#cache--per-host-local-actions-cache-server)).
 - Tune the server with `cache.port`, `cache.bind_addr`, `cache.retention_days`, `cache.max_size_bytes`, `cache.max_usage_percent`, and `cache.url_override` in `runners.yml`. `cache.image` lets you pin a specific tag or digest for reproducible deploys.
 
 ## Rebuild (container-mode runners)
@@ -173,6 +173,6 @@ gh sr rebuild backend-1      # Rebuild a single runner
 **Notes:**
 
 - Runner state (the `.runner` registration file, work directories, and Docker layer cache inside the container) is preserved across the rebuild, so runners stay registered with GitHub and do not consume a new registration token.
-- `runner_mode: native` runners are silently skipped (no error).
+- `runner_mode: native` runners are skipped with a per-runner notice (no error).
 - Changes that affect the container runtime (MTU, dockerd start timeout, bootstrap retry count, ...) take effect at container-create time, so a rebuild is required to pick them up.
 
