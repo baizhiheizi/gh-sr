@@ -60,8 +60,8 @@ runners:
 func TestLoadFromPath_propagatesLoadError(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "runners.yml")
-	// Missing required `runs-on` validation surface: a runners entry with
-	// both org and repo set trips Validate, so Load must fail.
+	// An empty `runners` list fails Validate's "at least one runner must be
+	// defined" check, so Load returns an error even though the file exists.
 	if err := os.WriteFile(path, []byte(`runners: []`), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -73,5 +73,28 @@ func TestLoadFromPath_propagatesLoadError(t *testing.T) {
 	// The error should bubble up from Load, not the not-found branch.
 	if strings.Contains(err.Error(), "config file not found") {
 		t.Errorf("error came from stat branch, not Load: %q", err)
+	}
+}
+
+func TestLoadFromPath_statErrorWraps(t *testing.T) {
+	dir := t.TempDir()
+	// A regular file used as a directory component makes os.Stat fail with
+	// ENOTDIR, which is *not* os.IsNotExist — so this exercises the
+	// "config file: %w" wrap rather than the gh sr init hint.
+	blocker := filepath.Join(dir, "blocker")
+	if err := os.WriteFile(blocker, []byte("not a directory"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := LoadFromPath(filepath.Join(blocker, "runners.yml"))
+	if err == nil {
+		t.Fatal("expected error when stat fails with a non-ENOENT error")
+	}
+	msg := err.Error()
+	if strings.Contains(msg, "config file not found") {
+		t.Errorf("should not take the not-found branch, got %q", msg)
+	}
+	if !strings.Contains(msg, "config file:") {
+		t.Errorf("error should wrap the stat failure, got %q", msg)
 	}
 }
