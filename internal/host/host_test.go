@@ -294,3 +294,80 @@ func TestHost_Upload_propagatesError(t *testing.T) {
 		t.Fatalf("Upload error: got %v, want wraps %v", err, want)
 	}
 }
+
+// TestHost_SetConn_swapsAndClosesOld covers the swap branch in
+// Host.SetConn: when a non-nil old connection is replaced by a
+// different one, the old connection's Close() must be invoked so the
+// underlying SSH session (or anything holding resources) is released.
+// Without this call, repeated SetConn against the same Host would
+// leak one connection per swap.
+func TestHost_SetConn_swapsAndClosesOld(t *testing.T) {
+	t.Parallel()
+
+	var oldClosed, newClosed bool
+	old := &closeTracker{closed: &oldClosed}
+	newer := &closeTracker{closed: &newClosed}
+
+	h := NewHost("h", config.HostConfig{Addr: "u@h", OS: "linux", Arch: "amd64"})
+	h.SetConn(old)
+	h.SetConn(newer)
+
+	if !oldClosed {
+		t.Error("old conn.Close() should have been called when swapped out")
+	}
+	if newClosed {
+		t.Error("new conn.Close() must not be called on swap-in")
+	}
+}
+
+// TestHost_SetConn_sameConnDoesNotClose covers the no-op branch in
+// Host.SetConn: replacing a connection with itself (or an equal value
+// under the pointer identity check the implementation actually uses)
+// must not invoke Close on the still-current connection. The race
+// window is small but real: a Host whose user code calls
+// SetConn(currentConn) defensively must not see the conn shut down
+// out from under it.
+func TestHost_SetConn_sameConnDoesNotClose(t *testing.T) {
+	t.Parallel()
+
+	var closed bool
+	conn := &closeTracker{closed: &closed}
+
+	h := NewHost("h", config.HostConfig{Addr: "u@h", OS: "linux", Arch: "amd64"})
+	h.SetConn(conn)
+	h.SetConn(conn)
+
+	if closed {
+		t.Error("conn.Close() should NOT be called when SetConn replaces a conn with itself")
+	}
+}
+
+// TestHost_Close_propagatesConnError covers the only error-returning
+// branch in Host.Close: when the injected Executor.Close() returns
+// an error, the Host.Close caller must see it. The nil-conn branch is
+// already covered indirectly (a fresh Host.Close is a no-op).
+func TestHost_Close_propagatesConnError(t *testing.T) {
+	t.Parallel()
+	want := errors.New("close failed")
+	mock := &testutil.MockExecutor{CloseErr: want}
+	h := NewHost("h", config.HostConfig{Addr: "u@h", OS: "linux", Arch: "amd64"})
+	h.SetConn(mock)
+
+	if err := h.Close(); !errors.Is(err, want) {
+		t.Fatalf("Close error: got %v, want wraps %v", err, want)
+	}
+	if h.conn != nil {
+		t.Error("Close must clear h.conn even when conn.Close() returns an error")
+	}
+}
+
+// closeTracker is a host.Executor whose Close() flips a flag. It is
+// kept here (alongside the tests that use it) so the connection-swap
+// coverage doesn't depend on testutil.MockExecutor's internal state.
+type closeTracker struct {
+	closed *bool
+}
+
+func (c *closeTracker) Run(string) (string, error)  { return "", nil }
+func (c *closeTracker) Upload(string, string) error { return nil }
+func (c *closeTracker) Close() error                { *c.closed = true; return nil }

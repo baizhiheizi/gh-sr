@@ -121,6 +121,58 @@ func TestHostMetrics_LoadStr(t *testing.T) {
 	}
 }
 
+// TestHostMetrics_AppendLoadStr is the builder-style parallel of
+// TestHostMetrics_LoadStr. AppendLoadStr is on the per-host render path
+// (FormatHostMetricsTo uses it to write the load cell into a strings.Builder
+// without going through a string round-trip), so it must agree with LoadStr
+// on every input — including the zero-load "-" sentinel — and it must append
+// to (not overwrite) the caller's buffer.
+func TestHostMetrics_AppendLoadStr(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name string
+		m    HostMetrics
+		want string
+	}{
+		{"typical", HostMetrics{Load1: 1.5, Load5: 0.8, Load15: 0.3}, "1.50 0.80 0.30"},
+		{"all zero renders dash", HostMetrics{}, "-"},
+		{"only Load1 nonzero still renders all three",
+			HostMetrics{Load1: 2.0}, "2.00 0.00 0.00"},
+		{"decimal precision matches LoadStr",
+			HostMetrics{Load1: 0.1, Load5: 0.2, Load15: 0.3}, "0.10 0.20 0.30"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := string(tc.m.AppendLoadStr(nil))
+			if got != tc.want {
+				t.Errorf("AppendLoadStr(nil) = %q, want %q", got, tc.want)
+			}
+		})
+	}
+
+	// Append (not overwrite): the prefix must survive.
+	t.Run("appends to existing buffer", func(t *testing.T) {
+		t.Parallel()
+		prefix := []byte("LOAD=")
+		got := string(HostMetrics{Load1: 1.5, Load5: 0.8, Load15: 0.3}.AppendLoadStr(prefix))
+		want := "LOAD=1.50 0.80 0.30"
+		if got != want {
+			t.Errorf("AppendLoadStr(prefix) = %q, want %q", got, want)
+		}
+	})
+
+	t.Run("zero load still appends dash", func(t *testing.T) {
+		t.Parallel()
+		got := string(HostMetrics{}.AppendLoadStr([]byte("x=")))
+		if got != "x=-" {
+			t.Errorf("AppendLoadStr = %q, want %q", got, "x=-")
+		}
+	})
+}
+
 func assertFloat(t *testing.T, name string, got, want float64) {
 	t.Helper()
 	diff := got - want
