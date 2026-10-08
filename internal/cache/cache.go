@@ -138,17 +138,24 @@ func parseGatewayIPOutput(out string) string {
 // need one allow rule — `gh sr doctor` probes the exact URL from inside a
 // runner and prints the command when it is blocked.
 func (s Settings) RunnerURL(h *host.Host) string {
+	gw, _ := ResolveGatewayIP(h)
+	return s.runnerURL(gw)
+}
+
+// runnerURL is the URL form of RunnerURL using a pre-resolved docker0 gateway
+// IP — let callers that already need the gateway (Inspect, deploy) avoid a
+// second SSH round-trip to resolve it again.
+func (s Settings) runnerURL(gatewayIP string) string {
 	if s.URLOverride != "" {
 		return WithTrailingSlash(s.URLOverride)
 	}
 	if s.BindAddr != "" && s.BindAddr != "0.0.0.0" {
 		return fmt.Sprintf("http://%s:%d/", s.BindAddr, s.port())
 	}
-	gw, err := ResolveGatewayIP(h)
-	if err != nil || gw == "" {
+	if gatewayIP == "" {
 		return ""
 	}
-	return fmt.Sprintf("http://%s:%d/", gw, s.port())
+	return fmt.Sprintf("http://%s:%d/", gatewayIP, s.port())
 }
 
 // localURL is the cache API base as seen from the host itself: an explicit
@@ -289,8 +296,10 @@ func deploy(w io.Writer, h *host.Host, s Settings) error {
 	_, _ = h.Run("docker pull " + hostshell.PosixSingleQuote(s.image()))
 
 	bind := s.BindAddr
+	var gw string
 	if bind == "" {
-		gw, err := ResolveGatewayIP(h)
+		var err error
+		gw, err = ResolveGatewayIP(h)
 		if err != nil || gw == "" {
 			bind = "0.0.0.0"
 			fmt.Fprintf(w, "  cache: warning: docker0 gateway not found; binding %s (cache API is exposed on every host interface)\n", bind)
@@ -303,7 +312,7 @@ func deploy(w io.Writer, h *host.Host, s Settings) error {
 		// Runner-facing base URL: the server signs cache download URLs with
 		// it, so it must be an address the runner containers can reach — the
 		// same published host port the runners are injected with.
-		"API_BASE_URL=" + s.RunnerURL(h),
+		"API_BASE_URL=" + s.runnerURL(gw),
 		"STORAGE_DRIVER=filesystem",
 		"STORAGE_FILESYSTEM_PATH=" + storageFilesystemPath,
 		"DB_DRIVER=sqlite",
@@ -404,10 +413,18 @@ func Inspect(h *host.Host, s Settings) (StatusInfo, error) {
 		return info, err
 	}
 	info.StoragePath = storage
-	info.URL = s.RunnerURL(h)
+
+	// Resolve the docker0 gateway once when neither URLOverride nor an
+	// explicit BindAddr short-circuit. The pre-fix code resolved it twice
+	// in the common auto-bind case (RunnerURL + the health probe) and once
+	// unnecessarily when BindAddr was set (the local probe ignores gw then).
+	var gw string
+	if s.URLOverride == "" && (s.BindAddr == "" || s.BindAddr == "0.0.0.0") {
+		gw, _ = ResolveGatewayIP(h)
+	}
+	info.URL = s.runnerURL(gw)
 
 	if info.State != "" {
-		gw, _ := ResolveGatewayIP(h)
 		healthOut, healthErr := h.Run(fmt.Sprintf(
 			"curl -fsS -m 3 %s/health 2>/dev/null || true", hostshell.PosixSingleQuote(s.localURL(gw))))
 		info.Healthy = healthErr == nil && strings.TrimSpace(healthOut) == "healthy"
