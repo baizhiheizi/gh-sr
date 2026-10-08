@@ -18,6 +18,27 @@ func launchdDomainList() string {
 	return `"gui/$UID" "user/$UID"`
 }
 
+// launchdUIDLabelPrelude emits the two variable assignments every launchctl
+// script needs before it can reference $LABEL: the remote UID (launchctl
+// domain paths are uid-scoped) and the pre-quoted job label. Centralising it
+// keeps the UID=$(id -u) invocation and LABEL assignment from drifting apart
+// between the bootout / bootstrap / print scripts.
+func launchdUIDLabelPrelude(qlabel string) string {
+	return fmt.Sprintf("UID=$(id -u)\nLABEL=%s", qlabel)
+}
+
+// launchdBootoutAllDomains emits the loop that boots the job in $LABEL out of
+// every domain in launchdDomainList(), ignoring per-domain failures (the job
+// may legitimately be loaded in only one domain, or none). It assumes
+// $LABEL is already assigned — pair it with launchdUIDLabelPrelude. The loop
+// is the single source of truth for the bootout verb; the activate, uninstall,
+// and stop scripts all splice it in.
+func launchdBootoutAllDomains() string {
+	return fmt.Sprintf(`for _DOMAIN in %s; do
+  launchctl bootout "$_DOMAIN/$LABEL" 2>/dev/null || true
+done`, launchdDomainList())
+}
+
 // launchdActivateScript loads or starts a LaunchAgent in ~/Library/LaunchAgents.
 //
 // Modern macOS expects LaunchAgents in the gui/$UID domain when a GUI session exists.
@@ -30,17 +51,12 @@ func launchdActivateScript(qlabel, qplist, plistFileName string, bootoutFirst bo
 	domains := launchdDomainList()
 	bootout := ""
 	if bootoutFirst {
-		bootout = fmt.Sprintf(`
-for _DOMAIN in %s; do
-  launchctl bootout "$_DOMAIN/$LABEL" 2>/dev/null || true
-done
-`, domains)
+		bootout = "\n" + launchdBootoutAllDomains() + "\n"
 	}
 	return fmt.Sprintf(`set -e
-UID=$(id -u)
+%s
 GUI_DOMAIN="gui/$UID"
 USER_DOMAIN="user/$UID"
-LABEL=%s
 PLIST=%s
 %s
 _DOMAIN=""
@@ -61,33 +77,41 @@ for _DOMAIN in %s; do
   fi
 done
 exit 1
-`, qlabel, qplist, bootout, domains)
+`, launchdUIDLabelPrelude(qlabel), qplist, bootout, domains)
 }
 
 // LaunchdBootoutScript unloads a LaunchAgent from both gui and user domains.
 // qlabel must already be posixSingleQuote'd.
 func LaunchdBootoutScript(qlabel, plistFileName string) string {
 	return fmt.Sprintf(`set -e
-UID=$(id -u)
-LABEL=%s
+%s
 PLIST="$HOME/Library/LaunchAgents/%s"
-for _DOMAIN in %s; do
-  launchctl bootout "$_DOMAIN/$LABEL" 2>/dev/null || true
-done
+%s
 launchctl unload -w "$PLIST" 2>/dev/null || true
 rm -f "$PLIST"
-`, qlabel, plistFileName, launchdDomainList())
+`, launchdUIDLabelPrelude(qlabel), plistFileName, launchdBootoutAllDomains())
+}
+
+// launchdStopScript boots the job out of every domain without removing the
+// plist — the launchd arm of autostart.Stop. qlabel must already be
+// posixSingleQuote'd. Same semantics as the bootout pass inside
+// LaunchdBootoutScript (per-domain failures ignored), plus set -e so a
+// failure of UID=$(id -u) itself surfaces instead of silently exiting 0.
+func launchdStopScript(qlabel string) string {
+	return fmt.Sprintf(`set -e
+%s
+%s
+`, launchdUIDLabelPrelude(qlabel), launchdBootoutAllDomains())
 }
 
 // launchdPrintScript returns launchctl print output for the first domain that has the job.
 func launchdPrintScript(qlabel string) string {
-	return fmt.Sprintf(`UID=$(id -u)
-LABEL=%s
+	return fmt.Sprintf(`%s
 for _DOMAIN in %s; do
   if launchctl print "$_DOMAIN/$LABEL" 2>/dev/null; then
     exit 0
   fi
 done
 echo unknown
-`, qlabel, launchdDomainList())
+`, launchdUIDLabelPrelude(qlabel), launchdDomainList())
 }
