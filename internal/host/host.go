@@ -48,27 +48,45 @@ func (h *Host) Connect() error {
 	return nil
 }
 
-func (h *Host) Close() error {
+// swapConn atomically replaces h.conn with next and returns the previous
+// connection (nil if there was none). Callers must Close the returned
+// connection outside the lock so an executor Close that re-enters the host
+// cannot deadlock.
+func (h *Host) swapConn(next Executor) Executor {
+	h.connMu.Lock()
+	old := h.conn
+	h.conn = next
+	h.connMu.Unlock()
+	return old
+}
+
+// withConn runs fn with the current connection. The lock-dereference and the
+// uniform "not connected" error live here so every executor-touching method
+// shares one code path; new methods (Stat, ReadFile, ...) should call it
+// rather than re-implementing the dance.
+func (h *Host) withConn(fn func(Executor) error) error {
 	h.connMu.Lock()
 	conn := h.conn
-	h.conn = nil
 	h.connMu.Unlock()
+	if conn == nil {
+		return fmt.Errorf("host %q is not connected", h.Name)
+	}
+	return fn(conn)
+}
 
-	if conn != nil {
-		return conn.Close()
+func (h *Host) Close() error {
+	old := h.swapConn(nil)
+	if old != nil {
+		return old.Close()
 	}
 	return nil
 }
 
 // SetConn injects a connection for testing without SSH.
 func (h *Host) SetConn(conn Executor) {
-	h.connMu.Lock()
-	oldConn := h.conn
-	h.conn = conn
-	h.connMu.Unlock()
-
-	if oldConn != nil && oldConn != conn {
-		_ = oldConn.Close()
+	old := h.swapConn(conn)
+	if old != nil && old != conn {
+		_ = old.Close()
 	}
 }
 
@@ -77,11 +95,13 @@ func (h *Host) Run(cmd string) (string, error) {
 		return "", err
 	}
 
-	h.connMu.Lock()
-	conn := h.conn
-	h.connMu.Unlock()
-
-	return conn.Run(cmd)
+	var out string
+	err := h.withConn(func(c Executor) error {
+		var err error
+		out, err = c.Run(cmd)
+		return err
+	})
+	return out, err
 }
 
 func (h *Host) RunShell(cmd string) (string, error) {
@@ -94,11 +114,9 @@ func (h *Host) Upload(localPath, remotePath string) error {
 		return err
 	}
 
-	h.connMu.Lock()
-	conn := h.conn
-	h.connMu.Unlock()
-
-	return conn.Upload(localPath, remotePath)
+	return h.withConn(func(c Executor) error {
+		return c.Upload(localPath, remotePath)
+	})
 }
 
 // encodePowerShellScript returns the base64 payload required by powershell.exe / pwsh -EncodedCommand (UTF-16LE).
