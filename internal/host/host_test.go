@@ -371,3 +371,65 @@ type closeTracker struct {
 func (c *closeTracker) Run(string) (string, error)  { return "", nil }
 func (c *closeTracker) Upload(string, string) error { return nil }
 func (c *closeTracker) Close() error                { *c.closed = true; return nil }
+
+// closeSpy is an Executor whose Close calls are counted, so tests can pin
+// the swapConn contract: Close closes the current connection exactly once
+// and only-then detaches it.
+type closeSpy struct {
+	testutil.MockExecutor
+	closeCalls int
+}
+
+func (c *closeSpy) Close() error {
+	c.closeCalls++
+	return nil
+}
+
+// TestHost_withConn_notConnected covers the nil-conn branch shared by every
+// withConn caller: the error must name the host and fn must never observe a
+// nil executor.
+func TestHost_withConn_notConnected(t *testing.T) {
+	t.Parallel()
+	h := NewHost("never-connected", config.HostConfig{Addr: "u@h", OS: "linux", Arch: "amd64"})
+
+	called := false
+	err := h.withConn(func(Executor) error {
+		called = true
+		return nil
+	})
+	if err == nil {
+		t.Fatal("withConn on disconnected host: expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "never-connected") {
+		t.Errorf("error should name the host, got %q", err)
+	}
+	if called {
+		t.Error("fn should not run when no connection is set")
+	}
+}
+
+// TestHost_Close_closesCurrentConnOnce pins the Close side of the swapConn
+// lifecycle (SetConn's swap branches are covered by
+// TestHost_SetConn_swapsAndClosesOld and TestHost_SetConn_sameConnDoesNotClose):
+// Close detaches and closes the current connection exactly once, and a second
+// Close is a no-op.
+func TestHost_Close_closesCurrentConnOnce(t *testing.T) {
+	t.Parallel()
+	only := &closeSpy{}
+	h := NewHost("h", config.HostConfig{Addr: "u@h", OS: "linux", Arch: "amd64"})
+
+	h.SetConn(only)
+
+	if err := h.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	if only.closeCalls != 1 {
+		t.Errorf("Close: conn closed %d times, want 1", only.closeCalls)
+	}
+	if err := h.Close(); err != nil {
+		t.Fatalf("second Close: %v", err)
+	}
+	if only.closeCalls != 1 {
+		t.Errorf("second Close must be a no-op, closed %d times", only.closeCalls)
+	}
+}
