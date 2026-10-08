@@ -35,7 +35,7 @@ func TestRenderRow_passesThroughColorize(t *testing.T) {
 		}
 		return cell
 	}
-	got := renderRow(cells, widths, colorize)
+	got := renderRow(cells, widths, colorize, false)
 	if calls != 3 {
 		t.Errorf("colorize should be called once per column, got %d calls", calls)
 	}
@@ -50,20 +50,21 @@ func TestRenderRow_nilColorizeRendersAsIs(t *testing.T) {
 	t.Parallel()
 	cells := []string{"one", "two"}
 	widths := []int{5, 5}
-	got := renderRow(cells, widths, nil)
+	got := renderRow(cells, widths, nil, false)
 	if !strings.Contains(got, "one") || !strings.Contains(got, "two") {
 		t.Fatalf("row should contain both cells with nil colorize, got: %q", got)
 	}
 }
 
-// TestRenderHighlightedRow_matchesPerCellCursorPattern verifies the cursor
-// variant still produces a row with each cell visible — the per-cell background
-// behavior is the contract viewMain depends on.
-func TestRenderHighlightedRow_matchesPerCellCursorPattern(t *testing.T) {
+// TestRenderRow_highlightedVariantStillShowsEveryCell verifies the highlight
+// flag (the former renderHighlightedRow, now folded into renderRow) keeps the
+// per-cell cursor-row contract: every cell stays visible with the selection
+// background applied per cell.
+func TestRenderRow_highlightedVariantStillShowsEveryCell(t *testing.T) {
 	t.Parallel()
 	cells := []string{"alpha", "beta"}
 	widths := []int{5, 5}
-	got := renderHighlightedRow(cells, widths, nil)
+	got := renderRow(cells, widths, nil, true)
 	if !strings.Contains(got, "alpha") || !strings.Contains(got, "beta") {
 		t.Fatalf("highlighted row should contain both cells, got: %q", got)
 	}

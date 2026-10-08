@@ -31,8 +31,8 @@ var headerSample = struct {
 	widths:  []int{8, 16, 8, 9, 28, 7, 8, 7, 21},
 }
 
-// colorizePassthrough is a no-op colorize for renderRow/renderHighlightedRow
-// that mimics the production path (returns the cell unchanged for cols the
+// colorizePassthrough is a no-op colorize for renderRow that mimics the
+// production path (returns the cell unchanged for cols the
 // colorize fn does not transform).
 func colorizePassthrough(col int, cell string) string { return cell }
 
@@ -51,7 +51,7 @@ func BenchmarkRenderRow(b *testing.B) {
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
 		for _, s := range rowSamples {
-			_ = renderRow(s.cells, s.widths, colorizePassthrough)
+			_ = renderRow(s.cells, s.widths, colorizePassthrough, false)
 		}
 	}
 }
@@ -62,7 +62,7 @@ func BenchmarkRenderHighlightedRow(b *testing.B) {
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
 		for _, s := range rowSamples {
-			_ = renderHighlightedRow(s.cells, s.widths, colorizePassthrough)
+			_ = renderRow(s.cells, s.widths, colorizePassthrough, true)
 		}
 	}
 }
@@ -87,7 +87,7 @@ func BenchmarkRenderHighlightedRowProduction(b *testing.B) {
 	var sb strings.Builder
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
-		renderHighlightedRowInto(&sb, productionRowSample.cells, productionRowSample.widths, runnerStatusColorize)
+		renderRowInto(&sb, productionRowSample.cells, productionRowSample.widths, runnerStatusColorize, true)
 		sb.Reset()
 	}
 }
@@ -98,7 +98,7 @@ func BenchmarkRenderRowProduction(b *testing.B) {
 	var sb strings.Builder
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
-		renderRowInto(&sb, productionRowSample.cells, productionRowSample.widths, runnerStatusColorize)
+		renderRowInto(&sb, productionRowSample.cells, productionRowSample.widths, runnerStatusColorize, false)
 		sb.Reset()
 	}
 }

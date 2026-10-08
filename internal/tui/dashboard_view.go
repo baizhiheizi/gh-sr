@@ -123,11 +123,7 @@ func (m *dashboardModel) viewMain() tea.View {
 	b.WriteByte('\n')
 
 	for i, cells := range rows {
-		if i == m.cursor {
-			renderHighlightedRowInto(&b, cells, widths, runnerStatusColorize)
-		} else {
-			renderRowInto(&b, cells, widths, runnerStatusColorize)
-		}
+		renderRowInto(&b, cells, widths, runnerStatusColorize, i == m.cursor)
 		b.WriteByte('\n')
 	}
 
@@ -273,7 +269,7 @@ func (m *dashboardModel) viewHostMetrics() tea.View {
 		b.WriteByte('\n')
 
 		for _, row := range rows {
-			renderRowInto(&b, row, widths, hostMetricsColorize)
+			renderRowInto(&b, row, widths, hostMetricsColorize, false)
 			b.WriteByte('\n')
 		}
 	}
