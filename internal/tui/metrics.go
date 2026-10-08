@@ -256,10 +256,9 @@ func appendFormatPercent(dst []byte, v float64, prec int) []byte {
 }
 
 // appendFormatUsedTotal appends "used/total UNIT (pct%)" (used/total/pct
-// formatted with 0 decimals) to dst. The function mirrors formatUsedTotal's
-// shape — the largest realistic output is around 24 chars
-// ("999999/9999999 GiB (100%)"); the stack [48]byte scratch in the TUI
-// caller covers this with room to spare.
+// formatted with 0 decimals) to dst. The largest realistic output is around
+// 24 chars ("999999/9999999 GiB (100%)"); the stack [48]byte scratch in the
+// TUI caller covers this with room to spare.
 func appendFormatUsedTotal(dst []byte, used, total, pct float64, unit string) []byte {
 	dst = strfmt.FmtFloat(dst, used, 0)
 	dst = append(dst, '/')
@@ -295,43 +294,31 @@ func metricsRow(m host.HostMetrics) []string {
 
 // formatPercent formats v with `prec` decimals followed by '%'.
 //
-// strconv.AppendFloat + a stack-allocated byte buffer avoids both the
-// per-call string allocation that strconv.FormatFloat returns AND the
-// strings.Builder heap allocation that the previous implementation
-// dragged in. metricsRow calls this once per host per View(); for a
-// 10-host panel that's 10 calls per render, and the cumulative cost
+// Thin wrapper over appendFormatPercent — the string-returning form exists
+// only for callers that need a standalone string (metricsRow); the byte
+// layout, buffer sizing, and allocation profile live in the append variant
+// so the two cannot drift. metricsRow calls this once per host per View();
+// for a 10-host panel that's 10 calls per render, and the cumulative cost
 // compounds across long dashboard sessions.
 //
 // The largest realistic output is "100.0%" (6 chars); [24]byte holds
 // the maximum AppendFloat output (24 chars) plus '%'.
 func formatPercent(v float64, prec int) string {
 	var buf [24]byte
-	b := strfmt.FmtFloat(buf[:0], v, prec)
-	b = append(b, '%')
-	return string(b)
+	return string(appendFormatPercent(buf[:0], v, prec))
 }
 
 // formatUsedTotal formats "used/total UNIT (pct%)".
 //
-// strconv.AppendFloat + stack buffer avoids the strings.Builder heap
-// allocation the previous implementation had. The largest realistic
-// output is around 24 chars (e.g. "999999/9999999 GiB (100%)"); [48]byte
-// holds AppendFloat's worst case (24 chars per float × 1 float at a time
-// since the buffer is reused across writes) plus the 8 non-float chars
-// ("/", " ", " (", "%)"). The buffer is big enough that this function
-// never allocates on the heap.
+// Thin wrapper over appendFormatUsedTotal — same single-source-of-truth
+// rationale as formatPercent. The largest realistic output is around 24
+// chars (e.g. "999999/9999999 GiB (100%)"); [48]byte holds AppendFloat's
+// worst case (24 chars per float × 1 float at a time since the buffer is
+// reused across writes) plus the 8 non-float chars ("/", " ", " (", "%)").
+// The buffer is big enough that this function never allocates on the heap.
 func formatUsedTotal(used, total, pct float64, unit string) string {
 	var buf [48]byte
-	b := buf[:0]
-	b = strfmt.FmtFloat(b, used, 0)
-	b = append(b, '/')
-	b = strfmt.FmtFloat(b, total, 0)
-	b = append(b, ' ')
-	b = append(b, unit...)
-	b = append(b, ' ', '(')
-	b = strfmt.FmtFloat(b, pct, 0)
-	b = append(b, '%', ')')
-	return string(b)
+	return string(appendFormatUsedTotal(buf[:0], used, total, pct, unit))
 }
 
 // colorizePercent highlights a cell that ends with a percentage based on severity.
