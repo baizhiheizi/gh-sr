@@ -90,8 +90,7 @@ func dispatchLaunchdAction(h *host.Host, san, action string) error {
 		_, err = h.Run(cmd)
 		return err
 	case actionStop:
-		cmd := fmt.Sprintf(`UID=$(id -u); LABEL=%s; for _DOMAIN in %s; do launchctl bootout "$_DOMAIN/$LABEL" 2>/dev/null || true; done`,
-			hostshell.PosixSingleQuote(label), launchdDomainList())
+		cmd := launchdStopScript(hostshell.PosixSingleQuote(label))
 		_, err := h.Run(cmd)
 		return err
 	default:

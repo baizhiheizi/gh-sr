@@ -54,7 +54,27 @@ func TestLaunchdBootoutScript(t *testing.T) {
 	}
 }
 
-// TestLaunchdDomainList_IsSingleSourceOfTruth verifies the four call sites
+func TestLaunchdStopScript(t *testing.T) {
+	label := "'com.github.ghsr.runner.test'"
+	script := launchdStopScript(label)
+
+	for _, want := range []string{
+		"set -e",
+		"UID=$(id -u)",
+		"LABEL='com.github.ghsr.runner.test'",
+		`launchctl bootout "$_DOMAIN/$LABEL" 2>/dev/null || true`,
+		// Stop must not remove the plist (that is uninstall's job).
+	} {
+		if !strings.Contains(script, want) {
+			t.Errorf("stop script missing %q", want)
+		}
+	}
+	if strings.Contains(script, "rm -f") || strings.Contains(script, "launchctl unload") {
+		t.Error("stop script must not touch the plist")
+	}
+}
+
+// TestLaunchdDomainList_IsSingleSourceOfTruth verifies the call sites
 // that previously inlined `for _DOMAIN in "gui/$UID" "user/$UID"; do` all
 // emit the canonical word list produced by launchdDomainList(). Catches
 // drift if a future change adds (or drops) a domain in one helper but not
@@ -66,6 +86,7 @@ func TestLaunchdDomainList_IsSingleSourceOfTruth(t *testing.T) {
 	activate := launchdActivateScript("'label'", "'plist'", "name.plist", false)
 	activateBootout := launchdActivateScript("'label'", "'plist'", "name.plist", true)
 	bootout := LaunchdBootoutScript("'label'", "name.plist")
+	stop := launchdStopScript("'label'")
 	printScript := launchdPrintScript("'label'")
 
 	cases := []struct {
@@ -76,6 +97,7 @@ func TestLaunchdDomainList_IsSingleSourceOfTruth(t *testing.T) {
 		{"activate", activate, 1},               // the bootstrap loop
 		{"activateBootout", activateBootout, 2}, // bootoutFirst + bootstrap loop
 		{"bootout", bootout, 1},                 // the single bootout loop
+		{"stop", stop, 1},                       // the single bootout loop
 		{"print", printScript, 1},               // the single print loop
 	}
 	for _, tc := range cases {
