@@ -1,10 +1,95 @@
 package tui
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/an-lee/gh-sr/internal/runner"
 )
+
+// menuItemsSamples mirrors the per-panel label counts. Every menu panel
+// (action / global / filter) has 4-7 items, and viewFilterList can carry
+// dozens of host/repo choices when filters are configured. RenderMenuItems
+// fires once per menu render, not per tick, so this bench captures the
+// per-call cost so a builder-into-builder optimisation can be measured.
+var menuItemsSamples = [][]string{
+	{"setup", "up", "down", "restart", "update", "logs"},                                                             // action menu
+	{"doctor", "host metrics", "cleanup", "show config", "edit yaml", "edit env"},                                    // global menu
+	{"host filter (clear)", "repo filter (clear)"},                                                                   // filter menu (idle)
+	{"h1.example", "h2.example", "h3.example", "h4.example", "h5.example", "h6.example", "h7.example", "h8.example"}, // filter list (8 hosts)
+}
+
+// BenchmarkRenderMenuItems measures the current string-returning helper so a
+// builder-into-builder variant can be compared on the same fixture.
+func BenchmarkRenderMenuItems(b *testing.B) {
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		for _, items := range menuItemsSamples {
+			_ = renderMenuItems(items, 1)
+		}
+	}
+}
+
+// BenchmarkRenderMenuItemsInto measures the same fixture through the
+// builder-into-builder variant once it lands. The pair of benches lets us
+// quantify the +alloc / -byte saving from dropping the inner-string b.String()
+// copy the caller used to pay for.
+func BenchmarkRenderMenuItemsInto(b *testing.B) {
+	var sb strings.Builder
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		for _, items := range menuItemsSamples {
+			renderMenuItemsInto(&sb, items, 1)
+			sb.Reset()
+		}
+	}
+}
+
+// BenchmarkViewActionMenu exercises the full action-menu view compositing
+// (title + instance line + renderMenuItems + help line) so the
+// renderMenuItemsInto swap at the call site shows up. The helper-only bench
+// (BenchmarkRenderMenuItems vs BenchmarkRenderMenuItemsInto) is identical
+// because strings.Builder.String() is a no-copy refcount bump; the actual
+// saving is the elimination of the intermediate b.String() copy the caller
+// previously paid when writing the result back into its own strings.Builder.
+func BenchmarkViewActionMenu(b *testing.B) {
+	m := newBenchDashboardModel()
+	_, _ = m.selectedInstance() // populate confirm/instance state
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		_ = m.viewActionMenu()
+	}
+}
+
+// scrollFixture builds a dashboardModel wired for viewScroll: a title + 200
+// log lines so the per-line "  " + line + "\n" pattern fires 200 times per
+// render. The bench measures the per-call cost of the scroll-mode view
+// compositing so the per-line WriteString/WriteByte('\n') split shows up as
+// a measurable byte / alloc saving.
+func scrollFixture() *dashboardModel {
+	lines := make([]string, 200)
+	for i := range lines {
+		lines[i] = "this is a representative log line for the scroll fixture"
+	}
+	return &dashboardModel{
+		scrollTitle: "Logs",
+		scrollLines: lines,
+		scrollOff:   0,
+		height:      100,
+	}
+}
+
+// BenchmarkViewScroll measures the scroll-mode panel that backs the logs /
+// doctor / config views. Only fires when the user is in scroll mode (NOT the
+// per-tick refresh path) but the per-line b.WriteString("  " + line + "\n")
+// pattern was the last remaining "+ "\n"" concat in the dashboard view code.
+func BenchmarkViewScroll(b *testing.B) {
+	m := scrollFixture()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		_ = m.viewScroll()
+	}
+}
 
 // BenchmarkFooterMain measures the per-View() cost of rendering the bottom
 // status line. The dashboard calls footerMain on every render (refresh tick

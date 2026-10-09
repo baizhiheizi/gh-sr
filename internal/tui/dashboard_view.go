@@ -50,16 +50,32 @@ func newAltView(s string) tea.View {
 // use the plain "    " indent so the column of arrow markers stays aligned.
 // The trailing newline is part of the returned string so callers can append
 // it directly to a strings.Builder.
+//
+// The string-returning shape is preserved for test use; menu renderers that
+// already have a strings.Builder to write into should call renderMenuItemsInto
+// to skip the final b.String() copy and the per-item "+ "\n"" concat allocs.
 func renderMenuItems(items []string, cursor int) string {
 	var b strings.Builder
+	renderMenuItemsInto(&b, items, cursor)
+	return b.String()
+}
+
+// renderMenuItemsInto appends the per-item lines to b. Same per-line
+// semantics as renderMenuItems but writes to a caller-supplied builder so the
+// lines can be embedded in a larger panel output without paying for an
+// intermediate strings.Builder grow + b.String() copy just to be concatenated
+// by the caller. Mirrors the renderRowInto / renderRow split used by the
+// table render path.
+func renderMenuItemsInto(b *strings.Builder, items []string, cursor int) {
 	for i, label := range items {
 		if i == cursor {
-			b.WriteString(selectedStyle.Render("  > "+label) + "\n")
+			b.WriteString(selectedStyle.Render("  > " + label))
 		} else {
-			b.WriteString("    " + label + "\n")
+			b.WriteString("    ")
+			b.WriteString(label)
 		}
+		b.WriteByte('\n')
 	}
-	return b.String()
 }
 
 func (m *dashboardModel) viewMain() tea.View {
@@ -171,8 +187,9 @@ func (m *dashboardModel) viewActionMenu() tea.View {
 	b.WriteString(titleStyle.Render("Runner actions"))
 	b.WriteString("\n\n")
 	b.WriteString(fmt.Sprintf("  Instance: %s\n\n", configVal.Render(inst)))
-	b.WriteString(renderMenuItems(actionMenuLabels, m.menuCursor))
-	b.WriteString(helpStyle.Render("\n  enter: run  esc: back") + "\n")
+	renderMenuItemsInto(&b, actionMenuLabels, m.menuCursor)
+	b.WriteString(helpStyle.Render("\n  enter: run  esc: back"))
+	b.WriteByte('\n')
 	return newAltView(b.String())
 }
 
@@ -180,8 +197,9 @@ func (m *dashboardModel) viewGlobalMenu() tea.View {
 	var b strings.Builder
 	b.WriteString(titleStyle.Render("Global menu"))
 	b.WriteString("\n\n")
-	b.WriteString(renderMenuItems(globalMenuLabels, m.menuCursor))
-	b.WriteString(helpStyle.Render("\n  enter: choose  esc: back") + "\n")
+	renderMenuItemsInto(&b, globalMenuLabels, m.menuCursor)
+	b.WriteString(helpStyle.Render("\n  enter: choose  esc: back"))
+	b.WriteByte('\n')
 	return newAltView(b.String())
 }
 
@@ -189,8 +207,9 @@ func (m *dashboardModel) viewFilterMenu() tea.View {
 	var b strings.Builder
 	b.WriteString(titleStyle.Render("Filters"))
 	b.WriteString("\n\n")
-	b.WriteString(renderMenuItems(filterMenuLabels, m.menuCursor))
-	b.WriteString(helpStyle.Render("\n  enter: choose  esc: back") + "\n")
+	renderMenuItemsInto(&b, filterMenuLabels, m.menuCursor)
+	b.WriteString(helpStyle.Render("\n  enter: choose  esc: back"))
+	b.WriteByte('\n')
 	return newAltView(b.String())
 }
 
@@ -198,13 +217,15 @@ func (m *dashboardModel) viewFilterList(choices []string, subtitle string) tea.V
 	var b strings.Builder
 	b.WriteString(titleStyle.Render("Pick filter"))
 	b.WriteString("\n\n")
-	b.WriteString(helpStyle.Render("  "+subtitle) + "\n\n")
+	b.WriteString(helpStyle.Render("  " + subtitle))
+	b.WriteString("\n\n")
 	if len(choices) == 0 {
 		b.WriteString("  (no values)\n")
 	} else {
-		b.WriteString(renderMenuItems(choices, m.menuCursor))
+		renderMenuItemsInto(&b, choices, m.menuCursor)
 	}
-	b.WriteString(helpStyle.Render("\n  enter: apply  esc: back") + "\n")
+	b.WriteString(helpStyle.Render("\n  enter: apply  esc: back"))
+	b.WriteByte('\n')
 	return newAltView(b.String())
 }
 
@@ -243,7 +264,9 @@ func (m *dashboardModel) viewScroll() tea.View {
 		b.WriteString(helpStyle.Render("  j/k scroll · ctrl+u/ctrl+d page · esc back\n\n"))
 	}
 	for i := m.scrollOff; i < end; i++ {
-		b.WriteString("  " + m.scrollLines[i] + "\n")
+		b.WriteString("  ")
+		b.WriteString(m.scrollLines[i])
+		b.WriteByte('\n')
 	}
 	return newAltView(b.String())
 }
