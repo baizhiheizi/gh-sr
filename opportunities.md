@@ -16,6 +16,7 @@ Status as of 2026-10-01. The repo is small (~14k LOC) and already heavily optimi
 - **[perf-improver] perf(runner): use SplitSeq for per-instance probe parsers on Status path** — PR #463 (MERGED 2026-09-27). `internal/runner/container.go` (`ProbeDinDContainerReadiness`) and `internal/runner/linux_instance_probe.go` (`linuxInstanceProbe`). -8.7% bytes / -1 alloc on the linux probe; mock harness swamps the saving on the docker probe.
 - **[efficiency-improver] perf(ui): use SplitSeq for FormatRemediation, wrapLines, and formatLaunchdDetail** — PR #498 (MERGED 2026-09-27). Last three display-side `strings.Split(out, "\n")` callers.
 - **[perf-improver] perf(tui): drop per-row builder copy + "+ "\n"" concats in viewMain** — PR #502 (MERGED 2026-09-27). `renderRowInto` / `renderHighlightedRowInto` builder-appending variants; `viewMain` / `viewHostMetrics` switched to `WriteString` + `WriteByte('\n')`. -7 allocs/op (-2.2%, 322→315), -590 B/op (-5.9%) on `BenchmarkViewMain/one_status`.
+- **[perf-improver] perf(tui): drop last "+ "\n"" concats in menu/scroll views via renderMenuItemsInto** — draft PR on branch `perf-assist/menu-render-builder-into` (commit `697b2d4`). Sweeps up the last two `+ "\n"` patterns: added `renderMenuItemsInto` builder-into-builder variant; the four menu views use it; the trailing `helpStyle.Render(...) + "\n"` in each menu view split into `WriteString` + `WriteByte('\n')`; `viewScroll` per-line `"  " + line + "\n"` split similarly. `BenchmarkViewActionMenu`: -26% time, -24% bytes (-368 B), -13% allocs. `BenchmarkViewScroll` (200-line fixture): -24% time, -18% bytes (-6,023 B), -77% allocs (-94). Output byte-identical; existing menu tests still pass.
 
 ## Backlog cursor
 
@@ -44,21 +45,7 @@ With SplitSeq + the TUI caller-side concat both complete, the next runs should l
 - Could skip cells already at column width (no padding needed).
 - Status: SPECULATIVE. Re-profile after PR #502 merge to see whether padding-skip still gives measurable savings on top.
 
-### 3. viewScroll `+ "\n"` concat (LOW impact, LOW risk)
-- `internal/tui/dashboard_view.go:250` has `b.WriteString("  " + m.scrollLines[i] + "\n")` repeated per line in `viewScroll`.
-- Same shape as the `viewMain` / `viewHostMetrics` fix (PR #502); mechanical conversion to `WriteString` + `WriteByte('\n')`.
-- Caveat: `viewScroll` only fires when the user is in scroll mode (NOT the per-tick refresh hot path), so this is more of a code-shape cleanup than a perf win.
-- Status: NOT STARTED. Deferred from run 36939788959 to avoid colliding with the maintainer's recent refactor work; worth picking up on a quieter week.
-
-### 4. EnrichFromScopeRunners N×M GitHub-runner scan (MEDIUM impact, LOW-MEDIUM risk) — NEW
-- `BenchmarkEnrichFromScopeRunners` (20 repos × 10 instances): 50,363 ns/op, 117,529 B/op, 420 allocs/op.
-- `BenchmarkEnrichFromScopeRunners_Small` (5 repos × 2 instances): 2,390 ns/op, 6,488 B/op, 28 allocs/op.
-- Inner loop `for _, gr := range scopeRunners[key] { if gr.Name != statuses[i].Instance { continue } ... }` is O(N×M) per status scan over per-scope GitHub runners. For 200 statuses × 100 GitHub runners that's 20K string comparisons per call.
-- Building a `map[string]GitHubRunner` per `scopeKey` would turn this into O(N+M). Cost: one extra map alloc per scope (≈ 20 small map allocs for the big fixture; 5 for the small fixture). For the small fixture the +alloc cost likely swamps the -CPU savings; for the big fixture the -CPU savings likely dominate.
-- Alternative: cache `rcByInstance` + the scopeKey→runners map across `EnrichWithGitHubStatus` calls (cfg-change detection required). Higher code-complexity payoff.
-- Status: NEEDS BENCHMARK before committing. Add a `BenchmarkEnrichFromScopeRunners_Map` variant comparing both strategies on the same fixtures (big + small), then decide.
-
-### 5. Manager.Status further per-instance optimization (LOW impact)
+### 3. Manager.Status further per-instance optimization (LOW impact)
 - `BenchmarkManager_Status`: 48,939 ns/op, 167,457 B/op, 75 allocs/op.
 - Already heavily optimized (mode/repo/labels hoisted per inline comment).
 - Remaining allocs likely from per-instance `RunnerStatus` struct construction + mock SSH output parsing.

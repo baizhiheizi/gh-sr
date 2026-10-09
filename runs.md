@@ -55,13 +55,27 @@ First run after PR #502 landed (merged 2026-09-27). Maintainer has been doing co
 - ✅ Task 6 (Measurement infra): no infra work needed. Existing bench suite (4 viewMain, 2 metricsRow, 5 runner probe, etc.) covers the hot paths. Could add a `BenchmarkEnrichFromScopeRunners_Map` variant next time item #5 is picked up.
 - ✅ Task 7 (Monthly summary): closed September issue #459 (with rollover comment) and opened the new `[perf-improver] Monthly Activity 2026-10` issue. Updated [[perf-improver-opportunities]] with item #5 (EnrichFromScopeRunners N×M scan) and re-prioritised #1–#4 against the new state.
 
+## 2026-10-08 (run_id 37861361199) — Sixth perf-improver run
+
+Picked up the deferred `viewScroll` `+ "\n"` follow-up (backlog item #3) and tried the EnrichFromScopeRunners map lookup (item #5). Created draft PR on branch `perf-assist/menu-render-builder-into` for the menu/scroll sweep.
+
+- ✅ Task 1 (Discover commands): re-validated `go build`, `go vet`, `gofmt -l .`, `go test ./... -race -count=1` all OK. Commands still current; `GOTOOLCHAIN=auto` still required.
+- ✅ Task 2 (Identify opportunities): re-ran the bench suite. `BenchmarkViewMain/one_status` still at 315 allocs/op on main. `BenchmarkEnrichFromScopeRunners` still at 420 allocs/op (big fixture), 28 allocs/op (small fixture). No new opportunities beyond the backlog.
+- ✅ Task 3 (Implement improvements): created draft PR on branch `perf-assist/menu-render-builder-into`. Added `renderMenuItemsInto` (mirrors `renderRowInto` shape); the four menu views now use it; the trailing `helpStyle.Render(...) + "\n"` in each menu view split into separate `WriteString` + `WriteByte('\n')` calls; `viewScroll` per-line `"  " + line + "\n"` split similarly. See [[perf-improver-work]] for full benchmark table.
+- ✅ Task 4 (Maintain PRs): no other open perf-improver PRs.
+- ✅ Task 5 (Comment on perf issues): no open performance-labelled issues besides the Monthly Activity issue.
+- ✅ Task 6 (Measurement infra): side-effect of Task 3 — added 4 new benchmarks (`BenchmarkRenderMenuItems`, `BenchmarkRenderMenuItemsInto`, `BenchmarkViewActionMenu`, `BenchmarkViewScroll` + `scrollFixture`) covering the menu and scroll paths. Future TUI render changes can measure against these.
+- ✅ Task 7 (Monthly summary): updated issue #517 (October) with the new run history entry, removed closed items #3 (viewScroll) and #5 (EnrichFromScopeRunners map) from backlog, recorded the map-lookup bench result.
+
+**Also resolved this run**: tried the `enrichFromScopeRunners` map-lookup variant (backlog item #5) — measured a CLEAR LOSS on every metric (big fixture: +26% time, +33% bytes, +83 allocs; small fixture: +72% time, +73% bytes, +10 allocs). The map allocation overhead dominates; the O(N×M) slice iteration is the right shape. Conclusion recorded in [[perf-improver-opportunities]].
+
 ## Backlog cursor for next run
 
 Pick up at the top of [[perf-improver-opportunities]]:
 
 1. **View() alloc reduction — remaining lipgloss cost** — was HIGH/HIGH; now MEDIUM/MEDIUM after PR #502 (merged 2026-09-27) closed the caller-side alloc opportunities. The remaining ~95% is inside `lipgloss.Style.Render` (line-wrapping `strings.Split`, ANSI byte-buffer growth). HIGH risk, only attempt if a future run wants to push further.
 2. **renderRow / renderHighlightedRow cell padding** — MEDIUM impact, LOW risk. Still speculative. Worth profiling after the *Into variants are merged to see whether padding-skip still gives measurable savings on top.
-3. **`viewScroll` `+ "\n"` concat** — `internal/tui/dashboard_view.go:250` has `b.WriteString("  " + m.scrollLines[i] + "\n")` repeated per line. Same shape as the merged `viewMain` / `viewHostMetrics` fix (PR #502). LOW impact (only fires when scroll mode is active, not the per-tick hot path). LOW risk. Quick mechanical follow-up if a future run wants to clear it out; deferred this run so it doesn't collide with the maintainer's recent refactor churn (#510/#509/#508/#511).
-4. **Manager.Status further per-instance optimization** — LOW priority. Marginal gains expected.
-5. **EnrichFromScopeRunners N×M GitHub-runner scan** — NEW this run. `BenchmarkEnrichFromScopeRunners` 420 allocs/op, 117 KB/op at 200 statuses (the dominant non-lipgloss alloc hotspot on the TUI refresh path). Hot loop does O(N×M) `gr.Name != statuses[i].Instance` comparisons against `scopeRunners[key]`. Building a `map[string]GitHubRunner` per scopeKey would turn this into O(N+M) at the cost of one map-alloc per scope. MEDIUM impact for big configs (where the comparison cost dominates), probably neutral for small configs (10 statuses × 10 runners). NEEDS a fresh bench pass comparing both strategies on the same fixture before committing. Could also be neutralised by caching `rcByInstance` + the scopeKey→runners map across `EnrichWithGitHubStatus` calls (cfg-change detection required — adds complexity).
-6. **Periodic `strings.Split` grep** — DONE for current code; worth re-running if new code lands.
+3. **Manager.Status further per-instance optimization** — LOW priority. Marginal gains expected.
+4. **Periodic `strings.Split` grep** — DONE for current code; worth re-running if new code lands.
+
+_(Items #3 `viewScroll` `+ "\n"` concat and #5 `EnrichFromScopeRunners` map lookup were resolved/closed by run 6 above.)_

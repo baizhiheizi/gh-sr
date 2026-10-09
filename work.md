@@ -81,3 +81,42 @@ The byte saving is more meaningful than the alloc drop because eliminating the i
 - A focus on byte savings (not just alloc count) often reveals larger GC wins — eliminating one intermediate `strings.Builder.String()` copy of ~600 bytes per `viewMain` call is more impactful than dropping several small per-cell allocations.
 - Mechanical follow-up fixes (e.g. the `viewScroll` `+ "\n"` concat) are best deferred when the maintainer is in a refactor-consolidation phase — the PR churn isn't worth a 1-line change. Schedule such cleanups for quieter weeks.
 - `BenchmarkEnrichFromScopeRunners` is the largest remaining non-lipgloss alloc hotspot (420 allocs/op at 200 statuses, dominated by `name+"-"+strconv.Itoa(j)` key construction). Possible optimizations: (a) build a per-scope `map[string]GitHubRunner` (trades +alloc for -CPU on big configs only); (b) cache `rcByInstance` across `EnrichWithGitHubStatus` calls with cfg-change detection (higher complexity, larger payoff). Both need a fresh bench pass before committing.
+- The TUI render builder-into-builder pattern (PR #502, run 6) generalises to every helper that uses `b.WriteString(<rendered> + "\n")` or `"  " + line + "\n"`. The pattern is now applied to `renderMenuItems` (kept as thin wrapper) + `renderMenuItemsInto` (direct), the trailing help lines in all four menu views, and the per-line `"  " + line + "\n"` in `viewScroll`. Net for the four helpers: -26% to -77% allocs/op, -18% to -24% bytes/op.
+- `strings.Builder.String()` is a no-copy refcount bump, so a helper-level bench that swaps the string form for the builder-into form shows NO change. The actual saving only shows up at the call site where the helper's result would have been concatenated back into a larger `strings.Builder` — bench the compositing path, not the helper.
+- For a simple `O(N×M)` slice iteration vs a `map[string]T` build, the map wins ONLY when M is large enough that the map build cost is amortised across the lookups. On small/medium fixtures the map build cost (header + bucket array per scopeKey) dominates and the slice iteration is the right shape. Don't pre-optimise; bench with realistic sizes first.
+
+### 2026-10-08 (run 6) — TUI menu/scroll builder-into-builder sweep (draft PR on `perf-assist/menu-render-builder-into`)
+
+**PR opened**: `[perf-improver] perf(tui): drop last "+ "\n"" concats in menu/scroll views via renderMenuItemsInto` (DRAFT, branch `perf-assist/menu-render-builder-into`, commit `697b2d4`).
+
+**Status**: Draft — pushed to branch, awaiting maintainer review.
+
+**Change**: `internal/tui/dashboard_view.go` —
+- Added `renderMenuItemsInto(b *strings.Builder, items []string, cursor int)` mirroring the `renderRowInto` shape. The original `renderMenuItems(items, cursor)` now delegates (`var b strings.Builder; renderMenuItemsInto(&b, items, cursor); return b.String()`) so existing test callers are unchanged.
+- All four menu views (`viewActionMenu`, `viewGlobalMenu`, `viewFilterMenu`, `viewFilterList`) call `renderMenuItemsInto(&b, ...)` instead of concatenating the helper's return value.
+- Trailing `helpStyle.Render("...") + "\n"` in each menu view split into separate `b.WriteString(helpStyle.Render("..."))` + `b.WriteByte('\n')` calls.
+- `viewScroll` per-line `"  " + line + "\n"` split into `b.WriteString("  ")` + `b.WriteString(line)` + `b.WriteByte('\n')`.
+
+`internal/tui/dashboard_view_bench_test.go` — added 4 new benchmarks:
+- `BenchmarkRenderMenuItems` + `BenchmarkRenderMenuItemsInto` (pair so the helper-only difference is quantifiable; intentionally identical because `strings.Builder.String()` is no-copy)
+- `BenchmarkViewActionMenu` (full action-menu compositing, captures the caller-side saving)
+- `BenchmarkViewScroll` + `scrollFixture()` (200-line scroll fixture for the `viewScroll` per-line fix)
+
+**Benchmark (go1.26.0, AMD Ryzen AI 9 HX 370, -benchtime=500ms -benchmem -count=10)**:
+
+| Bench | Before (main) | After (`perf-assist/menu-render-builder-into`) | Δ |
+| --- | --- | --- | --- |
+| `BenchmarkViewActionMenu` | 7,252 ns/op, 1,537 B/op, 39 allocs | 5,373 ns/op, 1,169 B/op, 34 allocs | **-26% time, -24% bytes (-368 B), -13% allocs** |
+| `BenchmarkViewScroll` (200-line fixture) | 14,560 ns/op, 32,601 B/op, 122 allocs | 11,042 ns/op, 26,578 B/op, 28 allocs | **-24% time, -18% bytes (-6,023 B), -77% allocs (-94)** |
+| `BenchmarkRenderMenuItems` (helper) | 365 ns/op, 576 B/op, 13 allocs | 365 ns/op, 576 B/op, 13 allocs | wash (expected — `String()` is no-copy) |
+| `BenchmarkRenderMenuItemsInto` (helper) | n/a | 365 ns/op, 576 B/op, 13 allocs | identical to wrapper, as expected |
+
+Output is byte-identical to main (no visible-text changes). Existing menu tests (`TestViewActionMenu`, `TestViewGlobalMenu`, etc.) still pass.
+
+**Verification**: `go build ./...` OK, `go vet ./...` OK, `gofmt -l .` clean, `go test ./... -race -count=1 -short` OK across all 17 packages.
+
+**Also tried (REJECTED): `enrichFromScopeRunners` map-lookup variant**. Built a per-scope `map[string]GitHubRunner` to turn the inner O(N×M) `gr.Name != statuses[i].Instance` scan into an O(1) lookup. Bench was a CLEAR LOSS on every metric:
+- Big fixture (20 repos × 10 instances): 49,054 → 61,713 ns/op (+26%), 117,528 → 156,576 B/op (+33%), 420 → 503 allocs (+83)
+- Small fixture (5 repos × 2 instances): 2,478 → 4,266 ns/op (+72%), 6,488 → 11,208 B/op (+73%), 28 → 38 allocs (+10)
+
+The map allocation overhead (one map header + bucket array per `scopeKey`) dominates the saved string compares on every fixture size. The function's alloc count is dominated by the `name+"-"+strconv.Itoa(j)` strings in the `rcByInstance` build (~200 per call on the big fixture), NOT by the GitHub-runner scan. **Conclusion**: the O(N×M) slice iteration is the right shape. Caching `rcByInstance` across `EnrichWithGitHubStatus` calls with cfg-change detection would be a bigger refactor and isn't worth the complexity for the per-tick cost. Backlog item #5 closed; conclusion recorded in `opportunities.md`.
