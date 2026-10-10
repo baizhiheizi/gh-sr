@@ -5,7 +5,6 @@
     "investigation_after": null
   },
   "issues": [],
-  "fixes": [],
   "checks": [
     {
       "area": "code",
@@ -26,12 +25,6 @@
       "follow_up": "All 6 direct deps already at head. No Dependabot PRs to bundle."
     },
     {
-      "area": "tests",
-      "checked_at": "2026-10-07",
-      "result": "acted",
-      "follow_up": "Filled internal/host coverage gap on branch repo-assist/test-host-coverage-2026-10-07 (commit 14665b6). 7 new hermetic tests. Package coverage 66.8% -> 70.0%."
-    },
-    {
       "area": "qa",
       "checked_at": "2026-10-03",
       "result": "acted",
@@ -42,8 +35,15 @@
       "checked_at": "2026-10-07",
       "result": "acted",
       "follow_up": "One PR open: branch repo-assist/test-host-coverage-2026-10-07 (commit 14665b6) — internal/host test coverage, 7 new tests, no production changes. Awaiting merge."
+    },
+    {
+      "area": "tests",
+      "checked_at": "2026-10-10",
+      "result": "acted",
+      "follow_up": "Filled internal/tui coverage gap on branch repo-assist/test-tui-colorize-2026-10-10 (commit b96ea72). 5 target functions 0%->100%: colorizeImageBuild, colorizeLocalStatus, colorizeGitHubStatus, runnerStatusColorize, runnerStatusCells. Package coverage 33.3% -> 37.2%."
     }
   ],
   "completed_actions": [],
-  "priorities": []
+  "priorities": [],
+  "fixes": []
 }
