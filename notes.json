@@ -20,9 +20,9 @@
     },
     {
       "area": "dependencies",
-      "checked_at": "2026-10-07",
+      "checked_at": "2026-10-11",
       "result": "no_actionable",
-      "follow_up": "All 6 direct deps already at head. No Dependabot PRs to bundle."
+      "follow_up": "All 6 direct deps still at head (or with minor/patch behind that Dependabot will surface). bubbletea/v2 v2.0.9→v2.1.0 minor now visible; defer to Dependabot weekly cadence. No Dependabot PRs to bundle."
     },
     {
       "area": "qa",
@@ -31,10 +31,16 @@
       "follow_up": "Filled docs gap for cache subcommands + rebuild + version + add on branch repo-assist/docs-commands-2026-10-03 (commit 30f3002)."
     },
     {
-      "area": "repo_assist_prs",
-      "checked_at": "2026-10-07",
+      "area": "docs",
+      "checked_at": "2026-10-11",
       "result": "acted",
-      "follow_up": "One PR open: branch repo-assist/test-host-coverage-2026-10-07 (commit 14665b6) — internal/host test coverage, 7 new tests, no production changes. Awaiting merge."
+      "follow_up": "Added dedicated 'Add host / runner' section to docs/content/commands.md on branch repo-assist/docs-add-command-2026-10-11 (commit 97b5a92). Covers every gh sr add host/runner flag with worked examples. Doc-only PR."
+    },
+    {
+      "area": "repo_assist_prs",
+      "checked_at": "2026-10-11",
+      "result": "acted",
+      "follow_up": "Two draft PRs open: repo-assist/test-tui-colorize-2026-10-10 (commit b96ea72, opened 2026-10-10) and repo-assist/docs-add-command-2026-10-11 (commit 97b5a92, opened 2026-10-11). Both awaiting maintainer review."
     },
     {
       "area": "tests",
