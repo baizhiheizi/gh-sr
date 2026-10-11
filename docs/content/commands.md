@@ -40,7 +40,7 @@ gh sr dashboard            # Same as bare gh sr: launch interactive TUI dashboar
 gh sr version              # Print gh sr version
 ```
 
-Use `gh sr add host <name> <addr>` and `gh sr add runner <name>` to add new hosts and runners to an existing `runners.yml` from the CLI (see the [Quick start](#quick-start-sequence) below).
+Use `gh sr add host <name> <addr>` and `gh sr add runner <name>` to append hosts and runners to your resolved `runners.yml` from the CLI; see [Add host / runner](#add-host--runner) below for flags and examples.
 
 The dashboard includes live status, per-runner actions (setup, up, down, restart, update, logs), global actions (doctor, cleanup, show/validate/edit config and env), and host/repo filters. Press `h` to open the host metrics panel (CPU, memory, disk, load, uptime) or `?` for the full key map.
 
@@ -88,6 +88,37 @@ gh sr
 ```
 
 For what each lifecycle command does on the host, see [Architecture — Lifecycle commands](architecture.md#lifecycle-commands-what-they-do).
+
+## Add host / runner
+
+The `gh sr add` subcommands append a new entry to your resolved `runners.yml` so you do not have to edit YAML by hand. Both subcommands resolve the config via `gh sr --config` (default `~/.gh-sr/runners.yml`) and write through `gh sr config edit` semantics: the file is reformatted and the change is logged on stderr.
+
+```bash
+gh sr add host vps-1 user@vps.example             # name + user@host (port optional)
+gh sr add host mac-mini user@192.168.1.50:2222    # custom SSH port
+gh sr add host win-pc user@10.0.0.5                # Windows hosts work the same way
+
+gh sr add runner backend-1 --repo owner/repo --host vps-1
+gh sr add runner backend-1 --repo owner/repo --host vps-1 --count 3
+gh sr add runner backend-1 --repo owner/repo --host vps-1 --labels linux,x64,docker
+gh sr add runner backend-1 --repo owner/repo --host vps-1 --ephemeral
+gh sr add runner org-runner --org my-org --group my-group --host vps-1   # org-level + group
+gh sr add runner aw-runner --repo owner/repo --host vps-1 --profile agentic
+```
+
+**Flags — `gh sr add host <name> <addr>`:** positional `<name>` and `<addr>` only. The addr accepts `user@host`, `user@host:port`, `host`, or `host:port`. `os` and `arch` are auto-detected over SSH on the next `setup` / `up` / `doctor` run.
+
+**Flags — `gh sr add runner <name>`:**
+
+- `--repo owner/repo` *or* `--org my-org` — exactly one is required; the runner is scoped to that target.
+- `--host <name>` — required, must match an existing host entry.
+- `--count <n>` — number of parallel instances with the same name suffix (default 1).
+- `--labels a,b,c` — GitHub runner labels; auto-generated from the host OS/arch when omitted.
+- `--ephemeral` — register as a single-job runner that GitHub deregisters after one job.
+- `--group <name>` — assign the runner to a runner group (org-level runners only).
+- `--profile agentic` — register as a GitHub Agentic Workflows runner; always runs in container (DinD) mode.
+
+After either subcommand, run `gh sr doctor && gh sr setup && gh sr up` to roll the new host/runner out. For background and field-by-field reference, see the [Organization runners guide](https://an-lee.github.io/gh-sr/guides/org-runners/) (for `--org` / `--group`) and [Host setup](host-setup.md) (for the full `host:` / `runner:` schema).
 
 ## Host metrics
 
