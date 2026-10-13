@@ -98,9 +98,6 @@ func (m *Manager) PlanOrphanCleanup(h *host.Host, instance string) (OrphanCleanu
 		return plan, err
 	}
 	plan.Autostart = kind != autostart.KindNone
-	if h.OS == "linux" && svcShPresent(h, instance) {
-		plan.Autostart = true
-	}
 	exists, err := instanceDirectoryExists(h, instance)
 	if err != nil {
 		return plan, err
@@ -112,7 +109,7 @@ func (m *Manager) PlanOrphanCleanup(h *host.Host, instance string) (OrphanCleanu
 // orphanLinuxPlanProbe issues one shell call that reports three correlated
 // facts about an orphan instance on Linux: directory existence, svc.sh
 // deployment, and autostart unit kind. Replaces three per-instance
-// round-trips (instanceDirectoryExists + svcShPresent + autostart.Detect)
+// round-trips (instanceDirectoryExists + autostart.Detect + a svc.sh probe)
 // with one. The script intentionally uses a literal "$HOME" prefix and
 // instance-name interpolation (already sanitized by the caller via
 // SafeRunnerInstanceName) so the remote sh performs the expansion.
