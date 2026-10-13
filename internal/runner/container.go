@@ -22,7 +22,7 @@ const AgenticRunnerImageTag = "gh-sr/agentic-runner"
 // runner image build, overridable via runners.yml
 // container_runner_image.base_image; pin by digest for reproducible builds.
 // The cache server image default lives in the cache package (cache.DefaultImage).
-const DefaultForkRunnerImage = "ghcr.io/falcondev-oss/actions-runner:2.337.0"
+const DefaultForkRunnerImage = "ghcr.io/falcondev-oss/actions-runner:2.338.0"
 
 // Docker image labels stamped at build time (see buildAgenticRunnerImage).
 const (
@@ -85,8 +85,8 @@ func containerRunnerImageExtraSorted(extra []string) []string {
 }
 
 // ContainerRunnerImageTag returns the Docker image reference for the container runner
-// built on top of baseImage (e.g. gh-sr/agentic-runner:2.337.0 or
-// gh-sr/agentic-runner:2.337.0-xa1b2c3d when extras or toolcache entries are set).
+// built on top of baseImage (e.g. gh-sr/agentic-runner:2.338.0 or
+// gh-sr/agentic-runner:2.338.0-xa1b2c3d when extras or toolcache entries are set).
 // The local tag derives from the base image's tag so a base_image bump in
 // runners.yml produces a new local tag and triggers a rebuild.
 func ContainerRunnerImageTag(baseImage string, extraApt []string, toolcache []config.ContainerToolcacheEntry) string {
