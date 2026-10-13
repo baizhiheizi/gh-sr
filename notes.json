@@ -8,15 +8,15 @@
   "checks": [
     {
       "area": "code",
-      "checked_at": "2026-10-07",
-      "result": "no_actionable",
-      "follow_up": "Maintainer's duplicate-code-detector / perf-improver / test-improver / efficiency-improver workflows cover all improvement areas."
+      "checked_at": "2026-10-13",
+      "result": "acted",
+      "follow_up": "Removed dead `svcShPresent` helper and unreachable `if h.OS == \"linux\" && svcShPresent(...)` branch in `PlanOrphanCleanup` (orphan code-path leftover from PR #358). PR opened on branch repo-assist/refactor-svcshpresent-dead-2026-10-13 (commit 56d3745). 3 files, +10/-25. No behaviour change."
     },
     {
       "area": "performance",
-      "checked_at": "2026-09-29",
+      "checked_at": "2026-10-13",
       "result": "no_actionable",
-      "follow_up": "perf-improver merged #498/#502 on 2026-09-27 covering viewMain and SplitSeq hot paths; backlog continues."
+      "follow_up": "No measurable perf opportunity from reading the code. Memory check 2026-09-29 (perf-improver workflow covered viewMain/SplitSeq hot paths via #498/#502); remaining items (renderRow cell-padding, viewMain alloc reduction) are speculative without profiling."
     },
     {
       "area": "dependencies",
@@ -34,13 +34,13 @@
       "area": "docs",
       "checked_at": "2026-10-11",
       "result": "acted",
-      "follow_up": "Added dedicated 'Add host / runner' section to docs/content/commands.md on branch repo-assist/docs-add-command-2026-10-11 (commit 97b5a92). Covers every gh sr add host/runner flag with worked examples. Doc-only PR."
+      "follow_up": "Added dedicated 'Add host / runner' section to docs/content/commands.md on branch repo-assist/docs-add-command-2026-10-11 (commit 97b5a92). PR #540 awaiting review. Doc-only PR."
     },
     {
       "area": "repo_assist_prs",
-      "checked_at": "2026-10-11",
+      "checked_at": "2026-10-13",
       "result": "acted",
-      "follow_up": "Two draft PRs open: repo-assist/test-tui-colorize-2026-10-10 (commit b96ea72, opened 2026-10-10) and repo-assist/docs-add-command-2026-10-11 (commit 97b5a92, opened 2026-10-11). Both awaiting maintainer review."
+      "follow_up": "Two draft PRs open: #540 docs-add-command (commit 76552d1, opened 2026-10-11) and repo-assist/refactor-svcshpresent-dead-2026-10-13 (commit 56d3745, opened 2026-10-13). Both awaiting maintainer review."
     },
     {
       "area": "tests",
