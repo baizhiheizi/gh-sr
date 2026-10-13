@@ -10,6 +10,7 @@ import (
 	"github.com/an-lee/gh-sr/internal/config"
 	"github.com/an-lee/gh-sr/internal/host"
 	"github.com/an-lee/gh-sr/internal/runner"
+	"github.com/an-lee/gh-sr/internal/registry"
 	"github.com/an-lee/gh-sr/internal/table"
 )
 
@@ -154,6 +155,20 @@ func CollectDiskUsage(w io.Writer, cfg *config.Config, mgr *runner.Manager, filt
 			out = append(out, runner.DiskUsageEntry{
 				Host:       g.name,
 				Instance:   cache.ContainerName,
+				Path:       path,
+				Mode:       "cache",
+				TotalBytes: bytes,
+				Err:        mErr,
+			})
+		}
+
+		// Host-level entry for the registry mirror storage (Linux only — the
+		// mirror container is only deployed there).
+		if s := registrySettings(cfg); s != nil && hcfg.OS == "linux" {
+			path, bytes, mErr := registry.MeasureStorage(h, *s)
+			out = append(out, runner.DiskUsageEntry{
+				Host:       g.name,
+				Instance:   registry.ContainerName,
 				Path:       path,
 				Mode:       "cache",
 				TotalBytes: bytes,

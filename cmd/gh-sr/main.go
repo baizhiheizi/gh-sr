@@ -84,6 +84,7 @@ With no subcommand, gh sr opens the interactive dashboard on a terminal; use gh 
 		cleanupCmd(),
 		diskCmd(),
 		cacheCmd(),
+		registryCmd(),
 		updateCmd(),
 		removeCmd(),
 		serviceCmd(),
@@ -758,6 +759,64 @@ Runner removal (gh sr remove) never touches the cache.`,
 		}),
 	}
 	cmd.Flags().BoolVar(&purgeData, "purge-data", false, "also delete the cache storage directory (all cached data)")
+	return cmd
+}
+
+// registryCmd groups the per-host Docker registry pull-through mirror
+// management commands. The mirror is deployed automatically before container
+// runner setup/start (when enabled); these commands inspect or uninstall it
+// explicitly.
+func registryCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "registry",
+		Short: "Manage the per-host Docker registry pull-through mirror",
+		Long: `Deploy and manage a Docker registry pull-through mirror (registry:2, one
+gh-sr-registry container per Linux host). Container runners' inner Docker
+pulls Docker Hub images through the mirror, so every runner on the host
+shares one copy of each image layer instead of each downloading it over the
+WAN.
+
+The mirror is deployed automatically before container runner setup/start when
+registry_mirror.enabled is not false in runners.yml, and wired into the
+runners' inner dockerd via daemon.json registry-mirrors on the next
+` + "`gh sr up`" + `. Only Docker Hub is redirected transparently — docker's
+registry-mirrors mechanism has no per-registry equivalent for ghcr.io.
+Use these commands to inspect or uninstall it. gh sr remove never deletes the
+mirror — gh sr registry remove is the only uninstall path.`,
+	}
+	cmd.AddCommand(registryStatusCmd(), registryDeployCmd(), registryRemoveCmd())
+	return cmd
+}
+
+func registryStatusCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "status",
+		Short: "Show registry mirror state, health, and storage per host",
+		RunE:  runCacheCmd(ops.RegistryStatus),
+	}
+}
+
+func registryDeployCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "deploy",
+		Short: "Deploy (or start) the registry mirror container on hosts",
+		RunE:  runCacheCmd(ops.RegistryDeploy),
+	}
+}
+
+func registryRemoveCmd() *cobra.Command {
+	var purgeData bool
+	cmd := &cobra.Command{
+		Use:   "remove",
+		Short: "Stop and remove the registry mirror container",
+		Long: `Stops and removes the gh-sr-registry container. With --purge-data, also
+deletes the storage directory (all mirrored image layers). Runner removal
+(gh sr remove) never touches the mirror.`,
+		RunE: runCacheCmd(func(w io.Writer, cfg *config.Config, filterHost string) error {
+			return ops.RegistryRemove(w, cfg, filterHost, purgeData)
+		}),
+	}
+	cmd.Flags().BoolVar(&purgeData, "purge-data", false, "also delete the mirror storage directory (all mirrored layers)")
 	return cmd
 }
 

@@ -26,6 +26,7 @@ type Config struct {
 	Runners              []RunnerConfig             `yaml:"runners"`
 	ContainerRunnerImage ContainerRunnerImageConfig `yaml:"container_runner_image,omitempty"`
 	Cache                CacheConfig                `yaml:"cache,omitempty"`
+	RegistryMirror       RegistryMirrorConfig       `yaml:"registry_mirror,omitempty"`
 }
 
 // CacheConfig configures the per-host local Actions cache server
@@ -63,6 +64,39 @@ type CacheConfig struct {
 	ManagementAPIKey string `yaml:"management_api_key,omitempty"`
 	// URLOverride replaces the runner-facing cache URL verbatim (escape hatch
 	// for non-docker0 topologies; must include the scheme).
+	URLOverride string `yaml:"url_override,omitempty"`
+}
+
+// RegistryMirrorConfig configures the per-host Docker registry pull-through
+// mirror (registry:2, deployed as the gh-sr-registry container). Container
+// runners' inner dockerd pulls Docker Hub images through the mirror, so every
+// runner on the host shares one copy of each image layer instead of each
+// downloading it over the WAN. Only Docker Hub is redirected transparently —
+// dockerd's registry-mirrors mechanism has no per-registry equivalent for
+// ghcr.io et al.
+type RegistryMirrorConfig struct {
+	// Enabled defaults to true: a `registry_mirror:` section is only needed
+	// to tune or disable (enabled: false). Set explicitly on Load
+	// (applyDefaults).
+	Enabled *bool `yaml:"enabled,omitempty"`
+	// Port is the host-side port the mirror publishes on (0 = built-in
+	// default 5577).
+	Port int `yaml:"port,omitempty"`
+	// BindAddr is the host address the mirror binds to. Empty = the docker0
+	// gateway IP (reachable from runner containers only); 0.0.0.0 exposes the
+	// mirror on every host interface.
+	BindAddr string `yaml:"bind_addr,omitempty"`
+	// StoragePath is the host directory for mirrored layers ("$HOME/..."
+	// allowed; empty = $HOME/.gh-sr/registry).
+	StoragePath string `yaml:"storage_path,omitempty"`
+	// Image overrides the mirror image (pin a digest for reproducible
+	// deploys; empty = registry:2).
+	Image string `yaml:"image,omitempty"`
+	// Upstream is the registry the mirror pulls through (empty = Docker Hub,
+	// registry-1.docker.io). The value must be a v2 registry URL.
+	Upstream string `yaml:"upstream,omitempty"`
+	// URLOverride replaces the runner-facing mirror URL verbatim (escape
+	// hatch for non-docker0 topologies; must include the scheme).
 	URLOverride string `yaml:"url_override,omitempty"`
 }
 
@@ -331,6 +365,17 @@ func validateContainerToolcache(entries []ContainerToolcacheEntry) error {
 		seenDirs[dir] = struct{}{}
 	}
 	return nil
+}
+
+// RegistryMirrorEnabled reports whether the per-host registry mirror should
+// be deployed and wired into container runners' inner dockerd. Unset
+// (zero-value Config, e.g. tests that never ran applyDefaults) means
+// disabled.
+func (c *Config) RegistryMirrorEnabled() bool {
+	if c == nil || c.RegistryMirror.Enabled == nil {
+		return false
+	}
+	return *c.RegistryMirror.Enabled
 }
 
 // validateToolcacheDir enforces a relative, normalized, traversal-free path
@@ -732,6 +777,11 @@ func (c *Config) applyDefaults() {
 	if c.Cache.Enabled == nil {
 		enabled := true
 		c.Cache.Enabled = &enabled
+	}
+	// Same for the registry mirror.
+	if c.RegistryMirror.Enabled == nil {
+		enabled := true
+		c.RegistryMirror.Enabled = &enabled
 	}
 	for name, h := range c.Hosts {
 		if IsLocalAddr(h.Addr) {

@@ -344,7 +344,7 @@ func TestRunHostChecks_ContainerOnlySkipsNative(t *testing.T) {
 	}
 	var buf strings.Builder
 	var r Result
-	runHostChecks(&buf, "mac", h, runners, &r, nil, false)
+	runHostChecks(&buf, "mac", h, runners, &r, nil, false, nil)
 	out := buf.String()
 	if strings.Contains(out, "native:") {
 		t.Fatalf("container-only host should skip native checks, got:\n%s", out)
@@ -359,7 +359,7 @@ func TestRunHostChecks_NonLinuxContainerFails(t *testing.T) {
 	runners := []config.RunnerConfig{
 		{Name: "aw", Host: "mac", Repo: "o/r", Profile: "agentic"},
 	}
-	runHostChecks(&buf, "mac", h, runners, &r, nil, false)
+	runHostChecks(&buf, "mac", h, runners, &r, nil, false, nil)
 	if r.Fail != 1 {
 		t.Fatalf("expected one FAIL for container mode on darwin, got %+v", r)
 	}
