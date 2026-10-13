@@ -15,8 +15,8 @@ import (
 	"github.com/an-lee/gh-sr/internal/config"
 	"github.com/an-lee/gh-sr/internal/host"
 	"github.com/an-lee/gh-sr/internal/hostshell"
-	"github.com/an-lee/gh-sr/internal/runner"
 	"github.com/an-lee/gh-sr/internal/registry"
+	"github.com/an-lee/gh-sr/internal/runner"
 )
 
 const (
@@ -712,7 +712,6 @@ func effectiveBind(s *cache.Settings, h *host.Host) string {
 	}
 	return gw
 }
-
 
 // checkRegistryMirror verifies the per-host Docker registry pull-through
 // mirror is deployed, healthy from the host, reachable from a container-mode
