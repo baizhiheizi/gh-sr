@@ -91,7 +91,7 @@ For what each lifecycle command does on the host, see [Architecture — Lifecycl
 
 ## Add host / runner
 
-The `gh sr add` subcommands append a new entry to your resolved `runners.yml` so you do not have to edit YAML by hand. Both subcommands resolve the config via `gh sr --config` (default `~/.gh-sr/runners.yml`) and write through `gh sr config edit` semantics: the file is reformatted and the change is logged on stderr.
+The `gh sr add` subcommands append a new entry to your resolved `runners.yml` so you do not have to edit YAML by hand. Both subcommands resolve the config via `gh sr --config` (default `~/.gh-sr/runners.yml`), append the entry, and rewrite the file in place — comments and other entries are preserved, and the file is re-serialized in canonical YAML style — then print a confirmation line to stdout.
 
 ```bash
 gh sr add host vps-1 user@vps.example             # name + user@host (port optional)
@@ -112,7 +112,7 @@ gh sr add runner aw-runner --repo owner/repo --host vps-1 --profile agentic
 
 - `--repo owner/repo` *or* `--org my-org` — exactly one is required; the runner is scoped to that target.
 - `--host <name>` — required, must match an existing host entry.
-- `--count <n>` — number of parallel instances with the same name suffix (default 1).
+- `--count <n>` — number of parallel instances, registered as `<name>-1` … `<name>-N` (default 1).
 - `--labels a,b,c` — GitHub runner labels; auto-generated from the host OS/arch when omitted.
 - `--ephemeral` — register as a single-job runner that GitHub deregisters after one job.
 - `--group <name>` — assign the runner to a runner group (org-level runners only).
