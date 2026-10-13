@@ -17,7 +17,7 @@
 # non-colliding bridge subnet automatically, and gh-aw's gateway/AWF pass their
 # own --add-host=host.docker.internal:host-gateway.
 #
-# Build: docker build --build-arg FORK_RUNNER_IMAGE=ghcr.io/falcondev-oss/actions-runner:2.337.0 -t gh-sr/agentic-runner:<version> .
+# Build: docker build --build-arg FORK_RUNNER_IMAGE=ghcr.io/falcondev-oss/actions-runner:2.338.0 -t gh-sr/agentic-runner:<version> .
 # Run:   see internal/runner/container.go
 
 ARG FORK_RUNNER_IMAGE
