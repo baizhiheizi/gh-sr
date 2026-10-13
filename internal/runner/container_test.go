@@ -136,7 +136,7 @@ func TestAgenticRunnerImageTag(t *testing.T) {
 func TestContainerRunnerImageTag(t *testing.T) {
 	t.Parallel()
 	fork := DefaultForkRunnerImage
-	base := AgenticRunnerImageTag + ":2.337.0"
+	base := AgenticRunnerImageTag + ":" + baseImageTag(fork)
 	if got := ContainerRunnerImageTag(fork, nil, nil); got != base {
 		t.Errorf("empty extras: got %q want %q", got, base)
 	}

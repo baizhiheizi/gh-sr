@@ -9,7 +9,7 @@
 # See docs: guides/agentic-workflows.md (container mode).
 #
 # container_runner_image:
-#   base_image: ghcr.io/falcondev-oss/actions-runner:2.337.0
+#   base_image: ghcr.io/falcondev-oss/actions-runner:2.338.0
 #   extra_apt_packages:
 #     - ffmpeg
 #     - sqlite3
