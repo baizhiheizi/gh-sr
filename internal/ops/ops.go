@@ -210,6 +210,7 @@ func applyContainerImageExtras(mgr *runner.Manager, cfg *config.Config) {
 		mgr.ContainerBootstrapMaxRetries = 0
 		mgr.ContainerStartStaggerSeconds = 0
 		mgr.Cache = nil
+		mgr.RegistryMirror = nil
 		return
 	}
 	mgr.ContainerImageBaseImage = cfg.ContainerRunnerImageBaseImage()
@@ -220,6 +221,7 @@ func applyContainerImageExtras(mgr *runner.Manager, cfg *config.Config) {
 	mgr.ContainerBootstrapMaxRetries = cfg.ContainerRunnerImageBootstrapMaxRetries()
 	mgr.ContainerStartStaggerSeconds = cfg.ContainerRunnerImageStartStaggerSeconds()
 	mgr.Cache = cacheSettings(cfg)
+	mgr.RegistryMirror = registrySettings(cfg)
 }
 
 // Setup installs and configures runners, mirroring the gh sr setup command.
@@ -258,6 +260,9 @@ func setupHost(w io.Writer, cfg *config.Config, mgr *runner.Manager, rc config.R
 		if err := ensureCacheForHost(w, h, cacheSettings(cfg)); err != nil {
 			return err
 		}
+		if err := ensureRegistryForHost(w, h, registrySettings(cfg)); err != nil {
+			return err
+		}
 	}
 	return mgr.Setup(h, rc)
 }
@@ -274,9 +279,13 @@ func Up(w io.Writer, cfg *config.Config, mgr *runner.Manager, filterHost, filter
 	}
 	applyContainerImageExtras(mgr, cfg)
 	cacheSet := cacheSettings(cfg)
+	registrySet := registrySettings(cfg)
 	return runPerHostParallel(w, cfg, runners, func(w io.Writer, h *host.Host, rc config.RunnerConfig) error {
 		if rc.IsContainerMode() {
 			if err := ensureCacheForHost(w, h, cacheSet); err != nil {
+				return err
+			}
+			if err := ensureRegistryForHost(w, h, registrySet); err != nil {
 				return err
 			}
 		}
@@ -352,8 +361,12 @@ func RebuildImage(w io.Writer, cfg *config.Config, mgr *runner.Manager, filterHo
 		return nil
 	}
 	cacheSet := cacheSettings(cfg)
+	registrySet := registrySettings(cfg)
 	return runPerHostParallel(w, cfg, containerRunners, func(w io.Writer, h *host.Host, rc config.RunnerConfig) error {
 		if err := ensureCacheForHost(w, h, cacheSet); err != nil {
+			return err
+		}
+		if err := ensureRegistryForHost(w, h, registrySet); err != nil {
 			return err
 		}
 		fmt.Fprintf(w, "Rebuilding image for %s on %s...\n", rc.Name, rc.Host)
@@ -373,9 +386,13 @@ func Update(w io.Writer, cfg *config.Config, mgr *runner.Manager, filterHost, fi
 	}
 	applyContainerImageExtras(mgr, cfg)
 	cacheSet := cacheSettings(cfg)
+	registrySet := registrySettings(cfg)
 	if err := runPerHostParallel(w, cfg, runners, func(w io.Writer, h *host.Host, rc config.RunnerConfig) error {
 		if rc.IsContainerMode() {
 			if err := ensureCacheForHost(w, h, cacheSet); err != nil {
+				return err
+			}
+			if err := ensureRegistryForHost(w, h, registrySet); err != nil {
 				return err
 			}
 		}

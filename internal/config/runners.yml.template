@@ -32,7 +32,24 @@
 #   # image: ghcr.io/falcondev-oss/github-actions-cache-server:latest  # pin a digest for reproducibility
 #   # management_api_key: env:CACHE_MGMT_KEY  # env ref; enables `gh sr cache prune` delete operations
 #   # url_override: http://10.0.0.5:3000/  # escape hatch: force the runner-facing URL
-
++
+# Optional: Docker registry pull-through mirror (one per Linux host,
+# auto-deployed as a gh-sr-registry container by `gh sr up`/`gh sr setup`).
+# Container-mode runners' inner Docker pulls Docker Hub images through it, so
+# every runner on the host shares one copy of each image layer instead of
+# each downloading it over the WAN. Only Docker Hub is redirected
+# transparently (dockerd's registry-mirrors has no per-registry equivalent
+# for ghcr.io). Native (macOS/Windows) runners are not affected.
+#
+# registry_mirror:
+#   enabled: true                     # default true on Linux hosts; set false to opt out
+#   port: 5577                        # host port for the mirror API (built-in default; override on collision)
+#   # bind_addr: 172.17.0.1           # default: docker0 gateway IP (containers can reach it;
+#   #                                 # 0.0.0.0 works but exposes the mirror to your LAN)
+#   # storage_path: ~/.gh-sr/registry # mirrored image layers on the host
+#   # upstream: https://registry-1.docker.io  # registry the mirror pulls through
+#   # image: registry:2               # pin a digest for reproducible deploys
+#   # url_override: http://10.0.0.5:5577  # escape hatch: force the runner-facing URL
 hosts:
   # Example hosts (os and arch are auto-detected over SSH -- you only need addr):
   #

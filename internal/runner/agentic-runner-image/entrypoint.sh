@@ -4,7 +4,8 @@
 # Startup (deterministic, single dockerd start):
 #   1. Enable cgroup v2 nesting (DinD requirement).
 #   2. Pin the inner/outer MTU when GH_SR_HOST_MTU says the host path MTU is
-#      reduced (writes a mtu-only daemon.json BEFORE the single dockerd start).
+#      reduced, and wire GH_SR_REGISTRY_MIRROR into daemon.json registry-mirrors
+#      (both strictly BEFORE the single dockerd start).
 #   3. Start the inner dockerd ONCE. No bip/dns pinning: dockerd's IPAM avoids
 #      subnets already routed on the container's interfaces (verified with
 #      docker 29 — a runner container on the host's 172.17 bridge gets an
@@ -33,6 +34,10 @@
 #   GH_SR_CACHE_URL     — base URL of the per-host Actions cache server; when set,
 #                         CUSTOM_ACTIONS_RESULTS_URL is exported so the fork runner
 #                         sends cache traffic there (must include the trailing slash)
+#   GH_SR_REGISTRY_MIRROR — URL of the per-host Docker registry pull-through mirror
+#                         (http://host:port); when set, the inner dockerd's
+#                         /etc/docker/daemon.json registry-mirrors points at it so
+#                         Docker Hub pulls are served from the host mirror
 #   GH_SR_HOST_MTU      — host egress MTU to pin the inner/outer Docker MTU to when it is
 #                         below 1500 (reduced-MTU host networks); unset/≥1500 ⇒ Docker default
 #   GH_SR_DOCKERD_START_TIMEOUT — seconds to wait for inner dockerd (default 90)
@@ -100,12 +105,26 @@ case "${GH_SR_HOST_MTU:-}" in
         ;;
 esac
 
-if [ -n "${BRIDGE_MTU}" ]; then
-    # Single-key daemon.json, written once before the only dockerd start (never
-    # after, and no dockerd restart — the daemon reads the final config here).
+mkdir -p /etc/docker
+
+# daemon.json, written once before the only dockerd start (never after, and no
+# dockerd restart — the daemon reads the final config here). The mtu key pins
+# inner-bridge MTU on reduced-MTU hosts; the registry-mirrors key routes Docker
+# Hub pulls through the per-host pull-through mirror (GH_SR_REGISTRY_MIRROR,
+# injected by `docker create` when registry_mirror is enabled in runners.yml) so
+# every runner on the host shares one copy of each image layer.
+if [ -n "${BRIDGE_MTU}" ] && [ -n "${GH_SR_REGISTRY_MIRROR:-}" ]; then
+    printf '{\n  "mtu": %s,\n  "registry-mirrors": ["%s"]\n}\n' "${BRIDGE_MTU}" "${GH_SR_REGISTRY_MIRROR}" > /etc/docker/daemon.json
+    echo "[entrypoint] inner Docker MTU pinned to ${BRIDGE_MTU}; registry mirror ${GH_SR_REGISTRY_MIRROR}"
+elif [ -n "${BRIDGE_MTU}" ]; then
     printf '{\n  "mtu": %s\n}\n' "${BRIDGE_MTU}" > /etc/docker/daemon.json
     echo "[entrypoint] inner Docker MTU pinned to ${BRIDGE_MTU} (host egress MTU)"
+elif [ -n "${GH_SR_REGISTRY_MIRROR:-}" ]; then
+    printf '{\n  "registry-mirrors": ["%s"]\n}\n' "${GH_SR_REGISTRY_MIRROR}" > /etc/docker/daemon.json
+    echo "[entrypoint] inner Docker registry mirror ${GH_SR_REGISTRY_MIRROR}"
+fi
 
+if [ -n "${BRIDGE_MTU}" ]; then
     # Lower the runner container's OWN egress interface MTU too. Workflow setup steps
     # such as actions/setup-go run directly in THIS (outer) container — not the inner
     # Docker — so the inner-bridge MTU alone would not fix their downloads. Lowering

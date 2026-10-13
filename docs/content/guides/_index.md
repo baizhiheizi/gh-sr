@@ -8,3 +8,4 @@ bookCollapseSection: true
 
 - [Organization runners]({{< ref "org-runners" >}}) -- Share self-hosted runners across all repos in a GitHub org: runner groups, workflow targeting, authentication, and migration from per-repo runners.
 - [Agentic Workflows]({{< ref "agentic-workflows" >}}) -- Full guide to GitHub Agentic Workflows (gh-aw) on self-hosted runners: the container-isolated, reset-per-job model, host requirements, operations, and troubleshooting.
+- [Registry pull-through mirror]({{< ref "registry-mirror" >}}) -- Cut Docker Hub traffic on metered WANs: one pull-through registry per Linux host, shared by every container runner's inner Docker.

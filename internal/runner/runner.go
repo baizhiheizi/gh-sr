@@ -13,6 +13,7 @@ import (
 	"github.com/an-lee/gh-sr/internal/cache"
 	"github.com/an-lee/gh-sr/internal/config"
 	"github.com/an-lee/gh-sr/internal/host"
+	"github.com/an-lee/gh-sr/internal/registry"
 )
 
 type Manager struct {
@@ -39,6 +40,13 @@ type Manager struct {
 	// runner-facing URL per host so concurrent host goroutines never share
 	// mutable state. Deployed by ops via the cache package.
 	Cache *cache.Settings
+	// RegistryMirror optionally wires the per-host Docker registry pull-through
+	// mirror (from the runners.yml registry_mirror: section; nil = disabled =
+	// runners' inner dockerd pulls straight from Docker Hub). Read-only for the
+	// Manager: createContainerInstance resolves the runner-facing URL per host
+	// so concurrent host goroutines never share mutable state. Deployed by ops
+	// via the registry package.
+	RegistryMirror *registry.Settings
 	// ContainerMTU, when > 0, forces the inner/outer Docker MTU for container-mode runners
 	// (overriding host egress MTU auto-detection). From runners.yml
 	// container_runner_image.mtu; set by ops before container setup. 0 = auto-detect.

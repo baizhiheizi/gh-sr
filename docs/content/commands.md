@@ -156,6 +156,25 @@ gh sr cache remove --purge-data  # Also delete the storage directory (all cached
 - The cache server runs on Linux only (Windows/macOS container runners fall back to GitHub's shared cache automatically; see [Configuration — `cache:` section](configuration.md#cache--per-host-local-actions-cache-server)).
 - Tune the server with `cache.port`, `cache.bind_addr`, `cache.retention_days`, `cache.max_size_bytes`, `cache.max_usage_percent`, and `cache.url_override` in `runners.yml`. `cache.image` lets you pin a specific tag or digest for reproducible deploys.
 
+## Registry mirror
+
+When `registry_mirror.enabled` is not `false` in `runners.yml`, `gh sr` deploys a per-host Docker registry pull-through mirror (`registry:2`, one `gh-sr-registry` container per Linux host). Container runners' inner dockerd pulls Docker Hub images through it, so every runner on the host shares one copy of each image layer instead of each downloading it over the WAN. Only Docker Hub is redirected transparently (dockerd's `registry-mirrors` mechanism has no per-registry equivalent for `ghcr.io`).
+
+The mirror is deployed automatically before container runner setup/start; the `registry` subcommands exist to inspect or uninstall it:
+
+```bash
+gh sr registry status             # State, image, health probe, storage du per host
+gh sr registry deploy             # Start the mirror (idempotent)
+gh sr registry remove             # Stop and remove the gh-sr-registry container
+gh sr registry remove --purge-data  # Also delete the storage directory (all mirrored layers)
+```
+
+**Notes:**
+
+- `gh sr remove <name>` (per-runner removal) **never** deletes the mirror container. `gh sr registry remove` is the only uninstall path.
+- Wiring is baked at container-create time (`GH_SR_REGISTRY_MIRROR` env → inner dockerd `daemon.json` `registry-mirrors`): run `gh sr rebuild <name>` after enabling the mirror so existing runner containers pick it up; `gh sr doctor` flags containers that predate the mirror.
+- The mirror runs on Linux only. See [Configuration — `registry_mirror:` section](configuration.md#registry_mirror--per-host-docker-registry-pull-through-mirror) and the [registry mirror guide](guides/registry-mirror.md).
+
 ## Rebuild (container-mode runners)
 
 `gh sr rebuild [names...]` rebuilds the `gh-sr/agentic-runner` Docker image from the embedded sources (the same image for every `runner_mode: container` runner, agentic or not), recreates the runner containers, and starts them. The image embeds the global `container_runner_image.extra_apt_packages` and `container_runner_image.toolcache` from your config (see the [agentic workflows guide](https://an-lee.github.io/gh-sr/guides/agentic-workflows/)).

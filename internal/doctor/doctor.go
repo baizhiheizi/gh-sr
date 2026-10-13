@@ -15,6 +15,7 @@ import (
 	"github.com/an-lee/gh-sr/internal/config"
 	"github.com/an-lee/gh-sr/internal/host"
 	"github.com/an-lee/gh-sr/internal/hostshell"
+	"github.com/an-lee/gh-sr/internal/registry"
 	"github.com/an-lee/gh-sr/internal/runner"
 )
 
@@ -149,6 +150,7 @@ func Run(w io.Writer, cfgPath, envPath string, cfg *config.Config, cfgErr error,
 	hostOrder := uniqueStringsBy(runners, func(rc config.RunnerConfig) string { return rc.Host })
 	cacheSet := cache.SettingsFromConfig(cfg)
 	cacheEnabled := cacheSet != nil
+	mirrorSet := registry.SettingsFromConfig(cfg)
 
 	type hostResult struct {
 		buf bytes.Buffer
@@ -179,7 +181,7 @@ func Run(w io.Writer, cfgPath, envPath string, cfg *config.Config, cfgErr error,
 
 			defer h.Close()
 			printLine(&hr.buf, sevOK, hostName, fmt.Sprintf("connected (%s)", addrSummary(hcfg.Addr)))
-			runHostChecks(&hr.buf, hostName, h, runners, &hr.r, cacheSet, cacheEnabled)
+			runHostChecks(&hr.buf, hostName, h, runners, &hr.r, cacheSet, cacheEnabled, mirrorSet)
 		}(i, hostName)
 	}
 	hostWg.Wait()
@@ -358,8 +360,7 @@ func hasContainerModeRunners(runners []config.RunnerConfig) bool {
 // already-filtered runners slice (respects --host / --repo filters). cacheSet is
 // the effective per-host cache configuration (nil = disabled); cacheEnabled is
 // passed through so agentic container probes include the cache-env check only
-// when runners are expected to carry CUSTOM_ACTIONS_RESULTS_URL.
-func runHostChecks(w io.Writer, hostName string, h *host.Host, runners []config.RunnerConfig, r *Result, cacheSet *cache.Settings, cacheEnabled bool) {
+func runHostChecks(w io.Writer, hostName string, h *host.Host, runners []config.RunnerConfig, r *Result, cacheSet *cache.Settings, cacheEnabled bool, mirrorSet *registry.Settings) {
 	hostRunners := runnersForHost(runners, hostName)
 	if hasNativeModeRunners(hostRunners) {
 		checkNative(w, hostName, h, r)
@@ -376,6 +377,7 @@ func runHostChecks(w io.Writer, hostName string, h *host.Host, runners []config.
 				checkContainerAgenticInnerHygiene(w, hostName, h, runners, r, cacheEnabled)
 			}
 			checkCacheReachability(w, hostName, h, hostRunners, cacheSet, r)
+			checkRegistryMirror(w, hostName, h, hostRunners, mirrorSet, r)
 		}
 	}
 	if h.OS == "linux" || h.OS == "darwin" || h.OS == "windows" {
@@ -701,6 +703,110 @@ func probeCacheFromRunner(w io.Writer, hostName string, h *host.Host, hostRunner
 // explicit cache.bind_addr wins; the auto path binds the docker0 gateway, or
 // 0.0.0.0 when no gateway was found.
 func effectiveBind(s *cache.Settings, h *host.Host) string {
+	if s.BindAddr != "" {
+		return s.BindAddr
+	}
+	gw, err := cache.ResolveGatewayIP(h)
+	if err != nil || gw == "" {
+		return "0.0.0.0"
+	}
+	return gw
+}
+
+// checkRegistryMirror verifies the per-host Docker registry pull-through
+// mirror is deployed, healthy from the host, reachable from a container-mode
+// runner, and wired into the runner container's env (the inner dockerd only
+// picks up registry-mirrors from daemon.json written at container start).
+// Skipped entirely when the mirror is disabled (runners pull from Docker Hub
+// directly).
+func checkRegistryMirror(w io.Writer, hostName string, h *host.Host, hostRunners []config.RunnerConfig, s *registry.Settings, r *Result) {
+	if s == nil {
+		return
+	}
+	info, err := registry.Inspect(h, *s)
+	if err != nil {
+		printLine(w, sevWarn, hostName, fmt.Sprintf("registry: inspect failed: %v", err))
+		r.Warn++
+		return
+	}
+	if info.State == "" {
+		printLine(w, sevWarn, hostName, "registry: enabled but not deployed; run: gh sr registry deploy")
+		r.Warn++
+		return
+	}
+	if !info.Healthy {
+		url := info.URL
+		if url == "" {
+			url = "(no container-reachable URL resolved)"
+		}
+		printLine(w, sevFail, hostName, fmt.Sprintf("registry: mirror not healthy at %s; check the mirror container logs: docker logs %s", url, registry.ContainerName))
+		r.Fail++
+		return
+	}
+	printLine(w, sevOK, hostName, fmt.Sprintf("registry: mirror healthy at %s (storage %s)", info.URL, info.StoragePath))
+	probeRegistryFromRunner(w, hostName, h, hostRunners, s, r)
+
+	// A 0.0.0.0 bind means the mirror answers on every host interface.
+	if mirrorEffectiveBind(s, h) == "0.0.0.0" {
+		printLine(w, sevWarn, hostName, "registry: bound to 0.0.0.0 — the mirror is reachable from your LAN; set registry_mirror.bind_addr (e.g. the docker0 gateway IP) in runners.yml")
+		r.Warn++
+	}
+}
+
+// probeRegistryFromRunner curls the mirror's /v2/ endpoint from inside the
+// first container-mode runner on the host (same host-INPUT firewall failure
+// mode probeCacheFromRunner guards against) and verifies the runner container
+// actually carries GH_SR_REGISTRY_MIRROR — the env is baked at docker create,
+// so containers created before the mirror was enabled keep pulling from
+// Docker Hub until recreated.
+func probeRegistryFromRunner(w io.Writer, hostName string, h *host.Host, hostRunners []config.RunnerConfig, s *registry.Settings, r *Result) {
+	inst := ""
+	for i := range hostRunners {
+		if hostRunners[i].IsContainerMode() && len(hostRunners[i].InstanceNames()) > 0 {
+			inst = hostRunners[i].InstanceNames()[0]
+			break
+		}
+	}
+	if inst == "" {
+		return
+	}
+	url := s.RunnerURL(h)
+	if url == "" {
+		return
+	}
+	cname := runner.ContainerDockerName(inst)
+	envOut, err := h.Run(fmt.Sprintf(
+		"docker inspect --format='{{range .Config.Env}}{{println .}}{{end}}' %s 2>/dev/null | grep -c '^GH_SR_REGISTRY_MIRROR=' || true",
+		runner.QuoteContainerName(cname)))
+	if err == nil && strings.TrimSpace(envOut) == "0" {
+		printLine(w, sevWarn, hostName, fmt.Sprintf(
+			"registry: runner container %s predates the mirror (no GH_SR_REGISTRY_MIRROR env); recreate with: gh sr rebuild %s",
+			cname, inst))
+		r.Warn++
+		return
+	}
+	out, err := h.Run(fmt.Sprintf(
+		"docker exec %s sh -c 'curl -fsS -m 5 -o /dev/null -w %%{http_code} %s/v2/ || echo PROBE_FAIL' 2>/dev/null",
+		runner.QuoteContainerName(cname), hostshell.PosixSingleQuote(url)))
+	switch {
+	case err != nil:
+		printLine(w, sevWarn, hostName, fmt.Sprintf("registry: could not probe from runner container %s: %v", cname, err))
+		r.Warn++
+	case strings.Contains(strings.TrimSpace(out), "PROBE_FAIL") || strings.TrimSpace(out) != "200":
+		bind := mirrorEffectiveBind(s, h)
+		printLine(w, sevFail, hostName, fmt.Sprintf(
+			"registry: not reachable from runner container %s at %s (host-side health is fine — the host INPUT firewall is blocking container traffic); allow it with: sudo ufw allow in on docker0 to %s port %d proto tcp comment 'allow-docker-registry-mirror' (or the equivalent nftables/iptables rule)",
+			cname, url, bind, s.EffectivePort()))
+		r.Fail++
+	default:
+		printLine(w, sevOK, hostName, fmt.Sprintf("registry: reachable from runner container %s at %s", cname, url))
+	}
+}
+
+// mirrorEffectiveBind resolves the bind address the mirror deploy actually
+// chose: an explicit registry_mirror.bind_addr wins; the auto path binds the
+// docker0 gateway, or 0.0.0.0 when no gateway was found.
+func mirrorEffectiveBind(s *registry.Settings, h *host.Host) string {
 	if s.BindAddr != "" {
 		return s.BindAddr
 	}

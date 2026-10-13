@@ -15,6 +15,7 @@ import (
 	"github.com/an-lee/gh-sr/internal/config"
 	"github.com/an-lee/gh-sr/internal/host"
 	"github.com/an-lee/gh-sr/internal/hostshell"
+	"github.com/an-lee/gh-sr/internal/registry"
 	"github.com/an-lee/gh-sr/internal/testutil"
 )
 
@@ -390,6 +391,30 @@ func TestAgenticRunnerEntrypointRootlessWiring(t *testing.T) {
 	}
 }
 
+// TestAgenticRunnerEntrypointRegistryMirror pins the registry-mirror wiring:
+// when GH_SR_REGISTRY_MIRROR is injected, the entrypoint writes it into the
+// inner dockerd's daemon.json registry-mirrors BEFORE the single dockerd start
+// (dockerd reads /etc/docker/daemon.json at startup only), merging with the
+// optional mtu pin.
+func TestAgenticRunnerEntrypointRegistryMirror(t *testing.T) {
+	t.Parallel()
+	for _, want := range []string{
+		`"registry-mirrors": ["%s"]`,
+		`${GH_SR_REGISTRY_MIRROR}`,
+	} {
+		if !strings.Contains(agenticRunnerEntrypoint, want) {
+			t.Fatalf("entrypoint should contain %q for the mirror wiring", want)
+		}
+	}
+
+	// The daemon.json write (any branch) must precede the dockerd start.
+	writeIdx := strings.Index(agenticRunnerEntrypoint, `> /etc/docker/daemon.json`)
+	dockerdIdx := strings.Index(agenticRunnerEntrypoint, `echo "[entrypoint] starting dockerd..."`)
+	if writeIdx == -1 || dockerdIdx == -1 || writeIdx > dockerdIdx {
+		t.Fatalf("daemon.json write must precede the single dockerd start (write=%d, dockerd=%d)", writeIdx, dockerdIdx)
+	}
+}
+
 // TestAgenticRunnerJobHooksReset verifies the per-job reset hooks perform the
 // deterministic teardown (containers, networks, /tmp/gh-aw) using the rootless-era
 // vocabulary (awmg-/awf-/gh-aw names; gh-aw-mcpg + firewall-stack ancestors — the
@@ -700,6 +725,46 @@ func TestAWFServiceBridgeDockerCreateArg(t *testing.T) {
 	got := awfServiceBridgeDockerCreateArg(config.RunnerConfig{Name: "r", Repo: "o/r", Profile: "agentic", AWFServiceBridge: true})
 	if !strings.Contains(got, "-e GH_SR_AWF_SERVICE_BRIDGE=1") {
 		t.Fatalf("bridge on should emit env, got %q", got)
+	}
+}
+
+// TestRegistryMirrorDockerCreateArg pins the registry-mirror injection
+// contract: a non-empty mirror URL becomes a single-quoted
+// -e GH_SR_REGISTRY_MIRROR line (the entrypoint writes it into the inner
+// dockerd's daemon.json registry-mirrors before its single start), and an
+// empty URL emits nothing so the inner dockerd pulls from Docker Hub directly.
+func TestRegistryMirrorDockerCreateArg(t *testing.T) {
+	t.Parallel()
+	if got := registryMirrorDockerCreateArg(""); got != "" {
+		t.Fatalf("empty URL should omit env, got %q", got)
+	}
+	got := registryMirrorDockerCreateArg("http://172.17.0.1:5577")
+	if !strings.Contains(got, "-e GH_SR_REGISTRY_MIRROR=") || !strings.Contains(got, "'http://172.17.0.1:5577'") {
+		t.Fatalf("got %q", got)
+	}
+}
+
+func TestRegistryMirrorEnvFor(t *testing.T) {
+	t.Parallel()
+	if got := registryMirrorEnvFor(nil, nil); got != "" {
+		t.Fatalf("nil settings: got %q", got)
+	}
+
+	mock := &testutil.MockExecutor{RunFn: func(cmd string) (string, error) {
+		if strings.Contains(cmd, "ip -4 -o addr show docker0") {
+			return "2: docker0    inet 172.17.0.1/16 brd 172.17.255.255 scope global docker0\\\n", nil
+		}
+		return "", nil
+	}}
+	h := host.NewHost("h", config.HostConfig{Addr: "runner@vps", OS: "linux", Arch: "amd64"})
+	h.SetConn(mock)
+
+	if got := registryMirrorEnvFor(h, &registry.Settings{Enabled: false}); got != "" {
+		t.Fatalf("disabled settings: got %q", got)
+	}
+	got := registryMirrorEnvFor(h, &registry.Settings{Enabled: true})
+	if got != registryMirrorDockerCreateArg(fmt.Sprintf("http://172.17.0.1:%d", registry.DefaultPort)) {
+		t.Fatalf("enabled settings: got %q", got)
 	}
 }
 

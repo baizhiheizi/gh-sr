@@ -1378,6 +1378,49 @@ runners:
 	}
 }
 
+func TestLoad_registryMirrorEnabledByDefault(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "runners.yml")
+	content := `
+hosts:
+  h1:
+    addr: runner@vps
+    os: linux
+    arch: amd64
+runners:
+  - name: r1
+    repo: o/r
+    host: h1
+`
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.RegistryMirrorEnabled() {
+		t.Error("registry mirror should default to enabled after Load")
+	}
+
+	path2 := filepath.Join(dir, "runners-off.yml")
+	off := content + "registry_mirror:\n  enabled: false\n"
+	if err := os.WriteFile(path2, []byte(off), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg2, err := Load(path2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg2.RegistryMirrorEnabled() {
+		t.Error("registry_mirror.enabled: false must disable the mirror")
+	}
+
+	if (&Config{}).RegistryMirrorEnabled() {
+		t.Error("zero-value Config must not enable the mirror")
+	}
+}
+
 func TestValidate_cache(t *testing.T) {
 	t.Parallel()
 	valid := CacheConfig{

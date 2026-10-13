@@ -147,6 +147,22 @@ Optional section tuning the [local Actions cache server](guides/local-cache.md) 
 | `cache.management_api_key` | Management API key for `gh sr cache prune` (supports `env:VAR` refs). Empty = auto-generate and persist one in the storage dir. |
 | `cache.url_override` | Replace the runner-facing cache URL verbatim (must include the scheme) — escape hatch for exotic topologies. |
 
+### `registry_mirror:` — per-host Docker registry pull-through mirror
+
+Optional section tuning the [registry pull-through mirror](guides/registry-mirror.md) (one `gh-sr-registry` container per Linux host, deployed automatically by `gh sr setup` / `up` / `update` / `rebuild`). Every field is optional; the mirror is disabled with `enabled: false`.
+
+| Field | Meaning |
+|---|---|
+| `registry_mirror.enabled` | Deploy and wire the mirror (default **`true`**). `false` keeps direct Docker Hub pulls. |
+| `registry_mirror.port` | Host-side published port (default **5577**). |
+| `registry_mirror.bind_addr` | Host address the mirror binds to. Empty = the **docker0 gateway IP** (containers only); `0.0.0.0` exposes the mirror on all interfaces (doctor warns). |
+| `registry_mirror.storage_path` | Host directory for mirrored layers (`$HOME/...` allowed; default `~/.gh-sr/registry`). |
+| `registry_mirror.image` | Mirror image override (default `registry:2`; pin a digest for reproducible deploys). |
+| `registry_mirror.upstream` | Registry the mirror pulls through (default `https://registry-1.docker.io`). |
+| `registry_mirror.url_override` | Replace the runner-facing mirror URL verbatim (must include the scheme) — escape hatch for exotic topologies. |
+
+Wiring takes effect at container-create time: after enabling the mirror on an existing pool, run `gh sr rebuild <name>` so runner containers pick up the inner-dockerd `registry-mirrors` config.
+
 **Unique runner names per registration scope:** GitHub registers each self-hosted runner by its **instance** name (`name-1`, `name-2`, …). That name must be **unique within the registration scope** — within a given `owner/repo` for repo-scoped runners, or **org-wide** for org-scoped runners. If two machines use the same base `name` and `count: 1` in the same scope, both try to register as `name-1` and only one registration remains active. Prefer distinct base names (for example `myapp-win` vs `myapp-linux`, or `myorg-ci` vs `myorg-gpu`) so every machine has its own GitHub runner record and `gh sr status` matches the right row.
 
 ## Recent behavior changes

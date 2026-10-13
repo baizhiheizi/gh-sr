@@ -13,6 +13,7 @@ import (
 	"github.com/an-lee/gh-sr/internal/config"
 	"github.com/an-lee/gh-sr/internal/host"
 	"github.com/an-lee/gh-sr/internal/hostshell"
+	"github.com/an-lee/gh-sr/internal/registry"
 )
 
 // AgenticRunnerImageTag is the local Docker image tag built by gh sr setup.
@@ -568,6 +569,29 @@ func cacheURLEnvFor(h *host.Host, s *cache.Settings) string {
 	return cacheURLDockerCreateArg(s.RunnerURL(h))
 }
 
+// registryMirrorDockerCreateArg returns the `-e GH_SR_REGISTRY_MIRROR=<url>`
+// line for the `docker create` command when a per-host registry mirror URL is
+// resolved, or "" when the runner's inner dockerd should pull from Docker Hub
+// directly. The entrypoint writes a non-empty value into the inner dockerd's
+// /etc/docker/daemon.json registry-mirrors before its single start.
+func registryMirrorDockerCreateArg(url string) string {
+	if url == "" {
+		return ""
+	}
+	return "  -e GH_SR_REGISTRY_MIRROR=" + hostshell.PosixSingleQuote(url) + " \\\n"
+}
+
+// registryMirrorEnvFor resolves the per-host mirror URL and returns the
+// docker-create env line for it ("" when the mirror is disabled or no
+// container-reachable address exists — e.g. no docker0 gateway). The
+// deploy-side Ensure has already deployed the mirror by this point.
+func registryMirrorEnvFor(h *host.Host, s *registry.Settings) string {
+	if s == nil || !s.Enabled {
+		return ""
+	}
+	return registryMirrorDockerCreateArg(s.RunnerURL(h))
+}
+
 // containerRestartPolicy returns the Docker --restart policy used for every
 // container-mode runner instance.
 //
@@ -687,6 +711,7 @@ func (m *Manager) createContainerInstance(h *host.Host, rc config.RunnerConfig, 
 	dockerdTimeoutEnv := dockerdStartTimeoutDockerCreateArg(m.containerDockerdStartTimeout())
 	bootstrapRetriesEnv := bootstrapMaxRetriesDockerCreateArg(m.containerBootstrapMaxRetries())
 	cacheURLEnv := cacheURLEnvFor(h, m.Cache)
+	registryMirrorEnv := registryMirrorEnvFor(h, m.RegistryMirror)
 	awfBridgeEnv := awfServiceBridgeDockerCreateArg(rc)
 	restartPolicy := containerRestartPolicy()
 
@@ -713,7 +738,7 @@ docker create \
   -e GH_SR_RUNNER_LABELS=%s \
   -e GH_SR_RUNNER_GROUP=%s \
   -e GH_SR_RUNNER_EPHEMERAL=%s \
-%s%s%s%s%s  %s`,
+%s%s%s%s%s%s  %s`,
 		hostshell.PosixSingleQuote(stateDir),
 		hostshell.PosixSingleQuote(containerName(instanceName)),
 		hostshell.PosixSingleQuote(restartPolicy),
@@ -728,6 +753,7 @@ docker create \
 		dockerdTimeoutEnv,
 		bootstrapRetriesEnv,
 		cacheURLEnv,
+		registryMirrorEnv,
 		awfBridgeEnv,
 		hostshell.PosixSingleQuote(imageTag),
 	)
