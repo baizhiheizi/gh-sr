@@ -35,26 +35,14 @@ func NativeRunnerConfigPresent(h *host.Host, instanceName string) (bool, error) 
 	return hostshell.RemoteBoolCheck(h, "test -d "+dir+" && test -f "+dir+"/run.sh && test -f "+dir+"/.runner")
 }
 
-// svcShPresent reports whether svc.sh is deployed in the runner directory.
-func svcShPresent(h *host.Host, instanceName string) bool {
-	dir := h.RunnerDir(instanceName)
-	if h.OS == "windows" {
-		return false
-	}
-	// dir carries a literal $HOME (see NativeRunnerConfigPresent); pass it
-	// raw so the shell expands $HOME, matching the original inline probe.
-	ok, _ := hostshell.RemoteBoolCheck(h, "test -f "+dir+"/svc.sh")
-	return ok
-}
-
 // linuxSvcAndAutostartProbe runs a single SSH round-trip on Linux that returns
 // whether svc.sh is deployed in the runner directory and the autostart kind
-// for the instance. It replaces the previous pattern of calling
-// `svcShPresent(h, name)` followed by `autostart.Detect(h, name)` (two separate
-// SSH round-trips per instance) on the Start / Stop / removeNativeServices
-// hot paths. Same win-class as orphanLinuxPlanProbe (PR #358), the systemd
-// probe consolidation in autostart.Detect (PR #285), and the per-instance
-// container presence one-shot (PR #350).
+// for the instance. It replaces the previous pattern of running a svc.sh
+// probe followed by `autostart.Detect(h, name)` (two separate SSH round-trips
+// per instance) on the Start / Stop / removeNativeServices hot paths. Same
+// win-class as orphanLinuxPlanProbe (PR #358), the systemd probe consolidation
+// in autostart.Detect (PR #285), and the per-instance container presence
+// one-shot (PR #350).
 //
 // Markers emitted by the shell on separate lines:
 //
@@ -552,7 +540,7 @@ func (m *Manager) removeNativeServices(h *host.Host, instanceName string) {
 
 	// Combined probe: one SSH round-trip answers both "is svc.sh deployed?" and
 	// "which autostart kind is installed?". Replaces the previous
-	// svcShPresent + autostart.Detect pair (2 SSH per call).
+	// svc.sh probe + autostart.Detect pair (2 SSH per call).
 	hasSvc, kind, _ := linuxSvcAndAutostartProbe(h, instanceName)
 	if hasSvc {
 		uninstallSvcCmd := fmt.Sprintf("cd %s && %s\n$SUDO ./svc.sh uninstall 2>/dev/null || true", dir, strings.TrimSpace(sudoPrelude()))

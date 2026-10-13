@@ -208,7 +208,7 @@ func (m *Manager) Start(h *host.Host, rc config.RunnerConfig) error {
 	for _, name := range rc.InstanceNames() {
 		// One SSH round-trip per instance that answers both "is svc.sh deployed?"
 		// and "which autostart kind is installed?". Replaces the previous
-		// svcShPresent + autostart.Detect pair (2 SSH per instance).
+		// svc.sh probe + autostart.Detect pair (2 SSH per instance).
 		hasSvc, kind, derr := linuxSvcAndAutostartProbe(h, name)
 		if derr != nil {
 			return fmt.Errorf("starting %s: %w", name, derr)
@@ -269,7 +269,7 @@ func (m *Manager) Stop(h *host.Host, rc config.RunnerConfig) error {
 	for _, name := range rc.InstanceNames() {
 		// One SSH round-trip per instance that answers both "is svc.sh deployed?"
 		// and "which autostart kind is installed?". Replaces the previous
-		// svcShPresent + autostart.Detect pair (2 SSH per instance).
+		// svc.sh probe + autostart.Detect pair (2 SSH per instance).
 		hasSvc, kind, derr := linuxSvcAndAutostartProbe(h, name)
 		if derr != nil {
 			return fmt.Errorf("stopping %s: %w", name, derr)
