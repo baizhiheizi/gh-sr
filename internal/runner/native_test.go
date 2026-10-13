@@ -450,7 +450,7 @@ func TestLinuxSvcAndAutostartProbe(t *testing.T) {
 				t.Fatalf("unexpected error: %v", err)
 			}
 			if gotSvc != tc.wantSvc {
-				t.Errorf("svcShPresent: got %v want %v", gotSvc, tc.wantSvc)
+				t.Errorf("svc.sh present: got %v want %v", gotSvc, tc.wantSvc)
 			}
 			if gotKind != tc.wantKind {
 				t.Errorf("autostart.Kind: got %q want %q", gotKind, tc.wantKind)
