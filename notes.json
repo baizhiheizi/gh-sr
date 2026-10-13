@@ -7,6 +7,12 @@
   "issues": [],
   "checks": [
     {
+      "area": "docs",
+      "checked_at": "2026-10-13",
+      "result": "acted",
+      "follow_up": "Closed two #543 follow-up docs gaps in docs/content/commands.md on branch repo-assist/basics-docs-registry-disk-usage-2026-10-13 (commit ce723d9). Added gh sr registry one-liners to the quick-ref + noted the host-level gh-sr-cache / gh-sr-registry rows in the disk-usage intro. Doc-only PR."
+    },
+    {
       "area": "code",
       "checked_at": "2026-10-13",
       "result": "acted",
@@ -31,16 +37,10 @@
       "follow_up": "Filled docs gap for cache subcommands + rebuild + version + add on branch repo-assist/docs-commands-2026-10-03 (commit 30f3002)."
     },
     {
-      "area": "docs",
-      "checked_at": "2026-10-11",
-      "result": "acted",
-      "follow_up": "Added dedicated 'Add host / runner' section to docs/content/commands.md on branch repo-assist/docs-add-command-2026-10-11 (commit 97b5a92). PR #540 awaiting review. Doc-only PR."
-    },
-    {
       "area": "repo_assist_prs",
       "checked_at": "2026-10-13",
       "result": "acted",
-      "follow_up": "Two draft PRs open: #540 docs-add-command (commit 76552d1, opened 2026-10-11) and repo-assist/refactor-svcshpresent-dead-2026-10-13 (commit 56d3745, opened 2026-10-13). Both awaiting maintainer review."
+      "follow_up": "One draft PR open: basics-docs-registry-disk-usage-2026-10-13 (commit ce723d9, opened 2026-10-13). Awaiting maintainer review. Previously open #540 docs-add-command and refactor-svcshpresent-dead-2026-10-13 both landed on 2026-10-13 (#540/a72541b, #541/82e04bf)."
     },
     {
       "area": "tests",
