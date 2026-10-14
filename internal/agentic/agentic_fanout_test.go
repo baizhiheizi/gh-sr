@@ -494,3 +494,156 @@ func TestValidateContainerAgenticFanout_CacheEnvGatingReachesShell(t *testing.T)
 		}
 	})
 }
+
+// TestContainerCheckDefByName_MatchesFanoutDefs guards against drift between
+// the per-def helpers (used by containerCheckDefByName and the byName
+// fanout lookups) and the slice builder (used by containerCheckDefs and the
+// fanout setup). The fanout path and the per-check wrappers must surface
+// byte-identical metadata for the same probe — the refactor split each def
+// out into its own helper, so a typo in one of the per-def helpers would
+// silently diverge the two paths. Walk every entry the slice builder emits
+// and assert the byName lookup returns the same fields.
+func TestContainerCheckDefByName_MatchesFanoutDefs(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name          string
+		hostEgressMTU int
+		cacheEnabled  bool
+	}{
+		{"always_on_only", 0, false},
+		{"cache_enabled", 0, true},
+		{"mtu_in_window", 1400, false},
+		{"all_gated", 1400, true},
+	}
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			for _, d := range containerCheckDefs("gh-sr-runner", "agentic-1", tc.hostEgressMTU, tc.cacheEnabled) {
+				got, ok := containerCheckDefByName(d.Name, "gh-sr-runner", "agentic-1", tc.hostEgressMTU, tc.cacheEnabled)
+				if !ok {
+					t.Errorf("byName(%q) returned !ok for a def the slice builder emitted", d.Name)
+					continue
+				}
+				if got.Name != d.Name || got.LoginShell != d.LoginShell || got.InnerBody != d.InnerBody ||
+					got.Message != d.Message || got.Remediation != d.Remediation || got.DocRef != d.DocRef {
+					t.Errorf("byName(%q) drifted from slice-builder def:\n slice: %+v\n byName: %+v", d.Name, d, got)
+				}
+			}
+		})
+	}
+}
+
+// TestContainerCheckDefByName_GatedDefReturnsFalseOffGate pins the (false)
+// return when a gated def's gate is closed. The switch in
+// containerCheckDefByName must not construct the def or render its
+// Message/Remediation when the caller's gate is off — the caller
+// (containerInnerNetworkCheckCommand et al.) immediately discards the bool
+// and uses the def regardless, but the gated contract is part of the helper's
+// public contract (any future caller should be able to rely on the gate).
+func TestContainerCheckDefByName_GatedDefReturnsFalseOffGate(t *testing.T) {
+	t.Parallel()
+
+	t.Run("cache-env returns false when cache disabled", func(t *testing.T) {
+		t.Parallel()
+		d, ok := containerCheckDefByName("container-cache-env", "gh-sr-runner", "agentic-1", 0, false)
+		if ok {
+			t.Errorf("cache-env with cacheEnabled=false must return ok=false, got %+v", d)
+		}
+	})
+
+	t.Run("cache-env returns true when cache enabled", func(t *testing.T) {
+		t.Parallel()
+		_, ok := containerCheckDefByName("container-cache-env", "gh-sr-runner", "agentic-1", 0, true)
+		if !ok {
+			t.Error("cache-env with cacheEnabled=true must return ok=true")
+		}
+	})
+
+	t.Run("mtu returns false when MTU out of pinning window", func(t *testing.T) {
+		t.Parallel()
+		for _, mtu := range []int{0, 1500, 9000} {
+			mtu := mtu
+			t.Run("mtu"+itoaForTest(mtu), func(t *testing.T) {
+				t.Parallel()
+				d, ok := containerCheckDefByName("container-mtu", "gh-sr-runner", "agentic-1", mtu, false)
+				if ok {
+					t.Errorf("mtu=%d must return ok=false, got %+v", mtu, d)
+				}
+			})
+		}
+	})
+
+	t.Run("mtu returns true when MTU in pinning window", func(t *testing.T) {
+		t.Parallel()
+		_, ok := containerCheckDefByName("container-mtu", "gh-sr-runner", "agentic-1", 1400, false)
+		if !ok {
+			t.Error("mtu=1400 must return ok=true")
+		}
+	})
+
+	t.Run("unknown name returns false", func(t *testing.T) {
+		t.Parallel()
+		_, ok := containerCheckDefByName("not-a-real-probe", "gh-sr-runner", "agentic-1", 0, false)
+		if ok {
+			t.Error("unknown name must return ok=false")
+		}
+	})
+}
+
+// TestValidateContainerAgenticFanout_BuildDefsOnce pins the dedup shape:
+// the fanout wrapper must call containerCheckDefs into the defs slice via a
+// single build, even though both the combined shell and the parser specs
+// are derived from that slice. We can't directly observe the build count
+// from a black-box test (no counter is exposed), so we instead pin the
+// observable consequence: the fanout cmd + the parser specs must match
+// what the slice builder produces when consumed through the FromDefs
+// helpers. If a future refactor accidentally drops the dedup, the cmd /
+// specs still produce the same observable result for the same inputs (the
+// underlying defs are pure), but the regression would still be caught by
+// the benchmarks; this test pins the contract that "the production path
+// uses the same source-of-truth defs as the slice builder".
+func TestValidateContainerAgenticFanout_BuildDefsOnce(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name          string
+		hostEgressMTU int
+		cacheEnabled  bool
+	}{
+		{"always_on", 0, false},
+		{"all_gated", 1400, true},
+	}
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			// The cmd the production wrapper builds (with defs shared
+			// once) must equal the cmd the legacy helpers produce (each
+			// builds its own defs). Both compute the same final string;
+			// the dedup only saves the redundant intermediate work.
+			defs := containerCheckDefs("gh-sr-runner", "agentic-1", tc.hostEgressMTU, tc.cacheEnabled)
+			wantCmd := containerAgenticFanoutCheckCommandFromDefs("gh-sr-runner", defs)
+			gotCmd := containerAgenticFanoutCheckCommand("gh-sr-runner", "agentic-1", tc.hostEgressMTU, tc.cacheEnabled)
+			if gotCmd != wantCmd {
+				t.Errorf("fanout cmd mismatch:\nwant: %s\n got: %s", wantCmd, gotCmd)
+			}
+			wantSpecs := containerAgenticFanoutSpecsFromDefs(defs)
+			gotSpecs := containerAgenticFanoutSpecs("gh-sr-runner", "agentic-1", tc.hostEgressMTU, tc.cacheEnabled)
+			if len(gotSpecs) != len(wantSpecs) {
+				t.Fatalf("specs map length mismatch: want %d, got %d", len(wantSpecs), len(gotSpecs))
+			}
+			for name, want := range wantSpecs {
+				got, ok := gotSpecs[name]
+				if !ok {
+					t.Errorf("specs missing %q in legacy helper output", name)
+					continue
+				}
+				if got != want {
+					t.Errorf("specs[%q] mismatch:\nwant: %+v\n got: %+v", name, want, got)
+				}
+			}
+		})
+	}
+}

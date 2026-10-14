@@ -222,23 +222,23 @@ func (d containerCheckDef) checkCommand(outerContainer string) string {
 	return runner.DockerExecCommand(outerContainer, "sh "+flag+" "+hostshell.PosixSingleQuote(d.InnerBody))
 }
 
-// containerCheckDefs returns the definitions for all in-scope agentic
-// container probes, with Message/Remediation pre-rendered against the supplied
-// outerContainer / runnerName / hostEgressMTU. The MTU probe is included only
-// when hostEgressMTU falls in the pinning window (0 < MTU < 1500), matching
-// ValidateContainerMTU's gate; the cache-env probe only when cacheEnabled
-// (runners without a local cache keep GitHub's cache service and must not
-// carry CUSTOM_ACTIONS_RESULTS_URL).
+// Per-def constructors. Each helper builds exactly one containerCheckDef with
+// Message/Remediation pre-rendered against the supplied outerContainer /
+// runnerName (and hostEgressMTU where applicable). They are the single source
+// of truth for the probe metadata: both containerCheckDefs (the fanout slice)
+// and containerCheckDefByName (the per-check wrapper lookup) compose from the
+// same set so a wording change only needs to happen in one place. Splitting
+// them out of the slice builder also lets byName build only the requested
+// def instead of paying for every sibling's fmt.Sprintf allocations.
 //
 // gh-aw v0.88+ rootless notes: no resolv.conf/dnsmasq probe (no baked DNS), no
 // iptables service-routing probe (network isolation is the inner bridge
 // topology), no awf CLI/sudo probe (AWF is rootless and fetched by the job).
-func containerCheckDefs(outerContainer, runnerName string, hostEgressMTU int, cacheEnabled bool) []containerCheckDef {
-	defs := []containerCheckDef{
-		{
-			Name:       "container-inner-host-docker-internal",
-			LoginShell: false,
-			InnerBody: `set -eu
+func innerHostDockerInternalDef(outerContainer, runnerName string) containerCheckDef {
+	return containerCheckDef{
+		Name:       "container-inner-host-docker-internal",
+		LoginShell: false,
+		InnerBody: `set -eu
 ok=0
 for i in 1 2 3 4 5; do
   ip=$(docker run --rm --add-host=host.docker.internal:host-gateway alpine getent hosts host.docker.internal 2>/dev/null | awk "{print \$1; exit}")
@@ -249,8 +249,8 @@ for i in 1 2 3 4 5; do
   sleep 1
 done
 [ "$ok" -eq 1 ]`,
-			Message: fmt.Sprintf("inner dockerd in runner container %s does not map --add-host=host.docker.internal:host-gateway to a usable non-loopback address; gh-aw v0.88+ job containers (agent sandbox, awmg-mcpg gateway) rely on it", outerContainer),
-			Remediation: fmt.Sprintf(`Inspect the runner container's inner Docker and restart/rebuild it if stale:
+		Message: fmt.Sprintf("inner dockerd in runner container %s does not map --add-host=host.docker.internal:host-gateway to a usable non-loopback address; gh-aw v0.88+ job containers (agent sandbox, awmg-mcpg gateway) rely on it", outerContainer),
+		Remediation: fmt.Sprintf(`Inspect the runner container's inner Docker and restart/rebuild it if stale:
 
   docker exec -it %s bash
   docker run --rm --add-host=host.docker.internal:host-gateway alpine sh -c 'getent hosts host.docker.internal'
@@ -258,68 +258,79 @@ done
 If resolution is empty or loopback, restart the runner container. If it persists, run:
 
   gh sr rebuild %s`, outerContainer, runnerName),
-			DocRef: "agentic-workflows.md §11a",
-		},
-		{
-			Name:       "container-node-npm",
-			LoginShell: true,
-			InnerBody:  `command -v node >/dev/null && command -v npm >/dev/null`,
-			Message:    fmt.Sprintf("node LTS/npm are not on PATH inside runner container %s", outerContainer),
-			Remediation: fmt.Sprintf(`Rebuild the runner image so it includes Node.js LTS:
+		DocRef: "agentic-workflows.md §11a",
+	}
+}
+
+func nodeNPMDef(outerContainer, runnerName string) containerCheckDef {
+	return containerCheckDef{
+		Name:       "container-node-npm",
+		LoginShell: true,
+		InnerBody:  `command -v node >/dev/null && command -v npm >/dev/null`,
+		Message:    fmt.Sprintf("node LTS/npm are not on PATH inside runner container %s", outerContainer),
+		Remediation: fmt.Sprintf(`Rebuild the runner image so it includes Node.js LTS:
 
   gh sr rebuild %s`, runnerName),
-			DocRef: "agentic-workflows.md §8",
-		},
-		{
-			Name:       "container-docker-socket-user",
-			LoginShell: false,
-			InnerBody:  `su -s /bin/sh runner -c 'docker info >/dev/null 2>&1'`,
-			Message:    fmt.Sprintf("the runner user inside runner container %s cannot talk to the inner dockerd socket; the awmg-mcpg gateway mounts that socket and needs non-root access (fork image puts runner in the docker group, gid 123)", outerContainer),
-			Remediation: fmt.Sprintf(`Rebuild the runner image so the inner dockerd socket is group-accessible to the runner user:
+		DocRef: "agentic-workflows.md §8",
+	}
+}
+
+func dockerSocketUserDef(outerContainer, runnerName string) containerCheckDef {
+	return containerCheckDef{
+		Name:       "container-docker-socket-user",
+		LoginShell: false,
+		InnerBody:  `su -s /bin/sh runner -c 'docker info >/dev/null 2>&1'`,
+		Message:    fmt.Sprintf("the runner user inside runner container %s cannot talk to the inner dockerd socket; the awmg-mcpg gateway mounts that socket and needs non-root access (fork image puts runner in the docker group, gid 123)", outerContainer),
+		Remediation: fmt.Sprintf(`Rebuild the runner image so the inner dockerd socket is group-accessible to the runner user:
 
   gh sr rebuild %s
 
 Verify:
 
   docker exec %s su -s /bin/sh runner -c 'docker info >/dev/null && echo ok'`, runnerName, outerContainer),
-			DocRef: "agentic-workflows.md §11a",
-		},
-		{
-			Name:       "container-zstd",
-			LoginShell: true,
-			InnerBody:  `command -v zstd >/dev/null`,
-			Message:    fmt.Sprintf("zstd is not on PATH inside runner container %s; actions/cache restore/save and tool-cache archives need it", outerContainer),
-			Remediation: fmt.Sprintf(`Rebuild the runner image so it includes zstd:
+		DocRef: "agentic-workflows.md §11a",
+	}
+}
+
+func zstdDef(outerContainer, runnerName string) containerCheckDef {
+	return containerCheckDef{
+		Name:       "container-zstd",
+		LoginShell: true,
+		InnerBody:  `command -v zstd >/dev/null`,
+		Message:    fmt.Sprintf("zstd is not on PATH inside runner container %s; actions/cache restore/save and tool-cache archives need it", outerContainer),
+		Remediation: fmt.Sprintf(`Rebuild the runner image so it includes zstd:
 
   gh sr rebuild %s`, runnerName),
-			DocRef: "agentic-workflows.md §8",
-		},
+		DocRef: "agentic-workflows.md §8",
 	}
-	if cacheEnabled {
-		defs = append(defs, containerCheckDef{
-			Name:       "container-cache-env",
-			LoginShell: false,
-			InnerBody:  `grep -q '^CUSTOM_ACTIONS_RESULTS_URL=' /home/runner/.env`,
-			Message:    fmt.Sprintf("runner container %s has no CUSTOM_ACTIONS_RESULTS_URL in .env; with the cache enabled the runner must point actions/cache at the per-host cache server", outerContainer),
-			Remediation: fmt.Sprintf(`Redeploy the runner so the entrypoint writes the cache URL (check that the cache is enabled and reachable on this host):
+}
+
+func cacheEnvDef(outerContainer, runnerName string) containerCheckDef {
+	return containerCheckDef{
+		Name:       "container-cache-env",
+		LoginShell: false,
+		InnerBody:  `grep -q '^CUSTOM_ACTIONS_RESULTS_URL=' /home/runner/.env`,
+		Message:    fmt.Sprintf("runner container %s has no CUSTOM_ACTIONS_RESULTS_URL in .env; with the cache enabled the runner must point actions/cache at the per-host cache server", outerContainer),
+		Remediation: fmt.Sprintf(`Redeploy the runner so the entrypoint writes the cache URL (check that the cache is enabled and reachable on this host):
 
   gh sr cache deploy
   gh sr up %s`, runnerName),
-			DocRef: "guides/local-cache.md",
-		})
+		DocRef: "guides/local-cache.md",
 	}
-	if hostEgressMTU > 0 && hostEgressMTU < 1500 {
-		mtu := strconv.Itoa(hostEgressMTU)
-		defs = append(defs, containerCheckDef{
-			Name:       "container-mtu",
-			LoginShell: false,
-			InnerBody: "host=" + mtu + `
+}
+
+func mtuDef(outerContainer, runnerName string, hostEgressMTU int) containerCheckDef {
+	mtu := strconv.Itoa(hostEgressMTU)
+	return containerCheckDef{
+		Name:       "container-mtu",
+		LoginShell: false,
+		InnerBody: "host=" + mtu + `
 for ifc in eth0 docker0; do
   m=$(cat /sys/class/net/$ifc/mtu 2>/dev/null || echo 0)
   [ "$m" -le "$host" ] || exit 1
 done`,
-			Message: fmt.Sprintf("runner container %s has a Docker interface MTU larger than the host egress MTU (%d); large-packet TLS handshakes (e.g. actions/setup-go) can fail with \"Client network socket disconnected before secure TLS connection was established\"", outerContainer, hostEgressMTU),
-			Remediation: fmt.Sprintf(`Rebuild the runner so it pins the inner/outer Docker MTU to the host egress MTU:
+		Message: fmt.Sprintf("runner container %s has a Docker interface MTU larger than the host egress MTU (%d); large-packet TLS handshakes (e.g. actions/setup-go) can fail with \"Client network socket disconnected before secure TLS connection was established\"", outerContainer, hostEgressMTU),
+		Remediation: fmt.Sprintf(`Rebuild the runner so it pins the inner/outer Docker MTU to the host egress MTU:
 
   gh sr rebuild %s
 
@@ -332,21 +343,65 @@ If the host's real path MTU is below its NIC MTU (a tunnel the NIC is unaware of
 
   container_runner_image:
     mtu: %d`, runnerName, hostEgressMTU, outerContainer, outerContainer, hostEgressMTU),
-			DocRef: "agentic-workflows.md §11c",
-		})
+		DocRef: "agentic-workflows.md §11c",
+	}
+}
+
+// containerCheckDefs returns the definitions for all in-scope agentic
+// container probes, with Message/Remediation pre-rendered against the supplied
+// outerContainer / runnerName / hostEgressMTU. The MTU probe is included only
+// when hostEgressMTU falls in the pinning window (0 < MTU < 1500), matching
+// ValidateContainerMTU's gate; the cache-env probe only when cacheEnabled
+// (runners without a local cache keep GitHub's cache service and must not
+// carry CUSTOM_ACTIONS_RESULTS_URL).
+//
+// The slice is composed from the per-def helpers above so the wording and
+// gating stay byte-identical to containerCheckDefByName — fanout + per-check
+// wrappers must agree on probe metadata to avoid divergent error messages
+// for the same probe.
+func containerCheckDefs(outerContainer, runnerName string, hostEgressMTU int, cacheEnabled bool) []containerCheckDef {
+	defs := []containerCheckDef{
+		innerHostDockerInternalDef(outerContainer, runnerName),
+		nodeNPMDef(outerContainer, runnerName),
+		dockerSocketUserDef(outerContainer, runnerName),
+		zstdDef(outerContainer, runnerName),
+	}
+	if cacheEnabled {
+		defs = append(defs, cacheEnvDef(outerContainer, runnerName))
+	}
+	if hostEgressMTU > 0 && hostEgressMTU < 1500 {
+		defs = append(defs, mtuDef(outerContainer, runnerName, hostEgressMTU))
 	}
 	return defs
 }
 
 // containerCheckDefByName looks up a single probe definition by its Name tag.
 // Used by the per-check wrappers so they share the same metadata + shell body
-// as the fanout path. Pass the same hostEgressMTU/cacheEnabled inputs as the
-// fanout call so gated defs resolve consistently.
+// as the fanout path. Switches on name to build only the requested def —
+// avoids the redundant fmt.Sprintf churn of constructing every sibling def
+// just to return one. Pass the same hostEgressMTU/cacheEnabled inputs as the
+// fanout call so gated defs resolve consistently; an unknown name or a gated
+// def whose gate is off returns (zero, false) to mirror the previous behaviour.
 func containerCheckDefByName(name, outerContainer, runnerName string, hostEgressMTU int, cacheEnabled bool) (containerCheckDef, bool) {
-	for _, d := range containerCheckDefs(outerContainer, runnerName, hostEgressMTU, cacheEnabled) {
-		if d.Name == name {
-			return d, true
+	switch name {
+	case "container-inner-host-docker-internal":
+		return innerHostDockerInternalDef(outerContainer, runnerName), true
+	case "container-node-npm":
+		return nodeNPMDef(outerContainer, runnerName), true
+	case "container-docker-socket-user":
+		return dockerSocketUserDef(outerContainer, runnerName), true
+	case "container-zstd":
+		return zstdDef(outerContainer, runnerName), true
+	case "container-cache-env":
+		if !cacheEnabled {
+			return containerCheckDef{}, false
 		}
+		return cacheEnvDef(outerContainer, runnerName), true
+	case "container-mtu":
+		if hostEgressMTU <= 0 || hostEgressMTU >= 1500 {
+			return containerCheckDef{}, false
+		}
+		return mtuDef(outerContainer, runnerName, hostEgressMTU), true
 	}
 	return containerCheckDef{}, false
 }
@@ -376,8 +431,14 @@ func ValidateContainerAgenticFanout(h *host.Host, outerContainer, runnerName str
 	if h == nil || h.OS != "linux" || outerContainer == "" {
 		return nil
 	}
-	cmd := containerAgenticFanoutCheckCommand(outerContainer, runnerName, hostEgressMTU, cacheEnabled)
-	specs := containerAgenticFanoutSpecs(outerContainer, runnerName, hostEgressMTU, cacheEnabled)
+	// Build the defs slice once and feed both the combined-shell builder and
+	// the parser-specs map from the same source — the previous shape called
+	// containerCheckDefs twice per fanout (once inside each helper), paying
+	// for every per-def fmt.Sprintf twice. This single build halves the
+	// pre-Run cost on the `gh sr doctor` hot path for container-mode runners.
+	defs := containerCheckDefs(outerContainer, runnerName, hostEgressMTU, cacheEnabled)
+	cmd := containerAgenticFanoutCheckCommandFromDefs(outerContainer, defs)
+	specs := containerAgenticFanoutSpecsFromDefs(defs)
 	out, err := h.Run(cmd)
 	if err != nil {
 		// Transport-level failure (SSH drop, etc.) — surface one synthetic
@@ -401,8 +462,20 @@ func ValidateContainerAgenticFanout(h *host.Host, outerContainer, runnerName str
 // (0 < MTU < 1500), and the cache-env block only when cacheEnabled — matching
 // the gating in containerCheckDefs so a fanout call has identical observable
 // behaviour to calling the per-check wrappers.
+//
+// Thin wrapper that builds the defs slice and delegates to
+// containerAgenticFanoutCheckCommandFromDefs; callers that already have the
+// slice (e.g. ValidateContainerAgenticFanout) should call the FromDefs form
+// to avoid paying for the slice twice.
 func containerAgenticFanoutCheckCommand(outerContainer, runnerName string, hostEgressMTU int, cacheEnabled bool) string {
-	defs := containerCheckDefs(outerContainer, runnerName, hostEgressMTU, cacheEnabled)
+	return containerAgenticFanoutCheckCommandFromDefs(outerContainer, containerCheckDefs(outerContainer, runnerName, hostEgressMTU, cacheEnabled))
+}
+
+// containerAgenticFanoutCheckCommandFromDefs renders the single `docker exec`
+// command from a pre-built defs slice. The fanout wrapper passes the same
+// defs to containerAgenticFanoutSpecsFromDefs so the command body and the
+// parser specs come from one source.
+func containerAgenticFanoutCheckCommandFromDefs(outerContainer string, defs []containerCheckDef) string {
 	var inner strings.Builder
 	for _, d := range defs {
 		inner.WriteString("{ ")
@@ -423,8 +496,16 @@ func containerAgenticFanoutCheckCommand(outerContainer, runnerName string, hostE
 // and the spec is silently ignored. Message and Remediation are pre-rendered
 // against the supplied outerContainer / runnerName so the output is
 // byte-identical to the per-check wrappers.
+//
+// Thin wrapper that builds the defs slice and delegates to
+// containerAgenticFanoutSpecsFromDefs.
 func containerAgenticFanoutSpecs(outerContainer, runnerName string, hostEgressMTU int, cacheEnabled bool) map[string]PrereqFailure {
-	defs := containerCheckDefs(outerContainer, runnerName, hostEgressMTU, cacheEnabled)
+	return containerAgenticFanoutSpecsFromDefs(containerCheckDefs(outerContainer, runnerName, hostEgressMTU, cacheEnabled))
+}
+
+// containerAgenticFanoutSpecsFromDefs renders the per-check metadata map
+// from a pre-built defs slice.
+func containerAgenticFanoutSpecsFromDefs(defs []containerCheckDef) map[string]PrereqFailure {
 	specs := make(map[string]PrereqFailure, len(defs))
 	for _, d := range defs {
 		specs[d.Name] = PrereqFailure{
