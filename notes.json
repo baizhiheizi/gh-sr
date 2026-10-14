@@ -32,21 +32,21 @@
     },
     {
       "area": "qa",
-      "checked_at": "2026-10-03",
+      "checked_at": "2026-10-14",
       "result": "acted",
-      "follow_up": "Filled docs gap for cache subcommands + rebuild + version + add on branch repo-assist/docs-commands-2026-10-03 (commit 30f3002)."
+      "follow_up": "Filled `internal/registry` coverage gap on branch repo-assist/test-registry-inspect-2026-10-14 (commit 6bb8f6d). Inspect + SettingsFromConfig 0% to 100%. Mirrors internal/cache test shape."
     },
     {
       "area": "repo_assist_prs",
-      "checked_at": "2026-10-13",
+      "checked_at": "2026-10-14",
       "result": "acted",
-      "follow_up": "One draft PR open: basics-docs-registry-disk-usage-2026-10-13 (commit ce723d9, opened 2026-10-13). Awaiting maintainer review. Previously open #540 docs-add-command and refactor-svcshpresent-dead-2026-10-13 both landed on 2026-10-13 (#540/a72541b, #541/82e04bf)."
+      "follow_up": "One draft PR open: test-registry-inspect-2026-10-14 (commit 6bb8f6d, opened 2026-10-14). Awaiting maintainer review. Previously open #544 basics-docs-registry-disk-usage landed 2026-10-13 as commit 2d2581a."
     },
     {
       "area": "tests",
-      "checked_at": "2026-10-10",
+      "checked_at": "2026-10-14",
       "result": "acted",
-      "follow_up": "Filled internal/tui coverage gap on branch repo-assist/test-tui-colorize-2026-10-10 (commit b96ea72). 5 target functions 0%->100%: colorizeImageBuild, colorizeLocalStatus, colorizeGitHubStatus, runnerStatusColorize, runnerStatusCells. Package coverage 33.3% -> 37.2%."
+      "follow_up": "Filled internal/registry coverage gap on branch repo-assist/test-registry-inspect-2026-10-14 (commit 6bb8f6d). Inspect 0% to 100% and SettingsFromConfig 0% to 100%. Mirrors internal/cache test shape."
     }
   ],
   "completed_actions": [],
