@@ -31,6 +31,9 @@ gh sr cache status         # Cache server state, image, health, storage per host
 gh sr cache deploy         # Deploy (or start) the cache server container on hosts
 gh sr cache prune          # Delete all cache entries via the management API (best-effort)
 gh sr cache remove [--purge-data]  # Stop and remove the cache server container
+gh sr registry status      # Mirror state, image, health, storage per host
+gh sr registry deploy      # Start the pull-through mirror (idempotent)
+gh sr registry remove [--purge-data]  # Stop and remove the gh-sr-registry container
 gh sr config path          # Print resolved config and ~/.gh-sr/env paths
 gh sr config show          # Print resolved configuration (token source summarized)
 gh sr config edit          # Edit resolved runners.yml in $VISUAL / $EDITOR
@@ -144,7 +147,7 @@ gh sr hosts --host mac-mini
 
 ## Disk usage and cleanup
 
-Runner workspaces under `~/.gh-sr/runners/<instance>` accumulate job checkouts (`_work`), temp files (`_temp`), and — for container/agentic runners — a persistent inner Docker cache (`docker-data`). Per-job hooks wipe runtime state inside the container but **never** prune the image cache, so disk use can grow large over time.
+Runner workspaces under `~/.gh-sr/runners/<instance>` accumulate job checkouts (`_work`), temp files (`_temp`), and — for container/agentic runners — a persistent inner Docker cache (`docker-data`). Per-job hooks wipe runtime state inside the container but **never** prune the image cache, so disk use can grow large over time. On Linux hosts the `gh sr disk usage` table also includes two host-level rows for the optional services: `gh-sr-cache` (local Actions cache server storage) and `gh-sr-registry` (pull-through mirror layers).
 
 ```bash
 gh sr disk usage                    # breakdown per host/instance
