@@ -488,6 +488,63 @@ func TestAgenticRunnerDockerfileInstallsNodeLTS(t *testing.T) {
 	}
 }
 
+// TestAgenticRunnerDockerfileDownloadsRetry pins the build-egress retry policy:
+// every curl in the image build must retry hard. Build egress rides the same
+// flaky upstream that breaks job-time downloads, and `gh sr rebuild` burns ~20
+// min (base pull + apt) before reaching the download layers — so one un-retried
+// TLS reset (curl 35 SSL_ERROR_SYSCALL to release-assets.githubusercontent.com
+// from x1, 2026-10-14) killed a build that was otherwise fully green at step
+// 6/19. The toolcache bake always retried; this pins the rule for every layer
+// so a newly added download cannot silently reintroduce the single-shot shape.
+func TestAgenticRunnerDockerfileDownloadsRetry(t *testing.T) {
+	t.Parallel()
+
+	// Join line continuations into logical instructions first (so a `RUN … && curl`
+	// split across lines still matches as one unit) and drop comment-only lines.
+	var instructions []string
+	var current strings.Builder
+	flush := func() {
+		if current.Len() > 0 {
+			instructions = append(instructions, current.String())
+			current.Reset()
+		}
+	}
+	for _, line := range strings.Split(agenticRunnerDockerfile, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if current.Len() == 0 && strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		continued := strings.HasSuffix(trimmed, "\\")
+		current.WriteString(trimmed)
+		if continued {
+			current.WriteString(" ")
+			continue
+		}
+		flush()
+	}
+	flush()
+
+	for _, instruction := range instructions {
+		// Check each `&&` segment on its own: two curls in one RUN (the compose
+		// step) must not mask each other's flags.
+		for _, segment := range strings.Split(instruction, "&&") {
+			if !strings.Contains(segment, "curl ") {
+				continue
+			}
+			for _, want := range []string{
+				"--retry",
+				"--retry-all-errors", // SSL/connreset failures are not retried without it
+				"--retry-delay",
+				"--connect-timeout",
+			} {
+				if !strings.Contains(segment, want) {
+					t.Errorf("curl download must set %s (build egress is flaky): %s", want, strings.TrimSpace(segment))
+				}
+			}
+		}
+	}
+}
+
 // TestAgenticRunnerDockerfileHasNoBakedChrome guards the browser posture: no
 // google-chrome is baked into the image (consumer system tests download a pinned
 // Chrome-for-Testing build at runtime instead, and dl.google.com is TLS-reset
