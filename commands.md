@@ -41,3 +41,5 @@ go tool pprof -alloc_objects -top -cum -nodecount=20 /tmp/mem.prof   # parse a -
 - The project tests via `gh run` (the actual GitHub CLI), not the local binary — see `CLAUDE.md`.
 - `Makefile` defines `bench` and `bench-save` targets (already validated).
 - The benchmark for Manager.Status uses a `testutil.MockExecutor` to replace the SSH round-trip — see `internal/runner/bench_test.go` for the pattern when adding new benchmarks that hit `h.Run`.
+- **Module path** is `github.com/an-lee/gh-sr` (renamed from `github.com/baizhiheizi/gh-sr` on 2026-10-15). New test imports and branch names should use `an-lee`.
+- **Profile-driven investigation**: `go test -bench='<name>' -benchtime=2s -count=1 -memprofile=/tmp/x.mem ./pkg/` followed by `go tool pprof -alloc_objects -list '<fn>' /tmp/x.mem` finds the exact allocating lines. Used in run 7 to attribute 51% of `BenchmarkEnrichFromScopeRunners` allocs to a single line.

@@ -69,13 +69,26 @@ Picked up the deferred `viewScroll` `+ "\n"` follow-up (backlog item #3) and tri
 
 **Also resolved this run**: tried the `enrichFromScopeRunners` map-lookup variant (backlog item #5) — measured a CLEAR LOSS on every metric (big fixture: +26% time, +33% bytes, +83 allocs; small fixture: +72% time, +73% bytes, +10 allocs). The map allocation overhead dominates; the O(N×M) slice iteration is the right shape. Conclusion recorded in [[perf-improver-opportunities]].
 
+## 2026-10-15 (run_id 38817271768) — Seventh perf-improver run
+
+Backlog item #4 (EnrichFromScopeRunners alloc hotspot) reopened — the run-6 conclusion was about the inner O(N×M) scan, but the pprof-revealed culprit was a different line: the per-instance `name+"-"+strconv.Itoa(j)` map KEY build. Profile-driven swap to `rcByName[rc.Name]` + `instName[:dashIdx]` lookup via `strings.LastIndex`. Module path renamed from `baizhiheizi/gh-sr` to `an-lee/gh-sr` (commits now use new path; no functional change).
+
+- ✅ Task 1 (Discover commands): re-validated `GOTOOLCHAIN=auto go build ./...`, `go vet ./...`, `gofmt -l .`, `go test ./... -count=1 -short` (18 packages pass). Commands still current; module path note added.
+- ✅ Task 2 (Identify opportunities): re-ran the bench suite at the run-6 baseline numbers; nothing regressed. `git grep 'strings\.Split\b'` confirmed the SplitSeq migration is still complete (only slice-index uses remain in `cmd/gh-sr/main.go`, `internal/doctor/lockfiles.go`, and the new `internal/autostart/autostart.go:183`). One NEW finding: `BenchmarkEnrichFromScopeRunners` is still the largest non-lipgloss alloc hotspot. Ran `pprof -alloc_objects -list 'enrichFromScopeRunners'` against a `-memprofile` capture to attribute the allocs to specific lines — found line 451 (`name+"-"+strconv.Itoa(j)`) was 51.49% of total alloc events. Different angle to consider than run 6.
+- ✅ Task 3 (Implement improvements): opened draft PR on `perf-assist/enrich-rc-by-base-name` (commit `e63fb3c`). The fix: `rcByInstance` map keyed on `name-N` becomes `rcByName` keyed on `rc.Name` (one entry per runner, no per-instance string alloc); per-status lookup is `strings.LastIndex(instName, "-")` + `rcByName[instName[:dashIdx]]`. Drops `strconv` import. See [[perf-improver-work]] for full benchmark table.
+- ✅ Task 4 (Maintain PRs): no open perf-improver PRs (PRs #536 + #537 merged 2026-10-10).
+- ✅ Task 5 (Comment on perf issues): no open perf-labelled issues besides the Monthly Activity issue.
+- ✅ Task 6 (Measurement infra): none needed. Existing `BenchmarkEnrichFromScopeRunners*` covers the function; `pprof -alloc_objects -list '<fn>'` against a `-memprofile` is the right primitive for future hotspots. Documented in [[perf-improver-opportunities]] cross-cutting notes.
+- ✅ Task 7 (Monthly summary): updating issue #517 this run. Will include the new draft PR and the run-6 entries plus the pprof-driven methodology change.
+
 ## Backlog cursor for next run
 
 Pick up at the top of [[perf-improver-opportunities]]:
 
 1. **View() alloc reduction — remaining lipgloss cost** — was HIGH/HIGH; now MEDIUM/MEDIUM after PR #502 (merged 2026-09-27) closed the caller-side alloc opportunities. The remaining ~95% is inside `lipgloss.Style.Render` (line-wrapping `strings.Split`, ANSI byte-buffer growth). HIGH risk, only attempt if a future run wants to push further.
-2. **renderRow / renderHighlightedRow cell padding** — MEDIUM impact, LOW risk. Still speculative. Worth profiling after the *Into variants are merged to see whether padding-skip still gives measurable savings on top.
+2. **renderRow / renderHighlightedRow cell padding** — MEDIUM impact, LOW risk. Still speculative. Worth profiling after the *Into variants are merged (run 6 closed this) to see whether padding-skip still gives measurable savings on top.
 3. **Manager.Status further per-instance optimization** — LOW priority. Marginal gains expected.
 4. **Periodic `strings.Split` grep** — DONE for current code; worth re-running if new code lands.
+5. **`internal/autostart/autostart.go:183` slice-index `strings.Split`** — new low-priority finding (run 7) on the system-unit Install path. One SSH round-trip; converting to `strings.Cut` is a trivial follow-up.
 
-_(Items #3 `viewScroll` `+ "\n"` concat and #5 `EnrichFromScopeRunners` map lookup were resolved/closed by run 6 above.)_
+_(Item #4 GitHub-runner O(N×M) scan was closed by run 6's rejected map-lookup variant, then partially reopened by run 7 which instead addressed the key-build alloc hotspot. The remaining inner scan is now item #4 in opportunities.md and is LOW priority.)_
