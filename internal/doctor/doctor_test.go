@@ -1379,6 +1379,10 @@ func TestCheckContainerRunnerInstall(t *testing.T) {
 			wantNotContains:  []string{"inner dockerd"},
 		},
 		{
+			// A container that exists but never registered needs the teardown
+			// step spelled out: EnsureSetup skips runners whose container
+			// already exists, and the token baked at `docker create` is
+			// single-use, so a bare `gh sr setup` restarts the same stale token.
 			name:             "inner dockerd and registration missing",
 			inspectOut:       "running\n",
 			execOut:          "no\nno\n",
@@ -1386,7 +1390,7 @@ func TestCheckContainerRunnerInstall(t *testing.T) {
 			wantWarn:         1,
 			wantInspectCalls: 1,
 			wantExecCalls:    1,
-			wantContains:     []string{"inner dockerd not responding", "missing .runner", "gh sr setup aw"},
+			wantContains:     []string{"inner dockerd not responding", "missing .runner", "gh sr down aw && gh sr setup aw"},
 		},
 		{
 			name:             "healthy",

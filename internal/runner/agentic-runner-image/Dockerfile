@@ -42,7 +42,8 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 # GitHub CLI (gh) — required by gh-aw
-RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+RUN curl -fsSL --retry 8 --retry-all-errors --retry-delay 20 --connect-timeout 20 \
+        https://cli.github.com/packages/githubcli-archive-keyring.gpg \
         | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg \
     && chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg \
     && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] \
@@ -55,7 +56,14 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
 # Node.js LTS (NodeSource) — speeds up gh-aw framework steps; the compiler also
 # emits an actions/setup-node step for non-standard runners, so this is an
 # accelerator, not a hard dependency.
-RUN curl -fsSL https://deb.nodesource.com/setup_lts.x | bash - \
+#
+# The setup script is fetched to a file and then executed, never piped straight
+# into bash: a retrying curl writing into a live bash stdin can replay a partial
+# script. Retry flags match the rest of the image's downloads (see below).
+RUN curl -fsSL --retry 8 --retry-all-errors --retry-delay 20 --connect-timeout 20 \
+        https://deb.nodesource.com/setup_lts.x -o /tmp/nodesource_setup_lts.sh \
+    && bash /tmp/nodesource_setup_lts.sh \
+    && rm -f /tmp/nodesource_setup_lts.sh \
     && apt-get install -y --no-install-recommends nodejs \
     && node -v \
     && npm -v \
@@ -73,12 +81,22 @@ RUN curl -fsSL https://deb.nodesource.com/setup_lts.x | bash - \
 # CLI's "unknown shorthand flag: 'd' in -d". Installed into the system-wide
 # plugin dir so the runner user (whom AWF runs as) finds it too. TARGETARCH is
 # docker's amd64/arm64; compose release assets use Go arch names (x86_64/aarch64).
+#
+# This is the ONLY layer that pulls from github.com/.../releases/download, which
+# redirects to release-assets.githubusercontent.com — the one GitHub host that
+# TLS-resets from some runner hosts (cn-region, x1 as of 2026-10-14:
+# "curl: (35) OpenSSL SSL_connect: SSL_ERROR_SYSCALL"). Since every earlier layer
+# (ghcr.io, archive.ubuntu.com, cli.github.com, deb.nodesource.com) resolves
+# fine, an un-retried curl here aborted an otherwise-successful ~20 min build at
+# step 6/19. Same retry policy as the toolcache bake below.
 ARG COMPOSE_VERSION=v5.5.0
 RUN mkdir -p /usr/local/lib/docker/cli-plugins /tmp/compose \
     && case "${TARGETARCH}" in arm64) _carch=aarch64 ;; *) _carch=x86_64 ;; esac \
-    && curl -fsSL "https://github.com/docker/compose/releases/download/${COMPOSE_VERSION}/docker-compose-linux-${_carch}" \
+    && curl -fsSL --retry 8 --retry-all-errors --retry-delay 20 --connect-timeout 20 \
+        "https://github.com/docker/compose/releases/download/${COMPOSE_VERSION}/docker-compose-linux-${_carch}" \
         -o "/tmp/compose/docker-compose-linux-${_carch}" \
-    && curl -fsSL "https://github.com/docker/compose/releases/download/${COMPOSE_VERSION}/docker-compose-linux-${_carch}.sha256" \
+    && curl -fsSL --retry 8 --retry-all-errors --retry-delay 20 --connect-timeout 20 \
+        "https://github.com/docker/compose/releases/download/${COMPOSE_VERSION}/docker-compose-linux-${_carch}.sha256" \
         -o "/tmp/compose/docker-compose-linux-${_carch}.sha256" \
     && (cd /tmp/compose && sha256sum -c "docker-compose-linux-${_carch}.sha256") \
     && install -m 0755 "/tmp/compose/docker-compose-linux-${_carch}" /usr/local/lib/docker/cli-plugins/docker-compose \

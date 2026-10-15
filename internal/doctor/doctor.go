@@ -362,6 +362,9 @@ func hasContainerModeRunners(runners []config.RunnerConfig) bool {
 // passed through so agentic container probes include the cache-env check only
 func runHostChecks(w io.Writer, hostName string, h *host.Host, runners []config.RunnerConfig, r *Result, cacheSet *cache.Settings, cacheEnabled bool, mirrorSet *registry.Settings) {
 	hostRunners := runnersForHost(runners, hostName)
+	if h.OS == "linux" {
+		checkHostDNS(w, hostName, h, r)
+	}
 	if hasNativeModeRunners(hostRunners) {
 		checkNative(w, hostName, h, r)
 		checkNativeRunnerInstall(w, hostName, h, runners, r)
@@ -384,6 +387,36 @@ func runHostChecks(w io.Writer, hostName string, h *host.Host, runners []config.
 		checkOrphanRunners(w, hostName, h, runners, r)
 	}
 	checkRunnerDiskUsage(w, hostName, h, runners, r)
+}
+
+// checkHostDNS probes host-side resolution of api.github.com on a Linux host.
+//
+// A host whose stub resolver is wedged (systemd-resolved accepting connections
+// but never answering, a stale dnsmasq, a blackholed upstream) passes every
+// other doctor row: runner directories exist, docker is healthy, the published
+// cache/registry ports answer on their IP literals. It only surfaces
+// downstream as "missing .runner" on the runners registered from that host —
+// container entrypoints fail `config.sh` on the resolve and crash-loop while
+// the host-side rows stay green — which sends remediation at `gh sr setup`
+// instead of at the resolver that is actually broken.
+//
+// getent is wrapped in `timeout`: a wedged resolver does not answer, it hangs,
+// and an unbounded probe would stall the whole doctor run behind the SSH
+// session rather than reporting a row.
+func checkHostDNS(w io.Writer, hostName string, h *host.Host, r *Result) {
+	out, err := h.Run(`r=$(timeout 5 getent hosts api.github.com 2>/dev/null); [ -n "$r" ] && echo ok || echo noresolve`)
+	if err != nil {
+		printLine(w, sevWarn, hostName, fmt.Sprintf("dns: could not check name resolution: %v", err))
+		r.Warn++
+		return
+	}
+	switch strings.TrimSpace(out) {
+	case "ok":
+		printLine(w, sevOK, hostName, "dns: resolves api.github.com")
+	default:
+		printLine(w, sevFail, hostName, "dns: host cannot resolve api.github.com; runner registration and job-time network access will fail until the host resolver is fixed (e.g. sudo systemctl restart systemd-resolved), then re-run: gh sr setup")
+		r.Fail++
+	}
 }
 
 func checkNativeRunnerInstall(w io.Writer, hostName string, h *host.Host, runners []config.RunnerConfig, r *Result) {
@@ -565,7 +598,16 @@ func checkContainerRunnerInstall(w io.Writer, hostName string, h *host.Host, run
 		}
 
 		if !rep.Registered {
-			printLine(w, sevFail, hostName, fmt.Sprintf("container: instance %s — actions runner not configured inside %s (missing .runner); run: gh sr setup %s", inst, cname, runnerName))
+			// "run: gh sr setup" alone does not fix this. The registration
+			// token is baked in at `docker create` (one-time use, ~1h TTL), and
+			// EnsureSetup skips any runner whose container already exists — so
+			// for a container that exists but never registered (typically after
+			// a host DNS outage left it crash-looping on config.sh), setup
+			// reports "already set up" and restarts the same stale token.
+			// Tearing the instance down first forces a fresh token.
+			printLine(w, sevFail, hostName, fmt.Sprintf(
+				"container: instance %s — actions runner not configured inside %s (missing .runner); run: gh sr down %s && gh sr setup %s (the registration token is baked in at container create and is single-use, so the container must be recreated)",
+				inst, cname, runnerName, runnerName))
 			r.Fail++
 			continue
 		}
@@ -681,9 +723,17 @@ func probeCacheFromRunner(w io.Writer, hostName string, h *host.Host, hostRunner
 		return
 	}
 	cname := runner.ContainerDockerName(inst)
+	// RunnerURL is a prefix and keeps its trailing slash, so the probe must
+	// trim it before appending "/health": concatenating the two yields
+	// "//health", which the cache server never answers — curl burns its full
+	// -m budget and the check reports the host INPUT firewall as the cause of
+	// a URL that is in fact reachable. The inner script is quoted once, as a
+	// whole: quoting the URL separately nests single quotes inside the
+	// already-quoted `sh -c` payload and silently rewrites the request.
+	script := fmt.Sprintf("curl -fsS -m 5 %s/health || echo PROBE_FAIL", strings.TrimSuffix(url, "/"))
 	out, err := h.Run(fmt.Sprintf(
-		"docker exec %s sh -c 'curl -fsS -m 5 %s/health || echo PROBE_FAIL' 2>/dev/null",
-		runner.QuoteContainerName(cname), hostshell.PosixSingleQuote(url)))
+		"docker exec %s sh -c %s 2>/dev/null",
+		runner.QuoteContainerName(cname), hostshell.PosixSingleQuote(script)))
 	switch {
 	case err != nil:
 		printLine(w, sevWarn, hostName, fmt.Sprintf("cache: could not probe from runner container %s: %v", cname, err))
@@ -785,9 +835,10 @@ func probeRegistryFromRunner(w io.Writer, hostName string, h *host.Host, hostRun
 		r.Warn++
 		return
 	}
+	script := fmt.Sprintf("curl -fsS -m 5 -o /dev/null -w %%{http_code} %s/v2/ || echo PROBE_FAIL", strings.TrimSuffix(url, "/"))
 	out, err := h.Run(fmt.Sprintf(
-		"docker exec %s sh -c 'curl -fsS -m 5 -o /dev/null -w %%{http_code} %s/v2/ || echo PROBE_FAIL' 2>/dev/null",
-		runner.QuoteContainerName(cname), hostshell.PosixSingleQuote(url)))
+		"docker exec %s sh -c %s 2>/dev/null",
+		runner.QuoteContainerName(cname), hostshell.PosixSingleQuote(script)))
 	switch {
 	case err != nil:
 		printLine(w, sevWarn, hostName, fmt.Sprintf("registry: could not probe from runner container %s: %v", cname, err))
