@@ -8,6 +8,7 @@ import (
 	"github.com/an-lee/gh-sr/internal/cache"
 	"github.com/an-lee/gh-sr/internal/config"
 	"github.com/an-lee/gh-sr/internal/host"
+	"github.com/an-lee/gh-sr/internal/registry"
 	"github.com/an-lee/gh-sr/internal/runner"
 	"github.com/an-lee/gh-sr/internal/testutil"
 )
@@ -242,6 +243,213 @@ func TestProbeCacheFromRunner(t *testing.T) {
 		probeCacheFromRunner(&buf, "h1", h, runners, &cache.Settings{Enabled: true, BindAddr: "172.17.0.1"}, &r)
 		if !strings.Contains(observedCmd, wantCName) {
 			t.Errorf("expected probe to use first container instance %q, got cmd:\n%s", wantCName, observedCmd)
+		}
+	})
+
+	// The probe URL regression that made this check lie. RunnerURL is a prefix
+	// and keeps its trailing slash, so the pre-fix `url + "/health"` asked for
+	// "//health" — the cache server never answers that path, curl burns its
+	// whole -m budget, and doctor printed "the host INPUT firewall is blocking
+	// container traffic" for a URL that answers 200 in the same container. The
+	// second defect it pins is the quoting level: the old command wrapped the
+	// URL in single quotes *inside* an already-quoted `sh -c` payload.
+	t.Run("probe requests /health, never //health, with a single quoting level", func(t *testing.T) {
+		t.Parallel()
+		var observedCmd string
+		h := host.NewHost("linux", config.HostConfig{OS: "linux", Addr: "local"})
+		h.SetConn(&testutil.MockExecutor{
+			RunFn: func(cmd string) (string, error) {
+				if strings.Contains(cmd, "docker exec") && strings.Contains(cmd, "curl -fsS") {
+					observedCmd = cmd
+					return "healthy\n", nil
+				}
+				return "", nil
+			},
+		})
+		var buf strings.Builder
+		var r Result
+		probeCacheFromRunner(&buf, "h1", h, containerRunners, &cache.Settings{Enabled: true, BindAddr: "172.17.0.1"}, &r)
+
+		if strings.Contains(observedCmd, "//health") {
+			t.Errorf("probe must not request //health (RunnerURL keeps a trailing slash), got cmd:\n%s", observedCmd)
+		}
+		if !strings.Contains(observedCmd, "/health") {
+			t.Errorf("expected probe to request /health, got cmd:\n%s", observedCmd)
+		}
+		// One open + one close quote: the whole inner script is quoted once.
+		if n := strings.Count(observedCmd, "'"); n != 2 {
+			t.Errorf("expected the inner script quoted exactly once (2 single quotes), got %d in cmd:\n%s", n, observedCmd)
+		}
+		if !strings.Contains(observedCmd, "'curl -fsS -m 5 http://172.17.0.1:27420/health || echo PROBE_FAIL'") {
+			t.Errorf("expected a single-quoted inner script, got cmd:\n%s", observedCmd)
+		}
+	})
+}
+
+// TestProbeRegistryFromRunner covers the mirror reachability probe. The mirror
+// URL carries no trailing slash today, so the //health-class defect is latent
+// rather than active — but the probe shared the same nested-quote construction
+// as the cache probe, and only the registry's tolerance for "//v2/" kept it
+// green. Both properties are pinned here so neither regresses.
+func TestProbeRegistryFromRunner(t *testing.T) {
+	t.Parallel()
+
+	containerRunners := []config.RunnerConfig{
+		{Name: "ci", Host: "h1", Repo: "o/r", Count: 1, RunnerMode: config.RunnerModeContainer},
+	}
+
+	t.Run("probe requests /v2/ with a single quoting level", func(t *testing.T) {
+		t.Parallel()
+		var observedCmd string
+		h := reachabilityHost(&testutil.MockExecutor{
+			RunFn: func(cmd string) (string, error) {
+				if strings.Contains(cmd, "docker exec") && strings.Contains(cmd, "curl -fsS") {
+					observedCmd = cmd
+					return "200", nil
+				}
+				if strings.Contains(cmd, "ip -4 -o addr show docker0") {
+					return gatewayIP("172.17.0.1"), nil
+				}
+				return "1\n", nil
+			},
+		})
+		var buf strings.Builder
+		var r Result
+		probeRegistryFromRunner(&buf, "h1", h, containerRunners, &registry.Settings{Enabled: true, BindAddr: "172.17.0.1"}, &r)
+
+		if strings.Contains(observedCmd, "//v2/") {
+			t.Errorf("probe must not request //v2/, got cmd:\n%s", observedCmd)
+		}
+		if n := strings.Count(observedCmd, "'"); n != 2 {
+			t.Errorf("expected the inner script quoted exactly once (2 single quotes), got %d in cmd:\n%s", n, observedCmd)
+		}
+		if !strings.Contains(buf.String(), "reachable from runner container") {
+			t.Errorf("expected OK row for a 200 answer, got:\n%s", buf.String())
+		}
+		if r.Fail != 0 || r.Warn != 0 {
+			t.Errorf("expected no warn/fail, got %+v", r)
+		}
+	})
+
+	t.Run("non-200 answer fails with the firewall hint", func(t *testing.T) {
+		t.Parallel()
+		h := reachabilityHost(&testutil.MockExecutor{
+			RunFn: func(cmd string) (string, error) {
+				if strings.Contains(cmd, "docker exec") && strings.Contains(cmd, "curl -fsS") {
+					return "PROBE_FAIL", nil
+				}
+				if strings.Contains(cmd, "ip -4 -o addr show docker0") {
+					return gatewayIP("172.17.0.1"), nil
+				}
+				return "1\n", nil
+			},
+		})
+		var buf strings.Builder
+		var r Result
+		probeRegistryFromRunner(&buf, "h1", h, containerRunners, &registry.Settings{Enabled: true, BindAddr: "172.17.0.1"}, &r)
+		out := buf.String()
+		if !strings.Contains(out, "FAIL") || !strings.Contains(out, "INPUT firewall is blocking container traffic") {
+			t.Errorf("expected FAIL with firewall remediation, got:\n%s", out)
+		}
+		if r.Fail != 1 {
+			t.Errorf("expected 1 fail, got %+v", r)
+		}
+	})
+}
+
+// TestCheckHostDNS pins the resolver check that names the real cause behind
+// "missing .runner" rows: on a host whose stub resolver is wedged, every
+// other row stays green while registration crash-loops on a resolve failure.
+func TestCheckHostDNS(t *testing.T) {
+	t.Parallel()
+
+	t.Run("resolving host prints OK", func(t *testing.T) {
+		t.Parallel()
+		h := reachabilityHost(&testutil.MockExecutor{
+			RunFn: func(cmd string) (string, error) {
+				if strings.Contains(cmd, "getent hosts api.github.com") {
+					return "ok\n", nil
+				}
+				return "", nil
+			},
+		})
+		var buf strings.Builder
+		var r Result
+		checkHostDNS(&buf, "h1", h, &r)
+		if !strings.Contains(buf.String(), "resolves api.github.com") || !strings.Contains(buf.String(), "OK") {
+			t.Errorf("expected OK row, got:\n%s", buf.String())
+		}
+		if r.Fail != 0 || r.Warn != 0 {
+			t.Errorf("expected no warn/fail, got %+v", r)
+		}
+	})
+
+	t.Run("unresolvable host fails and names the resolver", func(t *testing.T) {
+		t.Parallel()
+		h := reachabilityHost(&testutil.MockExecutor{
+			RunFn: func(cmd string) (string, error) {
+				if strings.Contains(cmd, "getent hosts api.github.com") {
+					return "noresolve\n", nil
+				}
+				return "", nil
+			},
+		})
+		var buf strings.Builder
+		var r Result
+		checkHostDNS(&buf, "h1", h, &r)
+		out := buf.String()
+		if !strings.Contains(out, "FAIL") || !strings.Contains(out, "cannot resolve api.github.com") {
+			t.Errorf("expected DNS FAIL row, got:\n%s", out)
+		}
+		if !strings.Contains(out, "systemd-resolved") {
+			t.Errorf("expected the message to name the resolver, got:\n%s", out)
+		}
+		if r.Fail != 1 || r.Warn != 0 {
+			t.Errorf("expected 1 fail / 0 warn, got %+v", r)
+		}
+	})
+
+	t.Run("probe error warns instead of failing", func(t *testing.T) {
+		t.Parallel()
+		h := reachabilityHost(&testutil.MockExecutor{
+			RunFn: func(cmd string) (string, error) {
+				if strings.Contains(cmd, "getent hosts api.github.com") {
+					return "", errors.New("ssh: connection reset")
+				}
+				return "", nil
+			},
+		})
+		var buf strings.Builder
+		var r Result
+		checkHostDNS(&buf, "h1", h, &r)
+		out := buf.String()
+		if !strings.Contains(out, "WARN") || !strings.Contains(out, "could not check name resolution") {
+			t.Errorf("expected WARN row, got:\n%s", out)
+		}
+		if r.Warn != 1 || r.Fail != 0 {
+			t.Errorf("expected 1 warn / 0 fail, got %+v", r)
+		}
+	})
+
+	t.Run("probe is timeout-bounded", func(t *testing.T) {
+		t.Parallel()
+		var observedCmd string
+		h := reachabilityHost(&testutil.MockExecutor{
+			RunFn: func(cmd string) (string, error) {
+				if strings.Contains(cmd, "getent hosts api.github.com") {
+					observedCmd = cmd
+					return "noresolve\n", nil
+				}
+				return "", nil
+			},
+		})
+		var buf strings.Builder
+		var r Result
+		checkHostDNS(&buf, "h1", h, &r)
+		// A wedged resolver hangs rather than failing, so an unbounded getent
+		// would stall the entire doctor run behind the SSH session.
+		if !strings.Contains(observedCmd, "timeout") {
+			t.Errorf("expected getent wrapped in timeout, got cmd:\n%s", observedCmd)
 		}
 	})
 }
