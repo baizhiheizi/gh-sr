@@ -170,7 +170,7 @@ func ValidateContainerInnerNetwork(h *host.Host, outerContainer, runnerName stri
 // egress interface MTU (from runner.DetectHostEgressMTU); 0 or >= 1500 means there is
 // nothing to pin, so the check is skipped (standard 1500 networks never see this).
 func ValidateContainerMTU(h *host.Host, outerContainer, runnerName string, hostEgressMTU int) []PrereqFailure {
-	if hostEgressMTU <= 0 || hostEgressMTU >= 1500 {
+	if !mtuProbeInWindow(hostEgressMTU) {
 		return nil
 	}
 	d, _ := containerCheckDefByName("container-mtu", outerContainer, runnerName, hostEgressMTU, false)
@@ -347,6 +347,20 @@ If the host's real path MTU is below its NIC MTU (a tunnel the NIC is unaware of
 	}
 }
 
+// mtuProbeInWindow reports whether the MTU probe is in scope for the supplied
+// host egress MTU. The pinning window is 0 < MTU < 1500: an MTU of 0 (unknown /
+// undetectable) or >= 1500 (standard Ethernet, jumbo frames) has nothing to pin,
+// so the probe is skipped entirely.
+//
+// This predicate is the single source of truth for that window. The three
+// call sites that must agree — ValidateContainerMTU's early return,
+// containerCheckDefs' slice membership, and containerCheckDefByName's gate —
+// all route through it, so widening or narrowing the window cannot make the
+// fanout and per-check paths disagree about whether container-mtu is in scope.
+func mtuProbeInWindow(hostEgressMTU int) bool {
+	return hostEgressMTU > 0 && hostEgressMTU < 1500
+}
+
 // containerCheckDefs returns the definitions for all in-scope agentic
 // container probes, with Message/Remediation pre-rendered against the supplied
 // outerContainer / runnerName / hostEgressMTU. The MTU probe is included only
@@ -369,7 +383,7 @@ func containerCheckDefs(outerContainer, runnerName string, hostEgressMTU int, ca
 	if cacheEnabled {
 		defs = append(defs, cacheEnvDef(outerContainer, runnerName))
 	}
-	if hostEgressMTU > 0 && hostEgressMTU < 1500 {
+	if mtuProbeInWindow(hostEgressMTU) {
 		defs = append(defs, mtuDef(outerContainer, runnerName, hostEgressMTU))
 	}
 	return defs
@@ -398,7 +412,7 @@ func containerCheckDefByName(name, outerContainer, runnerName string, hostEgress
 		}
 		return cacheEnvDef(outerContainer, runnerName), true
 	case "container-mtu":
-		if hostEgressMTU <= 0 || hostEgressMTU >= 1500 {
+		if !mtuProbeInWindow(hostEgressMTU) {
 			return containerCheckDef{}, false
 		}
 		return mtuDef(outerContainer, runnerName, hostEgressMTU), true

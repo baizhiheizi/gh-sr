@@ -592,18 +592,26 @@ func TestContainerCheckDefByName_GatedDefReturnsFalseOffGate(t *testing.T) {
 	})
 }
 
-// TestValidateContainerAgenticFanout_BuildDefsOnce pins the dedup shape:
-// the fanout wrapper must call containerCheckDefs into the defs slice via a
-// single build, even though both the combined shell and the parser specs
-// are derived from that slice. We can't directly observe the build count
-// from a black-box test (no counter is exposed), so we instead pin the
-// observable consequence: the fanout cmd + the parser specs must match
-// what the slice builder produces when consumed through the FromDefs
-// helpers. If a future refactor accidentally drops the dedup, the cmd /
-// specs still produce the same observable result for the same inputs (the
-// underlying defs are pure), but the regression would still be caught by
-// the benchmarks; this test pins the contract that "the production path
-// uses the same source-of-truth defs as the slice builder".
+// TestValidateContainerAgenticFanout_BuildDefsOnce pins the dedup shape by
+// driving the real production wrapper and inspecting what it actually issues.
+//
+// The earlier version of this test compared
+// containerAgenticFanoutCheckCommand against
+// containerAgenticFanoutCheckCommandFromDefs(containerCheckDefs(...)) — but
+// the former is *defined* as the latter, so the assertion compared an
+// expression with itself and passed even with the dedup deleted from
+// ValidateContainerAgenticFanout. Instead we run the wrapper against the mock
+// host and assert on its observable effects:
+//
+//  1. the single h.Run command equals the one derived from one shared
+//     containerCheckDefs slice (the dedup'd shape), and
+//  2. the emitted command carries a block for every in-scope def, so the specs
+//     the wrapper parses really come from that same slice.
+//
+// A future refactor that reverts the wrapper to the legacy split shape still
+// produces the same command, so (1) pins the contract "both helpers are fed
+// from the same defs source" without claiming to observe build counts — it
+// fails loudly if the wrapper ever stops deriving from containerCheckDefs.
 func TestValidateContainerAgenticFanout_BuildDefsOnce(t *testing.T) {
 	t.Parallel()
 
@@ -619,29 +627,35 @@ func TestValidateContainerAgenticFanout_BuildDefsOnce(t *testing.T) {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			// The cmd the production wrapper builds (with defs shared
-			// once) must equal the cmd the legacy helpers produce (each
-			// builds its own defs). Both compute the same final string;
-			// the dedup only saves the redundant intermediate work.
-			defs := containerCheckDefs("gh-sr-runner", "agentic-1", tc.hostEgressMTU, tc.cacheEnabled)
-			wantCmd := containerAgenticFanoutCheckCommandFromDefs("gh-sr-runner", defs)
-			gotCmd := containerAgenticFanoutCheckCommand("gh-sr-runner", "agentic-1", tc.hostEgressMTU, tc.cacheEnabled)
-			if gotCmd != wantCmd {
-				t.Errorf("fanout cmd mismatch:\nwant: %s\n got: %s", wantCmd, gotCmd)
+
+			// Response keyed by the expected dedup'd command, so the mock
+			// executor echoes clean tagged output for every probe.
+			wantCmd := containerAgenticFanoutCheckCommandFromDefs(
+				"gh-sr-runner",
+				containerCheckDefs("gh-sr-runner", "agentic-1", tc.hostEgressMTU, tc.cacheEnabled),
+			)
+			exec := &prereqTestExecutor{response: map[string]string{
+				wantCmd: agenticFanoutHappyPathOutput(tc.hostEgressMTU, tc.cacheEnabled),
+			}}
+			h := host.NewHost("h", config.HostConfig{OS: "linux"})
+			h.SetConn(exec)
+
+			if got := ValidateContainerAgenticFanout(h, "gh-sr-runner", "agentic-1", tc.hostEgressMTU, tc.cacheEnabled); got != nil {
+				t.Fatalf("clean fanout must return nil, got %#v", got)
 			}
-			wantSpecs := containerAgenticFanoutSpecsFromDefs(defs)
-			gotSpecs := containerAgenticFanoutSpecs("gh-sr-runner", "agentic-1", tc.hostEgressMTU, tc.cacheEnabled)
-			if len(gotSpecs) != len(wantSpecs) {
-				t.Fatalf("specs map length mismatch: want %d, got %d", len(wantSpecs), len(gotSpecs))
+			if len(exec.seen) != 1 {
+				t.Fatalf("expected exactly 1 h.Run call, saw %d: %v", len(exec.seen), exec.seen)
 			}
-			for name, want := range wantSpecs {
-				got, ok := gotSpecs[name]
-				if !ok {
-					t.Errorf("specs missing %q in legacy helper output", name)
-					continue
-				}
-				if got != want {
-					t.Errorf("specs[%q] mismatch:\nwant: %+v\n got: %+v", name, want, got)
+			if exec.seen[0] != wantCmd {
+				t.Errorf("fanout issued command not derived from the shared defs slice:\nwant: %s\n got: %s", wantCmd, exec.seen[0])
+			}
+
+			// Every in-scope def must have contributed a block to the single
+			// combined command, so the wrapper's specs and command body are
+			// provably built from the same slice.
+			for _, d := range containerCheckDefs("gh-sr-runner", "agentic-1", tc.hostEgressMTU, tc.cacheEnabled) {
+				if !strings.Contains(exec.seen[0], "#"+d.Name+":$?") {
+					t.Errorf("combined command missing a block for in-scope def %q", d.Name)
 				}
 			}
 		})
