@@ -494,3 +494,170 @@ func TestValidateContainerAgenticFanout_CacheEnvGatingReachesShell(t *testing.T)
 		}
 	})
 }
+
+// TestContainerCheckDefByName_MatchesFanoutDefs guards against drift between
+// the per-def helpers (used by containerCheckDefByName and the byName
+// fanout lookups) and the slice builder (used by containerCheckDefs and the
+// fanout setup). The fanout path and the per-check wrappers must surface
+// byte-identical metadata for the same probe — the refactor split each def
+// out into its own helper, so a typo in one of the per-def helpers would
+// silently diverge the two paths. Walk every entry the slice builder emits
+// and assert the byName lookup returns the same fields.
+func TestContainerCheckDefByName_MatchesFanoutDefs(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name          string
+		hostEgressMTU int
+		cacheEnabled  bool
+	}{
+		{"always_on_only", 0, false},
+		{"cache_enabled", 0, true},
+		{"mtu_in_window", 1400, false},
+		{"all_gated", 1400, true},
+	}
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			for _, d := range containerCheckDefs("gh-sr-runner", "agentic-1", tc.hostEgressMTU, tc.cacheEnabled) {
+				got, ok := containerCheckDefByName(d.Name, "gh-sr-runner", "agentic-1", tc.hostEgressMTU, tc.cacheEnabled)
+				if !ok {
+					t.Errorf("byName(%q) returned !ok for a def the slice builder emitted", d.Name)
+					continue
+				}
+				if got.Name != d.Name || got.LoginShell != d.LoginShell || got.InnerBody != d.InnerBody ||
+					got.Message != d.Message || got.Remediation != d.Remediation || got.DocRef != d.DocRef {
+					t.Errorf("byName(%q) drifted from slice-builder def:\n slice: %+v\n byName: %+v", d.Name, d, got)
+				}
+			}
+		})
+	}
+}
+
+// TestContainerCheckDefByName_GatedDefReturnsFalseOffGate pins the (false)
+// return when a gated def's gate is closed. The switch in
+// containerCheckDefByName must not construct the def or render its
+// Message/Remediation when the caller's gate is off — the caller
+// (containerInnerNetworkCheckCommand et al.) immediately discards the bool
+// and uses the def regardless, but the gated contract is part of the helper's
+// public contract (any future caller should be able to rely on the gate).
+func TestContainerCheckDefByName_GatedDefReturnsFalseOffGate(t *testing.T) {
+	t.Parallel()
+
+	t.Run("cache-env returns false when cache disabled", func(t *testing.T) {
+		t.Parallel()
+		d, ok := containerCheckDefByName("container-cache-env", "gh-sr-runner", "agentic-1", 0, false)
+		if ok {
+			t.Errorf("cache-env with cacheEnabled=false must return ok=false, got %+v", d)
+		}
+	})
+
+	t.Run("cache-env returns true when cache enabled", func(t *testing.T) {
+		t.Parallel()
+		_, ok := containerCheckDefByName("container-cache-env", "gh-sr-runner", "agentic-1", 0, true)
+		if !ok {
+			t.Error("cache-env with cacheEnabled=true must return ok=true")
+		}
+	})
+
+	t.Run("mtu returns false when MTU out of pinning window", func(t *testing.T) {
+		t.Parallel()
+		for _, mtu := range []int{0, 1500, 9000} {
+			mtu := mtu
+			t.Run("mtu"+itoaForTest(mtu), func(t *testing.T) {
+				t.Parallel()
+				d, ok := containerCheckDefByName("container-mtu", "gh-sr-runner", "agentic-1", mtu, false)
+				if ok {
+					t.Errorf("mtu=%d must return ok=false, got %+v", mtu, d)
+				}
+			})
+		}
+	})
+
+	t.Run("mtu returns true when MTU in pinning window", func(t *testing.T) {
+		t.Parallel()
+		_, ok := containerCheckDefByName("container-mtu", "gh-sr-runner", "agentic-1", 1400, false)
+		if !ok {
+			t.Error("mtu=1400 must return ok=true")
+		}
+	})
+
+	t.Run("unknown name returns false", func(t *testing.T) {
+		t.Parallel()
+		_, ok := containerCheckDefByName("not-a-real-probe", "gh-sr-runner", "agentic-1", 0, false)
+		if ok {
+			t.Error("unknown name must return ok=false")
+		}
+	})
+}
+
+// TestValidateContainerAgenticFanout_BuildDefsOnce pins the dedup shape by
+// driving the real production wrapper and inspecting what it actually issues.
+//
+// The earlier version of this test compared
+// containerAgenticFanoutCheckCommand against
+// containerAgenticFanoutCheckCommandFromDefs(containerCheckDefs(...)) — but
+// the former is *defined* as the latter, so the assertion compared an
+// expression with itself and passed even with the dedup deleted from
+// ValidateContainerAgenticFanout. Instead we run the wrapper against the mock
+// host and assert on its observable effects:
+//
+//  1. the single h.Run command equals the one derived from one shared
+//     containerCheckDefs slice (the dedup'd shape), and
+//  2. the emitted command carries a block for every in-scope def, so the specs
+//     the wrapper parses really come from that same slice.
+//
+// A future refactor that reverts the wrapper to the legacy split shape still
+// produces the same command, so (1) pins the contract "both helpers are fed
+// from the same defs source" without claiming to observe build counts — it
+// fails loudly if the wrapper ever stops deriving from containerCheckDefs.
+func TestValidateContainerAgenticFanout_BuildDefsOnce(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name          string
+		hostEgressMTU int
+		cacheEnabled  bool
+	}{
+		{"always_on", 0, false},
+		{"all_gated", 1400, true},
+	}
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			// Response keyed by the expected dedup'd command, so the mock
+			// executor echoes clean tagged output for every probe.
+			wantCmd := containerAgenticFanoutCheckCommandFromDefs(
+				"gh-sr-runner",
+				containerCheckDefs("gh-sr-runner", "agentic-1", tc.hostEgressMTU, tc.cacheEnabled),
+			)
+			exec := &prereqTestExecutor{response: map[string]string{
+				wantCmd: agenticFanoutHappyPathOutput(tc.hostEgressMTU, tc.cacheEnabled),
+			}}
+			h := host.NewHost("h", config.HostConfig{OS: "linux"})
+			h.SetConn(exec)
+
+			if got := ValidateContainerAgenticFanout(h, "gh-sr-runner", "agentic-1", tc.hostEgressMTU, tc.cacheEnabled); got != nil {
+				t.Fatalf("clean fanout must return nil, got %#v", got)
+			}
+			if len(exec.seen) != 1 {
+				t.Fatalf("expected exactly 1 h.Run call, saw %d: %v", len(exec.seen), exec.seen)
+			}
+			if exec.seen[0] != wantCmd {
+				t.Errorf("fanout issued command not derived from the shared defs slice:\nwant: %s\n got: %s", wantCmd, exec.seen[0])
+			}
+
+			// Every in-scope def must have contributed a block to the single
+			// combined command, so the wrapper's specs and command body are
+			// provably built from the same slice.
+			for _, d := range containerCheckDefs("gh-sr-runner", "agentic-1", tc.hostEgressMTU, tc.cacheEnabled) {
+				if !strings.Contains(exec.seen[0], "#"+d.Name+":$?") {
+					t.Errorf("combined command missing a block for in-scope def %q", d.Name)
+				}
+			}
+		})
+	}
+}
