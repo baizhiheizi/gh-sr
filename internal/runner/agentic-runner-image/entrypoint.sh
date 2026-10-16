@@ -38,6 +38,12 @@
 #                         (http://host:port); when set, the inner dockerd's
 #                         /etc/docker/daemon.json registry-mirrors points at it so
 #                         Docker Hub pulls are served from the host mirror
+#   GH_SR_NPM_REGISTRY  — npm registry override (runners.yml npm_registry); when
+#                         set, written to /home/runner/.npmrc so npm/npx/pnpm/bun
+#                         install from it (e.g. a mirror reachable without the
+#                         WAN proxy). Not exported through `su -` on purpose: the
+#                         npmrc is the one mechanism all four package managers
+#                         actually read under the runner user
 #   GH_SR_HOST_MTU      — host egress MTU to pin the inner/outer Docker MTU to when it is
 #                         below 1500 (reduced-MTU host networks); unset/≥1500 ⇒ Docker default
 #   GH_SR_DOCKERD_START_TIMEOUT — seconds to wait for inner dockerd (default 90)
@@ -139,6 +145,27 @@ if [ -n "${BRIDGE_MTU}" ]; then
         echo "[entrypoint] WARNING: could not set ${_egress_if} MTU to ${BRIDGE_MTU}"
     fi
 fi
+
+# ── 2c. npm registry override + shared cache volume ownership ──────────────────
+# GH_SR_NPM_REGISTRY (runners.yml npm_registry) becomes the runner user's
+# ~/.npmrc. The file (not an exported env var) is the delivery mechanism: npm,
+# npx, pnpm and bun all read it, and it survives the `su -` login-shell
+# environment reset that wipes every docker -e var. Overwrite, never append:
+# the file is regenerated from env on every start, exactly like the runner
+# .env below — job-time edits do not persist across restarts either way.
+if [ -n "${GH_SR_NPM_REGISTRY:-}" ]; then
+    printf 'registry=%s\n' "${GH_SR_NPM_REGISTRY}" > /home/runner/.npmrc
+    chown runner:runner /home/runner/.npmrc
+    echo "[entrypoint] npm registry ${GH_SR_NPM_REGISTRY}"
+fi
+
+# The shared cache volumes (docker create -v, runners.yml shared_caches) mount
+# at /home/runner/.npm and /home/runner/.cache. A volume first mounted when the
+# image carried no such path inits root-owned, and root-run job steps can leave
+# root-owned entries behind; re-assert the runner user on every start so
+# job-time writes never hit EACCES. Best-effort by design: chown failures
+# (e.g. a read-only mount) must not abort the bootstrap.
+chown -R runner:runner /home/runner/.npm /home/runner/.cache 2>/dev/null || true
 
 # ── 3. Inner dockerd (single start) ─────────────────────────────────────────────
 # A previous boot may have ended without dockerd shutting down cleanly (crash,
