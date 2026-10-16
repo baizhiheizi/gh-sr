@@ -27,6 +27,14 @@ type Config struct {
 	ContainerRunnerImage ContainerRunnerImageConfig `yaml:"container_runner_image,omitempty"`
 	Cache                CacheConfig                `yaml:"cache,omitempty"`
 	RegistryMirror       RegistryMirrorConfig       `yaml:"registry_mirror,omitempty"`
+	// NPMRegistry, when non-empty, is injected into every container-mode
+	// runner as GH_SR_NPM_REGISTRY; the entrypoint writes it to the runner
+	// user's ~/.npmrc so npm/npx/pnpm/bun install from an alternative
+	// registry — e.g. a China mirror reachable without the WAN proxy
+	// (https://registry.npmmirror.com). Empty = npm's default
+	// registry.npmjs.org.
+	NPMRegistry  string             `yaml:"npm_registry,omitempty"`
+	SharedCaches SharedCachesConfig `yaml:"shared_caches,omitempty"`
 }
 
 // CacheConfig configures the per-host local Actions cache server
@@ -98,6 +106,27 @@ type RegistryMirrorConfig struct {
 	// URLOverride replaces the runner-facing mirror URL verbatim (escape
 	// hatch for non-docker0 topologies; must include the scheme).
 	URLOverride string `yaml:"url_override,omitempty"`
+}
+
+// SharedCachesConfig configures the named Docker volumes mounted into every
+// container-mode runner on a host (docker create -v). Sharing turns N
+// per-container cold caches into one per host: the first runner that
+// downloads a package serves every other runner from the shared volume, and
+// the caches survive `gh sr rebuild` (volumes outlive container recreation;
+// only an explicit `docker volume rm` drops them).
+type SharedCachesConfig struct {
+	// Enabled defaults to true: a `shared_caches:` section is only needed
+	// to tune or disable. Set explicitly on Load (applyDefaults).
+	Enabled *bool `yaml:"enabled,omitempty"`
+	// NPM shares one npm cacache at /home/runner/.npm (volume
+	// gh-sr-npm-cache). npm's cacache is content-addressed and safe for
+	// concurrent writers, so N runner containers installing simultaneously
+	// share instead of racing.
+	NPM *bool `yaml:"npm,omitempty"`
+	// HomeCache shares /home/runner/.cache (volume gh-sr-runner-cache) —
+	// the XDG cache dir where job-time download caches land (pinned
+	// Chrome-for-Testing builds, pip, …).
+	HomeCache *bool `yaml:"home_cache,omitempty"`
 }
 
 // ContainerToolcacheEntry is one tool-cache bake item: a tarball URL extracted
@@ -376,6 +405,36 @@ func (c *Config) RegistryMirrorEnabled() bool {
 		return false
 	}
 	return *c.RegistryMirror.Enabled
+}
+
+// SharedCachesEnabled reports whether shared runner cache volumes should be
+// mounted at container create time. Defaults to true.
+func (c *Config) SharedCachesEnabled() bool {
+	if c == nil || c.SharedCaches.Enabled == nil {
+		return true
+	}
+	return *c.SharedCaches.Enabled
+}
+
+// SharedNPMCacheEnabled reports whether the shared npm cache volume should be
+// mounted at /home/runner/.npm. Defaults to true while shared caches are on.
+func (c *Config) SharedNPMCacheEnabled() bool {
+	return c.SharedCachesEnabled() && boolPtrOrTrue(c.SharedCaches.NPM)
+}
+
+// SharedHomeCacheEnabled reports whether the shared runner cache volume should
+// be mounted at /home/runner/.cache. Defaults to true while shared caches are on.
+func (c *Config) SharedHomeCacheEnabled() bool {
+	return c.SharedCachesEnabled() && boolPtrOrTrue(c.SharedCaches.HomeCache)
+}
+
+// boolPtrOrTrue resolves a *bool defaulting to true (the shared-caches
+// sub-flags are opt-out, like their parent section).
+func boolPtrOrTrue(b *bool) bool {
+	if b == nil {
+		return true
+	}
+	return *b
 }
 
 // validateToolcacheDir enforces a relative, normalized, traversal-free path
@@ -782,6 +841,21 @@ func (c *Config) applyDefaults() {
 	if c.RegistryMirror.Enabled == nil {
 		enabled := true
 		c.RegistryMirror.Enabled = &enabled
+	}
+	// And for the shared runner cache volumes (sub-flags inherit the
+	// section default; SharedCachesEnabled still gates the effective
+	// helpers when the section itself is off).
+	if c.SharedCaches.Enabled == nil {
+		enabled := true
+		c.SharedCaches.Enabled = &enabled
+	}
+	if c.SharedCaches.NPM == nil {
+		enabled := true
+		c.SharedCaches.NPM = &enabled
+	}
+	if c.SharedCaches.HomeCache == nil {
+		enabled := true
+		c.SharedCaches.HomeCache = &enabled
 	}
 	for name, h := range c.Hosts {
 		if IsLocalAddr(h.Addr) {

@@ -211,6 +211,9 @@ func applyContainerImageExtras(mgr *runner.Manager, cfg *config.Config) {
 		mgr.ContainerStartStaggerSeconds = 0
 		mgr.Cache = nil
 		mgr.RegistryMirror = nil
+		mgr.NPMRegistry = ""
+		mgr.SharedNPMCache = false
+		mgr.SharedRunnerCache = false
 		return
 	}
 	mgr.ContainerImageBaseImage = cfg.ContainerRunnerImageBaseImage()
@@ -222,6 +225,9 @@ func applyContainerImageExtras(mgr *runner.Manager, cfg *config.Config) {
 	mgr.ContainerStartStaggerSeconds = cfg.ContainerRunnerImageStartStaggerSeconds()
 	mgr.Cache = cacheSettings(cfg)
 	mgr.RegistryMirror = registrySettings(cfg)
+	mgr.NPMRegistry = cfg.NPMRegistry
+	mgr.SharedNPMCache = cfg.SharedNPMCacheEnabled()
+	mgr.SharedRunnerCache = cfg.SharedHomeCacheEnabled()
 }
 
 // Setup installs and configures runners, mirroring the gh sr setup command.

@@ -524,9 +524,13 @@ func TestApplyPackageScope_DemotesUntouched(t *testing.T) {
 	}
 }
 
-// TestApplyPackageScope_EmptyGatesAll pins the fallback: no detected
-// packages (docs-only PR, root-level changes) gates everything — the
-// pre-scope behaviour.
+// TestApplyPackageScope_EmptyGatesAll pins the fallback: an empty pkgs list
+// gates everything — the pre-scope behaviour, kept for callers that do not
+// distinguish "no filter supplied" from "diff touches no Go file".
+//
+// bench-compare.yml no longer relies on this for a Go-file-free diff: it
+// passes -gate=false (ApplyNoScope) instead, so a dependency bump cannot be
+// failed by benchmarks it never touched. See TestApplyNoScope_* below.
 func TestApplyPackageScope_EmptyGatesAll(t *testing.T) {
 	t.Parallel()
 
@@ -537,6 +541,99 @@ func TestApplyPackageScope_EmptyGatesAll(t *testing.T) {
 	}
 	if rows[0].Status != "fail" || !HasFail(rows) {
 		t.Errorf("empty scope must leave rows gated")
+	}
+}
+
+// TestApplyNoScope_DemotesEverything pins the contract for a diff that
+// changes no Go files: every row is demoted to "ungated" and HasFail goes
+// false, so no benchmark can fail the job.
+func TestApplyNoScope_DemotesEverything(t *testing.T) {
+	t.Parallel()
+
+	rows := []Row{
+		{Name: "A", Package: "github.com/an-lee/gh-sr/internal/config", Status: "fail"},
+		{Name: "B", Package: "github.com/an-lee/gh-sr/internal/runner", Status: "fail"},
+		{Name: "C", Package: "github.com/an-lee/gh-sr/internal/host", Status: "warn"},
+		{Name: "D", Package: "github.com/an-lee/gh-sr/internal/ops", Status: "ok"},
+	}
+	ApplyNoScope(rows)
+	for _, r := range rows {
+		if r.Status != "ungated" {
+			t.Errorf("row %s: status = %q, want \"ungated\"", r.Name, r.Status)
+		}
+	}
+	if HasFail(rows) {
+		t.Error("gating disabled must leave HasFail false")
+	}
+}
+
+// TestApplyNoScope_PreservesMeasurements pins that demoting to ungated only
+// changes Status: the delta still has to render in the report, otherwise the
+// PR loses the numbers entirely.
+func TestApplyNoScope_PreservesMeasurements(t *testing.T) {
+	t.Parallel()
+
+	rows := []Row{{
+		Name: "Noisy", Package: "github.com/an-lee/gh-sr/internal/host", Status: "fail",
+		Head: Result{NsPerOp: 600}, Base: Result{NsPerOp: 300}, HasNs: true, NsD: 100, NsF: true,
+	}}
+	ApplyNoScope(rows)
+	if !rows[0].NsF || rows[0].NsD != 100 {
+		t.Errorf("metric flags must survive demotion, got %+v", rows[0])
+	}
+	md := RenderMarkdown(rows, "main", "PR")
+	if !strings.Contains(md, "| Noisy ") || !strings.Contains(md, "⚪") {
+		t.Errorf("demoted row must still render, got:\n%s", md)
+	}
+}
+
+// TestEndToEnd_GateDisabledSilencesDependencyBump replays the failure that
+// motivated the -gate flag: every benchmark in the suite "regresses" (the
+// shared-runner contention signature — ns/op way up, allocs/op flat), on a
+// diff that changes no Go file at all. With gating disabled the pipeline
+// exits 0; without it, HasFail is true.
+func TestEndToEnd_GateDisabledSilencesDependencyBump(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	basePath := writeBench(t, dir, "base.txt", `pkg: github.com/an-lee/gh-sr/internal/config
+BenchmarkDefaultLabels-8   	1000	      30.0 ns/op	 64.00 B/op	 1.00 allocs/op
+BenchmarkLoad_Small-8   	1000	     870 ns/op	 936.0 B/op	23.00 allocs/op
+pkg: github.com/an-lee/gh-sr/internal/runner
+BenchmarkManager_Status-8   	1000	   40312 ns/op	170789.0 B/op	75.00 allocs/op
+`)
+	// Same allocations, ~2-4x the time: contention, not a code change.
+	headPath := writeBench(t, dir, "head.txt", `pkg: github.com/an-lee/gh-sr/internal/config
+BenchmarkDefaultLabels-8   	1000	     120 ns/op	 64.00 B/op	 1.00 allocs/op
+BenchmarkLoad_Small-8   	1000	    1795 ns/op	 936.0 B/op	23.00 allocs/op
+pkg: github.com/an-lee/gh-sr/internal/runner
+BenchmarkManager_Status-8   	1000	   61706 ns/op	170789.0 B/op	75.00 allocs/op
+`)
+
+	base, err := ParseFile(basePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	head, err := ParseFile(headPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// What the workflow used to do: empty package list -> gate everything.
+	scoped := Compare(base, head, DefaultThresholds())
+	ApplyPackageScope(scoped, nil)
+	if !HasFail(scoped) {
+		t.Fatal("regression fixture should trip the empty-scope fallback")
+	}
+
+	// What it does now for a Go-file-free diff.
+	rows := Compare(base, head, DefaultThresholds())
+	ApplyNoScope(rows)
+	if HasFail(rows) {
+		t.Error("a diff changing no Go files must not fail the job")
+	}
+	if !strings.Contains(RenderMarkdown(rows, "main", "PR"), "⚪") {
+		t.Error("report-only mode must still show the rows as ungated")
 	}
 }
 
