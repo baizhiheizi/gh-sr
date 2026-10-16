@@ -1421,6 +1421,65 @@ runners:
 	}
 }
 
+// TestLoad_sharedCachesDefaults pins the shared-caches defaults: both volumes
+// mount unless the section (or a sub-flag) turns them off, mirroring the
+// cache:/registry_mirror: opt-out convention.
+func TestLoad_sharedCachesDefaults(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	content := `
+hosts:
+  h1:
+    addr: user@10.0.0.1
+runners:
+  - name: r1
+    repo: o/r
+    host: h1
+`
+	path := filepath.Join(dir, "runners.yml")
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.SharedCachesEnabled() || !cfg.SharedNPMCacheEnabled() || !cfg.SharedHomeCacheEnabled() {
+		t.Error("shared caches should default to enabled after Load")
+	}
+
+	// Section off disables both regardless of sub-flags.
+	off := content + "shared_caches:\n  enabled: false\n"
+	path2 := filepath.Join(dir, "runners-off.yml")
+	if err := os.WriteFile(path2, []byte(off), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg2, err := Load(path2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg2.SharedCachesEnabled() || cfg2.SharedNPMCacheEnabled() || cfg2.SharedHomeCacheEnabled() {
+		t.Error("shared_caches.enabled: false must disable every shared volume")
+	}
+
+	// Sub-flags disable selectively.
+	npmOff := content + "shared_caches:\n  npm: false\n"
+	path3 := filepath.Join(dir, "runners-npm-off.yml")
+	if err := os.WriteFile(path3, []byte(npmOff), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg3, err := Load(path3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg3.SharedNPMCacheEnabled() {
+		t.Error("shared_caches.npm: false must disable the npm volume")
+	}
+	if !cfg3.SharedHomeCacheEnabled() {
+		t.Error("shared_caches.npm: false must not disable the home-cache volume")
+	}
+}
+
 func TestValidate_cache(t *testing.T) {
 	t.Parallel()
 	valid := CacheConfig{

@@ -181,7 +181,7 @@ func Run(w io.Writer, cfgPath, envPath string, cfg *config.Config, cfgErr error,
 
 			defer h.Close()
 			printLine(&hr.buf, sevOK, hostName, fmt.Sprintf("connected (%s)", addrSummary(hcfg.Addr)))
-			runHostChecks(&hr.buf, hostName, h, runners, &hr.r, cacheSet, cacheEnabled, mirrorSet)
+			runHostChecks(&hr.buf, hostName, h, runners, &hr.r, cacheSet, cacheEnabled, mirrorSet, containerExtras{cfg.NPMRegistry, cfg.SharedNPMCacheEnabled(), cfg.SharedHomeCacheEnabled()})
 		}(i, hostName)
 	}
 	hostWg.Wait()
@@ -360,7 +360,7 @@ func hasContainerModeRunners(runners []config.RunnerConfig) bool {
 // already-filtered runners slice (respects --host / --repo filters). cacheSet is
 // the effective per-host cache configuration (nil = disabled); cacheEnabled is
 // passed through so agentic container probes include the cache-env check only
-func runHostChecks(w io.Writer, hostName string, h *host.Host, runners []config.RunnerConfig, r *Result, cacheSet *cache.Settings, cacheEnabled bool, mirrorSet *registry.Settings) {
+func runHostChecks(w io.Writer, hostName string, h *host.Host, runners []config.RunnerConfig, r *Result, cacheSet *cache.Settings, cacheEnabled bool, mirrorSet *registry.Settings, extras containerExtras) {
 	hostRunners := runnersForHost(runners, hostName)
 	if h.OS == "linux" {
 		checkHostDNS(w, hostName, h, r)
@@ -381,12 +381,82 @@ func runHostChecks(w io.Writer, hostName string, h *host.Host, runners []config.
 			}
 			checkCacheReachability(w, hostName, h, hostRunners, cacheSet, r)
 			checkRegistryMirror(w, hostName, h, hostRunners, mirrorSet, r)
+			checkContainerExtras(w, hostName, h, hostRunners, extras, r)
 		}
 	}
 	if h.OS == "linux" || h.OS == "darwin" || h.OS == "windows" {
 		checkOrphanRunners(w, hostName, h, runners, r)
 	}
 	checkRunnerDiskUsage(w, hostName, h, runners, r)
+}
+
+// containerExtras carries the container-create-time options doctor cannot
+// derive from the cache/registry settings: the npm registry override and the
+// shared cache volume switches (runners.yml npm_registry / shared_caches).
+type containerExtras struct {
+	NPMRegistry       string
+	SharedNPMCache    bool
+	SharedRunnerCache bool
+}
+
+// checkContainerExtras verifies the first container-mode runner on the host
+// actually carries the npm-registry env and the shared-cache volume mounts.
+// Both are baked at `docker create`, so containers created before the option
+// was enabled silently keep the old behavior (no mirror, private cold caches)
+// until recreated — the same drift class probeRegistryFromRunner guards
+// against for GH_SR_REGISTRY_MIRROR.
+func checkContainerExtras(w io.Writer, hostName string, h *host.Host, hostRunners []config.RunnerConfig, extras containerExtras, r *Result) {
+	if !extras.SharedNPMCache && !extras.SharedRunnerCache && extras.NPMRegistry == "" {
+		return
+	}
+	inst := ""
+	for i := range hostRunners {
+		if hostRunners[i].IsContainerMode() && len(hostRunners[i].InstanceNames()) > 0 {
+			inst = hostRunners[i].InstanceNames()[0]
+			break
+		}
+	}
+	if inst == "" {
+		return
+	}
+	cname := runner.ContainerDockerName(inst)
+
+	var problems []string
+	if extras.NPMRegistry != "" {
+		envOut, err := h.Run(fmt.Sprintf(
+			"docker inspect --format='{{range .Config.Env}}{{println .}}{{end}}' %s 2>/dev/null | grep -c '^GH_SR_NPM_REGISTRY=' || true",
+			runner.QuoteContainerName(cname)))
+		if err == nil && strings.TrimSpace(envOut) == "0" {
+			problems = append(problems, fmt.Sprintf("no GH_SR_NPM_REGISTRY env (npm_registry set); npm keeps using registry.npmjs.org"))
+		}
+	}
+	var wantMounts []string
+	if extras.SharedNPMCache {
+		wantMounts = append(wantMounts, "gh-sr-npm-cache /home/runner/.npm")
+	}
+	if extras.SharedRunnerCache {
+		wantMounts = append(wantMounts, "gh-sr-runner-cache /home/runner/.cache")
+	}
+	if len(wantMounts) > 0 {
+		mountOut, err := h.Run(fmt.Sprintf(
+			"docker inspect --format='{{range .Mounts}}{{println .Name .Destination}}{{end}}' %s 2>/dev/null",
+			runner.QuoteContainerName(cname)))
+		if err == nil {
+			for _, want := range wantMounts {
+				if !strings.Contains(mountOut, want) {
+					problems = append(problems, fmt.Sprintf("missing shared volume %s", want))
+				}
+			}
+		}
+	}
+	if len(problems) == 0 {
+		printLine(w, sevOK, hostName, "extras: npm registry + shared caches wired into runner containers")
+		return
+	}
+	for _, p := range problems {
+		printLine(w, sevWarn, hostName, fmt.Sprintf("extras: runner container %s predates the config (%s); recreate with: gh sr rebuild %s", cname, p, inst))
+		r.Warn++
+	}
 }
 
 // checkHostDNS probes host-side resolution of api.github.com on a Linux host.

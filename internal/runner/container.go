@@ -592,6 +592,51 @@ func registryMirrorEnvFor(h *host.Host, s *registry.Settings) string {
 	return registryMirrorDockerCreateArg(s.RunnerURL(h))
 }
 
+// Shared runner cache volumes (runners.yml shared_caches): one volume per
+// host daemon, mounted into every runner container. The first container that
+// downloads a package/tool warms the volume for every other container on the
+// host, and the volumes survive `gh sr rebuild` (only an explicit
+// `docker volume rm` drops them — see the rebuild flow, which removes
+// containers and images but never volumes).
+const (
+	sharedNPMCacheVolume    = "gh-sr-npm-cache"
+	sharedRunnerCacheVolume = "gh-sr-runner-cache"
+	sharedNPMCacheMount     = "/home/runner/.npm"
+	sharedRunnerCacheMount  = "/home/runner/.cache"
+)
+
+// npmRegistryDockerCreateArg returns the `-e GH_SR_NPM_REGISTRY=<url>` line
+// for the `docker create` command when a registry override is configured, or
+// "" otherwise. The entrypoint writes a non-empty value into the runner
+// user's ~/.npmrc (npm, npx, pnpm and bun all read it) before dropping to the
+// runner user — env vars alone would not survive the `su -` login shell.
+func npmRegistryDockerCreateArg(url string) string {
+	if url == "" {
+		return ""
+	}
+	return "  -e GH_SR_NPM_REGISTRY=" + hostshell.PosixSingleQuote(url) + " \\\n"
+}
+
+// sharedCacheDockerCreateArgs returns the `docker create -v` continuation
+// lines for the shared runner cache volumes enabled on the Manager (""
+// when none are). The daemon auto-creates missing named volumes (local
+// driver); the entrypoint re-asserts runner-user ownership on every start
+// because a volume first mounted without a matching image path inits
+// root-owned.
+func (m *Manager) sharedCacheDockerCreateArgs() string {
+	if m == nil {
+		return ""
+	}
+	var b strings.Builder
+	if m.SharedNPMCache {
+		fmt.Fprintf(&b, "  -v %s:%s \\\n", sharedNPMCacheVolume, sharedNPMCacheMount)
+	}
+	if m.SharedRunnerCache {
+		fmt.Fprintf(&b, "  -v %s:%s \\\n", sharedRunnerCacheVolume, sharedRunnerCacheMount)
+	}
+	return b.String()
+}
+
 // containerRestartPolicy returns the Docker --restart policy used for every
 // container-mode runner instance.
 //
@@ -713,6 +758,8 @@ func (m *Manager) createContainerInstance(h *host.Host, rc config.RunnerConfig, 
 	cacheURLEnv := cacheURLEnvFor(h, m.Cache)
 	registryMirrorEnv := registryMirrorEnvFor(h, m.RegistryMirror)
 	awfBridgeEnv := awfServiceBridgeDockerCreateArg(rc)
+	npmRegistryEnv := npmRegistryDockerCreateArg(m.NPMRegistry)
+	sharedCacheArgs := m.sharedCacheDockerCreateArgs()
 	restartPolicy := containerRestartPolicy()
 
 	// Build the `docker create` command. We use `--restart unless-stopped` so any
@@ -738,7 +785,7 @@ docker create \
   -e GH_SR_RUNNER_LABELS=%s \
   -e GH_SR_RUNNER_GROUP=%s \
   -e GH_SR_RUNNER_EPHEMERAL=%s \
-%s%s%s%s%s%s  %s`,
+%s%s%s%s%s%s%s%s  %s`,
 		hostshell.PosixSingleQuote(stateDir),
 		hostshell.PosixSingleQuote(containerName(instanceName)),
 		hostshell.PosixSingleQuote(restartPolicy),
@@ -755,6 +802,8 @@ docker create \
 		cacheURLEnv,
 		registryMirrorEnv,
 		awfBridgeEnv,
+		npmRegistryEnv,
+		sharedCacheArgs,
 		hostshell.PosixSingleQuote(imageTag),
 	)
 

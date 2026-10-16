@@ -320,6 +320,26 @@ func ApplyPackageScope(rows []Row, pkgs []string) (gated, ungated int) {
 	return len(gatedRows), len(ungatedRows)
 }
 
+// ApplyNoScope demotes every row to "ungated": the report still renders each
+// benchmark's delta, but nothing gates the exit code (HasFail reports false).
+//
+// This is the correct mode for a PR that changes no Go files at all — a
+// dependency bump (go.mod/go.sum) or a workflow/docs-only edit. Such a PR
+// cannot regress the repo's own benchmark code, so gating it was always a
+// false-failure generator: the empty pkgs list made ApplyPackageScope fall
+// through to its "gate everything" fallback, and comparing an unchanged
+// benchmark suite against the latest main artifact (which can be hours old,
+// measured under different load on the shared self-hosted pool) produced a
+// uniform 30-345% "regression" across every benchmark with allocs/op and
+// B/op unchanged to 0.0% — the signature of machine contention, not code.
+// That failed all seven dependabot PRs in the 2026-10-15 batch, twice each
+// (re-run included).
+func ApplyNoScope(rows []Row) {
+	for i := range rows {
+		rows[i].Status = "ungated"
+	}
+}
+
 // packageMatches reports whether the import path pkg is covered by any of
 // the directory-style filters. "internal/runner" matches the package itself,
 // its subpackages, and is never confused with "internal/runnerx".
