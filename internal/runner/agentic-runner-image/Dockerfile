@@ -170,6 +170,15 @@ RUN apt-get update \
        fi \
     && rm -rf /var/lib/apt/lists/*
 
+# Shared cache volume mount points (runners.yml shared_caches): docker create
+# mounts the gh-sr-npm-cache / gh-sr-runner-cache named volumes here. Baking
+# the empty dirs with runner ownership makes the volume copy-up on first mount
+# inherit the right owner; the entrypoint re-asserts ownership on every start
+# regardless. Placed after the heavy layers so adding it never invalidates the
+# apt/toolcache build cache.
+RUN mkdir -p /home/runner/.npm /home/runner/.cache \
+    && chown runner:runner /home/runner/.npm /home/runner/.cache
+
 # Runner state directory (bind-mounted from host at runtime)
 RUN mkdir -p /runner-state && chown runner:runner /runner-state
 

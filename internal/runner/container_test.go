@@ -415,6 +415,24 @@ func TestAgenticRunnerEntrypointRegistryMirror(t *testing.T) {
 	}
 }
 
+// TestAgenticRunnerEntrypointNPMRegistry pins the npm-registry wiring: when
+// GH_SR_NPM_REGISTRY is injected, the entrypoint writes it into the runner
+// user's ~/.npmrc (not an exported env var — `su -` resets the environment,
+// and ~/.npmrc is the one mechanism npm/npx/pnpm/bun all read under the
+// runner user) and chowns the shared cache volume mount points either way.
+func TestAgenticRunnerEntrypointNPMRegistry(t *testing.T) {
+	t.Parallel()
+	for _, want := range []string{
+		`> /home/runner/.npmrc`,
+		`${GH_SR_NPM_REGISTRY}`,
+		`chown -R runner:runner /home/runner/.npm /home/runner/.cache`,
+	} {
+		if !strings.Contains(agenticRunnerEntrypoint, want) {
+			t.Fatalf("entrypoint should contain %q, got:\n%s", want, agenticRunnerEntrypoint)
+		}
+	}
+}
+
 // TestAgenticRunnerJobHooksReset verifies the per-job reset hooks perform the
 // deterministic teardown (containers, networks, /tmp/gh-aw) using the rootless-era
 // vocabulary (awmg-/awf-/gh-aw names; gh-aw-mcpg + firewall-stack ancestors — the
@@ -798,6 +816,43 @@ func TestRegistryMirrorDockerCreateArg(t *testing.T) {
 	got := registryMirrorDockerCreateArg("http://172.17.0.1:5577")
 	if !strings.Contains(got, "-e GH_SR_REGISTRY_MIRROR=") || !strings.Contains(got, "'http://172.17.0.1:5577'") {
 		t.Fatalf("got %q", got)
+	}
+}
+
+// TestNPMRegistryDockerCreateArg pins the npm-registry injection contract: a
+// non-empty registry becomes a single-quoted -e GH_SR_NPM_REGISTRY line (the
+// entrypoint writes it into /home/runner/.npmrc before dropping to the runner
+// user), and an empty value emits nothing so npm uses its default registry.
+func TestNPMRegistryDockerCreateArg(t *testing.T) {
+	t.Parallel()
+	if got := npmRegistryDockerCreateArg(""); got != "" {
+		t.Fatalf("empty registry should omit env, got %q", got)
+	}
+	got := npmRegistryDockerCreateArg("https://registry.npmmirror.com")
+	if !strings.Contains(got, "-e GH_SR_NPM_REGISTRY=") || !strings.Contains(got, "'https://registry.npmmirror.com'") {
+		t.Fatalf("got %q", got)
+	}
+}
+
+// TestSharedCacheDockerCreateArgs pins the shared-caches volume wiring: each
+// enabled cache becomes a -v <volume>:<mount> line with the canonical names,
+// a nil Manager emits nothing, and the two caches are independently
+// switchable.
+func TestSharedCacheDockerCreateArgs(t *testing.T) {
+	t.Parallel()
+	if got := (*Manager)(nil).sharedCacheDockerCreateArgs(); got != "" {
+		t.Fatalf("nil manager should emit nothing, got %q", got)
+	}
+	if got := (&Manager{}).sharedCacheDockerCreateArgs(); got != "" {
+		t.Fatalf("nothing enabled should emit nothing, got %q", got)
+	}
+	got := (&Manager{SharedNPMCache: true}).sharedCacheDockerCreateArgs()
+	if !strings.Contains(got, "-v gh-sr-npm-cache:/home/runner/.npm") || strings.Contains(got, "gh-sr-runner-cache") {
+		t.Fatalf("npm-only should emit exactly the npm volume, got %q", got)
+	}
+	got = (&Manager{SharedNPMCache: true, SharedRunnerCache: true}).sharedCacheDockerCreateArgs()
+	if !strings.Contains(got, "-v gh-sr-npm-cache:/home/runner/.npm") || !strings.Contains(got, "-v gh-sr-runner-cache:/home/runner/.cache") {
+		t.Fatalf("both enabled should emit both volumes, got %q", got)
 	}
 }
 
