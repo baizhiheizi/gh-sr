@@ -42,7 +42,7 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 # GitHub CLI (gh) — required by gh-aw
-RUN curl -fsSL --retry 8 --retry-all-errors --retry-delay 20 --connect-timeout 20 \
+RUN curl -fsSL --retry 8 --retry-all-errors --retry-delay 20 --connect-timeout 20 --speed-limit 10240 --speed-time 60 --max-time 300 \
         https://cli.github.com/packages/githubcli-archive-keyring.gpg \
         | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg \
     && chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg \
@@ -60,7 +60,7 @@ RUN curl -fsSL --retry 8 --retry-all-errors --retry-delay 20 --connect-timeout 2
 # The setup script is fetched to a file and then executed, never piped straight
 # into bash: a retrying curl writing into a live bash stdin can replay a partial
 # script. Retry flags match the rest of the image's downloads (see below).
-RUN curl -fsSL --retry 8 --retry-all-errors --retry-delay 20 --connect-timeout 20 \
+RUN curl -fsSL --retry 8 --retry-all-errors --retry-delay 20 --connect-timeout 20 --speed-limit 10240 --speed-time 60 --max-time 300 \
         https://deb.nodesource.com/setup_lts.x -o /tmp/nodesource_setup_lts.sh \
     && bash /tmp/nodesource_setup_lts.sh \
     && rm -f /tmp/nodesource_setup_lts.sh \
@@ -92,10 +92,10 @@ RUN curl -fsSL --retry 8 --retry-all-errors --retry-delay 20 --connect-timeout 2
 ARG COMPOSE_VERSION=v5.5.0
 RUN mkdir -p /usr/local/lib/docker/cli-plugins /tmp/compose \
     && case "${TARGETARCH}" in arm64) _carch=aarch64 ;; *) _carch=x86_64 ;; esac \
-    && curl -fsSL --retry 8 --retry-all-errors --retry-delay 20 --connect-timeout 20 \
+    && curl -fsSL --retry 8 --retry-all-errors --retry-delay 20 --connect-timeout 20 --speed-limit 10240 --speed-time 60 --max-time 600 \
         "https://github.com/docker/compose/releases/download/${COMPOSE_VERSION}/docker-compose-linux-${_carch}" \
         -o "/tmp/compose/docker-compose-linux-${_carch}" \
-    && curl -fsSL --retry 8 --retry-all-errors --retry-delay 20 --connect-timeout 20 \
+    && curl -fsSL --retry 8 --retry-all-errors --retry-delay 20 --connect-timeout 20 --speed-limit 10240 --speed-time 60 --max-time 300 \
         "https://github.com/docker/compose/releases/download/${COMPOSE_VERSION}/docker-compose-linux-${_carch}.sha256" \
         -o "/tmp/compose/docker-compose-linux-${_carch}.sha256" \
     && (cd /tmp/compose && sha256sum -c "docker-compose-linux-${_carch}.sha256") \
@@ -144,6 +144,17 @@ RUN mkdir -p /home/runner/.toolcache && chown runner:runner /home/runner/.toolca
 # can simply be re-run) instead of surfacing as repeated unattended CI failures —
 # the same trade-off that retired the dl.google.com chrome bake.
 #
+# The three timeouts are load-bearing, and the retry policy is only as good as
+# them. --connect-timeout bounds TCP connect only: a connection that comes up
+# and then goes dead without a FIN/RST (the documented release-asset TLS-reset
+# case) leaves curl blocked in read() forever, so --retry never sees an error
+# and the build hangs silently instead of failing. --speed-limit/--speed-time
+# turns that dead socket into a 60s abort (curl exit 28, retried by
+# --retry-all-errors), and --max-time additionally bounds a socket that is alive
+# but pathologically slow — measured at ~42 KB/s from this network, which turns
+# the 1.6 GB Flutter tarball alone into a ~10 h wait. Without both, a rebuild
+# can wedge indefinitely on an entry it is never going to finish.
+#
 # Ownership: the whole tree is chowned to runner ONCE after the loop, not per
 # entry. A per-entry `chown -R .../$dir` only covers the leaf — the intermediate
 # parents that `mkdir -p` created as root stay root-owned, so a bake of
@@ -161,7 +172,7 @@ COPY toolcache-extra.txt /tmp/toolcache-extra.txt
 RUN while read -r url dir complete strip; do \
         [ -n "$url" ] || continue; \
         [ -n "$complete" ] || complete="$dir.complete"; \
-        curl -fsSL --retry 8 --retry-all-errors --retry-delay 20 --connect-timeout 20 "$url" -o /tmp/toolcache.tar \
+        curl -fsSL --retry 8 --retry-all-errors --retry-delay 20 --connect-timeout 20 --speed-limit 10240 --speed-time 60 --max-time 1800 "$url" -o /tmp/toolcache.tar \
         && mkdir -p "/home/runner/.toolcache/$dir" "/home/runner/.toolcache/$(dirname "$complete")" \
         && case "$url" in \
              *.tar.xz) tar -xJf /tmp/toolcache.tar --strip-components=${strip:-0} -C "/home/runner/.toolcache/$dir" ;; \

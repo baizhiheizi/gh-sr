@@ -719,6 +719,46 @@ func TestAgenticRunnerDockerfileToolcacheBakeOwnsIntermediateDirs(t *testing.T) 
 	}
 }
 
+// TestAgenticRunnerDockerfileToolcacheBakeBoundsTransfers guards the transfer
+// timeouts on every curl in the image. The retry policy (--retry 8
+// --retry-all-errors) only helps if curl actually returns an error, and
+// --connect-timeout bounds TCP connect only. A connection that comes up and
+// then stalls without a FIN/RST — the documented release-asset TLS-reset case —
+// leaves curl blocked in read() forever: --retry never fires and the build hangs
+// instead of failing. Observed on a pool rebuild that sat 25 minutes on the
+// first (49 MB) bake entry with one second of CPU while the link delivered
+// ~42 KB/s, which at that rate also puts the 1.6 GB Flutter entry ~10 h out.
+// --speed-limit/--speed-time converts a dead socket into a fast abort;
+// --max-time bounds a live-but-pathological transfer.
+//
+// The assertion spans every curl, not just the bake: the docker-compose layers
+// pull from the same release-assets.githubusercontent.com host, and the Dockerfile
+// already declares that its retry policy matches the bake's.
+func TestAgenticRunnerDockerfileToolcacheBakeBoundsTransfers(t *testing.T) {
+	t.Parallel()
+	const bounded = "curl -fsSL --retry 8 --retry-all-errors --retry-delay 20 --connect-timeout 20 --speed-limit 10240 --speed-time 60 --max-time "
+	total := strings.Count(agenticRunnerDockerfile, "curl -fsSL")
+	got := strings.Count(agenticRunnerDockerfile, bounded)
+	if total == 0 {
+		t.Fatal("no curl invocations found in the Dockerfile; this test is vacuous")
+	}
+	if got != total {
+		t.Fatalf("%d of %d curl invocations lack the stall bounds (--speed-limit/--speed-time/--max-time); got:\n%s", total-got, total, agenticRunnerDockerfile)
+	}
+	// --max-time must differ per payload: a 100-byte checksum and a 1.6 GB
+	// Flutter tarball cannot share one ceiling without either wedging or
+	// failing the large entry on a merely-slow link.
+	flutter := strings.Index(agenticRunnerDockerfile, `--max-time 1800`)
+	if flutter < 0 || strings.Index(agenticRunnerDockerfile, "--max-time 300") < 0 {
+		t.Fatal("expected both a small-file ceiling (--max-time 300) and a large-archive ceiling (--max-time 1800)")
+	}
+	// The bounds are only useful because both timeouts are retryable rather
+	// than fatal on attempt one.
+	if !strings.Contains(agenticRunnerDockerfile, "--retry-all-errors") {
+		t.Fatal("--retry-all-errors must survive: without it curl exit 28 aborts the build instead of retrying")
+	}
+}
+
 // TestAgenticRunnerEntrypointPinsMTU verifies the entrypoint pins the inner-bridge
 // MTU (mtu-only daemon.json written before the single dockerd start) and the outer
 // egress interface MTU when the host egress MTU (GH_SR_HOST_MTU) is below 1500 — the
