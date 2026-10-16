@@ -30,6 +30,40 @@ USER root
 
 ENV DEBIAN_FRONTEND=noninteractive
 
+# APT mirror — this is the slowest network path in the whole build.
+#
+# The fork base ships the stock Ubuntu archive sources, so `apt-get update` +
+# `apt-get install` go to archive.ubuntu.com / security.ubuntu.com. Measured from
+# a cn-region host (x1, via the WAN proxy) that link sustained only 60–338 KB/s,
+# which is 30–100x slower than the CN mirrors the toolcache bake uses (6–11 MB/s).
+# The core + extra apt manifests (clang, cmake, gtk-3-dev, gstreamer-*, …) are
+# several hundred MB, so this layer — not the 1.6 GB Flutter bake — dominated
+# build wall time.
+#
+# Only the two Ubuntu archive URIs are rewritten, in place, so every other repo
+# the base carries survives untouched — notably the git-core PPA
+# (ppa.launchpadcontent.net), which has no CN mirror. Both the deb822 form
+# (/etc/apt/sources.list.d/*.sources, what Ubuntu 24.04 noble uses) and the
+# legacy /etc/apt/sources.list are handled. Passing http:// and https:// forms
+# keeps this working if a future base switches one of them to https.
+#
+# Override with --build-arg APT_MIRROR=... (or an empty value to keep the
+# upstream archives). TUNA and Aliyun serve byte-identical Release files for
+# noble, so the choice is about which one is closer to the build host.
+ARG APT_MIRROR=https://mirrors.tuna.tsinghua.edu.cn/ubuntu/
+RUN set -eux; \
+    if [ -n "${APT_MIRROR}" ]; then \
+        for f in /etc/apt/sources.list /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources; do \
+            [ -f "$f" ] || continue; \
+            sed -i -e "s|http://archive.ubuntu.com/ubuntu/|${APT_MIRROR}|g" \
+                   -e "s|http://security.ubuntu.com/ubuntu/|${APT_MIRROR}|g" \
+                   -e "s|https://archive.ubuntu.com/ubuntu/|${APT_MIRROR}|g" \
+                   -e "s|https://security.ubuntu.com/ubuntu/|${APT_MIRROR}|g" \
+                   "$f"; \
+        done; \
+    fi; \
+    grep -rhE '^URIs:|^deb ' /etc/apt/sources.list /etc/apt/sources.list.d/ 2>/dev/null | sort -u
+
 # Core system dependencies (manifest: apt-packages-core.txt). iptables/iproute2
 # are what the inner dockerd needs for bridge NAT and route inspection; zstd is
 # the Actions-cache compression codec the runner uses for cache upload/download.

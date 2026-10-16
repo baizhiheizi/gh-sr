@@ -759,6 +759,60 @@ func TestAgenticRunnerDockerfileToolcacheBakeBoundsTransfers(t *testing.T) {
 	}
 }
 
+// TestAgenticRunnerDockerfileRoutesAptThroughMirror guards the apt mirror
+// rewrite, which is the slowest network path in the build. The fork base ships
+// stock Ubuntu archive sources, so apt went to archive.ubuntu.com /
+// security.ubuntu.com; measured from a cn-region host that link sustained only
+// 60–338 KB/s against 6–11 MB/s from the CN mirrors the toolcache bake uses —
+// so the several-hundred-MB clang/cmake/gtk-3-dev/gstreamer manifests dominated
+// build wall time, not the 1.6 GB Flutter bake.
+//
+// The rewrite must be targeted rather than a wholesale sources.list overwrite:
+// the base also carries the git-core PPA (ppa.launchpadcontent.net), which has
+// no CN mirror, and clobbering it would break the image.
+func TestAgenticRunnerDockerfileRoutesAptThroughMirror(t *testing.T) {
+	t.Parallel()
+	for _, want := range []string{
+		"ARG APT_MIRROR=https://mirrors.tuna.tsinghua.edu.cn/ubuntu/",
+		// Both on-disk formats: Ubuntu 24.04 noble uses deb822 (.sources),
+		// older/overlaid configs still use one-line /etc/apt/sources.list.
+		"/etc/apt/sources.list.d/*.sources",
+		"/etc/apt/sources.list.d/*.list",
+		"/etc/apt/sources.list",
+		// Both archive endpoints must be caught, over http and https.
+		"http://archive.ubuntu.com/ubuntu/",
+		"http://security.ubuntu.com/ubuntu/",
+		"https://archive.ubuntu.com/ubuntu/",
+		"https://security.ubuntu.com/ubuntu/",
+	} {
+		if !strings.Contains(agenticRunnerDockerfile, want) {
+			t.Fatalf("apt mirror rewrite should mention %q, got:\n%s", want, agenticRunnerDockerfile)
+		}
+	}
+	// Targeted substitution only. Writing the base's sources files out
+	// wholesale would silently drop the git-core PPA. (Note the check is on
+	// the Ubuntu archive files specifically: the gh CLI layer legitimately
+	// redirects into a NEW sources.list.d/github-cli.list, so a bare
+	// "> /etc/apt/sources.list" prefix test false-positives on it.)
+	for _, bad := range []string{
+		"> /etc/apt/sources.list.d/ubuntu.sources",
+		"tee /etc/apt/sources.list.d/ubuntu.sources",
+		"> /etc/apt/sources.list ",
+		"> /etc/apt/sources.list\n",
+	} {
+		if strings.Contains(agenticRunnerDockerfile, bad) {
+			t.Fatalf("apt sources must be rewritten with targeted sed, not overwritten (%q) — that would drop the git-core PPA", bad)
+		}
+	}
+	// The rewrite must run BEFORE the first apt-get update, or the layer would
+	// still resolve against the upstream archives.
+	mirrorAt := strings.Index(agenticRunnerDockerfile, "ARG APT_MIRROR")
+	firstUpdateAt := strings.Index(agenticRunnerDockerfile, "RUN apt-get update")
+	if mirrorAt < 0 || firstUpdateAt < 0 || mirrorAt > firstUpdateAt {
+		t.Fatalf("apt mirror rewrite must precede the first apt-get update (ARG at %d, update at %d)", mirrorAt, firstUpdateAt)
+	}
+}
+
 // TestAgenticRunnerEntrypointPinsMTU verifies the entrypoint pins the inner-bridge
 // MTU (mtu-only daemon.json written before the single dockerd start) and the outer
 // egress interface MTU when the host egress MTU (GH_SR_HOST_MTU) is below 1500 — the
