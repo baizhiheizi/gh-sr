@@ -688,6 +688,37 @@ func TestAgenticRunnerDockerfileSymlinksHostedToolCache(t *testing.T) {
 	}
 }
 
+// TestAgenticRunnerDockerfileToolcacheBakeOwnsIntermediateDirs guards the bake's
+// post-loop chown. The bake ran as root, and a per-entry `chown -R .../$dir`
+// only covered the leaf — the intermediate parents that `mkdir -p` created stayed
+// root-owned. A workflow pinning a version the bake doesn't carry then made
+// ruby/setup-ruby die with
+// `EACCES: permission denied, mkdir '/opt/hostedtoolcache/Ruby/4.0.5'`
+// (seen on baizhiheizi/ohmyxin: .ruby-version 4.0.5 against a 4.0.7 bake)
+// instead of downloading the missing version at job time — breaking the
+// "Runtime install fallback preserved" scenario in
+// openspec/specs/container-runner-image/spec.md. Every nested dir is affected:
+// "Ruby/<ver>" stranded "Ruby/", "node/<ver>/x64" stranded both "node/" and
+// "node/<ver>/".
+func TestAgenticRunnerDockerfileToolcacheBakeOwnsIntermediateDirs(t *testing.T) {
+	t.Parallel()
+	const want = "&& chown -R runner:runner /home/runner/.toolcache"
+	if !strings.Contains(agenticRunnerDockerfile, want) {
+		t.Fatalf("bake must chown the whole tool cache root so nested dirs end up runner-owned, missing %q in:\n%s", want, agenticRunnerDockerfile)
+	}
+	// The chown must run AFTER the loop drains the manifest. Inside the loop it
+	// could only ever cover the entry being processed — the leaf-only shape that
+	// caused the bug.
+	loop := strings.Index(agenticRunnerDockerfile, "done < /tmp/toolcache-extra.txt")
+	chown := strings.Index(agenticRunnerDockerfile, want)
+	if loop < 0 || chown < 0 || chown < loop {
+		t.Fatalf("tool-cache chown must follow the bake loop (loop at %d, chown at %d)", loop, chown)
+	}
+	if strings.Contains(agenticRunnerDockerfile, `chown -R runner:runner "/home/runner/.toolcache/$dir"`) {
+		t.Fatal("drop the per-entry leaf-only chown — it leaves intermediate tool-cache dirs root-owned")
+	}
+}
+
 // TestAgenticRunnerEntrypointPinsMTU verifies the entrypoint pins the inner-bridge
 // MTU (mtu-only daemon.json written before the single dockerd start) and the outer
 // egress interface MTU when the host egress MTU (GH_SR_HOST_MTU) is below 1500 — the

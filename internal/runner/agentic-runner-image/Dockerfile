@@ -143,6 +143,20 @@ RUN mkdir -p /home/runner/.toolcache && chown runner:runner /home/runner/.toolca
 # job-time downloads, but here a failure is loud and attended (gh sr rebuild
 # can simply be re-run) instead of surfacing as repeated unattended CI failures —
 # the same trade-off that retired the dl.google.com chrome bake.
+#
+# Ownership: the whole tree is chowned to runner ONCE after the loop, not per
+# entry. A per-entry `chown -R .../$dir` only covers the leaf — the intermediate
+# parents that `mkdir -p` created as root stay root-owned, so a bake of
+# "Ruby/4.0.7" left "Ruby/" unwritable by the runner user. That broke the
+# runtime-install fallback this list is layered on top of: a workflow pinning a
+# version the bake doesn't carry (e.g. .ruby-version 4.0.5 against a 4.0.7 bake)
+# made ruby/setup-ruby mkdir a sibling version dir and die with
+# `EACCES: permission denied, mkdir '/opt/hostedtoolcache/Ruby/4.0.5'` instead of
+# downloading the missing version at job time. Same for the two-level node
+# entries ("node/24.21.0/x64" stranded both "node/" and "node/<ver>/"), and any
+# future nested dir. Chowning the root once keeps every level runner-owned, so a
+# bake miss degrades to a normal runtime install (see the "Runtime install
+# fallback preserved" scenario in openspec/specs/container-runner-image/spec.md).
 COPY toolcache-extra.txt /tmp/toolcache-extra.txt
 RUN while read -r url dir complete strip; do \
         [ -n "$url" ] || continue; \
@@ -154,9 +168,9 @@ RUN while read -r url dir complete strip; do \
              *) tar -xzf /tmp/toolcache.tar --strip-components=${strip:-0} -C "/home/runner/.toolcache/$dir" ;; \
            esac \
         && touch "/home/runner/.toolcache/$complete" \
-        && chown -R runner:runner "/home/runner/.toolcache/$dir" "/home/runner/.toolcache/$complete" \
         || exit 1; \
     done < /tmp/toolcache-extra.txt \
+    && chown -R runner:runner /home/runner/.toolcache \
     && rm -f /tmp/toolcache-extra.txt /tmp/toolcache.tar
 
 # Optional extra apt packages (from runners.yml; empty file skips this step)
