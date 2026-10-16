@@ -1,0 +1,1 @@
+- [Test Improver notes](notes.md) — build/test commands, coverage snapshot, test patterns, completed work for baizhiheizi/gh-sr
