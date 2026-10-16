@@ -129,6 +129,8 @@ See [Organization runners](guides/org-runners.md) for runner groups, workflow ta
 | `container_runner_image.dockerd_start_timeout_seconds` | Optional integer (30–300). Seconds the entrypoint waits for inner `dockerd` during bootstrap. Default **90** when unset. Increase on slow or I/O-bound hosts. Applied at container-create time (`gh sr rebuild` to change existing containers). |
 | `container_runner_image.bootstrap_max_retries` | Optional integer (1–20). Consecutive inner-`dockerd` start failures before the entrypoint stops retrying and marks the runner **failed** (default **5**). Applied at container-create time. |
 | `container_runner_image.start_stagger_seconds` | Optional integer (0–60). Delay multiplier between starting each container instance on the same host during `gh sr up` (default **3** — instance *i* waits *i×3* seconds). Reduces lockstep dockerd spikes when `count > 1`. |
+| `npm_registry` | Optional top-level string. npm registry override written to the runner user's `~/.npmrc` in every `runner_mode: container` runner (read by npm/npx/pnpm/bun). Use it to route package installs through a regional mirror reachable without the WAN proxy (e.g. `https://registry.npmmirror.com` on China-network hosts). Empty = npm's default registry. Applied at container-create time — see [`npm_registry:`](#npm_registry-npm-registry-override-for-runner-containers). |
+| `shared_caches.enabled` / `shared_caches.npm` / `shared_caches.home_cache` | Optional section (defaults **on**) mounting the `gh-sr-npm-cache` (`/home/runner/.npm`) and `gh-sr-runner-cache` (`/home/runner/.cache`) named volumes into every container-mode runner, so cold caches are paid once per host and survive rebuilds. See [`shared_caches:`](#shared_caches-per-host-shared-cache-volumes). |
 
 ### `cache:` — per-host local Actions cache server
 
@@ -162,6 +164,38 @@ Optional section tuning the [registry pull-through mirror](guides/registry-mirro
 | `registry_mirror.url_override` | Replace the runner-facing mirror URL verbatim (must include the scheme) — escape hatch for exotic topologies. |
 
 Wiring takes effect at container-create time: after enabling the mirror on an existing pool, run `gh sr rebuild <name>` so runner containers pick up the inner-dockerd `registry-mirrors` config.
+
+### `npm_registry:` — npm registry override for runner containers
+
+Optional top-level string. When set, every `runner_mode: container` runner gets it injected as `GH_SR_NPM_REGISTRY`, and the container entrypoint writes it into the runner user's `~/.npmrc` — the one mechanism npm, npx, pnpm and bun all read under the runner user (a `docker -e` env var alone would not survive the entrypoint's `su -` login-shell reset).
+
+The canonical use is routing package installs through a regional mirror that is reachable **without** the WAN proxy — e.g. on a China-network host:
+
+```yaml
+npm_registry: https://registry.npmmirror.com
+```
+
+Workflow-level `NPM_CONFIG_REGISTRY` env still wins over the `.npmrc` (npm's normal precedence), so per-workflow overrides keep working. `gh sr rebuild <name>` picks the env up on existing pools.
+
+**Read this before enabling on a shared pool.** The override applies to *every* repo that runs on the host, and three real-world failure modes were hit when it was trialed on a mixed pool (and reverted):
+
+- **bun ≥ 1.4 reads `~/.npmrc`** (bun ≤ 1.3 ignores it, reading only a project-level `.npmrc` next to each `package.json`) — so the mirror silently reaches bun-based repos that a user-level npmrc "shouldn't" affect.
+- **Mirrors can 404 on versions npmjs no longer serves or hasn't synced** — an upstream unpublish or a sync gap turns into a hard `bun install --frozen-lockfile` / `npm ci` failure on every branch.
+- **Repos may pin the canonical registry by policy** — e.g. a CI guard asserting `pull_request` installs resolve `registry.npmjs.org` (supply-chain policy). A runner-level mirror fails such guards on every PR run.
+
+Where those constraints don't apply (single-tenant tooling pools, or repos whose workflows already select the mirror per-event), the override moves all package-install bytes off the WAN proxy — on a fake-ip router setup, China-mirror traffic is kernel-routed around the proxy core entirely.
+
+### `shared_caches:` — per-host shared cache volumes
+
+Optional section controlling two named Docker volumes mounted into every container-mode runner on a host, so cold caches are paid **once per host** instead of once per container, and survive `gh sr rebuild` (volumes outlive container recreation; only an explicit `docker volume rm` drops them). Every field is optional and defaults to on.
+
+| Field | Meaning |
+|---|---|
+| `shared_caches.enabled` | Master switch (default **`true`**). `false` mounts nothing. |
+| `shared_caches.npm` | Mount `gh-sr-npm-cache` at `/home/runner/.npm` (default **`true`**). One npm cacache shared by every runner on the host — npm's content-addressed cache is safe for concurrent writers. |
+| `shared_caches.home_cache` | Mount `gh-sr-runner-cache` at `/home/runner/.cache` (default **`true`**). The XDG cache dir where job-time download caches land (pinned Chrome-for-Testing builds, pip, …). |
+
+The entrypoint re-asserts runner-user ownership of both mount points on every start, so job-time writes never hit `EACCES` even when a root-run step left entries behind. Wiring takes effect at container-create time: run `gh sr rebuild <name>` after changing the section on an existing pool. Note the `.toolcache` is deliberately **not** shared — it is seeded by the `container_runner_image.toolcache` bake, and a shared volume would freeze the first image's bake forever.
 
 **Unique runner names per registration scope:** GitHub registers each self-hosted runner by its **instance** name (`name-1`, `name-2`, …). That name must be **unique within the registration scope** — within a given `owner/repo` for repo-scoped runners, or **org-wide** for org-scoped runners. If two machines use the same base `name` and `count: 1` in the same scope, both try to register as `name-1` and only one registration remains active. Prefer distinct base names (for example `myapp-win` vs `myapp-linux`, or `myorg-ci` vs `myorg-gpu`) so every machine has its own GitHub runner record and `gh sr status` matches the right row.
 

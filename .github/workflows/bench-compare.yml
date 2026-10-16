@@ -24,6 +24,11 @@ permissions:
 #   - Only packages touched by the diff gate the exit code (benchstat
 #     -packages). Cross-runner noise previously "regressed" benchmarks in
 #     packages the PR never opened; they are still reported, as ⚪.
+#   - A diff that changes NO Go file (dependency bump, workflow/docs-only
+#     edit) gates nothing at all (benchstat -gate=false). It cannot regress
+#     the repo's own benchmark code, and scoping it to an empty package list
+#     used to fall back to "gate everything" — failing all seven dependabot
+#     PRs of the 2026-10-15 batch on pure self-hosted-runner noise.
 #   - The PR is checked out via refs/pull/N/head instead of refs/pull/N/merge.
 #     The merge ref is cached by GitHub: reruns of a PR whose base moved kept
 #     fetching a pre-merge snapshot and compared stale code against fresh
@@ -54,10 +59,23 @@ jobs:
           echo "changed Go packages vs $(git rev-parse --short "$base"):"
           dirs=$(git diff --name-only "$base" HEAD -- '*.go' | xargs -r -n1 dirname | sort -u)
           echo "$dirs"
-          # Root-level .go files affect everything — don't scope.
-          if echo "$dirs" | grep -qx '\.'; then
+          if [ -z "$dirs" ]; then
+            # No .go file changed at all (go.mod/go.sum bump, workflow or
+            # docs-only edit). Such a diff cannot regress the repo's own
+            # benchmark code, so gate nothing and render report-only.
+            # This used to fall through to the empty-list "gate everything"
+            # fallback, which failed every dependency bump: comparing an
+            # unchanged suite against a main artifact up to ~15h old, on a
+            # contended self-hosted runner, showed every benchmark 30-345%
+            # slower with allocs/op and B/op flat at 0.0%.
+            echo "gate=false" >> "$GITHUB_OUTPUT"
+            echo "packages=" >> "$GITHUB_OUTPUT"
+          elif echo "$dirs" | grep -qx '\.'; then
+            # Root-level .go files affect everything — don't scope.
+            echo "gate=true" >> "$GITHUB_OUTPUT"
             echo "packages=" >> "$GITHUB_OUTPUT"
           else
+            echo "gate=true" >> "$GITHUB_OUTPUT"
             echo "packages=$(echo "$dirs" | paste -sd,)" >> "$GITHUB_OUTPUT"
           fi
 
@@ -132,6 +150,7 @@ jobs:
             -base-ref "${{ steps.fetch-main.outputs.main-sha }}" \
             -head-ref "${{ github.event.pull_request.head.label }}" \
             -packages "${{ steps.pkgs.outputs.packages }}" \
+            -gate=${{ steps.pkgs.outputs.gate }} \
             -output comment.md
           ec=$?
           echo "exit-code=$ec" >> "$GITHUB_OUTPUT"
