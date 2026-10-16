@@ -47,6 +47,19 @@ type Manager struct {
 	// so concurrent host goroutines never share mutable state. Deployed by ops
 	// via the registry package.
 	RegistryMirror *registry.Settings
+	// NPMRegistry, when non-empty, is injected as GH_SR_NPM_REGISTRY so the
+	// entrypoint writes /home/runner/.npmrc pointing npm/npx/pnpm/bun at an
+	// alternative registry (runners.yml npm_registry; e.g. a mirror reachable
+	// without the WAN proxy). Empty = npm's default registry.
+	NPMRegistry string
+	// SharedNPMCache mounts the host-wide gh-sr-npm-cache named volume at
+	// /home/runner/.npm in every container-mode runner (runners.yml
+	// shared_caches.npm), so cold npm installs are paid once per host.
+	SharedNPMCache bool
+	// SharedRunnerCache mounts gh-sr-runner-cache at /home/runner/.cache
+	// (runners.yml shared_caches.home_cache) for job-time download caches
+	// (pinned Chrome-for-Testing builds, pip, …).
+	SharedRunnerCache bool
 	// ContainerMTU, when > 0, forces the inner/outer Docker MTU for container-mode runners
 	// (overriding host egress MTU auto-detection). From runners.yml
 	// container_runner_image.mtu; set by ops before container setup. 0 = auto-detect.
