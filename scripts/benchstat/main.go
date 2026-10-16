@@ -9,6 +9,10 @@
 //	    -base-ref main -head-ref pr -output bench-diff.md \
 //	    -packages internal/runner,internal/host
 //
+// Pass -gate=false for a report-only comparison, for a PR that changes no Go
+// files (dependency bump, workflow/docs-only edit) and therefore cannot
+// regress the repo's own benchmark code.
+//
 // Exit codes:
 //
 //	0 — no fail-level regressions (warn-level OK)
@@ -32,6 +36,7 @@ func main() {
 	headRef := flag.String("head-ref", "PR", "head ref label")
 	output := flag.String("output", "", "optional output file (default: stdout)")
 	packages := flag.String("packages", "", "comma-separated directory-style import paths (e.g. internal/runner) whose benchmarks gate the exit code; empty gates everything")
+	gate := flag.Bool("gate", true, "gate the exit code on fail-level regressions; false renders the report but never fails (for diffs that change no Go files)")
 	flag.Parse()
 
 	if *basePath == "" || *headPath == "" {
@@ -59,8 +64,13 @@ func main() {
 			}
 		}
 	}
-	gated, ungated := benchstat.ApplyPackageScope(rows, pkgs)
-	fmt.Fprintf(os.Stderr, "scope: gating %d benchmark(s) in changed packages, %d ungated\n", gated, ungated)
+	if *gate {
+		gated, ungated := benchstat.ApplyPackageScope(rows, pkgs)
+		fmt.Fprintf(os.Stderr, "scope: gating %d benchmark(s) in changed packages, %d ungated\n", gated, ungated)
+	} else {
+		benchstat.ApplyNoScope(rows)
+		fmt.Fprintf(os.Stderr, "scope: gating disabled (diff changes no Go files); report-only, exit code forced to 0\n")
+	}
 	md := benchstat.RenderMarkdown(rows, *baseRef, *headRef)
 
 	if *output != "" {
