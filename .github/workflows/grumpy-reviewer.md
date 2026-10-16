@@ -10,7 +10,7 @@ permissions:
   contents: read
   pull-requests: read
 imports:
-  - shared/engine-deepseek.md
+  - shared/engine-minimax.md
   - shared/runtime.md
   - shared/github-app.md
 safe-outputs:
