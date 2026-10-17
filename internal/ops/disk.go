@@ -186,6 +186,13 @@ func CollectDiskUsage(w io.Writer, cfg *config.Config, mgr *runner.Manager, filt
 				})
 			}
 		}
+
+		// Host-level rows for the gh-sr-* Docker volumes (shared_caches and
+		// friends; Linux only). Best-effort: Docker failures surface as row
+		// errors, not a failed report.
+		if hcfg.OS == "linux" {
+			out = append(out, measureSharedVolumes(h, g.name)...)
+		}
 		return out, nil
 	})
 
