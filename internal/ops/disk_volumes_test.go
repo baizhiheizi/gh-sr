@@ -113,3 +113,60 @@ func TestMeasureSharedVolumesDuFailure(t *testing.T) {
 }
 
 var errDiskVolumesTest = errors.New("disk volumes test error")
+
+// TestMeasureSharedVolumesSilentDuFailure pins the distinction between "the
+// measurement failed" and "this volume is empty". The busybox output is piped
+// through sed, so the pipeline's exit status is sed's and a failed docker run
+// still exits 0 — without this check every volume would be reported as "empty
+// or missing", misdescribing real cache dirs and silently dropping their bytes
+// from the host total.
+func TestMeasureSharedVolumesSilentDuFailure(t *testing.T) {
+	t.Parallel()
+	mock := &testutil.MockExecutor{RunFn: func(cmd string) (string, error) {
+		if strings.Contains(cmd, "docker volume ls") {
+			return "gh-sr-gradle-cache\ngh-sr-npm-cache\n", nil
+		}
+		// docker run produced nothing but sed still exited 0.
+		return "", nil
+	}}
+	entries := measureSharedVolumes(newDiskVolumesHost(t, mock), "h")
+	if len(entries) != 2 {
+		t.Fatalf("got %d entries, want 2: %+v", len(entries), entries)
+	}
+	for _, e := range entries {
+		if e.Err == nil {
+			t.Fatalf("row %s must carry an error, got %+v", e.Instance, e)
+		}
+		if strings.Contains(e.Err.Error(), "empty or missing") {
+			t.Errorf("row %s must not claim the volume is empty: %v", e.Instance, e.Err)
+		}
+		if !strings.Contains(e.Err.Error(), "busybox") {
+			t.Errorf("row %s must name the likely cause, got %v", e.Instance, e.Err)
+		}
+		if e.TotalBytes != 0 {
+			t.Errorf("row %s must report 0 bytes, got %d", e.Instance, e.TotalBytes)
+		}
+	}
+}
+
+// TestMeasureSharedVolumesPartialOutput keeps the per-volume fallback for a
+// genuinely missing dir: some volumes measured, one did not.
+func TestMeasureSharedVolumesPartialOutput(t *testing.T) {
+	t.Parallel()
+	mock := &testutil.MockExecutor{RunFn: func(cmd string) (string, error) {
+		if strings.Contains(cmd, "docker volume ls") {
+			return "gh-sr-gradle-cache\ngh-sr-npm-cache\n", nil
+		}
+		return "4321\t0\n", nil // volume 1 absent from du's output
+	}}
+	entries := measureSharedVolumes(newDiskVolumesHost(t, mock), "h")
+	if len(entries) != 2 {
+		t.Fatalf("got %d entries, want 2: %+v", len(entries), entries)
+	}
+	if entries[0].TotalBytes != 4321 || entries[0].Err != nil {
+		t.Errorf("measured volume must be clean: %+v", entries[0])
+	}
+	if entries[1].Err == nil || !strings.Contains(entries[1].Err.Error(), "empty or missing") {
+		t.Errorf("unmeasured volume must say so per-volume, got %+v", entries[1])
+	}
+}

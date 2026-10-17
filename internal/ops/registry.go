@@ -98,30 +98,36 @@ func RegistryStatus(w io.Writer, cfg *config.Config, filterHost string) error {
 			fmt.Fprintf(w, "  registry: disabled in runners.yml\n")
 			return nil
 		}
-		info, err := registry.Inspect(h, *s)
+		mirrors, err := registry.Inspect(h, *s)
 		if err != nil {
 			return err
 		}
-		printRegistryStatus(w, info)
+		for _, m := range mirrors {
+			printRegistryStatus(w, m)
+		}
 		return nil
 	})
 }
 
-func printRegistryStatus(w io.Writer, info registry.StatusInfo) {
-	if info.State == "" {
-		fmt.Fprintf(w, "  registry: not deployed\n")
+func printRegistryStatus(w io.Writer, m registry.MirrorStatus) {
+	name := ""
+	if m.Name != "" && m.Name != config.DefaultRegistryMirrorName {
+		name = "[" + m.Name + "]"
+	}
+	if m.Info.State == "" {
+		fmt.Fprintf(w, "  registry%s: not deployed\n", name)
 		return
 	}
-	state := info.State
-	if info.Healthy {
+	state := m.Info.State
+	if m.Info.Healthy {
 		state += " (healthy)"
 	}
-	fmt.Fprintf(w, "  state:   %s\n", state)
-	fmt.Fprintf(w, "  image:   %s\n", info.Image)
-	if info.URL != "" {
-		fmt.Fprintf(w, "  url:     %s\n", info.URL)
+	fmt.Fprintf(w, "  registry%s: state: %s\n", name, state)
+	fmt.Fprintf(w, "           image: %s\n", m.Info.Image)
+	if m.Info.URL != "" {
+		fmt.Fprintf(w, "           url:   %s\n", m.Info.URL)
 	}
-	fmt.Fprintf(w, "  storage: %s (%s)\n", info.StoragePath, runner.FormatBytesHuman(info.StorageBytes))
+	fmt.Fprintf(w, "           store: %s (%s)\n", m.Info.StoragePath, runner.FormatBytesHuman(m.Info.StorageBytes))
 }
 
 // RegistryRemove uninstalls the registry mirror; purgeData also deletes the

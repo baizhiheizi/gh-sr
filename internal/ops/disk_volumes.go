@@ -64,6 +64,15 @@ func measureSharedVolumes(h *host.Host, hostName string) []runner.DiskUsageEntry
 		}
 	}
 
+	// The throwaway container's output is piped through `sed`, so the pipeline's
+	// exit status is sed's — a failed `docker run` (most likely: busybox not
+	// pullable on an offline or metered host without the mirror configured)
+	// still exits 0. Detect "du produced nothing at all" separately, otherwise
+	// every volume would be reported as "empty or missing", which both
+	// misdescribes the state and silently drops real cache data from the host
+	// total on the very command meant to warn about disk pressure.
+	measureFailed := duErr == nil && len(sizes) == 0
+
 	entries := make([]runner.DiskUsageEntry, 0, len(names))
 	for i, n := range names {
 		e := runner.DiskUsageEntry{
@@ -72,12 +81,17 @@ func measureSharedVolumes(h *host.Host, hostName string) []runner.DiskUsageEntry
 			Path:     base + "/" + n + "/_data",
 			Mode:     "volume",
 		}
-		if size, ok := sizes[i]; ok {
-			e.TotalBytes = size
-		} else if duErr != nil {
-			e.Err = fmt.Errorf("measuring volume: %v", duErr)
-		} else {
-			e.Err = fmt.Errorf("no size reported (volume empty or missing)")
+		switch {
+		case measureFailed:
+			e.Err = fmt.Errorf("measuring volumes failed (the busybox helper produced no output — is busybox pullable on this host?)")
+		default:
+			if size, ok := sizes[i]; ok {
+				e.TotalBytes = size
+			} else if duErr != nil {
+				e.Err = fmt.Errorf("measuring volume: %v", duErr)
+			} else {
+				e.Err = fmt.Errorf("no size reported (volume empty or missing)")
+			}
 		}
 		entries = append(entries, e)
 	}

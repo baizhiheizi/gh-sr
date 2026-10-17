@@ -76,36 +76,74 @@ type CacheConfig struct {
 }
 
 // RegistryMirrorConfig configures the per-host Docker registry pull-through
-// mirror (registry:2, deployed as the gh-sr-registry container). Container
-// runners' inner dockerd pulls Docker Hub images through the mirror, so every
-// runner on the host shares one copy of each image layer instead of each
+// mirrors (registry:2, deployed as the gh-sr-registry container plus one
+// gh-sr-registry-<name> container per extra entry in mirrors). Container
+// runners' inner dockerd pulls Docker Hub images through the first mirror, so
+// every runner on the host shares one copy of each image layer instead of each
 // downloading it over the WAN. Only Docker Hub is redirected transparently —
 // dockerd's registry-mirrors mechanism has no per-registry equivalent for
-// ghcr.io et al.
+// ghcr.io et al (moby/moby#41456); the additional mirrors serve host-side
+// prefetch (registry_mirror.prefetch + `gh sr images sync`), which pulls each
+// listed image once per host and loads it into every runner's inner dockerd.
 type RegistryMirrorConfig struct {
 	// Enabled defaults to true: a `registry_mirror:` section is only needed
 	// to tune or disable (enabled: false). Set explicitly on Load
 	// (applyDefaults).
 	Enabled *bool `yaml:"enabled,omitempty"`
-	// Port is the host-side port the mirror publishes on (0 = built-in
-	// default 5577).
+	// Port is the host-side port the first mirror publishes on (0 = built-in
+	// default 5577). Mirrors beyond the first default to 5578, 5579, … unless
+	// they set their own port.
 	Port int `yaml:"port,omitempty"`
-	// BindAddr is the host address the mirror binds to. Empty = the docker0
-	// gateway IP (reachable from runner containers only); 0.0.0.0 exposes the
-	// mirror on every host interface.
+	// BindAddr is the host address the mirrors bind to. Empty = the docker0
+	// gateway IP plus loopback (runner-facing and host-prefetch pulls);
+	// 0.0.0.0 exposes every mirror on every host interface.
 	BindAddr string `yaml:"bind_addr,omitempty"`
-	// StoragePath is the host directory for mirrored layers ("$HOME/..."
-	// allowed; empty = $HOME/.gh-sr/registry).
+	// StoragePath is the host directory for the first mirror's layers
+	// ("$HOME/..." allowed; empty = $HOME/.gh-sr/registry). Mirrors beyond
+	// the first use <storage_path>-<name>.
 	StoragePath string `yaml:"storage_path,omitempty"`
 	// Image overrides the mirror image (pin a digest for reproducible
 	// deploys; empty = registry:2).
 	Image string `yaml:"image,omitempty"`
-	// Upstream is the registry the mirror pulls through (empty = Docker Hub,
-	// registry-1.docker.io). The value must be a v2 registry URL.
+	// Upstream is the registry the first mirror pulls through (empty = Docker
+	// Hub, registry-1.docker.io). The value must be a v2 registry URL. An
+	// explicit mirrors[0].upstream wins over this legacy key.
 	Upstream string `yaml:"upstream,omitempty"`
-	// URLOverride replaces the runner-facing mirror URL verbatim (escape
-	// hatch for non-docker0 topologies; must include the scheme).
+	// URLOverride replaces the runner-facing URL of the first mirror verbatim
+	// (escape hatch for non-docker0 topologies; must include the scheme).
 	URLOverride string `yaml:"url_override,omitempty"`
+	// Mirrors deploys one pull-through registry per entry. mirrors[0] IS the
+	// Docker-Hub-facing mirror (container gh-sr-registry, wired into runner
+	// inner dockerds via daemon.json registry-mirrors); it inherits the legacy
+	// port/upstream keys when it sets neither. Entries beyond the first need
+	// a name and an upstream, and serve host-side prefetch pulls only.
+	Mirrors []RegistryMirrorEntry `yaml:"mirrors,omitempty"`
+	// Prefetch lists image references that `gh sr images sync` (and, after
+	// `gh sr up` / `gh sr rebuild`, an automatic pass) pulls once per host —
+	// through the matching mirror when one exists — and loads into every
+	// container runner's inner dockerd, so each image costs one WAN fetch
+	// per host instead of one per runner.
+	Prefetch []string `yaml:"prefetch,omitempty"`
+}
+
+// RegistryMirrorEntry is one pull-through mirror in registry_mirror.mirrors.
+type RegistryMirrorEntry struct {
+	// Name identifies the mirror in container names (gh-sr-registry-<name>),
+	// storage paths, and status output. Lowercase alphanumerics and hyphens.
+	// mirrors[0] defaults to "dockerhub"; later entries must set one.
+	Name string `yaml:"name,omitempty"`
+	// Upstream is the registry this mirror pulls through (e.g.
+	// https://ghcr.io). mirrors[0] inherits the legacy registry_mirror.upstream
+	// when unset; later entries must set one.
+	Upstream string `yaml:"upstream,omitempty"`
+	// Port is the host-side published port (0 = 5577 + list index).
+	Port int `yaml:"port,omitempty"`
+	// Username authenticates the pull-through against the upstream (with
+	// Password). For GHCR use any GitHub username with a read:packages PAT.
+	Username string `yaml:"username,omitempty"`
+	// PasswordEnv names an environment variable carrying the upstream
+	// password / PAT. The secret never touches runners.yml.
+	PasswordEnv string `yaml:"password_env,omitempty"`
 }
 
 // SharedCachesConfig configures the named Docker volumes mounted into every
@@ -127,6 +165,33 @@ type SharedCachesConfig struct {
 	// the XDG cache dir where job-time download caches land (pinned
 	// Chrome-for-Testing builds, pip, …).
 	HomeCache *bool `yaml:"home_cache,omitempty"`
+	// Gradle shares one GRADLE_USER_HOME at /home/runner/.gradle (volume
+	// gh-sr-gradle-cache — the variable's default location, so no env var
+	// is needed). Gradle guards cross-process cache access with file locks
+	// inside GRADLE_USER_HOME, so N runner containers building
+	// simultaneously share the dependency and wrapper-distribution caches
+	// instead of each re-downloading them over the WAN.
+	Gradle *bool `yaml:"gradle,omitempty"`
+	// Pub shares one Dart/Flutter package cache at /home/runner/.pub-cache
+	// (volume gh-sr-pub-cache — PUB_CACHE's default location on Linux, so
+	// no env var is needed). pub writes each package version atomically,
+	// making the cache safe for concurrent writers.
+	Pub *bool `yaml:"pub,omitempty"`
+	// Mise shares one tool-install dir at /home/runner/.local/share/mise
+	// (volume gh-sr-mise-data — MISE_DATA_DIR's default location, so no
+	// env var is needed). The mise download cache already lives under
+	// ~/.cache and is therefore shared by HomeCache. Every container runs
+	// as the same uid (runner, 1001), so the multi-user permission issues
+	// of a shared mise data dir do not apply here; a concurrent install of
+	// the same tool+version is last-writer-wins and a fresh install heals
+	// any partial race.
+	Mise *bool `yaml:"mise,omitempty"`
+	// AndroidSDK opts into sharing one Android SDK at /opt/android-sdk
+	// (volume gh-sr-android-sdk), with ANDROID_SDK_ROOT/ANDROID_HOME
+	// exported to jobs via the runner .env. Off by default (opt-in): the
+	// SDK is large, and pointing ANDROID_SDK_ROOT at a shared volume
+	// changes behavior for repos that install their own SDK at job time.
+	AndroidSDK *bool `yaml:"android_sdk,omitempty"`
 }
 
 // ContainerToolcacheEntry is one tool-cache bake item: a tarball URL extracted
@@ -428,6 +493,33 @@ func (c *Config) SharedHomeCacheEnabled() bool {
 	return c.SharedCachesEnabled() && boolPtrOrTrue(c.SharedCaches.HomeCache)
 }
 
+// SharedGradleCacheEnabled reports whether the shared Gradle cache volume
+// should be mounted at /home/runner/.gradle. Defaults to true while shared
+// caches are on.
+func (c *Config) SharedGradleCacheEnabled() bool {
+	return c.SharedCachesEnabled() && boolPtrOrTrue(c.SharedCaches.Gradle)
+}
+
+// SharedPubCacheEnabled reports whether the shared pub cache volume should be
+// mounted at /home/runner/.pub-cache. Defaults to true while shared caches are on.
+func (c *Config) SharedPubCacheEnabled() bool {
+	return c.SharedCachesEnabled() && boolPtrOrTrue(c.SharedCaches.Pub)
+}
+
+// SharedMiseDataEnabled reports whether the shared mise data volume should be
+// mounted at /home/runner/.local/share/mise. Defaults to true while shared
+// caches are on.
+func (c *Config) SharedMiseDataEnabled() bool {
+	return c.SharedCachesEnabled() && boolPtrOrTrue(c.SharedCaches.Mise)
+}
+
+// SharedAndroidSDKEnabled reports whether the shared Android SDK volume should
+// be mounted at /opt/android-sdk (with ANDROID_SDK_ROOT exported to jobs).
+// Defaults to false — the sub-flag is opt-in, unlike its siblings.
+func (c *Config) SharedAndroidSDKEnabled() bool {
+	return c.SharedCachesEnabled() && boolPtrOrFalse(c.SharedCaches.AndroidSDK)
+}
+
 // boolPtrOrTrue resolves a *bool defaulting to true (the shared-caches
 // sub-flags are opt-out, like their parent section).
 func boolPtrOrTrue(b *bool) bool {
@@ -435,6 +527,12 @@ func boolPtrOrTrue(b *bool) bool {
 		return true
 	}
 	return *b
+}
+
+// boolPtrOrFalse resolves a *bool defaulting to false (the opt-in
+// shared-caches sub-flags).
+func boolPtrOrFalse(b *bool) bool {
+	return b != nil && *b
 }
 
 // validateToolcacheDir enforces a relative, normalized, traversal-free path
@@ -842,6 +940,27 @@ func (c *Config) applyDefaults() {
 		enabled := true
 		c.RegistryMirror.Enabled = &enabled
 	}
+	// Resolve the multi-upstream mirror list: an absent list stays absent
+	// (SettingsFromConfig then synthesizes the legacy single Docker Hub
+	// mirror); mirrors[0] inherits the legacy section-level upstream/port
+	// when it sets neither and defaults its name; entries without a port get
+	// 5577 + index.
+	if len(c.RegistryMirror.Mirrors) > 0 {
+		if c.RegistryMirror.Mirrors[0].Upstream == "" {
+			c.RegistryMirror.Mirrors[0].Upstream = c.RegistryMirror.Upstream
+		}
+		if c.RegistryMirror.Mirrors[0].Port == 0 {
+			c.RegistryMirror.Mirrors[0].Port = c.RegistryMirror.Port
+		}
+		if c.RegistryMirror.Mirrors[0].Name == "" {
+			c.RegistryMirror.Mirrors[0].Name = DefaultRegistryMirrorName
+		}
+		for i := range c.RegistryMirror.Mirrors {
+			if c.RegistryMirror.Mirrors[i].Port == 0 {
+				c.RegistryMirror.Mirrors[i].Port = 5577 + i
+			}
+		}
+	}
 	// And for the shared runner cache volumes (sub-flags inherit the
 	// section default; SharedCachesEnabled still gates the effective
 	// helpers when the section itself is off).
@@ -856,6 +975,20 @@ func (c *Config) applyDefaults() {
 	if c.SharedCaches.HomeCache == nil {
 		enabled := true
 		c.SharedCaches.HomeCache = &enabled
+	}
+	// gradle / pub / mise follow the same opt-out convention; android_sdk
+	// stays nil (= false) — it is deliberately opt-in.
+	if c.SharedCaches.Gradle == nil {
+		enabled := true
+		c.SharedCaches.Gradle = &enabled
+	}
+	if c.SharedCaches.Pub == nil {
+		enabled := true
+		c.SharedCaches.Pub = &enabled
+	}
+	if c.SharedCaches.Mise == nil {
+		enabled := true
+		c.SharedCaches.Mise = &enabled
 	}
 	for name, h := range c.Hosts {
 		if IsLocalAddr(h.Addr) {
@@ -1049,8 +1182,141 @@ func (c *Config) Validate() error {
 	if err := validateCache(&c.Cache); err != nil {
 		return err
 	}
+	return validateRegistryMirror(&c.RegistryMirror)
+}
 
+// DefaultRegistryMirrorName is the name applied to mirrors[0] when the list
+// leaves it unset — the legacy Docker Hub mirror (container gh-sr-registry).
+const DefaultRegistryMirrorName = "dockerhub"
+
+const (
+	maxRegistryMirrors    = 8
+	maxRegistryPrefetch   = 64
+	maxRegistryMirrorName = 32
+)
+
+var registryMirrorNamePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,31}$`)
+
+// validateRegistryMirror checks the registry_mirror: section: unique
+// lowercase names, unique valid ports, absolute http(s) upstreams, paired
+// username/password_env, no legacy-vs-mirrors[0] conflicts, and valid
+// image references in prefetch. Runs after applyDefaults, so mirrors[0] has
+// already inherited the legacy upstream/port and unset ports are defaulted.
+func validateRegistryMirror(cfg *RegistryMirrorConfig) error {
+	if cfg == nil {
+		return nil
+	}
+	if err := validateRegistryMirrorsList(cfg); err != nil {
+		return err
+	}
+	return validateRegistryPrefetch(cfg.Prefetch)
+}
+
+func validateRegistryMirrorsList(cfg *RegistryMirrorConfig) error {
+	if len(cfg.Mirrors) == 0 {
+		return nil
+	}
+	if len(cfg.Mirrors) > maxRegistryMirrors {
+		return fmt.Errorf("registry_mirror.mirrors: at most %d entries allowed (got %d)", maxRegistryMirrors, len(cfg.Mirrors))
+	}
+	names := make(map[string]struct{}, len(cfg.Mirrors))
+	ports := make(map[int]struct{}, len(cfg.Mirrors))
+	for i, m := range cfg.Mirrors {
+		field := fmt.Sprintf("registry_mirror.mirrors[%d]", i)
+		if m.Name == "" {
+			if i == 0 {
+				return fmt.Errorf("%s.name: only mirrors[0] may leave the name unset (it defaults to %q)", field, DefaultRegistryMirrorName)
+			}
+			return fmt.Errorf("%s.name: required for every mirror beyond the first", field)
+		}
+		if len(m.Name) > maxRegistryMirrorName {
+			return fmt.Errorf("%s.name: too long (max %d characters)", field, maxRegistryMirrorName)
+		}
+		if !registryMirrorNamePattern.MatchString(m.Name) {
+			return fmt.Errorf("%s.name: invalid name %q (use lowercase alphanumerics and hyphens, starting with a letter or digit)", field, m.Name)
+		}
+		if _, dup := names[m.Name]; dup {
+			return fmt.Errorf("%s.name: duplicate mirror name %q", field, m.Name)
+		}
+		names[m.Name] = struct{}{}
+		if m.Port < 1 || m.Port > 65535 {
+			return fmt.Errorf("%s.port: must be between 1 and 65535 (got %d)", field, m.Port)
+		}
+		if _, dup := ports[m.Port]; dup {
+			return fmt.Errorf("%s.port: duplicate port %d (each mirror needs its own)", field, m.Port)
+		}
+		ports[m.Port] = struct{}{}
+		if i > 0 || cfg.Upstream != "" || m.Upstream != "" {
+			if strings.TrimSpace(m.Upstream) == "" {
+				return fmt.Errorf("%s.upstream: required", field)
+			}
+			if err := validateRegistryUpstream(field+".upstream", m.Upstream); err != nil {
+				return err
+			}
+		}
+		if (m.Username == "") != (m.PasswordEnv == "") {
+			return fmt.Errorf("%s: username and password_env must be set together", field)
+		}
+	}
+	// mirrors[0] merges with the legacy keys; equal values are fine, a
+	// divergence is a config error (which mirror should win is ambiguous).
+	if cfg.Upstream != "" && cfg.Mirrors[0].Upstream != "" && cfg.Upstream != cfg.Mirrors[0].Upstream {
+		return fmt.Errorf("registry_mirror.upstream (%q) conflicts with registry_mirror.mirrors[0].upstream (%q); set one", cfg.Upstream, cfg.Mirrors[0].Upstream)
+	}
+	if cfg.Port != 0 && cfg.Mirrors[0].Port != 0 && cfg.Port != cfg.Mirrors[0].Port {
+		return fmt.Errorf("registry_mirror.port (%d) conflicts with registry_mirror.mirrors[0].port (%d); set one", cfg.Port, cfg.Mirrors[0].Port)
+	}
 	return nil
+}
+
+// validateRegistryPrefetch checks the prefetch image-reference list.
+func validateRegistryPrefetch(refs []string) error {
+	if len(refs) > maxRegistryPrefetch {
+		return fmt.Errorf("registry_mirror.prefetch: at most %d entries allowed (got %d)", maxRegistryPrefetch, len(refs))
+	}
+	for i, raw := range refs {
+		field := fmt.Sprintf("registry_mirror.prefetch[%d]", i)
+		ref := strings.TrimSpace(raw)
+		if ref == "" {
+			return fmt.Errorf("%s: empty image reference", field)
+		}
+		if err := validateDockerImageRef(field, ref); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateRegistryUpstream enforces an absolute http(s) registry URL.
+func validateRegistryUpstream(field, upstream string) error {
+	u, err := url.Parse(strings.TrimSpace(upstream))
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		return fmt.Errorf("%s: must be an absolute http(s) registry URL (got %q)", field, upstream)
+	}
+	return nil
+}
+
+// RegistryMirrorEntries returns the resolved mirror list (post-defaults);
+// an empty list means the legacy single Docker Hub mirror synthesized at
+// deploy time.
+func (c *Config) RegistryMirrorEntries() []RegistryMirrorEntry {
+	if c == nil || len(c.RegistryMirror.Mirrors) == 0 {
+		return nil
+	}
+	out := make([]RegistryMirrorEntry, len(c.RegistryMirror.Mirrors))
+	copy(out, c.RegistryMirror.Mirrors)
+	return out
+}
+
+// RegistryMirrorPrefetch returns a copy of the image references to preload
+// into container runners via `gh sr images sync`.
+func (c *Config) RegistryMirrorPrefetch() []string {
+	if c == nil || len(c.RegistryMirror.Prefetch) == 0 {
+		return nil
+	}
+	out := make([]string, len(c.RegistryMirror.Prefetch))
+	copy(out, c.RegistryMirror.Prefetch)
+	return out
 }
 
 // NeedsDetection reports whether any host is missing os or arch (and is not local).
