@@ -2,6 +2,7 @@ package registry
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"strings"
 	"testing"
@@ -19,7 +20,7 @@ func TestEffectivePort(t *testing.T) {
 	if got := (Settings{}).EffectivePort(); got != DefaultPort {
 		t.Errorf("zero-value: got %d, want %d", got, DefaultPort)
 	}
-	if got := (Settings{Port: 3001}).EffectivePort(); got != 3001 {
+	if got := (Settings{Mirrors: []MirrorSettings{{Name: "dockerhub", Port: 3001}}}).EffectivePort(); got != 3001 {
 		t.Errorf("explicit port: got %d, want 3001", got)
 	}
 }
@@ -54,9 +55,10 @@ func TestSettingsFromConfig(t *testing.T) {
 	if got == nil {
 		t.Fatalf("enabled: got nil")
 	}
-	if !got.Enabled || got.Port != 6000 || got.BindAddr != "10.0.0.5" ||
+	first := got.first()
+	if !got.Enabled || first.Port != 6000 || got.BindAddr != "10.0.0.5" ||
 		got.StoragePath != "/srv/mirror" || got.Image != "registry:3" ||
-		got.Upstream != "https://quay.io" || got.URLOverride != "http://override:9999" {
+		first.Upstream != "https://quay.io" || got.URLOverride != "http://override:9999" {
 		t.Errorf("fields not copied: %+v", got)
 	}
 
@@ -74,27 +76,27 @@ func TestSettingsFromConfig(t *testing.T) {
 func TestLocalURL(t *testing.T) {
 	t.Parallel()
 
-	s := Settings{Port: 4000}
-	if got := s.localURL("172.17.0.1"); got != "http://172.17.0.1:4000" {
+	s := Settings{Mirrors: []MirrorSettings{{Name: "dockerhub", Port: 4000}}}
+	if got := s.localURL(0, "172.17.0.1"); got != "http://172.17.0.1:4000" {
 		t.Errorf("gateway + auto bind: got %q", got)
 	}
 
 	s.BindAddr = "0.0.0.0"
-	if got := s.localURL("172.17.0.1"); got != "http://172.17.0.1:4000" {
+	if got := s.localURL(0, "172.17.0.1"); got != "http://172.17.0.1:4000" {
 		t.Errorf("0.0.0.0 + gateway: got %q", got)
 	}
-	if got := s.localURL(""); got != "http://127.0.0.1:4000" {
+	if got := s.localURL(0, ""); got != "http://127.0.0.1:4000" {
 		t.Errorf("0.0.0.0 + no gateway: got %q", got)
 	}
 
 	s.BindAddr = "192.168.1.5"
-	if got := s.localURL("172.17.0.1"); got != "http://192.168.1.5:4000" {
+	if got := s.localURL(0, "172.17.0.1"); got != "http://192.168.1.5:4000" {
 		t.Errorf("explicit bind wins over gateway: got %q", got)
 	}
 
 	// Auto bind + no gateway → loopback.
 	s.BindAddr = ""
-	if got := s.localURL(""); got != "http://127.0.0.1:4000" {
+	if got := s.localURL(0, ""); got != "http://127.0.0.1:4000" {
 		t.Errorf("auto + no gateway: got %q", got)
 	}
 }
@@ -109,21 +111,21 @@ func TestResolvedStoragePath_errors(t *testing.T) {
 	// echo $HOME fails.
 	h := newRegistryHost(t, &testutil.MockExecutor{RunErr: errors.New("ssh down")})
 	s := Settings{StoragePath: "$HOME/mirror"}
-	if got, err := s.resolvedStoragePath(h); err == nil || got != "" {
+	if got, err := s.mirrorStoragePath(0, h); err == nil || got != "" {
 		t.Errorf("echo failure: got %q, err %v", got, err)
 	}
 
 	// echo $HOME empty.
 	h = newRegistryHost(t, &testutil.MockExecutor{Output: "\n"})
 	s = Settings{StoragePath: "$HOME/mirror"}
-	if got, err := s.resolvedStoragePath(h); err == nil || got != "" {
+	if got, err := s.mirrorStoragePath(0, h); err == nil || got != "" {
 		t.Errorf("empty $HOME: got %q, err %v", got, err)
 	}
 
 	// $HOME prefix with no suffix → expands to bare home (covers edge case).
 	h = newRegistryHost(t, &testutil.MockExecutor{Output: "/home/op\n"})
 	s = Settings{StoragePath: "$HOME"}
-	if got, err := s.resolvedStoragePath(h); err != nil || got != "/home/op" {
+	if got, err := s.mirrorStoragePath(0, h); err != nil || got != "/home/op" {
 		t.Errorf("$HOME bare: got %q, err %v", got, err)
 	}
 }
@@ -243,7 +245,7 @@ func TestDeploy_explicitBindAddr(t *testing.T) {
 		return "", nil
 	}}
 	var buf strings.Builder
-	if err := deploy(&buf, newRegistryHost(t, mock), Settings{Enabled: true, BindAddr: "10.0.0.5", Port: 6000}); err != nil {
+	if err := deployMirror(&buf, newRegistryHost(t, mock), Settings{Enabled: true, BindAddr: "10.0.0.5", Mirrors: []MirrorSettings{{Name: "dockerhub", Port: 6000}}}, 0); err != nil {
 		t.Fatalf("deploy: %v", err)
 	}
 	if calls != 0 {
@@ -279,7 +281,7 @@ func TestDeploy_gatewayMissingBindsAll(t *testing.T) {
 		}
 		return "", nil
 	}}
-	if err := deploy(&buf, newRegistryHost(t, mock), Settings{Enabled: true}); err != nil {
+	if err := deployMirror(&buf, newRegistryHost(t, mock), Settings{Enabled: true}, 0); err != nil {
 		t.Fatalf("deploy: %v", err)
 	}
 	if !strings.Contains(buf.String(), "docker0 gateway not found") {
@@ -307,7 +309,7 @@ func TestDeploy_mkdirError(t *testing.T) {
 		}
 		return "", nil
 	}}
-	err := deploy(io.Discard, newRegistryHost(t, mock), Settings{Enabled: true})
+	err := deployMirror(io.Discard, newRegistryHost(t, mock), Settings{Enabled: true}, 0)
 	if err == nil || !strings.Contains(err.Error(), "creating registry mirror storage dir") {
 		t.Errorf("expected mkdir error, got %v", err)
 	}
@@ -330,7 +332,7 @@ func TestDeploy_runError(t *testing.T) {
 		}
 		return "", nil
 	}}
-	err := deploy(io.Discard, newRegistryHost(t, mock), Settings{Enabled: true})
+	err := deployMirror(io.Discard, newRegistryHost(t, mock), Settings{Enabled: true}, 0)
 	if err == nil || !strings.Contains(err.Error(), "starting registry mirror container") {
 		t.Errorf("expected run error, got %v", err)
 	}
@@ -356,7 +358,7 @@ func TestDeploy_pullErrorIgnored(t *testing.T) {
 		}
 		return "", nil
 	}}
-	if err := deploy(io.Discard, newRegistryHost(t, mock), Settings{Enabled: true}); err != nil {
+	if err := deployMirror(io.Discard, newRegistryHost(t, mock), Settings{Enabled: true}, 0); err != nil {
 		t.Fatalf("deploy with failing pull: %v", err)
 	}
 	if !ran {
@@ -385,10 +387,11 @@ func TestInspect_runningHealthy(t *testing.T) {
 		}
 		return "", nil
 	}}
-	info, err := Inspect(newRegistryHost(t, mock), Settings{Enabled: true})
-	if err != nil {
-		t.Fatalf("Inspect: %v", err)
+	infos, err := Inspect(newRegistryHost(t, mock), Settings{Enabled: true})
+	if err != nil || len(infos) != 1 {
+		t.Fatalf("Inspect: len=%d err=%v", len(infos), err)
 	}
+	info := infos[0].Info
 	if info.State != "running" || info.Image != "registry:2" {
 		t.Errorf("state/image: %+v", info)
 	}
@@ -422,10 +425,11 @@ func TestInspect_absentNoHealthProbe(t *testing.T) {
 		}
 		return "", nil
 	}}
-	info, err := Inspect(newRegistryHost(t, mock), Settings{Enabled: true})
-	if err != nil {
-		t.Fatalf("Inspect: %v", err)
+	infos, err := Inspect(newRegistryHost(t, mock), Settings{Enabled: true})
+	if err != nil || len(infos) != 1 {
+		t.Fatalf("Inspect: len=%d err=%v", len(infos), err)
 	}
+	info := infos[0].Info
 	if info.State != "" {
 		t.Errorf("State: got %q", info.State)
 	}
@@ -452,10 +456,11 @@ func TestInspect_unhealthyProbe(t *testing.T) {
 		}
 		return "", nil
 	}}
-	info, err := Inspect(newRegistryHost(t, mock), Settings{Enabled: true})
-	if err != nil {
-		t.Fatalf("Inspect: %v", err)
+	infos, err := Inspect(newRegistryHost(t, mock), Settings{Enabled: true})
+	if err != nil || len(infos) != 1 {
+		t.Fatalf("Inspect: len=%d err=%v", len(infos), err)
 	}
+	info := infos[0].Info
 	if info.Healthy {
 		t.Errorf("expected Healthy=false when curl fails")
 	}
@@ -495,10 +500,11 @@ func TestInspect_duGarbage(t *testing.T) {
 		}
 		return "", nil
 	}}
-	info, err := Inspect(newRegistryHost(t, mock), Settings{Enabled: true})
-	if err != nil {
-		t.Fatalf("Inspect: %v", err)
+	infos, err := Inspect(newRegistryHost(t, mock), Settings{Enabled: true})
+	if err != nil || len(infos) != 1 {
+		t.Fatalf("Inspect: len=%d err=%v", len(infos), err)
 	}
+	info := infos[0].Info
 	if info.StorageBytes != 0 {
 		t.Errorf("expected StorageBytes=0 for garbage output, got %d", info.StorageBytes)
 	}
@@ -521,10 +527,11 @@ func TestInspect_urlOverrideSkipsGateway(t *testing.T) {
 		}
 		return "", nil
 	}}
-	info, err := Inspect(newRegistryHost(t, mock), Settings{Enabled: true, URLOverride: "http://override:9999"})
-	if err != nil {
-		t.Fatalf("Inspect: %v", err)
+	infos, err := Inspect(newRegistryHost(t, mock), Settings{Enabled: true, URLOverride: "http://override:9999"})
+	if err != nil || len(infos) != 1 {
+		t.Fatalf("Inspect: len=%d err=%v", len(infos), err)
 	}
+	info := infos[0].Info
 	if info.URL != "http://override:9999" {
 		t.Errorf("URL override: got %q", info.URL)
 	}
@@ -534,33 +541,45 @@ func TestInspect_urlOverrideSkipsGateway(t *testing.T) {
 }
 
 // ----------------------------------------------------------------------------
-// MeasureStorage
+// MirrorStorages
 // ----------------------------------------------------------------------------
 
-func TestMeasureStorage_success(t *testing.T) {
+// mirrorStorageMock answers the du call with `<bytes>\t<path>` lines, the
+// shape MirrorStorages parses (one line per directory, matched back by path).
+func duOutput(total int, path string) string {
+	return fmt.Sprintf("%d\t%s\n", total, path)
+}
+
+func TestMirrorStorages_success(t *testing.T) {
 	t.Parallel()
 	mock := &testutil.MockExecutor{RunFn: func(cmd string) (string, error) {
 		switch {
 		case strings.Contains(cmd, "echo $HOME"):
 			return "/root\n", nil
 		case strings.Contains(cmd, "du -sb"):
-			return "9876543\n", nil
+			return duOutput(9876543, "/root/.gh-sr/registry"), nil
 		}
 		return "", nil
 	}}
-	storage, bytes, err := MeasureStorage(newRegistryHost(t, mock), Settings{Enabled: true})
+	stores, err := MirrorStorages(newRegistryHost(t, mock), Settings{Enabled: true})
 	if err != nil {
-		t.Fatalf("MeasureStorage: %v", err)
+		t.Fatalf("MirrorStorages: %v", err)
 	}
-	if storage != "/root/.gh-sr/registry" {
-		t.Errorf("storage: got %q", storage)
+	if len(stores) != 1 {
+		t.Fatalf("want 1 entry, got %d", len(stores))
 	}
-	if bytes != 9876543 {
-		t.Errorf("bytes: got %d", bytes)
+	if stores[0].Container != ContainerName {
+		t.Errorf("container: got %q", stores[0].Container)
+	}
+	if stores[0].Path != "/root/.gh-sr/registry" {
+		t.Errorf("path: got %q", stores[0].Path)
+	}
+	if stores[0].Bytes != 9876543 {
+		t.Errorf("bytes: got %d", stores[0].Bytes)
 	}
 }
 
-func TestMeasureStorage_duFails(t *testing.T) {
+func TestMirrorStorages_duFails(t *testing.T) {
 	t.Parallel()
 	mock := &testutil.MockExecutor{RunFn: func(cmd string) (string, error) {
 		switch {
@@ -571,19 +590,21 @@ func TestMeasureStorage_duFails(t *testing.T) {
 		}
 		return "", nil
 	}}
-	storage, bytes, err := MeasureStorage(newRegistryHost(t, mock), Settings{Enabled: true})
+	stores, err := MirrorStorages(newRegistryHost(t, mock), Settings{Enabled: true})
 	if err == nil {
 		t.Fatal("expected error when du fails")
 	}
-	if storage != "/root/.gh-sr/registry" {
-		t.Errorf("storage still resolved: got %q", storage)
+	// The resolved paths survive the du failure so the caller can still show
+	// them alongside the error.
+	if len(stores) != 1 || stores[0].Path != "/root/.gh-sr/registry" {
+		t.Errorf("path still resolved: %+v", stores)
 	}
-	if bytes != 0 {
-		t.Errorf("bytes: got %d", bytes)
+	if stores[0].Bytes != 0 {
+		t.Errorf("bytes: got %d", stores[0].Bytes)
 	}
 }
 
-func TestMeasureStorage_garbageBytes(t *testing.T) {
+func TestMirrorStorages_garbageBytes(t *testing.T) {
 	t.Parallel()
 	mock := &testutil.MockExecutor{RunFn: func(cmd string) (string, error) {
 		switch {
@@ -594,24 +615,24 @@ func TestMeasureStorage_garbageBytes(t *testing.T) {
 		}
 		return "", nil
 	}}
-	storage, bytes, err := MeasureStorage(newRegistryHost(t, mock), Settings{Enabled: true})
+	stores, err := MirrorStorages(newRegistryHost(t, mock), Settings{Enabled: true})
 	if err != nil {
-		t.Fatalf("MeasureStorage: %v", err)
+		t.Fatalf("MirrorStorages: %v", err)
 	}
-	if storage != "/root/.gh-sr/registry" || bytes != 0 {
-		t.Errorf("storage=%q bytes=%d err=%v", storage, bytes, err)
+	if stores[0].Path != "/root/.gh-sr/registry" || stores[0].Bytes != 0 {
+		t.Errorf("path=%q bytes=%d err=%v", stores[0].Path, stores[0].Bytes, err)
 	}
 }
 
-func TestMeasureStorage_resolveError(t *testing.T) {
+func TestMirrorStorages_resolveError(t *testing.T) {
 	t.Parallel()
 	mock := &testutil.MockExecutor{RunErr: errors.New("ssh down")}
-	storage, bytes, err := MeasureStorage(newRegistryHost(t, mock), Settings{Enabled: true, StoragePath: "$HOME/m"})
+	stores, err := MirrorStorages(newRegistryHost(t, mock), Settings{Enabled: true, StoragePath: "$HOME/m"})
 	if err == nil {
 		t.Fatal("expected error when $HOME echo fails")
 	}
-	if storage != "" || bytes != 0 {
-		t.Errorf("expected zero storage/bytes on resolve failure, got %q/%d", storage, bytes)
+	if stores != nil {
+		t.Errorf("expected no entries on resolve failure, got %+v", stores)
 	}
 }
 

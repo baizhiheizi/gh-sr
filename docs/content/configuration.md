@@ -149,21 +149,23 @@ Optional section tuning the [local Actions cache server](guides/local-cache.md) 
 | `cache.management_api_key` | Management API key for `gh sr cache prune` (supports `env:VAR` refs). Empty = auto-generate and persist one in the storage dir. |
 | `cache.url_override` | Replace the runner-facing cache URL verbatim (must include the scheme) — escape hatch for exotic topologies. |
 
-### `registry_mirror:` — per-host Docker registry pull-through mirror
+### `registry_mirror:` — per-host Docker registry pull-through mirrors
 
-Optional section tuning the [registry pull-through mirror](guides/registry-mirror.md) (one `gh-sr-registry` container per Linux host, deployed automatically by `gh sr setup` / `up` / `update` / `rebuild`). Every field is optional; the mirror is disabled with `enabled: false`.
+Optional section tuning the [registry pull-through mirrors](guides/registry-mirror.md) (one `gh-sr-registry` container per Linux host plus one `gh-sr-registry-<name>` per extra `mirrors:` entry, deployed automatically by `gh sr setup` / `up` / `update` / `rebuild`). Every field is optional; the whole mirror stack is disabled with `enabled: false`.
 
 | Field | Meaning |
 |---|---|
-| `registry_mirror.enabled` | Deploy and wire the mirror (default **`true`**). `false` keeps direct Docker Hub pulls. |
-| `registry_mirror.port` | Host-side published port (default **5577**). |
-| `registry_mirror.bind_addr` | Host address the mirror binds to. Empty = the **docker0 gateway IP** (containers only); `0.0.0.0` exposes the mirror on all interfaces (doctor warns). |
-| `registry_mirror.storage_path` | Host directory for mirrored layers (`$HOME/...` allowed; default `~/.gh-sr/registry`). |
+| `registry_mirror.enabled` | Deploy and wire the mirrors (default **`true`**). `false` keeps direct Docker Hub pulls. |
+| `registry_mirror.port` | Host-side port the **first** mirror publishes on (default **5577**; also published on `127.0.0.1` for host-side prefetch pulls). |
+| `registry_mirror.bind_addr` | Host address the mirrors bind to. Empty = the **docker0 gateway IP plus loopback** (runner-facing and host-prefetch pulls); `0.0.0.0` exposes every mirror on all interfaces (doctor warns). |
+| `registry_mirror.storage_path` | Host directory for the first mirror's layers (`$HOME/...` allowed; default `~/.gh-sr/registry`). Later mirrors use `<storage_path>-<name>`. |
 | `registry_mirror.image` | Mirror image override (default `registry:2`; pin a digest for reproducible deploys). |
-| `registry_mirror.upstream` | Registry the mirror pulls through (default `https://registry-1.docker.io`). |
-| `registry_mirror.url_override` | Replace the runner-facing mirror URL verbatim (must include the scheme) — escape hatch for exotic topologies. |
+| `registry_mirror.upstream` | Registry the first mirror pulls through (default `https://registry-1.docker.io`). An explicit `mirrors[0].upstream` wins over this legacy key. |
+| `registry_mirror.url_override` | Replace the runner-facing URL of the first mirror verbatim (must include the scheme) — escape hatch for exotic topologies. |
+| `registry_mirror.mirrors` | Optional list (max 8) of pull-through mirrors. `mirrors[0]` **is** the Docker-Hub-facing mirror wired into runner inner dockerds (`daemon.json` `registry-mirrors` — the only per-registry redirection dockerd supports); it inherits the legacy `port`/`upstream` when it sets neither and defaults its name to `dockerhub`. Entries beyond the first need a unique lowercase `name` and an absolute `upstream:` URL, default to ports 5578, 5579, …, and serve host-side prefetch pulls — **dockerd cannot be pointed at a ghcr.io mirror transparently** (moby/moby#41456), so other registries are handled by `prefetch` + `gh sr images sync` instead. Optional `username` + `password_env` (name of an env var — the secret never touches runners.yml) authenticate the pull-through upstream, e.g. a `read:packages` PAT for private GHCR images. |
+| `registry_mirror.prefetch` | Optional list (max 64) of image references that `gh sr images sync` — and an automatic pass after `gh sr up` / `gh sr rebuild` — pulls **once per host** (through the matching mirror when one exists, else directly) and loads into every container runner's inner dockerd (`docker save \| docker exec docker load`), skipping runners that already have the exact image. The canonical use is the gh-aw stack (`ghcr.io/github/gh-aw-firewall/agent`, `gh-aw-mcpg`, …): each version bump costs one WAN fetch per host instead of one per runner. Tag references are restored with their tags; bare digest references (`…@sha256:…`) land their layers in the inner store but cannot be tagged — prefer tags. |
 
-Wiring takes effect at container-create time: after enabling the mirror on an existing pool, run `gh sr rebuild <name>` so runner containers pick up the inner-dockerd `registry-mirrors` config.
+Wiring of the first mirror takes effect at container-create time: after enabling it on an existing pool, run `gh sr rebuild <name>` so runner containers pick up the inner-dockerd `registry-mirrors` config. Deploying a `mirrors:` list for the first time recreates the `gh-sr-registry` container (layout v2 — per-mirror credentials and the loopback publish) on the next `gh sr setup` / `up` / `registry deploy`.
 
 ### `npm_registry:` — npm registry override for runner containers
 

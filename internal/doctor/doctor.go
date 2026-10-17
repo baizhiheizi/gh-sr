@@ -858,42 +858,91 @@ func effectiveBind(s *cache.Settings, h *host.Host) string {
 	return gw
 }
 
-// checkRegistryMirror verifies the per-host Docker registry pull-through
-// mirror is deployed, healthy from the host, reachable from a container-mode
-// runner, and wired into the runner container's env (the inner dockerd only
-// picks up registry-mirrors from daemon.json written at container start).
-// Skipped entirely when the mirror is disabled (runners pull from Docker Hub
-// directly).
+// checkRegistryMirror verifies every per-host Docker registry pull-through
+// mirror is deployed and healthy from the host, that the first (Docker Hub)
+// mirror is reachable from a container-mode runner and wired into the runner
+// container's env (the inner dockerd only picks up registry-mirrors from
+// daemon.json written at container start), and that prefetch-target mirrors
+// are reachable from runners too. Skipped entirely when the mirror section is
+// disabled (runners pull from Docker Hub directly).
 func checkRegistryMirror(w io.Writer, hostName string, h *host.Host, hostRunners []config.RunnerConfig, s *registry.Settings, r *Result) {
 	if s == nil {
 		return
 	}
-	info, err := registry.Inspect(h, *s)
+	mirrors, err := registry.Inspect(h, *s)
 	if err != nil {
 		printLine(w, sevWarn, hostName, fmt.Sprintf("registry: inspect failed: %v", err))
 		r.Warn++
 		return
 	}
-	if info.State == "" {
-		printLine(w, sevWarn, hostName, "registry: enabled but not deployed; run: gh sr registry deploy")
-		r.Warn++
-		return
-	}
-	if !info.Healthy {
-		url := info.URL
-		if url == "" {
-			url = "(no container-reachable URL resolved)"
+	for i, m := range mirrors {
+		// Single-mirror configs keep the historical "registry:" prefix;
+		// multi-mirror output names each mirror.
+		label := "registry"
+		if len(mirrors) > 1 {
+			label = "registry[" + m.Name + "]"
 		}
-		printLine(w, sevFail, hostName, fmt.Sprintf("registry: mirror not healthy at %s; check the mirror container logs: docker logs %s", url, registry.ContainerName))
-		r.Fail++
-		return
+		if m.Info.State == "" {
+			printLine(w, sevWarn, hostName, fmt.Sprintf("%s: enabled but not deployed; run: gh sr registry deploy", label))
+			r.Warn++
+			continue
+		}
+		if !m.Info.Healthy {
+			url := m.Info.URL
+			if url == "" {
+				url = "(no container-reachable URL resolved)"
+			}
+			printLine(w, sevFail, hostName, fmt.Sprintf("%s: mirror not healthy at %s; check the mirror container logs: docker logs %s", label, url, m.Container))
+			r.Fail++
+			continue
+		}
+		printLine(w, sevOK, hostName, fmt.Sprintf("%s: mirror healthy at %s (storage %s)", label, m.Info.URL, m.Info.StoragePath))
+		if i > 0 {
+			// Non-first mirrors have no daemon.json wiring; a runner-side
+			// reachability probe is all doctor can verify.
+			probeMirrorURLFromRunner(w, hostName, h, hostRunners, m.Info.URL, label, r)
+		}
 	}
-	printLine(w, sevOK, hostName, fmt.Sprintf("registry: mirror healthy at %s (storage %s)", info.URL, info.StoragePath))
 	probeRegistryFromRunner(w, hostName, h, hostRunners, s, r)
+	checkOrphanMirrors(w, hostName, h, s, r)
 
 	// A 0.0.0.0 bind means the mirror answers on every host interface.
 	if mirrorEffectiveBind(s, h) == "0.0.0.0" {
 		printLine(w, sevWarn, hostName, "registry: bound to 0.0.0.0 — the mirror is reachable from your LAN; set registry_mirror.bind_addr (e.g. the docker0 gateway IP) in runners.yml")
+		r.Warn++
+	}
+}
+
+// checkOrphanMirrors flags gh-sr-registry* containers on the host that the
+// current registry_mirror.mirrors list no longer configures (an entry that was
+// renamed or deleted). Both Ensure and `gh sr registry remove` iterate only
+// the configured list, so an orphan keeps serving pulls nobody asked for and
+// keeps its storage dir on disk, and neither gh sr disk usage nor
+// `gh sr registry remove --purge-data` can reach it.
+func checkOrphanMirrors(w io.Writer, hostName string, h *host.Host, s *registry.Settings, r *Result) {
+	configured := make(map[string]struct{})
+	for _, n := range s.ContainerNames() {
+		configured[n] = struct{}{}
+	}
+	out, err := h.Run("docker ps -a --format '{{.Names}}' 2>/dev/null || true")
+	if err != nil {
+		return // Best-effort: never turn an unreadable container list into a FAIL.
+	}
+	var orphans []string
+	for _, line := range strings.Split(out, "\n") {
+		name := strings.TrimSpace(line)
+		if name != registry.ContainerName && !strings.HasPrefix(name, registry.ContainerNamePrefix) {
+			continue
+		}
+		if _, ok := configured[name]; !ok {
+			orphans = append(orphans, name)
+		}
+	}
+	sort.Strings(orphans)
+	for _, name := range orphans {
+		printLine(w, sevWarn, hostName, fmt.Sprintf(
+			"registry: %s runs on this host but is not in registry_mirror.mirrors; remove it with: docker rm -f %s (its storage dir keeps occupying disk)",
+			name, name))
 		r.Warn++
 	}
 }
@@ -946,6 +995,42 @@ func probeRegistryFromRunner(w io.Writer, hostName string, h *host.Host, hostRun
 		r.Fail++
 	default:
 		printLine(w, sevOK, hostName, fmt.Sprintf("registry: reachable from runner container %s at %s", cname, url))
+	}
+}
+
+// probeMirrorURLFromRunner curls one mirror's /v2/ endpoint from inside the
+// first container-mode runner on the host. Used for the prefetch-only mirrors
+// (index > 0): they have no daemon.json wiring to verify, but `gh sr images
+// sync` still pulls through them from the host and a blocked INPUT chain is
+// worth surfacing.
+func probeMirrorURLFromRunner(w io.Writer, hostName string, h *host.Host, hostRunners []config.RunnerConfig, url, label string, r *Result) {
+	if url == "" {
+		return
+	}
+	inst := ""
+	for i := range hostRunners {
+		if hostRunners[i].IsContainerMode() && len(hostRunners[i].InstanceNames()) > 0 {
+			inst = hostRunners[i].InstanceNames()[0]
+			break
+		}
+	}
+	if inst == "" {
+		return
+	}
+	cname := runner.ContainerDockerName(inst)
+	script := fmt.Sprintf("curl -fsS -m 5 -o /dev/null -w %%{http_code} %s/v2/ || echo PROBE_FAIL", strings.TrimSuffix(url, "/"))
+	out, err := h.Run(fmt.Sprintf(
+		"docker exec %s sh -c %s 2>/dev/null",
+		runner.QuoteContainerName(cname), hostshell.PosixSingleQuote(script)))
+	switch {
+	case err != nil:
+		printLine(w, sevWarn, hostName, fmt.Sprintf("%s: could not probe from runner container %s: %v", label, cname, err))
+		r.Warn++
+	case strings.Contains(strings.TrimSpace(out), "PROBE_FAIL") || strings.TrimSpace(out) != "200":
+		printLine(w, sevWarn, hostName, fmt.Sprintf("%s: not reachable from runner container %s at %s (host INPUT firewall); not fatal — prefetch pulls run on the host", label, cname, url))
+		r.Warn++
+	default:
+		printLine(w, sevOK, hostName, fmt.Sprintf("%s: reachable from runner container %s at %s", label, cname, url))
 	}
 }
 
