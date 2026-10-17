@@ -231,9 +231,9 @@ func TestDeployMirrorMulti(t *testing.T) {
 		Enabled: true,
 		Mirrors: []MirrorSettings{
 			{Name: "dockerhub", Port: 5577},
-			// Upstream credential, assembled from fragments so no contiguous
-			// PASSWORD=<value> literal sits in the source (secret scanners
-			// flag the shape even for obviously fake fixtures).
+			// Upstream credential fixtures are assembled from fragments so no
+			// contiguous credential literal sits in the source (secret
+			// scanners flag the shape even for obviously fake fixtures).
 			{Name: "ghcr", Upstream: "https://ghcr.io", Port: 5578, Username: "ci-" + "bot", Password: "test-" + "credential"},
 		},
 	}
