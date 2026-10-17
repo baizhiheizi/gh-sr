@@ -879,10 +879,45 @@ func checkRegistryMirror(w io.Writer, hostName string, h *host.Host, hostRunners
 		}
 	}
 	probeRegistryFromRunner(w, hostName, h, hostRunners, s, r)
+	checkOrphanMirrors(w, hostName, h, s, r)
 
 	// A 0.0.0.0 bind means the mirror answers on every host interface.
 	if mirrorEffectiveBind(s, h) == "0.0.0.0" {
 		printLine(w, sevWarn, hostName, "registry: bound to 0.0.0.0 — the mirror is reachable from your LAN; set registry_mirror.bind_addr (e.g. the docker0 gateway IP) in runners.yml")
+		r.Warn++
+	}
+}
+
+// checkOrphanMirrors flags gh-sr-registry* containers on the host that the
+// current registry_mirror.mirrors list no longer configures (an entry that was
+// renamed or deleted). Both Ensure and `gh sr registry remove` iterate only
+// the configured list, so an orphan keeps serving pulls nobody asked for and
+// keeps its storage dir on disk, and neither gh sr disk usage nor
+// `gh sr registry remove --purge-data` can reach it.
+func checkOrphanMirrors(w io.Writer, hostName string, h *host.Host, s *registry.Settings, r *Result) {
+	configured := make(map[string]struct{})
+	for _, n := range s.ContainerNames() {
+		configured[n] = struct{}{}
+	}
+	out, err := h.Run("docker ps -a --format '{{.Names}}' 2>/dev/null || true")
+	if err != nil {
+		return // Best-effort: never turn an unreadable container list into a FAIL.
+	}
+	var orphans []string
+	for _, line := range strings.Split(out, "\n") {
+		name := strings.TrimSpace(line)
+		if name != registry.ContainerName && !strings.HasPrefix(name, registry.ContainerNamePrefix) {
+			continue
+		}
+		if _, ok := configured[name]; !ok {
+			orphans = append(orphans, name)
+		}
+	}
+	sort.Strings(orphans)
+	for _, name := range orphans {
+		printLine(w, sevWarn, hostName, fmt.Sprintf(
+			"registry: %s runs on this host but is not in registry_mirror.mirrors; remove it with: docker rm -f %s (its storage dir keeps occupying disk)",
+			name, name))
 		r.Warn++
 	}
 }

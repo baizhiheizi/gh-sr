@@ -44,9 +44,9 @@ func ImagesSync(w io.Writer, cfg *config.Config, filterHost string) error {
 				}
 			}
 			res, err := registry.SyncPrefetch(w, h, s, prefetch, containers)
-			if res.Pulled+res.Skipped > 0 || res.Loaded+res.Cached > 0 {
-				fmt.Fprintf(w, "  images: %d pulled (%d already on host), %d loaded into runners (%d cached)\n",
-					res.Pulled, res.Skipped, res.Loaded, res.Cached)
+			if res.Pulled > 0 || res.Loaded+res.Cached > 0 {
+				fmt.Fprintf(w, "  images: %d pulled, %d loaded into runners (%d already cached there)\n",
+					res.Pulled, res.Loaded, res.Cached)
 			}
 			return err
 		}()
@@ -117,8 +117,8 @@ func syncPrefetchAfterStart(w io.Writer, cfg *config.Config, runners []config.Ru
 				fmt.Fprintf(w, "Warning: image sync on %s: %v\n", g.name, err)
 				return
 			}
-			fmt.Fprintf(w, "  images: %d pulled (%d already on host), %d loaded into runners (%d cached)\n",
-				res.Pulled, res.Skipped, res.Loaded, res.Cached)
+			fmt.Fprintf(w, "  images: %d pulled, %d loaded into runners (%d already cached there)\n",
+				res.Pulled, res.Loaded, res.Cached)
 		}()
 	}
 	return nil

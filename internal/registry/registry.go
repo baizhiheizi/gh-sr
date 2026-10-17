@@ -132,7 +132,7 @@ func (s Settings) EffectivePort() int {
 	return s.port()
 }
 
-// containerName returns the Docker container name of mirror i: the first
+// ContainerName returns the Docker container name of mirror i: the first
 // mirror keeps the legacy gh-sr-registry name; others are
 // gh-sr-registry-<name>.
 func (s Settings) containerName(i int) string {
@@ -140,6 +140,20 @@ func (s Settings) containerName(i int) string {
 		return ContainerName
 	}
 	return ContainerNamePrefix + s.Mirrors[i].Name
+}
+
+// ContainerNames returns the container names of every configured mirror, in
+// deploy order. Callers reconcile on-host gh-sr-registry* containers against
+// this list to spot mirrors that were removed from runners.yml: nothing in the
+// Ensure/Remove path iterates anything but the configured list, so a dropped
+// entry would otherwise keep running (and keep its storage dir) forever.
+func (s Settings) ContainerNames() []string {
+	list := s.mirrorList()
+	out := make([]string, len(list))
+	for i := range list {
+		out[i] = s.containerName(i)
+	}
+	return out
 }
 
 // RunnerURL returns the first mirror's URL to inject into runners' inner
@@ -231,37 +245,49 @@ func (s Settings) localURL(i int, gatewayIP string) string {
 	return fmt.Sprintf("http://127.0.0.1:%d", s.mirrorPort(i))
 }
 
-// resolvedStoragePath expands the $HOME prefix (the default storage path is
-// expressed relative to the remote shell's home) into an absolute path —
-// Docker bind mounts and mkdir do not undergo shell expansion. This is the
-// FIRST mirror's storage (compat: existing deployments keep their path);
-// later mirrors append -<name>.
-func (s Settings) resolvedStoragePath(h *host.Host) (string, error) {
-	return s.mirrorStoragePath(0, h)
-}
-
 // mirrorStoragePath resolves the on-host storage dir of mirror i: the base
 // path for the first mirror, <base>-<name> for the rest.
 func (s Settings) mirrorStoragePath(i int, h *host.Host) (string, error) {
-	p := s.StoragePath
-	if p == "" {
-		p = DefaultStoragePath
-	}
-	if i > 0 {
-		p += "-" + s.Mirrors[i].Name
-	}
-	if !strings.HasPrefix(p, "$HOME") {
-		return p, nil
-	}
-	out, err := h.Run("echo $HOME")
+	paths, err := s.mirrorStoragePaths(h)
 	if err != nil {
-		return "", fmt.Errorf("resolving home dir: %w", err)
+		return "", err
 	}
-	home := strings.TrimSpace(out)
-	if home == "" {
-		return "", fmt.Errorf("resolving home dir: empty $HOME")
+	if i < 0 || i >= len(paths) {
+		return "", fmt.Errorf("mirror index %d out of range (%d mirror(s) configured)", i, len(paths))
 	}
-	return home + p[len("$HOME"):], nil
+	return paths[i], nil
+}
+
+// mirrorStoragePaths resolves the on-host storage dir of every configured
+// mirror in one pass, expanding the $HOME prefix (the default storage path is
+// expressed relative to the remote shell's home) into an absolute path —
+// Docker bind mounts and mkdir do not undergo shell expansion. $HOME is
+// resolved once for the whole list rather than once per mirror.
+func (s Settings) mirrorStoragePaths(h *host.Host) ([]string, error) {
+	base := s.StoragePath
+	if base == "" {
+		base = DefaultStoragePath
+	}
+	if strings.HasPrefix(base, "$HOME") {
+		out, err := h.Run("echo $HOME")
+		if err != nil {
+			return nil, fmt.Errorf("resolving home dir: %w", err)
+		}
+		home := strings.TrimSpace(out)
+		if home == "" {
+			return nil, fmt.Errorf("resolving home dir: empty $HOME")
+		}
+		base = home + base[len("$HOME"):]
+	}
+	list := s.mirrorList()
+	paths := make([]string, len(list))
+	for i := range list {
+		paths[i] = base
+		if i > 0 {
+			paths[i] = base + "-" + list[i].Name
+		}
+	}
+	return paths, nil
 }
 
 // containerState reports "running", "exists" (present but not running) or ""
@@ -435,6 +461,12 @@ func Inspect(h *host.Host, s Settings) ([]MirrorStatus, error) {
 	if s.URLOverride == "" && (s.BindAddr == "" || s.BindAddr == "0.0.0.0") {
 		gw, _ = cache.ResolveGatewayIP(h)
 	}
+	// Resolve every mirror's storage dir up front: one $HOME round-trip for
+	// the whole list instead of one per mirror.
+	storages, err := s.mirrorStoragePaths(h)
+	if err != nil {
+		return nil, err
+	}
 	for i := range s.mirrorList() {
 		cname := s.containerName(i)
 		info := StatusInfo{}
@@ -450,10 +482,7 @@ func Inspect(h *host.Host, s Settings) ([]MirrorStatus, error) {
 			}
 		}
 
-		storage, err := s.mirrorStoragePath(i, h)
-		if err != nil {
-			return out, err
-		}
+		storage := storages[i]
 		info.StoragePath = storage
 		info.URL = s.mirrorRunnerURL(i, gw)
 
@@ -493,32 +522,54 @@ type StatusInfo struct {
 	Healthy      bool // GET /v2/ answered 200
 }
 
-// MeasureStorage reports the resolved on-host storage path of the first
-// mirror and the total bytes across every mirror's directory (0 when the dirs
-// do not exist yet or are empty).
-func MeasureStorage(h *host.Host, s Settings) (string, int64, error) {
-	storage, err := s.resolvedStoragePath(h)
+// MirrorStorage is one mirror's storage directory and its apparent size on
+// disk (0 when the dir does not exist yet or is empty).
+type MirrorStorage struct {
+	Container string // gh-sr-registry / gh-sr-registry-<name>
+	Path      string
+	Bytes     int64
+}
+
+// MirrorStorages reports every configured mirror's storage directory and size.
+// Each directory is reported against its own container so callers (gh sr disk
+// usage) never attribute another mirror's bytes to the first mirror's path.
+//
+// One `du` covers the whole list — every path is single-quoted individually,
+// because quoting the joined string would hand du a single argument
+// containing spaces and silently measure nothing — and each output line is
+// matched back to its directory, so a mirror whose dir is absent simply
+// reports 0 instead of shifting the other mirrors' sizes.
+func MirrorStorages(h *host.Host, s Settings) ([]MirrorStorage, error) {
+	paths, err := s.mirrorStoragePaths(h)
 	if err != nil {
-		return "", 0, err
+		return nil, err
 	}
-	var total int64
-	dirs := []string{storage}
-	for i := 1; i < len(s.Mirrors); i++ {
-		p, err := s.mirrorStoragePath(i, h)
-		if err != nil {
-			return storage, total, err
+	list := s.mirrorList()
+	out := make([]MirrorStorage, len(list))
+	quoted := make([]string, len(paths))
+	for i := range paths {
+		out[i] = MirrorStorage{Container: s.containerName(i), Path: paths[i]}
+		quoted[i] = hostshell.PosixSingleQuote(paths[i])
+	}
+	duOut, err := h.Run("du -sb " + strings.Join(quoted, " ") + " 2>/dev/null")
+	if err != nil {
+		return out, err
+	}
+	byPath := make(map[string]int64, len(paths))
+	for _, line := range strings.Split(duOut, "\n") {
+		// du prints "<bytes>\t<path>" per argument.
+		tab := strings.Index(line, "\t")
+		if tab <= 0 {
+			continue
 		}
-		dirs = append(dirs, p)
-	} // One du over all mirror dirs: -s per dir would cost a round-trip each.
-	out, err := h.Run(fmt.Sprintf("du -sb -c %s 2>/dev/null | tail -1 | cut -f1",
-		hostshell.PosixSingleQuote(strings.Join(dirs, " "))))
-	if err != nil {
-		return storage, total, err
+		if n, perr := strconv.ParseInt(strings.TrimSpace(line[:tab]), 10, 64); perr == nil {
+			byPath[line[tab+1:]] = n
+		}
 	}
-	if n, perr := strconv.ParseInt(strings.TrimSpace(out), 10, 64); perr == nil {
-		total = n
+	for i := range out {
+		out[i].Bytes = byPath[out[i].Path]
 	}
-	return storage, total, nil
+	return out, nil
 }
 
 // Remove stops and deletes every mirror container. purgeData also deletes the

@@ -17,12 +17,17 @@ import (
 )
 
 // SyncResult counts what one host's sync did.
+//
+// There is deliberately no host-side "skipped" counter: `docker pull` must
+// contact the registry to learn whether a :latest moved, so a host-side pull
+// always costs a manifest request and there is no meaningful already-present
+// case to count. The skip that does save real work is the per-runner one
+// (Cached), matched by image ID.
 type SyncResult struct {
-	Pulled  int // images fetched on the host (via mirror or direct)
-	Skipped int // host-side pulls avoided: image already in the host store
-	Loaded  int // docker save | docker load transfers into runner containers
-	Cached  int // runner containers that already had the image and were skipped
-	Failed  int // pull or load failures (reported inline; sync continues)
+	Pulled int // images fetched on the host (via mirror or direct)
+	Loaded int // docker save | docker load transfers into runner containers
+	Cached int // runner containers that already had the image and were skipped
+	Failed int // pull or load failures (reported inline; sync continues)
 }
 
 // SyncPrefetch pulls refs once on the host and loads them into every named
@@ -38,17 +43,13 @@ func SyncPrefetch(w io.Writer, h *host.Host, s *Settings, refs []string, runnerC
 		if ref == "" {
 			continue
 		}
-		id, pulled, err := syncPullOnHost(w, h, s, ref)
+		id, err := syncPullOnHost(w, h, s, ref)
 		if err != nil {
 			res.Failed++
 			pullErrs = append(pullErrs, fmt.Sprintf("%s: %v", ref, err))
 			continue
 		}
-		if pulled {
-			res.Pulled++
-		} else {
-			res.Skipped++
-		}
+		res.Pulled++
 		for _, cname := range runnerContainers {
 			ok, err := syncIntoRunner(h, cname, ref, id)
 			if err != nil {
@@ -74,9 +75,8 @@ func SyncPrefetch(w io.Writer, h *host.Host, s *Settings, refs []string, runnerC
 // its image ID. It pulls through the matching mirror (127.0.0.1:<port>, plain
 // HTTP — dockerd treats loopback as insecure) when one is configured for the
 // ref's registry and the bind allows it, so the upstream is fetched through
-// the pull-through cache; otherwise it pulls the ref directly. pulled reports
-// whether a network fetch happened (false = the image was already present).
-func syncPullOnHost(w io.Writer, h *host.Host, s *Settings, ref string) (imageID string, pulled bool, err error) {
+// the pull-through cache; otherwise it pulls the ref directly.
+func syncPullOnHost(w io.Writer, h *host.Host, s *Settings, ref string) (string, error) {
 	pullRef := ref
 	via := ""
 	if s != nil {
@@ -95,7 +95,7 @@ func syncPullOnHost(w io.Writer, h *host.Host, s *Settings, ref string) (imageID
 	if _, err := h.Run("docker pull " + hostshell.PosixSingleQuote(pullRef)); err != nil {
 		// Already-present images make `docker pull` a no-op, not an error —
 		// reaching here means the pull genuinely failed.
-		return "", false, fmt.Errorf("docker pull %s: %w", pullRef, err)
+		return "", fmt.Errorf("docker pull %s: %w", pullRef, err)
 	}
 	// Fetch the image ID from the canonical ref; when the pull went through a
 	// mirror the fetched image carries the mirror-prefixed name, so retag it
@@ -103,19 +103,19 @@ func syncPullOnHost(w io.Writer, h *host.Host, s *Settings, ref string) (imageID
 	inspectRef := pullRef
 	if via != "" {
 		if _, err := h.Run("docker tag " + hostshell.PosixSingleQuote(pullRef) + " " + hostshell.PosixSingleQuote(ref)); err != nil {
-			return "", false, fmt.Errorf("docker tag %s -> %s: %w", pullRef, ref, err)
+			return "", fmt.Errorf("docker tag %s -> %s: %w", pullRef, ref, err)
 		}
 		inspectRef = ref
 	}
 	idOut, err := h.Run("docker image inspect --format='{{.Id}}' " + hostshell.PosixSingleQuote(inspectRef))
 	if err != nil {
-		return "", false, fmt.Errorf("inspecting %s on host: %w", inspectRef, err)
+		return "", fmt.Errorf("inspecting %s on host: %w", inspectRef, err)
 	}
 	id := strings.TrimSpace(idOut)
 	if id == "" {
-		return "", false, fmt.Errorf("inspecting %s on host: empty image ID", inspectRef)
+		return "", fmt.Errorf("inspecting %s on host: empty image ID", inspectRef)
 	}
-	return id, true, nil
+	return id, nil
 }
 
 // syncIntoRunner loads the image (by ID — docker save/load does not preserve

@@ -48,7 +48,7 @@ registry_mirror:
 
 1. **Pulls each prefetch image once** — through the matching mirror when one exists (`127.0.0.1:5578/github/gh-aw-mcpg:latest`, so the fetch is cached in the mirror and survives host image prunes), else directly from the upstream.
 2. **Streams it into every runner's inner dockerd** (`docker save | docker exec -i <runner> docker load`), skipping runners that already have the exact image by ID.
-3. Reports per-host counts (`pulled / loaded / cached`); failures are per-image and never take runners down.
+3. Reports per-host counts (`pulled` / `loaded` / `already cached in runners`); failures are per-image and never take runners down. There is no host-side "skipped" count on purpose — `docker pull` must contact the registry to learn whether a `:latest` moved, so a host-side pull always costs a manifest request; the skip that saves real work is the per-runner one, matched by image ID.
 
 Each image is therefore fetched from the WAN **at most once per host** — the difference between N× and 1× on every gh-aw version bump. Two caveats: the sync is *eager* (a brand-new tag benefits only after the next sync), and tag references are restored with their tags while bare digest references land their layers without a taggable name — prefer tags in the prefetch list.
 
@@ -75,9 +75,10 @@ gh sr images sync                 # pull prefetch images once per host, load int
 - **WARN** — enabled but not deployed: run `gh sr registry deploy`;
 - **WARN** — bound to `0.0.0.0`: set `registry_mirror.bind_addr`;
 - **WARN** — a prefetch-only mirror (`registry[<name>]`) is not reachable from a runner container (non-fatal — prefetch pulls run on the host);
+- **WARN** — a `gh-sr-registry*` container runs on the host but is no longer in `registry_mirror.mirrors` (an entry that was renamed or deleted). `Ensure` and `gh sr registry remove` only walk the configured list, so an orphan keeps serving pulls nobody asked for and keeps its storage dir on disk; remove it with `docker rm -f <name>` (plus `rm -rf` of its storage dir);
 - **WARN** — a runner container predates the mirror (no `GH_SR_REGISTRY_MIRROR` env, baked at create): recreate with `gh sr rebuild <name>`.
 
-`gh sr disk usage` includes the per-host mirror storage directory as a `gh-sr-registry` row.
+`gh sr disk usage` reports one row per mirror — the container name against **its own** storage directory (`gh-sr-registry` → `<storage_path>`, `gh-sr-registry-<name>` → `<storage_path>-<name>`), so no mirror's layers are attributed to another mirror's path.
 
 ## When this pays off
 
