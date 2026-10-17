@@ -58,3 +58,10 @@ Every runner container on the host has its own inner Docker image cache (preserv
 - any workflow pulling job service images (`postgres`, `redis`, ...) on runners that haven't seen the tag yet.
 
 On metered WANs (per-GB proxies, LTE/5G uplinks) that is the difference between N× and 1× the bytes for every image refresh.
+
+## Measuring the savings
+
+Two signals are available without any external traffic tracker:
+
+- **`gh sr disk usage`** — the `gh-sr-registry` row (and `gh-sr-registry-<name>` rows for extra mirrors) is the mirrored-layer total; its growth between two points in time is the WAN traffic the mirror absorbed. The `volume` rows show the shared cache volumes' growth the same way.
+- **Mirror access logs** — `docker logs gh-sr-registry-ghcr` prints an access log line per request; after a `gh sr images sync`, every `GET /v2/…` served there (rather than a fresh upstream fetch in `gh sr registry status`'s storage growth) is a pull the runners did not make independently. To verify the "fetched at most once per host" acceptance criterion, clear the mirror's storage (`gh sr registry remove --purge-data` + redeploy), run one sync, and confirm the storage grows by exactly one copy of the prefetch set no matter how many runners the host has.

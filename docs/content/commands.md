@@ -147,7 +147,7 @@ gh sr hosts --host mac-mini
 
 ## Disk usage and cleanup
 
-Runner workspaces under `~/.gh-sr/runners/<instance>` accumulate job checkouts (`_work`), temp files (`_temp`), and — for container/agentic runners — a persistent inner Docker cache (`docker-data`). Per-job hooks wipe runtime state inside the container but **never** prune the image cache, so disk use can grow large over time. On Linux hosts the `gh sr disk usage` table also includes two host-level rows for the optional services: `gh-sr-cache` (local Actions cache server storage) and `gh-sr-registry` (pull-through mirror layers).
+Runner workspaces under `~/.gh-sr/runners/<instance>` accumulate job checkouts (`_work`), temp files (`_temp`), and — for container/agentic runners — a persistent inner Docker cache (`docker-data`). Per-job hooks wipe runtime state inside the container but **never** prune the image cache, so disk use can grow large over time. On Linux hosts the `gh sr disk usage` table also includes host-level rows for the optional services and shared caches: `gh-sr-cache` (local Actions cache server storage), `gh-sr-registry` (pull-through mirror layers), and one `volume` row per `gh-sr-*` Docker volume (the `shared_caches` volumes — npm, `~/.cache`, gradle, pub, mise, android-sdk — plus any older gh-sr volumes). Volume sizes are measured through a throwaway `busybox` container (the data under `/var/lib/docker/volumes` is only readable via the daemon; the busybox pull itself is served by the Docker Hub mirror), so watching these rows grow is the local proxy for how many WAN bytes the shared caches are saving.
 
 ```bash
 gh sr disk usage                    # breakdown per host/instance
