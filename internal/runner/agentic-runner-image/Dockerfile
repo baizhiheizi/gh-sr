@@ -230,13 +230,23 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 # Shared cache volume mount points (runners.yml shared_caches): docker create
-# mounts the gh-sr-npm-cache / gh-sr-runner-cache named volumes here. Baking
-# the empty dirs with runner ownership makes the volume copy-up on first mount
-# inherit the right owner; the entrypoint re-asserts ownership on every start
-# regardless. Placed after the heavy layers so adding it never invalidates the
-# apt/toolcache build cache.
-RUN mkdir -p /home/runner/.npm /home/runner/.cache \
-    && chown runner:runner /home/runner/.npm /home/runner/.cache
+# mounts the gh-sr-npm-cache / gh-sr-runner-cache / gh-sr-gradle-cache /
+# gh-sr-pub-cache / gh-sr-mise-data / gh-sr-android-sdk named volumes here.
+# Baking the empty dirs with runner ownership makes the volume copy-up on
+# first mount inherit the right owner; the entrypoint re-asserts ownership on
+# every start regardless. gradle/pub/mise mount at the tools' own default
+# cache locations (GRADLE_USER_HOME / PUB_CACHE / MISE_DATA_DIR), so no env
+# var is needed; the Android SDK mount at /opt/android-sdk is accompanied by
+# an ANDROID_SDK_ROOT export from the entrypoint. The intermediate
+# /home/runner/.local and /home/runner/.local/share are chowned too — leaving
+# them root-owned would break unrelated job-time writes into ~/.local
+# (e.g. `pip install --user` landing in ~/.local/lib). Placed after the heavy
+# layers so adding entries never invalidates the apt/toolcache build cache.
+RUN mkdir -p /home/runner/.npm /home/runner/.cache /home/runner/.gradle \
+        /home/runner/.pub-cache /home/runner/.local/share/mise /opt/android-sdk \
+    && chown runner:runner /home/runner/.npm /home/runner/.cache /home/runner/.gradle \
+        /home/runner/.pub-cache /home/runner/.local /home/runner/.local/share \
+        /home/runner/.local/share/mise /opt/android-sdk
 
 # Runner state directory (bind-mounted from host at runtime)
 RUN mkdir -p /runner-state && chown runner:runner /runner-state

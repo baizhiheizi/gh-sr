@@ -127,6 +127,33 @@ type SharedCachesConfig struct {
 	// the XDG cache dir where job-time download caches land (pinned
 	// Chrome-for-Testing builds, pip, …).
 	HomeCache *bool `yaml:"home_cache,omitempty"`
+	// Gradle shares one GRADLE_USER_HOME at /home/runner/.gradle (volume
+	// gh-sr-gradle-cache — the variable's default location, so no env var
+	// is needed). Gradle guards cross-process cache access with file locks
+	// inside GRADLE_USER_HOME, so N runner containers building
+	// simultaneously share the dependency and wrapper-distribution caches
+	// instead of each re-downloading them over the WAN.
+	Gradle *bool `yaml:"gradle,omitempty"`
+	// Pub shares one Dart/Flutter package cache at /home/runner/.pub-cache
+	// (volume gh-sr-pub-cache — PUB_CACHE's default location on Linux, so
+	// no env var is needed). pub writes each package version atomically,
+	// making the cache safe for concurrent writers.
+	Pub *bool `yaml:"pub,omitempty"`
+	// Mise shares one tool-install dir at /home/runner/.local/share/mise
+	// (volume gh-sr-mise-data — MISE_DATA_DIR's default location, so no
+	// env var is needed). The mise download cache already lives under
+	// ~/.cache and is therefore shared by HomeCache. Every container runs
+	// as the same uid (runner, 1001), so the multi-user permission issues
+	// of a shared mise data dir do not apply here; a concurrent install of
+	// the same tool+version is last-writer-wins and a fresh install heals
+	// any partial race.
+	Mise *bool `yaml:"mise,omitempty"`
+	// AndroidSDK opts into sharing one Android SDK at /opt/android-sdk
+	// (volume gh-sr-android-sdk), with ANDROID_SDK_ROOT/ANDROID_HOME
+	// exported to jobs via the runner .env. Off by default (opt-in): the
+	// SDK is large, and pointing ANDROID_SDK_ROOT at a shared volume
+	// changes behavior for repos that install their own SDK at job time.
+	AndroidSDK *bool `yaml:"android_sdk,omitempty"`
 }
 
 // ContainerToolcacheEntry is one tool-cache bake item: a tarball URL extracted
@@ -428,6 +455,33 @@ func (c *Config) SharedHomeCacheEnabled() bool {
 	return c.SharedCachesEnabled() && boolPtrOrTrue(c.SharedCaches.HomeCache)
 }
 
+// SharedGradleCacheEnabled reports whether the shared Gradle cache volume
+// should be mounted at /home/runner/.gradle. Defaults to true while shared
+// caches are on.
+func (c *Config) SharedGradleCacheEnabled() bool {
+	return c.SharedCachesEnabled() && boolPtrOrTrue(c.SharedCaches.Gradle)
+}
+
+// SharedPubCacheEnabled reports whether the shared pub cache volume should be
+// mounted at /home/runner/.pub-cache. Defaults to true while shared caches are on.
+func (c *Config) SharedPubCacheEnabled() bool {
+	return c.SharedCachesEnabled() && boolPtrOrTrue(c.SharedCaches.Pub)
+}
+
+// SharedMiseDataEnabled reports whether the shared mise data volume should be
+// mounted at /home/runner/.local/share/mise. Defaults to true while shared
+// caches are on.
+func (c *Config) SharedMiseDataEnabled() bool {
+	return c.SharedCachesEnabled() && boolPtrOrTrue(c.SharedCaches.Mise)
+}
+
+// SharedAndroidSDKEnabled reports whether the shared Android SDK volume should
+// be mounted at /opt/android-sdk (with ANDROID_SDK_ROOT exported to jobs).
+// Defaults to false — the sub-flag is opt-in, unlike its siblings.
+func (c *Config) SharedAndroidSDKEnabled() bool {
+	return c.SharedCachesEnabled() && boolPtrOrFalse(c.SharedCaches.AndroidSDK)
+}
+
 // boolPtrOrTrue resolves a *bool defaulting to true (the shared-caches
 // sub-flags are opt-out, like their parent section).
 func boolPtrOrTrue(b *bool) bool {
@@ -435,6 +489,12 @@ func boolPtrOrTrue(b *bool) bool {
 		return true
 	}
 	return *b
+}
+
+// boolPtrOrFalse resolves a *bool defaulting to false (the opt-in
+// shared-caches sub-flags).
+func boolPtrOrFalse(b *bool) bool {
+	return b != nil && *b
 }
 
 // validateToolcacheDir enforces a relative, normalized, traversal-free path
@@ -856,6 +916,20 @@ func (c *Config) applyDefaults() {
 	if c.SharedCaches.HomeCache == nil {
 		enabled := true
 		c.SharedCaches.HomeCache = &enabled
+	}
+	// gradle / pub / mise follow the same opt-out convention; android_sdk
+	// stays nil (= false) — it is deliberately opt-in.
+	if c.SharedCaches.Gradle == nil {
+		enabled := true
+		c.SharedCaches.Gradle = &enabled
+	}
+	if c.SharedCaches.Pub == nil {
+		enabled := true
+		c.SharedCaches.Pub = &enabled
+	}
+	if c.SharedCaches.Mise == nil {
+		enabled := true
+		c.SharedCaches.Mise = &enabled
 	}
 	for name, h := range c.Hosts {
 		if IsLocalAddr(h.Addr) {

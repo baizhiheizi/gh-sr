@@ -728,6 +728,101 @@ func TestPrintAgenticFailures_MixedSeverities(t *testing.T) {
 
 // TestCheckShellOK_OkBranch verifies checkShellOK returns true, prints the
 // OK line, and leaves r.Fail untouched when trimmed stdout matches want.
+// TestCheckContainerExtras pins the drift guard for the shared-cache volume
+// mounts: a container carrying every wanted mount reports OK, and one created
+// before the new sub-flags were enabled warns per missing volume with the
+// rebuild hint — including the gradle / pub / mise / android-sdk additions.
+func TestCheckContainerExtras(t *testing.T) {
+	t.Parallel()
+	hostRunners := []config.RunnerConfig{
+		{Name: "aw", Host: "h1", Repo: "o/r", Profile: "agentic", Count: 1},
+	}
+	allExtras := containerExtras{
+		SharedNPMCache:    true,
+		SharedRunnerCache: true,
+		SharedGradleCache: true,
+		SharedPubCache:    true,
+		SharedMiseData:    true,
+		SharedAndroidSDK:  true,
+	}
+
+	t.Run("all mounts present is OK", func(t *testing.T) {
+		t.Parallel()
+		h := host.NewHost("h1", config.HostConfig{OS: "linux", Addr: "local"})
+		h.SetConn(&testutil.MockExecutor{
+			RunFn: func(cmd string) (string, error) {
+				if strings.Contains(cmd, "range .Mounts") {
+					return "gh-sr-npm-cache /home/runner/.npm\n" +
+						"gh-sr-runner-cache /home/runner/.cache\n" +
+						"gh-sr-gradle-cache /home/runner/.gradle\n" +
+						"gh-sr-pub-cache /home/runner/.pub-cache\n" +
+						"gh-sr-mise-data /home/runner/.local/share/mise\n" +
+						"gh-sr-android-sdk /opt/android-sdk\n", nil
+				}
+				return "", nil
+			},
+		})
+		var buf bytes.Buffer
+		r := Result{}
+		checkContainerExtras(&buf, "h1", h, hostRunners, allExtras, &r)
+		if r.Warn != 0 {
+			t.Fatalf("expected no warnings, got %d: %s", r.Warn, buf.String())
+		}
+		if !strings.Contains(buf.String(), "extras:") {
+			t.Fatalf("expected an extras row, got: %s", buf.String())
+		}
+	})
+
+	t.Run("missing new volumes warn with rebuild hint", func(t *testing.T) {
+		t.Parallel()
+		h := host.NewHost("h1", config.HostConfig{OS: "linux", Addr: "local"})
+		h.SetConn(&testutil.MockExecutor{
+			RunFn: func(cmd string) (string, error) {
+				if strings.Contains(cmd, "range .Mounts") {
+					// Container predates the new sub-flags: only the two
+					// original volumes are mounted.
+					return "gh-sr-npm-cache /home/runner/.npm\n" +
+						"gh-sr-runner-cache /home/runner/.cache\n", nil
+				}
+				return "", nil
+			},
+		})
+		var buf bytes.Buffer
+		r := Result{}
+		checkContainerExtras(&buf, "h1", h, hostRunners, allExtras, &r)
+		for _, missing := range []string{
+			"gh-sr-gradle-cache /home/runner/.gradle",
+			"gh-sr-pub-cache /home/runner/.pub-cache",
+			"gh-sr-mise-data /home/runner/.local/share/mise",
+			"gh-sr-android-sdk /opt/android-sdk",
+		} {
+			if !strings.Contains(buf.String(), "missing shared volume "+missing) {
+				t.Fatalf("expected warning for %q, got: %s", missing, buf.String())
+			}
+		}
+		if !strings.Contains(buf.String(), "gh sr rebuild") {
+			t.Fatalf("expected rebuild hint, got: %s", buf.String())
+		}
+	})
+
+	t.Run("nothing configured is a no-op", func(t *testing.T) {
+		t.Parallel()
+		h := host.NewHost("h1", config.HostConfig{OS: "linux", Addr: "local"})
+		h.SetConn(&testutil.MockExecutor{
+			RunFn: func(cmd string) (string, error) {
+				t.Fatalf("no probes should run when nothing is configured, got: %s", cmd)
+				return "", nil
+			},
+		})
+		var buf bytes.Buffer
+		r := Result{}
+		checkContainerExtras(&buf, "h1", h, hostRunners, containerExtras{}, &r)
+		if buf.Len() != 0 || r.Warn != 0 {
+			t.Fatalf("expected no output, got: %s", buf.String())
+		}
+	})
+}
+
 func TestCheckShellOK_OkBranch(t *testing.T) {
 	t.Parallel()
 	h := host.NewHost("h1", config.HostConfig{OS: "linux", Addr: "local"})

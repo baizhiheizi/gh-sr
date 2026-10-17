@@ -214,6 +214,10 @@ func applyContainerImageExtras(mgr *runner.Manager, cfg *config.Config) {
 		mgr.NPMRegistry = ""
 		mgr.SharedNPMCache = false
 		mgr.SharedRunnerCache = false
+		mgr.SharedGradleCache = false
+		mgr.SharedPubCache = false
+		mgr.SharedMiseData = false
+		mgr.SharedAndroidSDK = false
 		return
 	}
 	mgr.ContainerImageBaseImage = cfg.ContainerRunnerImageBaseImage()
@@ -228,6 +232,10 @@ func applyContainerImageExtras(mgr *runner.Manager, cfg *config.Config) {
 	mgr.NPMRegistry = cfg.NPMRegistry
 	mgr.SharedNPMCache = cfg.SharedNPMCacheEnabled()
 	mgr.SharedRunnerCache = cfg.SharedHomeCacheEnabled()
+	mgr.SharedGradleCache = cfg.SharedGradleCacheEnabled()
+	mgr.SharedPubCache = cfg.SharedPubCacheEnabled()
+	mgr.SharedMiseData = cfg.SharedMiseDataEnabled()
+	mgr.SharedAndroidSDK = cfg.SharedAndroidSDKEnabled()
 }
 
 // Setup installs and configures runners, mirroring the gh sr setup command.
