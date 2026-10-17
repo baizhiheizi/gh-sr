@@ -228,4 +228,20 @@ gh sr rebuild backend-1      # Rebuild a single runner
 - Runner state (the `.runner` registration file, work directories, and Docker layer cache inside the container) is preserved across the rebuild, so runners stay registered with GitHub and do not consume a new registration token.
 - `runner_mode: native` runners are skipped with a per-runner notice (no error).
 - Changes that affect the container runtime (MTU, dockerd start timeout, bootstrap retry count, ...) take effect at container-create time, so a rebuild is required to pick them up.
+- With `registry_mirror.prefetch` configured, the rebuild is followed by an automatic `gh sr images sync` pass — the fresh containers' inner image stores are repopulated from one host-side pull per image.
+
+**What survives a rebuild (and what does not):**
+
+| State | Survives? | Where it lives |
+|---|---|---|
+| GitHub registration (`.runner`) | ✅ | `runner-state` bind mount |
+| Inner Docker layer cache (job images) | ✅ | `runner-state/docker-data` bind mount |
+| Job workspaces (`_work`, `_temp`) | ✅ | `runner-state` bind mount |
+| Shared caches: npm, `~/.cache`, Gradle, pub, mise, Android SDK (`shared_caches`) | ✅ | Docker named volumes (`gh-sr-npm-cache`, …) — shared by every runner on the host |
+| Prefetch images (gh-aw stack, …) | ✅ reloaded | one host-side pull per image, `docker load`-ed into each runner (see [registry mirrors](guides/registry-mirror.md)) |
+| `container_runner_image.toolcache` bake | ✅ | baked into the new image; sources cached on the host (below) |
+| Toolcache installs beyond the bake (runtime `setup-*` downloads) | ❌ | container writable layer — re-downloaded by the first job that needs them |
+| Anything else in the container's writable layer | ❌ | lost by design (that is what a rebuild means) |
+
+**Rebuild cost on a metered WAN:** the toolcache bake is a single `RUN` layer, so any list edit, base-image bump, or builder-cache prune re-runs the whole loop. gh-sr therefore keeps a content-addressed copy of every `toolcache` tarball in `~/.gh-sr/toolcache-src/<sha256(url)[:16]>` on each host: a rebuild downloads each URL **once, ever**, and every later build reads the cached blob (the bake falls back to a direct download only when the pre-sync failed). `rm -rf ~/.gh-sr/toolcache-src` reclaims the space.
 
