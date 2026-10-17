@@ -231,7 +231,7 @@ func TestDeployMirrorMulti(t *testing.T) {
 		Enabled: true,
 		Mirrors: []MirrorSettings{
 			{Name: "dockerhub", Port: 5577},
-			{Name: "ghcr", Upstream: "https://ghcr.io", Port: 5578, Username: "ci-bot", Password: "pat-token"},
+			{Name: "ghcr", Upstream: "https://ghcr.io", Port: 5578, Username: "ci-bot", Password: "test-credential"},
 		},
 	}
 	if err := Ensure(io.Discard, newRegistryHost(t, mock), s); err != nil {
@@ -250,7 +250,7 @@ func TestDeployMirrorMulti(t *testing.T) {
 		"-e 'REGISTRY_PROXY_REMOTEURL=https://registry-1.docker.io'",
 		"-e 'REGISTRY_PROXY_REMOTEURL=https://ghcr.io'",
 		"-e 'REGISTRY_PROXY_USERNAME=ci-bot'",
-		"-e 'REGISTRY_PROXY_PASSWORD=pat-token'",
+		"-e 'REGISTRY_PROXY_PASSWORD=test-credential'",
 	} {
 		if !strings.Contains(all, want) {
 			t.Errorf("missing %q in deploy calls:\n%s", want, all)
@@ -263,7 +263,7 @@ func TestDeployMirrorMulti(t *testing.T) {
 // config synthesizes exactly one Docker Hub mirror.
 func TestSettingsFromConfigMulti(t *testing.T) {
 	// Not parallel: t.Setenv.
-	t.Setenv("GHCR_SYNC_PAT", "secret-pat")
+	t.Setenv("GH_SR_TEST_MIRROR_CRED", "plain-test-credential")
 
 	cfg := &config.Config{}
 	cfg.RegistryMirror.Enabled = boolPtrTrue()
@@ -276,13 +276,13 @@ func TestSettingsFromConfigMulti(t *testing.T) {
 	cfg.RegistryMirror.Enabled = boolPtrTrue()
 	cfg.RegistryMirror.Mirrors = []config.RegistryMirrorEntry{
 		{Name: "hub"},
-		{Name: "ghcr", Upstream: "https://ghcr.io", Port: 5578, Username: "bot", PasswordEnv: "GHCR_SYNC_PAT"},
+		{Name: "ghcr", Upstream: "https://ghcr.io", Port: 5578, Username: "bot", PasswordEnv: "GH_SR_TEST_MIRROR_CRED"},
 	}
 	s = SettingsFromConfig(cfg)
 	if s == nil || len(s.Mirrors) != 2 {
 		t.Fatalf("multi config: got %+v", s)
 	}
-	if s.Mirrors[1].Password != "secret-pat" {
+	if s.Mirrors[1].Password != "plain-test-credential" {
 		t.Errorf("password_env not resolved: got %q", s.Mirrors[1].Password)
 	}
 }
