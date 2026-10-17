@@ -286,7 +286,7 @@ func Up(w io.Writer, cfg *config.Config, mgr *runner.Manager, filterHost, filter
 	applyContainerImageExtras(mgr, cfg)
 	cacheSet := cacheSettings(cfg)
 	registrySet := registrySettings(cfg)
-	return runPerHostParallel(w, cfg, runners, func(w io.Writer, h *host.Host, rc config.RunnerConfig) error {
+	err = runPerHostParallel(w, cfg, runners, func(w io.Writer, h *host.Host, rc config.RunnerConfig) error {
 		if rc.IsContainerMode() {
 			if err := ensureCacheForHost(w, h, cacheSet); err != nil {
 				return err
@@ -301,6 +301,13 @@ func Up(w io.Writer, cfg *config.Config, mgr *runner.Manager, filterHost, filter
 		}
 		return mgr.Start(h, rc)
 	})
+	if err != nil {
+		return err
+	}
+	// Best-effort prefetch pass once every container is up: registry_mirror
+	// .prefetch images are pulled once per host and loaded into the runners'
+	// inner dockerds (no-op without prefetch entries).
+	return syncPrefetchAfterStart(w, cfg, runners)
 }
 
 // Down stops runners.
@@ -368,7 +375,7 @@ func RebuildImage(w io.Writer, cfg *config.Config, mgr *runner.Manager, filterHo
 	}
 	cacheSet := cacheSettings(cfg)
 	registrySet := registrySettings(cfg)
-	return runPerHostParallel(w, cfg, containerRunners, func(w io.Writer, h *host.Host, rc config.RunnerConfig) error {
+	err = runPerHostParallel(w, cfg, containerRunners, func(w io.Writer, h *host.Host, rc config.RunnerConfig) error {
 		if err := ensureCacheForHost(w, h, cacheSet); err != nil {
 			return err
 		}
@@ -378,6 +385,13 @@ func RebuildImage(w io.Writer, cfg *config.Config, mgr *runner.Manager, filterHo
 		fmt.Fprintf(w, "Rebuilding image for %s on %s...\n", rc.Name, rc.Host)
 		return mgr.RebuildImage(h, rc)
 	})
+	if err != nil {
+		return err
+	}
+	// Rebuild recreated every container — the inner image stores are empty
+	// again. Prefetch repopulates them from one host-side pull per image
+	// (no-op without registry_mirror.prefetch entries).
+	return syncPrefetchAfterStart(w, cfg, containerRunners)
 }
 
 // Update removes, sets up, and starts runners again.
@@ -409,6 +423,9 @@ func Update(w io.Writer, cfg *config.Config, mgr *runner.Manager, filterHost, fi
 		}
 		return mgr.Start(h, rc)
 	}); err != nil {
+		return err
+	}
+	if err := syncPrefetchAfterStart(w, cfg, runners); err != nil {
 		return err
 	}
 

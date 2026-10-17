@@ -44,12 +44,22 @@
 # registry_mirror:
 #   enabled: true                     # default true on Linux hosts; set false to opt out
 #   port: 5577                        # host port for the mirror API (built-in default; override on collision)
-#   # bind_addr: 172.17.0.1           # default: docker0 gateway IP (containers can reach it;
-#   #                                 # 0.0.0.0 works but exposes the mirror to your LAN)
+#   # bind_addr: 172.17.0.1           # default: docker0 gateway IP + loopback (containers and
+#   #                                 # host-side prefetch pulls); 0.0.0.0 exposes it to your LAN
 #   # storage_path: ~/.gh-sr/registry # mirrored image layers on the host
 #   # upstream: https://registry-1.docker.io  # registry the mirror pulls through
 #   # image: registry:2               # pin a digest for reproducible deploys
 #   # url_override: http://10.0.0.5:5577  # escape hatch: force the runner-facing URL
+#   # Extra pull-through mirrors (dockerd can only mirror Docker Hub transparently;
+#   # other registries pair a mirror with the prefetch sync below — gh sr images sync):
+#   # mirrors:
+#   #   - name: ghcr                  # container gh-sr-registry-ghcr, port 5578
+#   #     upstream: https://ghcr.io
+#   #     # username: ci-bot          # optional: private GHCR
+#   #     # password_env: GHCR_PAT    #   PAT read from the environment, never stored here
+#   # prefetch:                       # pulled once per host, loaded into every runner
+#   #   - ghcr.io/github/gh-aw-firewall/agent:latest
+#   #   - ghcr.io/github/gh-aw-mcpg:latest
 +
 # Optional: npm registry override for container-mode runners. Written to the
 # runner user's ~/.npmrc (npm/npx/pnpm/bun all read it) so package installs

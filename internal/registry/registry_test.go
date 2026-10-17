@@ -29,7 +29,7 @@ func TestRunnerURL_precedence(t *testing.T) {
 		t.Errorf("override: got %q", got)
 	}
 
-	s = Settings{Enabled: true, BindAddr: "192.168.1.5", Port: 3001}
+	s = Settings{Enabled: true, BindAddr: "192.168.1.5", Mirrors: []MirrorSettings{{Name: "dockerhub", Port: 3001}}}
 	if got := s.RunnerURL(h); got != "http://192.168.1.5:3001" {
 		t.Errorf("explicit bind: got %q", got)
 	}
