@@ -60,6 +60,22 @@ type Manager struct {
 	// (runners.yml shared_caches.home_cache) for job-time download caches
 	// (pinned Chrome-for-Testing builds, pip, …).
 	SharedRunnerCache bool
+	// SharedGradleCache mounts gh-sr-gradle-cache at /home/runner/.gradle
+	// (runners.yml shared_caches.gradle), so Gradle dependency and wrapper
+	// caches are paid once per host and survive rebuilds.
+	SharedGradleCache bool
+	// SharedPubCache mounts gh-sr-pub-cache at /home/runner/.pub-cache
+	// (runners.yml shared_caches.pub) — one Dart/Flutter package cache
+	// per host.
+	SharedPubCache bool
+	// SharedMiseData mounts gh-sr-mise-data at /home/runner/.local/share/mise
+	// (runners.yml shared_caches.mise), so mise tool installs are shared per
+	// host instead of re-downloaded per container.
+	SharedMiseData bool
+	// SharedAndroidSDK mounts gh-sr-android-sdk at /opt/android-sdk and
+	// exports ANDROID_SDK_ROOT to jobs (runners.yml shared_caches.android_sdk,
+	// opt-in). One Android SDK per host survives rebuilds.
+	SharedAndroidSDK bool
 	// ContainerMTU, when > 0, forces the inner/outer Docker MTU for container-mode runners
 	// (overriding host egress MTU auto-detection). From runners.yml
 	// container_runner_image.mtu; set by ops before container setup. 0 = auto-detect.

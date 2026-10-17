@@ -433,6 +433,41 @@ func TestAgenticRunnerEntrypointNPMRegistry(t *testing.T) {
 	}
 }
 
+// TestAgenticRunnerEntrypointSharedCaches pins the extended shared-cache
+// wiring: the entrypoint re-asserts runner ownership on every new mount point
+// (gradle / pub / mise / android-sdk), the Dockerfile pre-creates them
+// runner-owned (so volume copy-up inherits the owner), and the Android SDK
+// env survives the `su -` login-shell reset via the .env + RUNNER_ENV pair —
+// the same delivery mechanism CUSTOM_ACTIONS_RESULTS_URL uses.
+func TestAgenticRunnerEntrypointSharedCaches(t *testing.T) {
+	t.Parallel()
+	chownLine := `chown -R runner:runner /home/runner/.npm /home/runner/.cache /home/runner/.gradle \`
+	if !strings.Contains(agenticRunnerEntrypoint, chownLine) {
+		t.Fatalf("entrypoint should chown the new mount points, got:\n%s", agenticRunnerEntrypoint)
+	}
+	for _, want := range []string{
+		`/home/runner/.pub-cache`,
+		`/home/runner/.local/share/mise`,
+		`/opt/android-sdk`,
+	} {
+		if !strings.Contains(agenticRunnerEntrypoint, want) {
+			t.Fatalf("entrypoint should reference %q, got:\n%s", want, agenticRunnerEntrypoint)
+		}
+		if !strings.Contains(agenticRunnerDockerfile, want) {
+			t.Fatalf("Dockerfile should pre-create %q, got:\n%s", want, agenticRunnerDockerfile)
+		}
+	}
+	for _, want := range []string{
+		`echo "ANDROID_SDK_ROOT=${GH_SR_ANDROID_SDK_ROOT}"`,
+		`echo "ANDROID_HOME=${GH_SR_ANDROID_SDK_ROOT}"`,
+		`ANDROID_SDK_ROOT='${GH_SR_ANDROID_SDK_ROOT}' ANDROID_HOME='${GH_SR_ANDROID_SDK_ROOT}'`,
+	} {
+		if !strings.Contains(agenticRunnerEntrypoint, want) {
+			t.Fatalf("entrypoint should propagate the Android SDK env via .env + RUNNER_ENV (%q), got:\n%s", want, agenticRunnerEntrypoint)
+		}
+	}
+}
+
 // TestAgenticRunnerJobHooksReset verifies the per-job reset hooks perform the
 // deterministic teardown (containers, networks, /tmp/gh-aw) using the rootless-era
 // vocabulary (awmg-/awf-/gh-aw names; gh-aw-mcpg + firewall-stack ancestors — the
@@ -961,8 +996,7 @@ func TestNPMRegistryDockerCreateArg(t *testing.T) {
 
 // TestSharedCacheDockerCreateArgs pins the shared-caches volume wiring: each
 // enabled cache becomes a -v <volume>:<mount> line with the canonical names,
-// a nil Manager emits nothing, and the two caches are independently
-// switchable.
+// a nil Manager emits nothing, and each cache is independently switchable.
 func TestSharedCacheDockerCreateArgs(t *testing.T) {
 	t.Parallel()
 	if got := (*Manager)(nil).sharedCacheDockerCreateArgs(); got != "" {
@@ -978,6 +1012,43 @@ func TestSharedCacheDockerCreateArgs(t *testing.T) {
 	got = (&Manager{SharedNPMCache: true, SharedRunnerCache: true}).sharedCacheDockerCreateArgs()
 	if !strings.Contains(got, "-v gh-sr-npm-cache:/home/runner/.npm") || !strings.Contains(got, "-v gh-sr-runner-cache:/home/runner/.cache") {
 		t.Fatalf("both enabled should emit both volumes, got %q", got)
+	}
+
+	// The gradle/pub/mise volumes mount at the tools' own default cache
+	// locations (GRADLE_USER_HOME / PUB_CACHE / MISE_DATA_DIR), so no env
+	// var accompanies them.
+	got = (&Manager{SharedGradleCache: true, SharedPubCache: true, SharedMiseData: true}).sharedCacheDockerCreateArgs()
+	for _, want := range []string{
+		"-v gh-sr-gradle-cache:/home/runner/.gradle",
+		"-v gh-sr-pub-cache:/home/runner/.pub-cache",
+		"-v gh-sr-mise-data:/home/runner/.local/share/mise",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("gradle/pub/mise enabled should emit %q, got %q", want, got)
+		}
+	}
+	if strings.Contains(got, "gh-sr-npm-cache") || strings.Contains(got, "gh-sr-runner-cache") || strings.Contains(got, "gh-sr-android-sdk") {
+		t.Fatalf("gradle/pub/mise must not mount unrelated volumes, got %q", got)
+	}
+
+	got = (&Manager{SharedAndroidSDK: true}).sharedCacheDockerCreateArgs()
+	if !strings.Contains(got, "-v gh-sr-android-sdk:/opt/android-sdk") {
+		t.Fatalf("android sdk enabled should emit its volume, got %q", got)
+	}
+}
+
+// TestAndroidSDKDockerCreateArg pins the Android SDK env contract: enabling
+// the shared volume bakes GH_SR_ANDROID_SDK_ROOT=<mount> (the entrypoint
+// propagates it into the runner .env because `su -` wipes docker -e vars),
+// and a disabled volume emits nothing.
+func TestAndroidSDKDockerCreateArg(t *testing.T) {
+	t.Parallel()
+	if got := androidSDKDockerCreateArg(false); got != "" {
+		t.Fatalf("disabled android sdk should omit env, got %q", got)
+	}
+	got := androidSDKDockerCreateArg(true)
+	if !strings.Contains(got, "-e GH_SR_ANDROID_SDK_ROOT=/opt/android-sdk") {
+		t.Fatalf("got %q", got)
 	}
 }
 

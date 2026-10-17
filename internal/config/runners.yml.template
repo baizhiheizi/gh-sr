@@ -32,7 +32,7 @@
 #   # image: ghcr.io/falcondev-oss/github-actions-cache-server:latest  # pin a digest for reproducibility
 #   # management_api_key: env:CACHE_MGMT_KEY  # env ref; enables `gh sr cache prune` delete operations
 #   # url_override: http://10.0.0.5:3000/  # escape hatch: force the runner-facing URL
-+
+#
 # Optional: Docker registry pull-through mirror (one per Linux host,
 # auto-deployed as a gh-sr-registry container by `gh sr up`/`gh sr setup`).
 # Container-mode runners' inner Docker pulls Docker Hub images through it, so
@@ -60,7 +60,7 @@
 #   # prefetch:                       # pulled once per host, loaded into every runner
 #   #   - ghcr.io/github/gh-aw-firewall/agent:latest
 #   #   - ghcr.io/github/gh-aw-mcpg:latest
-+
+#
 # Optional: npm registry override for container-mode runners. Written to the
 # runner user's ~/.npmrc (npm/npx/pnpm/bun all read it) so package installs
 # come from a mirror reachable without the WAN proxy — e.g. on China-network
@@ -69,14 +69,19 @@
 # npm_registry: https://registry.npmmirror.com
 #
 # Optional: shared cache volumes mounted into every container runner on a
-# host (defaults on). One npm cacache + one ~/.cache shared by all runners:
-# cold caches are paid once per host and survive rebuilds. The .toolcache is
-# NOT shared (it is seeded by the container_runner_image.toolcache bake).
+# host (defaults on). One npm cacache, ~/.cache, Gradle, pub and mise dir
+# shared by all runners: cold caches are paid once per host and survive
+# rebuilds. The .toolcache is NOT shared (it is seeded by the
+# container_runner_image.toolcache bake). The Android SDK is opt-in (large).
 #
 # shared_caches:
 #   enabled: true                     # master switch, default true
 #   npm: true                         # gh-sr-npm-cache at /home/runner/.npm
 #   home_cache: true                  # gh-sr-runner-cache at /home/runner/.cache
+#   gradle: true                      # gh-sr-gradle-cache at /home/runner/.gradle
+#   pub: true                         # gh-sr-pub-cache at /home/runner/.pub-cache
+#   mise: true                        # gh-sr-mise-data at /home/runner/.local/share/mise
+#   android_sdk: false                # gh-sr-android-sdk at /opt/android-sdk (opt-in)
 hosts:
   # Example hosts (os and arch are auto-detected over SSH -- you only need addr):
   #

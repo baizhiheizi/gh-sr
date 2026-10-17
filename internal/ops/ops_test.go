@@ -135,6 +135,10 @@ func TestGroupRunnersByHost(t *testing.T) {
 func TestApplyContainerImageExtras(t *testing.T) {
 	t.Parallel()
 
+	// boolPtr mirrors the config package's test helper: shared_caches fields
+	// are *bool, and the opt-out/opt-in cases need explicit pointers.
+	boolPtr := func(b bool) *bool { return &b }
+
 	t.Run("nil manager is no-op", func(t *testing.T) {
 		t.Parallel()
 		// Must not panic.
@@ -174,6 +178,41 @@ func TestApplyContainerImageExtras(t *testing.T) {
 		}
 		if mgr.ContainerImageExtraApt[0] != "sqlite3" || mgr.ContainerImageExtraApt[1] != "ffmpeg" {
 			t.Errorf("got %v", mgr.ContainerImageExtraApt)
+		}
+		// Zero-value Config: shared caches default on (unlike cache/registry,
+		// which need an explicit applyDefaults-set Enabled) and android_sdk
+		// stays opt-in off.
+		if !mgr.SharedNPMCache || !mgr.SharedRunnerCache {
+			t.Errorf("npm/home caches should default on, got npm=%v home=%v", mgr.SharedNPMCache, mgr.SharedRunnerCache)
+		}
+		if !mgr.SharedGradleCache || !mgr.SharedPubCache || !mgr.SharedMiseData {
+			t.Errorf("gradle/pub/mise caches should default on, got gradle=%v pub=%v mise=%v", mgr.SharedGradleCache, mgr.SharedPubCache, mgr.SharedMiseData)
+		}
+		if mgr.SharedAndroidSDK {
+			t.Error("android sdk must default off")
+		}
+	})
+
+	t.Run("shared caches opt-outs and android opt-in propagate", func(t *testing.T) {
+		t.Parallel()
+		mgr := &runner.Manager{}
+		cfg := &config.Config{
+			SharedCaches: config.SharedCachesConfig{
+				Enabled:    boolPtr(true),
+				NPM:        boolPtr(false),
+				HomeCache:  boolPtr(false),
+				Gradle:     boolPtr(false),
+				Pub:        boolPtr(false),
+				Mise:       boolPtr(false),
+				AndroidSDK: boolPtr(true),
+			},
+		}
+		applyContainerImageExtras(mgr, cfg)
+		if mgr.SharedNPMCache || mgr.SharedRunnerCache || mgr.SharedGradleCache || mgr.SharedPubCache || mgr.SharedMiseData {
+			t.Errorf("opted-out caches must stay off, got %+v", mgr)
+		}
+		if !mgr.SharedAndroidSDK {
+			t.Error("android_sdk: true must reach the Manager")
 		}
 	})
 }
