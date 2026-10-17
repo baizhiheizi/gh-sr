@@ -21,7 +21,7 @@
 # Run:   see internal/runner/container.go
 
 ARG FORK_RUNNER_IMAGE
-FROM ${FORK_RUNNER_IMAGE}
+FROM ${FORK_RUNNER_IMAGE} AS base-with-tools
 
 # The fork base ends with `USER runner`; every build step below needs root
 # (apt-get, keyrings, chown). Runtime must stay root too: entrypoint.sh starts
@@ -137,6 +137,42 @@ RUN mkdir -p /usr/local/lib/docker/cli-plugins /tmp/compose \
     && rm -rf /tmp/compose \
     && docker compose version
 
+# ── Tool-cache bake stage (throwaway) ─────────────────────────────────────
+# The source tarballs live in the build context and are GBs-scale (the Flutter
+# entry alone is ~1.6 GB). COPYing them puts those bytes into a persisted layer,
+# and deleting them in a later layer cannot reclaim layer bytes — so a
+# single-stage bake would ship a second, complete copy of every tarball
+# alongside the extracted tool cache. Baking in a throwaway stage that inherits
+# the same base layers and copying ONLY the extracted tool cache forward keeps
+# the final image the size it was before the host-side source cache existed.
+FROM base-with-tools AS toolcache-bake
+USER root
+COPY toolcache-blobs/ /tmp/toolcache-blobs/
+COPY toolcache-extra.txt /tmp/toolcache-extra.txt
+RUN mkdir -p /home/runner/.toolcache \
+    && while read -r url dir complete strip local; do \
+        [ -n "$url" ] || continue; \
+        [ -n "$complete" ] || complete="$dir.complete"; \
+        [ -n "$local" ] || local="-"; \
+        if [ "$local" != "-" ] && [ -s "/tmp/toolcache-blobs/$local" ]; then \
+            cp "/tmp/toolcache-blobs/$local" /tmp/toolcache.tar; \
+        else \
+            curl -fsSL --retry 8 --retry-all-errors --retry-delay 20 --connect-timeout 20 --speed-limit 10240 --speed-time 60 --max-time 1800 "$url" -o /tmp/toolcache.tar; \
+        fi \
+        && mkdir -p "/home/runner/.toolcache/$dir" "/home/runner/.toolcache/$(dirname "$complete")" \
+        && case "$url" in \
+             *.tar.xz) tar -xJf /tmp/toolcache.tar --strip-components=${strip:-0} -C "/home/runner/.toolcache/$dir" ;; \
+             *) tar -xzf /tmp/toolcache.tar --strip-components=${strip:-0} -C "/home/runner/.toolcache/$dir" ;; \
+           esac \
+        && touch "/home/runner/.toolcache/$complete" \
+        || exit 1; \
+    done < /tmp/toolcache-extra.txt \
+    && chown -R runner:runner /home/runner/.toolcache
+
+# ── Final image ───────────────────────────────────────────────────────────
+# Resumes from the same base layers; only the baked tool cache is carried over.
+FROM base-with-tools
+USER root
 # Tool cache — must NOT live under /opt/* because gh-aw's compiled AWF invocation
 # (see repo-assist.lock.yml) intentionally SKIPS mounting any RUNNER_TOOL_CACHE
 # whose path matches `/opt/*` to avoid leaking the rest of /opt (e.g. /opt/gh-aw
@@ -157,22 +193,30 @@ RUN mkdir -p /home/runner/.toolcache && chown runner:runner /home/runner/.toolca
     && ln -s /home/runner/.toolcache /opt/hostedtoolcache
 
 # Optional tool-cache bake (runners.yml container_runner_image.toolcache; empty
-# file = no-op). Each line is "<tarball-url> <dir> [complete] [strip]" — paths
-# relative to /home/runner/.toolcache. The tarball is extracted into <dir> and a
-# zero-byte marker is written at <complete> (default "<dir>.complete") —
-# setup-ruby & co. treat that marker as "already installed" and skip their
-# runtime download (GitHub-hosted images pre-seed rubies the same way). The
-# explicit <complete> form matters for self-wrapping archives: ruby-builder
-# tarballs ship a top-level x64/, so their entry is dir "Ruby/<ver>" + complete
+# file = no-op). Each line is "<tarball-url> <dir> [complete] [strip] [local]"
+# — paths relative to /home/runner/.toolcache, plus an optional fifth field:
+# the name of a blob pre-downloaded into the build context's toolcache-blobs/
+# by gh-sr's host-side source cache (~/.gh-sr/toolcache-src/<sha256(url)[:16]>;
+# issue #559). The tarball is extracted into <dir> and a zero-byte marker is
+# written at <complete> (default "<dir>.complete") — setup-ruby & co. treat
+# that marker as "already installed" and skip their runtime download
+# (GitHub-hosted images pre-seed rubies the same way). The explicit <complete>
+# form matters for self-wrapping archives: ruby-builder tarballs ship a
+# top-level x64/, so their entry is dir "Ruby/<ver>" + complete
 # "Ruby/<ver>/x64.complete", yielding Ruby/<ver>/x64/bin/ruby. <strip> is the
 # tar --strip-components count (default 0): strip 1 unwraps a single top-level
 # version directory so the archive extracts as the bare tool dir — the
 # canonical case is an Adoptium JDK tarball (jdk-<v>+<b>/) with dir
 # "jdk-temurin-17" + strip 1, so consumers probing <toolcache>/jdk-temurin-17
-# need not know the version. Legacy 3-field lines parse with strip 0.
-# Both tar.gz and tar.xz archives are supported, picked by URL suffix (xz
-# covers e.g. Flutter stable, which ships tar.xz only; xz-utils is in
-# apt-packages-core.txt).
+# need not know the version. Legacy 3-field lines parse with strip 0 and no
+# local blob. Both tar.gz and tar.xz archives are supported, picked by URL
+# suffix (xz covers e.g. Flutter stable, which ships tar.xz only; xz-utils is
+# in apt-packages-core.txt).
+# A cached blob (fifth field present AND the file exists) is copied from the
+# context instead of downloaded — a rebuild after ANY list edit, base-image
+# bump, or builder-cache prune then re-extracts from local disk instead of
+# re-downloading every tarball (the bake is one RUN layer, so Docker cannot
+# partially reuse it). Anything else falls back to the WAN download below.
 # Downloads retry hard: build egress rides the same flaky upstream that breaks
 # job-time downloads, but here a failure is loud and attended (gh sr rebuild
 # can simply be re-run) instead of surfacing as repeated unattended CI failures —
@@ -202,21 +246,11 @@ RUN mkdir -p /home/runner/.toolcache && chown runner:runner /home/runner/.toolca
 # future nested dir. Chowning the root once keeps every level runner-owned, so a
 # bake miss degrades to a normal runtime install (see the "Runtime install
 # fallback preserved" scenario in openspec/specs/container-runner-image/spec.md).
-COPY toolcache-extra.txt /tmp/toolcache-extra.txt
-RUN while read -r url dir complete strip; do \
-        [ -n "$url" ] || continue; \
-        [ -n "$complete" ] || complete="$dir.complete"; \
-        curl -fsSL --retry 8 --retry-all-errors --retry-delay 20 --connect-timeout 20 --speed-limit 10240 --speed-time 60 --max-time 1800 "$url" -o /tmp/toolcache.tar \
-        && mkdir -p "/home/runner/.toolcache/$dir" "/home/runner/.toolcache/$(dirname "$complete")" \
-        && case "$url" in \
-             *.tar.xz) tar -xJf /tmp/toolcache.tar --strip-components=${strip:-0} -C "/home/runner/.toolcache/$dir" ;; \
-             *) tar -xzf /tmp/toolcache.tar --strip-components=${strip:-0} -C "/home/runner/.toolcache/$dir" ;; \
-           esac \
-        && touch "/home/runner/.toolcache/$complete" \
-        || exit 1; \
-    done < /tmp/toolcache-extra.txt \
-    && chown -R runner:runner /home/runner/.toolcache \
-    && rm -f /tmp/toolcache-extra.txt /tmp/toolcache.tar
+
+# Carry the baked tool cache across without the tarballs (see the bake stage).
+# COPY --from preserves the builder's uid/gid, so the chown at the end of the
+# bake stage is what leaves these dirs runner-owned in the final image.
+COPY --from=toolcache-bake /home/runner/.toolcache/ /home/runner/.toolcache/
 
 # Optional extra apt packages (from runners.yml; empty file skips this step)
 COPY apt-packages-extra.txt /tmp/apt-packages-extra.txt
