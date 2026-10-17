@@ -2,7 +2,7 @@
   "version": 1,
   "cursors": {
     "labelling_after": null,
-    "investigation_after": null
+    "investigation_after": 559
   },
   "issues": [],
   "checks": [
@@ -20,9 +20,9 @@
     },
     {
       "area": "performance",
-      "checked_at": "2026-10-13",
+      "checked_at": "2026-10-17",
       "result": "no_actionable",
-      "follow_up": "No measurable perf opportunity from reading the code. Memory check 2026-09-29 (perf-improver workflow covered viewMain/SplitSeq hot paths via #498/#502); remaining items (renderRow cell-padding, viewMain alloc reduction) are speculative without profiling."
+      "follow_up": "Re-checked after #560–#563. Volume-mount wiring adds args per runner, not a hot path; renderRow / viewMain alloc reductions + viewScroll newline-concat remain speculative without profiling."
     },
     {
       "area": "dependencies",
@@ -38,9 +38,9 @@
     },
     {
       "area": "repo_assist_prs",
-      "checked_at": "2026-10-14",
+      "checked_at": "2026-10-17",
       "result": "acted",
-      "follow_up": "One draft PR open: test-registry-inspect-2026-10-14 (commit 6bb8f6d, opened 2026-10-14). Awaiting maintainer review. Previously open #544 basics-docs-registry-disk-usage landed 2026-10-13 as commit 2d2581a."
+      "follow_up": "0 open Repo Assist PRs as of 2026-10-17 (Dependabot #547–#555, test-improver #558, and the previous registry-inspect branch all resolved). Nothing new opened this run — only #559 close plus monthly-activity accounting on #516."
     },
     {
       "area": "tests",
