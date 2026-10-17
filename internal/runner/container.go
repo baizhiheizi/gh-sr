@@ -111,34 +111,72 @@ func ContainerRunnerImageTag(baseImage string, extraApt []string, toolcache []co
 // [strip]" line per entry, sorted by dir then URL for a deterministic
 // fingerprint. Returns "" when the list is empty (the caller then truncates
 // the file instead of writing it).
+//
+// This 4-column form is the CONTAINER IMAGE LAYOUT REVISION input
+// (ContainerImageLayoutRevision hashes its output): it must stay a pure
+// function of the config, never of host-side cache state — otherwise every
+// host would fingerprint a different image revision. The build-context file
+// gains a fifth column via containerToolcacheExtraFileWithBlobs instead.
 func containerToolcacheExtraFile(entries []config.ContainerToolcacheEntry) string {
+	return containerToolcacheExtraFileLines(entries, nil)
+}
+
+// containerToolcacheExtraFileWithBlobs renders the build-context form with the
+// optional fifth column: the toolcache-blobs/ file name of each entry whose
+// source is present in the host-side source cache (keyed by the entry's index
+// in the ORIGINAL, unsorted list — matching syncToolcacheSources' result).
+// The bake loop prefers the blob and falls back to curl-ing the URL when the
+// field is absent or "-".
+func containerToolcacheExtraFileWithBlobs(entries []config.ContainerToolcacheEntry, blobs map[int]string) string {
+	if len(entries) == 0 || len(blobs) == 0 {
+		// No cached blobs: the context file must stay byte-identical to the
+		// 4-column form so the bake is reproducible either way.
+		return containerToolcacheExtraFile(entries)
+	}
+	return containerToolcacheExtraFileLines(entries, blobs)
+}
+
+func containerToolcacheExtraFileLines(entries []config.ContainerToolcacheEntry, blobs map[int]string) string {
 	if len(entries) == 0 {
 		return ""
 	}
-	sorted := make([]config.ContainerToolcacheEntry, len(entries))
-	copy(sorted, entries)
-	slices.SortFunc(sorted, func(a, b config.ContainerToolcacheEntry) int {
-		if c := strings.Compare(a.Dir, b.Dir); c != 0 {
+	type line struct {
+		e   config.ContainerToolcacheEntry
+		key string
+	}
+	sorted := make([]line, len(entries))
+	for i, e := range entries {
+		sorted[i] = line{e: e, key: blobs[i]}
+	}
+	slices.SortFunc(sorted, func(a, b line) int {
+		if c := strings.Compare(a.e.Dir, b.e.Dir); c != 0 {
 			return c
 		}
-		return strings.Compare(a.URL, b.URL)
+		return strings.Compare(a.e.URL, b.e.URL)
 	})
 	var b strings.Builder
-	for _, e := range sorted {
-		b.WriteString(e.URL)
+	for _, l := range sorted {
+		b.WriteString(l.e.URL)
 		b.WriteByte(' ')
-		b.WriteString(e.Dir)
-		if e.Complete != "" {
+		b.WriteString(l.e.Dir)
+		if l.e.Complete != "" {
 			b.WriteByte(' ')
-			b.WriteString(e.Complete)
+			b.WriteString(l.e.Complete)
 		}
 		// The fourth field only appears when strip is set, so legacy
 		// 3-field-only lists render byte-identically (and fingerprint
 		// identically) to pre-strip output; the bake loop defaults a
 		// missing/empty fourth field to 0.
-		if e.Strip != 0 {
+		if l.e.Strip != 0 {
 			b.WriteByte(' ')
-			b.WriteString(strconv.Itoa(e.Strip))
+			b.WriteString(strconv.Itoa(l.e.Strip))
+		}
+		// The fifth field (cached blob name) only appears when the
+		// host-side source cache holds the tarball — same minimal-diff
+		// principle as the strip field.
+		if l.key != "" {
+			b.WriteByte(' ')
+			b.WriteString(l.key)
 		}
 		b.WriteByte('\n')
 	}
@@ -1253,8 +1291,15 @@ func buildAgenticRunnerImage(h *host.Host, imageTag, baseImage, ghSrVersion stri
 
 	// toolcache-extra.txt feeds the Dockerfile bake step (COPYed unconditionally,
 	// so it must always exist). One "<url> <dir>" line per entry; empty (truncated)
-	// when no bake is configured.
-	toolcacheFile := containerToolcacheExtraFile(toolcache)
+	// when no bake is configured. Before rendering it, prime the host-side
+	// source cache (issue #559 proposal 3): every tarball whose URL is
+	// unchanged is downloaded once into ~/.gh-sr/toolcache-src/<sha256(url)[:16]>
+	// and linked into the build context's toolcache-blobs/, so any later
+	// rebuild — after a list edit, a base-image bump, or a builder-cache
+	// prune, all of which re-run the whole single-RUN-layer bake — reads
+	// local disk instead of re-downloading every entry over the WAN.
+	blobs := syncToolcacheSources(h, toolcache)
+	toolcacheFile := containerToolcacheExtraFileWithBlobs(toolcache, blobs)
 	toolcachePath := buildDir + "/toolcache-extra.txt"
 	if toolcacheFile == "" {
 		if _, err := h.Run(formatEmptyRemoteFile(toolcachePath)); err != nil {
