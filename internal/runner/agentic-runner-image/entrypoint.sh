@@ -52,6 +52,12 @@
 #                         `awf_service_bridge: true`): forwarded to the runner
 #                         .env so job-started.sh spawns the per-job waiter that
 #                         joins this job's `services:` containers to awf-net
+#   GH_SR_ANDROID_SDK_ROOT — mount path of the shared Android SDK volume
+#                         (runners.yml `shared_caches.android_sdk: true`);
+#                         when set, ANDROID_SDK_ROOT/ANDROID_HOME are written
+#                         to the runner .env and re-exported through `su -`,
+#                         because a docker -e env var alone does not survive
+#                         the login-shell reset
 
 set -euo pipefail
 
@@ -160,12 +166,15 @@ if [ -n "${GH_SR_NPM_REGISTRY:-}" ]; then
 fi
 
 # The shared cache volumes (docker create -v, runners.yml shared_caches) mount
-# at /home/runner/.npm and /home/runner/.cache. A volume first mounted when the
-# image carried no such path inits root-owned, and root-run job steps can leave
-# root-owned entries behind; re-assert the runner user on every start so
-# job-time writes never hit EACCES. Best-effort by design: chown failures
-# (e.g. a read-only mount) must not abort the bootstrap.
-chown -R runner:runner /home/runner/.npm /home/runner/.cache 2>/dev/null || true
+# at /home/runner/.npm, /home/runner/.cache, /home/runner/.gradle,
+# /home/runner/.pub-cache, /home/runner/.local/share/mise and /opt/android-sdk.
+# A volume first mounted when the image carried no such path inits root-owned,
+# and root-run job steps can leave root-owned entries behind; re-assert the
+# runner user on every start so job-time writes never hit EACCES. Best-effort
+# by design: chown failures (e.g. a read-only mount) must not abort the
+# bootstrap, and paths that are not mounted simply do not exist.
+chown -R runner:runner /home/runner/.npm /home/runner/.cache /home/runner/.gradle \
+    /home/runner/.pub-cache /home/runner/.local/share/mise /opt/android-sdk 2>/dev/null || true
 
 # ── 3. Inner dockerd (single start) ─────────────────────────────────────────────
 # A previous boot may have ended without dockerd shutting down cleanly (crash,
@@ -302,6 +311,12 @@ export RUNNER_TOOL_CACHE="/home/runner/.toolcache"
     if [ "${GH_SR_AWF_SERVICE_BRIDGE:-0}" = "1" ]; then
         echo "GH_SR_AWF_SERVICE_BRIDGE=1"
     fi
+    if [ -n "${GH_SR_ANDROID_SDK_ROOT:-}" ]; then
+        # GitHub-hosted runners export both; ANDROID_HOME is the legacy name
+        # older Gradle Android plugin versions still read first.
+        echo "ANDROID_SDK_ROOT=${GH_SR_ANDROID_SDK_ROOT}"
+        echo "ANDROID_HOME=${GH_SR_ANDROID_SDK_ROOT}"
+    fi
     echo "ACTIONS_RUNNER_HOOK_JOB_STARTED=/opt/gh-sr/hooks/job-started.sh"
     echo "ACTIONS_RUNNER_HOOK_JOB_COMPLETED=/opt/gh-sr/hooks/job-completed.sh"
 } > "${RUNNER_DIR}/.env"
@@ -313,6 +328,9 @@ chown runner:runner "${RUNNER_DIR}/.env"
 RUNNER_ENV="RUNNER_TEMP='${RUNNER_TEMP_DIR}' RUNNER_TOOL_CACHE='${RUNNER_TOOL_CACHE}'"
 if [ -n "${GH_SR_CACHE_URL:-}" ]; then
     RUNNER_ENV="${RUNNER_ENV} CUSTOM_ACTIONS_RESULTS_URL='${GH_SR_CACHE_URL}'"
+fi
+if [ -n "${GH_SR_ANDROID_SDK_ROOT:-}" ]; then
+    RUNNER_ENV="${RUNNER_ENV} ANDROID_SDK_ROOT='${GH_SR_ANDROID_SDK_ROOT}' ANDROID_HOME='${GH_SR_ANDROID_SDK_ROOT}'"
 fi
 
 # Only configure if not already done. GitHub registration tokens are one-time-use;

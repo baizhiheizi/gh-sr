@@ -162,18 +162,29 @@ func CollectDiskUsage(w io.Writer, cfg *config.Config, mgr *runner.Manager, filt
 			})
 		}
 
-		// Host-level entry for the registry mirror storage (Linux only — the
-		// mirror container is only deployed there).
+		// One entry per registry mirror (Linux only — the mirror containers
+		// are only deployed there). Each mirror keeps its own storage dir, so
+		// reporting one combined total under the first mirror's path would
+		// misattribute the extra mirrors' layers.
 		if s := registrySettings(cfg); s != nil && hcfg.OS == "linux" {
-			path, bytes, mErr := registry.MeasureStorage(h, *s)
-			out = append(out, runner.DiskUsageEntry{
-				Host:       g.name,
-				Instance:   registry.ContainerName,
-				Path:       path,
-				Mode:       "cache",
-				TotalBytes: bytes,
-				Err:        mErr,
-			})
+			stores, mErr := registry.MirrorStorages(h, *s)
+			if mErr != nil {
+				out = append(out, runner.DiskUsageEntry{
+					Host:     g.name,
+					Instance: registry.ContainerName,
+					Mode:     "cache",
+					Err:      mErr,
+				})
+			}
+			for _, ms := range stores {
+				out = append(out, runner.DiskUsageEntry{
+					Host:       g.name,
+					Instance:   ms.Container,
+					Path:       ms.Path,
+					Mode:       "cache",
+					TotalBytes: ms.Bytes,
+				})
+			}
 		}
 		return out, nil
 	})

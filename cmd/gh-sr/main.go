@@ -85,6 +85,7 @@ With no subcommand, gh sr opens the interactive dashboard on a terminal; use gh 
 		diskCmd(),
 		cacheCmd(),
 		registryCmd(),
+		imagesCmd(),
 		updateCmd(),
 		removeCmd(),
 		serviceCmd(),
@@ -769,20 +770,23 @@ Runner removal (gh sr remove) never touches the cache.`,
 func registryCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "registry",
-		Short: "Manage the per-host Docker registry pull-through mirror",
-		Long: `Deploy and manage a Docker registry pull-through mirror (registry:2, one
-gh-sr-registry container per Linux host). Container runners' inner Docker
-pulls Docker Hub images through the mirror, so every runner on the host
+		Short: "Manage the per-host Docker registry pull-through mirrors",
+		Long: `Deploy and manage Docker registry pull-through mirrors (registry:2, one
+gh-sr-registry container per Linux host plus one gh-sr-registry-<name> per
+extra registry_mirror.mirrors entry). Container runners' inner Docker pulls
+Docker Hub images through the first mirror, so every runner on the host
 shares one copy of each image layer instead of each downloading it over the
 WAN.
 
-The mirror is deployed automatically before container runner setup/start when
-registry_mirror.enabled is not false in runners.yml, and wired into the
-runners' inner dockerd via daemon.json registry-mirrors on the next
-` + "`gh sr up`" + `. Only Docker Hub is redirected transparently — docker's
-registry-mirrors mechanism has no per-registry equivalent for ghcr.io.
-Use these commands to inspect or uninstall it. gh sr remove never deletes the
-mirror — gh sr registry remove is the only uninstall path.`,
+The mirrors are deployed automatically before container runner setup/start
+when registry_mirror.enabled is not false in runners.yml, and the first
+mirror is wired into the runners' inner dockerd via daemon.json
+registry-mirrors on the next ` + "`gh sr rebuild`" + `. Only Docker Hub is
+redirected transparently — dockerd's registry-mirrors mechanism has no
+per-registry equivalent for ghcr.io (moby/moby#41456), so other registries
+are handled by registry_mirror.mirrors + registry_mirror.prefetch with
+` + "`gh sr images sync`" + ` instead. gh sr remove never deletes the mirrors —
+gh sr registry remove is the only uninstall path.`,
 	}
 	cmd.AddCommand(registryStatusCmd(), registryDeployCmd(), registryRemoveCmd())
 	return cmd
@@ -818,6 +822,40 @@ deletes the storage directory (all mirrored image layers). Runner removal
 	}
 	cmd.Flags().BoolVar(&purgeData, "purge-data", false, "also delete the mirror storage directory (all mirrored layers)")
 	return cmd
+}
+
+// imagesCmd groups image-management commands for container runners.
+func imagesCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "images",
+		Short: "Manage images preloaded into container runners",
+		Long: `Manage images preloaded into container runners' inner Docker.
+
+The gh-aw stack (ghcr.io/github/gh-aw-firewall/agent, gh-aw-mcpg, squid,
+api-proxy, ...) is pulled from ghcr.io by every runner independently — dockerd
+has no per-registry mirror mechanism outside Docker Hub (moby/moby#41456), so
+each version bump costs N × WAN downloads on an N-runner host. List those
+images in registry_mirror.prefetch and sync them: each image is pulled once
+per host (through the matching registry_mirror.mirrors pull-through cache
+when one exists) and docker save | docker load-ed into every runner's inner
+dockerd. gh sr up and gh sr rebuild run the sync automatically.`,
+	}
+	cmd.AddCommand(imagesSyncCmd())
+	return cmd
+}
+
+func imagesSyncCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "sync",
+		Short: "Pull prefetch images once per host and load them into runner containers",
+		Long: `Pulls every registry_mirror.prefetch image once on each Linux host —
+through the matching registry_mirror.mirrors pull-through cache when one
+exists, else directly from the upstream — then loads it into every
+container-mode runner's inner dockerd (docker save | docker exec docker
+load), skipping runners that already have the exact image. Also runs
+automatically after gh sr up and gh sr rebuild.`,
+		RunE: runCacheCmd(ops.ImagesSync),
+	}
 }
 
 func rebuildCmd() *cobra.Command {

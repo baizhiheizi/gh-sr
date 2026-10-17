@@ -628,3 +628,76 @@ func reachabilityHost(mock *testutil.MockExecutor) *host.Host {
 	h.SetConn(mock)
 	return h
 }
+
+// TestCheckOrphanMirrors covers the reconciliation of on-host mirror
+// containers against registry_mirror.mirrors. Ensure and `gh sr registry
+// remove` only ever walk the configured list, so a mirror deleted from
+// runners.yml keeps running (and keeps its storage dir) with nothing reporting
+// it — this check is what surfaces it.
+func TestCheckOrphanMirrors(t *testing.T) {
+	t.Parallel()
+
+	configured := &registry.Settings{
+		Enabled: true,
+		Mirrors: []registry.MirrorSettings{
+			{Name: "dockerhub", Port: 5577},
+			{Name: "ghcr", Port: 5578},
+		},
+	}
+	containerList := "gh-sr-registry\ngh-sr-registry-ghcr\ngh-sr-registry-ghcr-old\nunrelated-container\n"
+
+	orphanHost := func(list string) *host.Host {
+		return reachabilityHost(&testutil.MockExecutor{
+			RunFn: func(cmd string) (string, error) {
+				if strings.Contains(cmd, "docker ps -a") {
+					return list, nil
+				}
+				return "", nil
+			},
+		})
+	}
+
+	t.Run("flags a mirror missing from the config", func(t *testing.T) {
+		t.Parallel()
+		var buf strings.Builder
+		var r Result
+		checkOrphanMirrors(&buf, "h1", orphanHost(containerList), configured, &r)
+
+		out := buf.String()
+		if !strings.Contains(out, "gh-sr-registry-ghcr-old") {
+			t.Errorf("expected the dropped mirror to be reported, got:\n%s", out)
+		}
+		if strings.Contains(out, "unrelated-container") || strings.Contains(out, "gh-sr-registry-ghcr:") {
+			t.Errorf("configured and unrelated containers must not be reported, got:\n%s", out)
+		}
+		if r.Warn != 1 {
+			t.Errorf("want exactly one warn, got %+v", r)
+		}
+	})
+
+	t.Run("clean host reports nothing", func(t *testing.T) {
+		t.Parallel()
+		var buf strings.Builder
+		var r Result
+		checkOrphanMirrors(&buf, "h1",
+			orphanHost("gh-sr-registry\ngh-sr-registry-ghcr\nunrelated-container\n"), configured, &r)
+		if buf.Len() != 0 || r.Warn != 0 {
+			t.Errorf("expected silence, got %+v\n%s", r, buf.String())
+		}
+	})
+
+	t.Run("unreadable container list never fails the check", func(t *testing.T) {
+		t.Parallel()
+		var buf strings.Builder
+		var r Result
+		h := reachabilityHost(&testutil.MockExecutor{
+			RunFn: func(cmd string) (string, error) {
+				return "", errors.New("docker daemon unreachable")
+			},
+		})
+		checkOrphanMirrors(&buf, "h1", h, configured, &r)
+		if r.Warn != 0 || r.Fail != 0 {
+			t.Errorf("a failed docker ps must stay silent, got %+v", r)
+		}
+	})
+}

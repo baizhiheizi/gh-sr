@@ -29,7 +29,7 @@ func TestRunnerURL_precedence(t *testing.T) {
 		t.Errorf("override: got %q", got)
 	}
 
-	s = Settings{Enabled: true, BindAddr: "192.168.1.5", Port: 3001}
+	s = Settings{Enabled: true, BindAddr: "192.168.1.5", Mirrors: []MirrorSettings{{Name: "dockerhub", Port: 3001}}}
 	if got := s.RunnerURL(h); got != "http://192.168.1.5:3001" {
 		t.Errorf("explicit bind: got %q", got)
 	}
@@ -60,13 +60,83 @@ func TestResolvedStoragePath(t *testing.T) {
 	t.Parallel()
 	h := newRegistryHost(t, &testutil.MockExecutor{Output: "/home/op\n"})
 	s := Settings{Enabled: true}
-	got, err := s.resolvedStoragePath(h)
+	got, err := s.mirrorStoragePath(0, h)
 	if err != nil || got != "/home/op/.gh-sr/registry" {
 		t.Errorf("default path: got %q, err %v", got, err)
 	}
 	s = Settings{Enabled: true, StoragePath: "/srv/mirror"}
-	if got, _ := s.resolvedStoragePath(h); got != "/srv/mirror" {
+	if got, _ := s.mirrorStoragePath(0, h); got != "/srv/mirror" {
 		t.Errorf("absolute path: got %q", got)
+	}
+	// Extra mirrors append -<name> to the same base; $HOME is expanded once.
+	s = Settings{Enabled: true, Mirrors: []MirrorSettings{
+		{Name: "dockerhub", Port: 5577},
+		{Name: "ghcr", Port: 5578},
+	}}
+	paths, err := s.mirrorStoragePaths(h)
+	if err != nil {
+		t.Fatalf("mirrorStoragePaths: %v", err)
+	}
+	want := []string{"/home/op/.gh-sr/registry", "/home/op/.gh-sr/registry-ghcr"}
+	if len(paths) != len(want) {
+		t.Fatalf("got %v, want %v", paths, want)
+	}
+	for i := range want {
+		if paths[i] != want[i] {
+			t.Errorf("path[%d]: got %q, want %q", i, paths[i], want[i])
+		}
+	}
+}
+
+// TestMirrorStoragesQuotingPerPath guards the disk-usage measurement: every
+// mirror dir must reach du as its own argument. Quoting the joined list hands
+// du a single path containing spaces, which measures nothing and reports 0 for
+// every multi-mirror host.
+func TestMirrorStoragesQuotingPerPath(t *testing.T) {
+	t.Parallel()
+	mock := &testutil.MockExecutor{Output: ""}
+	h := newRegistryHost(t, mock)
+	s := Settings{
+		Enabled:     true,
+		StoragePath: "/srv/registry",
+		Mirrors: []MirrorSettings{
+			{Name: "dockerhub", Port: 5577},
+			{Name: "ghcr", Port: 5578},
+		},
+	}
+	mock.Output = "4096\t/srv/registry\n8192\t/srv/registry-ghcr\n"
+	stores, err := MirrorStorages(h, s)
+	if err != nil {
+		t.Fatalf("MirrorStorages: %v", err)
+	}
+	if len(stores) != 2 {
+		t.Fatalf("want one entry per mirror, got %d", len(stores))
+	}
+	if stores[0].Container != ContainerName || stores[0].Path != "/srv/registry" || stores[0].Bytes != 4096 {
+		t.Errorf("mirror 0: %+v", stores[0])
+	}
+	if stores[1].Container != ContainerNamePrefix+"ghcr" || stores[1].Path != "/srv/registry-ghcr" || stores[1].Bytes != 8192 {
+		t.Errorf("mirror 1: %+v", stores[1])
+	}
+	var du string
+	for _, c := range mock.Calls {
+		if strings.HasPrefix(c, "du ") {
+			du = c
+		}
+	}
+	if !strings.Contains(du, "'/srv/registry' '/srv/registry-ghcr'") {
+		t.Errorf("each dir must be quoted separately, got: %s", du)
+	}
+
+	// A mirror whose dir does not exist yet reports 0 without shifting the
+	// other mirrors' sizes onto it.
+	mock.Output = "4096\t/srv/registry\n"
+	stores, err = MirrorStorages(h, s)
+	if err != nil {
+		t.Fatalf("MirrorStorages (missing dir): %v", err)
+	}
+	if stores[0].Bytes != 4096 || stores[1].Bytes != 0 {
+		t.Errorf("missing dir must not shift sizes: %+v", stores)
 	}
 }
 

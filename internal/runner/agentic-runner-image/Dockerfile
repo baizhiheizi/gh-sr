@@ -21,7 +21,7 @@
 # Run:   see internal/runner/container.go
 
 ARG FORK_RUNNER_IMAGE
-FROM ${FORK_RUNNER_IMAGE}
+FROM ${FORK_RUNNER_IMAGE} AS base-with-tools
 
 # The fork base ends with `USER runner`; every build step below needs root
 # (apt-get, keyrings, chown). Runtime must stay root too: entrypoint.sh starts
@@ -137,6 +137,42 @@ RUN mkdir -p /usr/local/lib/docker/cli-plugins /tmp/compose \
     && rm -rf /tmp/compose \
     && docker compose version
 
+# ── Tool-cache bake stage (throwaway) ─────────────────────────────────────
+# The source tarballs live in the build context and are GBs-scale (the Flutter
+# entry alone is ~1.6 GB). COPYing them puts those bytes into a persisted layer,
+# and deleting them in a later layer cannot reclaim layer bytes — so a
+# single-stage bake would ship a second, complete copy of every tarball
+# alongside the extracted tool cache. Baking in a throwaway stage that inherits
+# the same base layers and copying ONLY the extracted tool cache forward keeps
+# the final image the size it was before the host-side source cache existed.
+FROM base-with-tools AS toolcache-bake
+USER root
+COPY toolcache-blobs/ /tmp/toolcache-blobs/
+COPY toolcache-extra.txt /tmp/toolcache-extra.txt
+RUN mkdir -p /home/runner/.toolcache \
+    && while read -r url dir complete strip local; do \
+        [ -n "$url" ] || continue; \
+        [ -n "$complete" ] || complete="$dir.complete"; \
+        [ -n "$local" ] || local="-"; \
+        if [ "$local" != "-" ] && [ -s "/tmp/toolcache-blobs/$local" ]; then \
+            cp "/tmp/toolcache-blobs/$local" /tmp/toolcache.tar; \
+        else \
+            curl -fsSL --retry 8 --retry-all-errors --retry-delay 20 --connect-timeout 20 --speed-limit 10240 --speed-time 60 --max-time 1800 "$url" -o /tmp/toolcache.tar; \
+        fi \
+        && mkdir -p "/home/runner/.toolcache/$dir" "/home/runner/.toolcache/$(dirname "$complete")" \
+        && case "$url" in \
+             *.tar.xz) tar -xJf /tmp/toolcache.tar --strip-components=${strip:-0} -C "/home/runner/.toolcache/$dir" ;; \
+             *) tar -xzf /tmp/toolcache.tar --strip-components=${strip:-0} -C "/home/runner/.toolcache/$dir" ;; \
+           esac \
+        && touch "/home/runner/.toolcache/$complete" \
+        || exit 1; \
+    done < /tmp/toolcache-extra.txt \
+    && chown -R runner:runner /home/runner/.toolcache
+
+# ── Final image ───────────────────────────────────────────────────────────
+# Resumes from the same base layers; only the baked tool cache is carried over.
+FROM base-with-tools
+USER root
 # Tool cache — must NOT live under /opt/* because gh-aw's compiled AWF invocation
 # (see repo-assist.lock.yml) intentionally SKIPS mounting any RUNNER_TOOL_CACHE
 # whose path matches `/opt/*` to avoid leaking the rest of /opt (e.g. /opt/gh-aw
@@ -210,27 +246,11 @@ RUN mkdir -p /home/runner/.toolcache && chown runner:runner /home/runner/.toolca
 # future nested dir. Chowning the root once keeps every level runner-owned, so a
 # bake miss degrades to a normal runtime install (see the "Runtime install
 # fallback preserved" scenario in openspec/specs/container-runner-image/spec.md).
-COPY toolcache-blobs/ /tmp/toolcache-blobs/
-COPY toolcache-extra.txt /tmp/toolcache-extra.txt
-RUN while read -r url dir complete strip local; do \
-        [ -n "$url" ] || continue; \
-        [ -n "$complete" ] || complete="$dir.complete"; \
-        [ -n "$local" ] || local="-"; \
-        if [ "$local" != "-" ] && [ -s "/tmp/toolcache-blobs/$local" ]; then \
-            cp "/tmp/toolcache-blobs/$local" /tmp/toolcache.tar; \
-        else \
-            curl -fsSL --retry 8 --retry-all-errors --retry-delay 20 --connect-timeout 20 --speed-limit 10240 --speed-time 60 --max-time 1800 "$url" -o /tmp/toolcache.tar; \
-        fi \
-        && mkdir -p "/home/runner/.toolcache/$dir" "/home/runner/.toolcache/$(dirname "$complete")" \
-        && case "$url" in \
-             *.tar.xz) tar -xJf /tmp/toolcache.tar --strip-components=${strip:-0} -C "/home/runner/.toolcache/$dir" ;; \
-             *) tar -xzf /tmp/toolcache.tar --strip-components=${strip:-0} -C "/home/runner/.toolcache/$dir" ;; \
-           esac \
-        && touch "/home/runner/.toolcache/$complete" \
-        || exit 1; \
-    done < /tmp/toolcache-extra.txt \
-    && chown -R runner:runner /home/runner/.toolcache \
-    && rm -f /tmp/toolcache-extra.txt /tmp/toolcache.tar
+
+# Carry the baked tool cache across without the tarballs (see the bake stage).
+# COPY --from preserves the builder's uid/gid, so the chown at the end of the
+# bake stage is what leaves these dirs runner-owned in the final image.
+COPY --from=toolcache-bake /home/runner/.toolcache/ /home/runner/.toolcache/
 
 # Optional extra apt packages (from runners.yml; empty file skips this step)
 COPY apt-packages-extra.txt /tmp/apt-packages-extra.txt
@@ -244,13 +264,23 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 # Shared cache volume mount points (runners.yml shared_caches): docker create
-# mounts the gh-sr-npm-cache / gh-sr-runner-cache named volumes here. Baking
-# the empty dirs with runner ownership makes the volume copy-up on first mount
-# inherit the right owner; the entrypoint re-asserts ownership on every start
-# regardless. Placed after the heavy layers so adding it never invalidates the
-# apt/toolcache build cache.
-RUN mkdir -p /home/runner/.npm /home/runner/.cache \
-    && chown runner:runner /home/runner/.npm /home/runner/.cache
+# mounts the gh-sr-npm-cache / gh-sr-runner-cache / gh-sr-gradle-cache /
+# gh-sr-pub-cache / gh-sr-mise-data / gh-sr-android-sdk named volumes here.
+# Baking the empty dirs with runner ownership makes the volume copy-up on
+# first mount inherit the right owner; the entrypoint re-asserts ownership on
+# every start regardless. gradle/pub/mise mount at the tools' own default
+# cache locations (GRADLE_USER_HOME / PUB_CACHE / MISE_DATA_DIR), so no env
+# var is needed; the Android SDK mount at /opt/android-sdk is accompanied by
+# an ANDROID_SDK_ROOT export from the entrypoint. The intermediate
+# /home/runner/.local and /home/runner/.local/share are chowned too — leaving
+# them root-owned would break unrelated job-time writes into ~/.local
+# (e.g. `pip install --user` landing in ~/.local/lib). Placed after the heavy
+# layers so adding entries never invalidates the apt/toolcache build cache.
+RUN mkdir -p /home/runner/.npm /home/runner/.cache /home/runner/.gradle \
+        /home/runner/.pub-cache /home/runner/.local/share/mise /opt/android-sdk \
+    && chown runner:runner /home/runner/.npm /home/runner/.cache /home/runner/.gradle \
+        /home/runner/.pub-cache /home/runner/.local /home/runner/.local/share \
+        /home/runner/.local/share/mise /opt/android-sdk
 
 # Runner state directory (bind-mounted from host at runtime)
 RUN mkdir -p /runner-state && chown runner:runner /runner-state

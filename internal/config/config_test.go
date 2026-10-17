@@ -1447,6 +1447,12 @@ runners:
 	if !cfg.SharedCachesEnabled() || !cfg.SharedNPMCacheEnabled() || !cfg.SharedHomeCacheEnabled() {
 		t.Error("shared caches should default to enabled after Load")
 	}
+	if !cfg.SharedGradleCacheEnabled() || !cfg.SharedPubCacheEnabled() || !cfg.SharedMiseDataEnabled() {
+		t.Error("gradle/pub/mise caches should default to enabled after Load")
+	}
+	if cfg.SharedAndroidSDKEnabled() {
+		t.Error("android_sdk must default to disabled (opt-in)")
+	}
 
 	// Section off disables both regardless of sub-flags.
 	off := content + "shared_caches:\n  enabled: false\n"
@@ -1460,6 +1466,12 @@ runners:
 	}
 	if cfg2.SharedCachesEnabled() || cfg2.SharedNPMCacheEnabled() || cfg2.SharedHomeCacheEnabled() {
 		t.Error("shared_caches.enabled: false must disable every shared volume")
+	}
+	if cfg2.SharedGradleCacheEnabled() || cfg2.SharedPubCacheEnabled() || cfg2.SharedMiseDataEnabled() {
+		t.Error("shared_caches.enabled: false must disable the gradle/pub/mise volumes too")
+	}
+	if cfg2.SharedAndroidSDKEnabled() {
+		t.Error("shared_caches.enabled: false must keep android_sdk off")
 	}
 
 	// Sub-flags disable selectively.
@@ -1477,6 +1489,84 @@ runners:
 	}
 	if !cfg3.SharedHomeCacheEnabled() {
 		t.Error("shared_caches.npm: false must not disable the home-cache volume")
+	}
+}
+
+// TestLoad_sharedCachesGradlePubMiseOptOut pins the opt-out behavior of the
+// gradle/pub/mise sub-flags: each turns off only its own volume, and an
+// opt-in android_sdk turns on only the Android SDK volume.
+func TestLoad_sharedCachesGradlePubMiseOptOut(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	base := `
+hosts:
+  h1:
+    addr: user@10.0.0.1
+runners:
+  - name: r1
+    repo: o/r
+    host: h1
+`
+	write := func(name, extra string) string {
+		p := filepath.Join(dir, name)
+		if err := os.WriteFile(p, []byte(base+extra), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+
+	cfg, err := Load(write("gradle-off.yml", "shared_caches:\n  gradle: false\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.SharedGradleCacheEnabled() {
+		t.Error("shared_caches.gradle: false must disable the gradle volume")
+	}
+	if !cfg.SharedPubCacheEnabled() || !cfg.SharedMiseDataEnabled() || !cfg.SharedNPMCacheEnabled() || !cfg.SharedHomeCacheEnabled() {
+		t.Error("shared_caches.gradle: false must not disable the other volumes")
+	}
+
+	cfg, err = Load(write("pub-off.yml", "shared_caches:\n  pub: false\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.SharedPubCacheEnabled() {
+		t.Error("shared_caches.pub: false must disable the pub volume")
+	}
+	if !cfg.SharedGradleCacheEnabled() || !cfg.SharedMiseDataEnabled() {
+		t.Error("shared_caches.pub: false must not disable the other volumes")
+	}
+
+	cfg, err = Load(write("mise-off.yml", "shared_caches:\n  mise: false\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.SharedMiseDataEnabled() {
+		t.Error("shared_caches.mise: false must disable the mise volume")
+	}
+	if !cfg.SharedGradleCacheEnabled() || !cfg.SharedPubCacheEnabled() {
+		t.Error("shared_caches.mise: false must not disable the other volumes")
+	}
+
+	// android_sdk is opt-in: explicit true enables it alongside the defaults.
+	cfg, err = Load(write("android-on.yml", "shared_caches:\n  android_sdk: true\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.SharedAndroidSDKEnabled() {
+		t.Error("shared_caches.android_sdk: true must enable the android sdk volume")
+	}
+	if !cfg.SharedGradleCacheEnabled() || !cfg.SharedPubCacheEnabled() || !cfg.SharedMiseDataEnabled() {
+		t.Error("shared_caches.android_sdk: true must not disable the other volumes")
+	}
+
+	// Explicit android_sdk: false keeps the opt-in off.
+	cfg, err = Load(write("android-off.yml", "shared_caches:\n  android_sdk: false\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.SharedAndroidSDKEnabled() {
+		t.Error("shared_caches.android_sdk: false must keep the android sdk volume off")
 	}
 }
 

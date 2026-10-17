@@ -75,9 +75,11 @@ func TestSyncToolcacheSources(t *testing.T) {
 		t.Fatalf("got blobs %v, want entries 0 and 1 present, 2 absent", blobs)
 	}
 	for _, want := range []string{
-		"mkdir -p '" + toolcacheSrcDir + "' /tmp/gh-sr-agentic-runner-build/toolcache-blobs",
+		// The cache dir must be DOUBLE-quoted: single quotes would make the
+		// shell create a literal "$HOME" directory instead of expanding it.
+		`mkdir -p "` + toolcacheSrcDir + `" /tmp/gh-sr-agentic-runner-build/toolcache-blobs`,
 		": > /tmp/gh-sr-agentic-runner-build/toolcache-blobs/.keep",
-		"if [ -s '$HOME/.gh-sr/toolcache-src/" + toolcacheSourceKey("https://example.com/flutter.tar.xz") + "' ]",
+		`if [ -s "$HOME/.gh-sr/toolcache-src/` + toolcacheSourceKey("https://example.com/flutter.tar.xz") + `" ]`,
 		"curl -fsSL --retry 8 --retry-all-errors --retry-delay 20 --connect-timeout 20 --speed-limit 10240 --speed-time 60 --max-time 1800 'https://example.com/jdk.tar.gz'",
 		// Atomic rename: a partial download must never look complete.
 		".tmp",
@@ -88,6 +90,11 @@ func TestSyncToolcacheSources(t *testing.T) {
 		if !strings.Contains(script, want) {
 			t.Errorf("script missing %q:\n%s", want, script)
 		}
+	}
+	// Guard the regression directly: no cache path may be single-quoted, which
+	// would park the whole cache in a directory literally named "$HOME".
+	if strings.Contains(script, "'"+toolcacheSrcDir) || strings.Contains(script, "'$HOME/.gh-sr/toolcache-src/") {
+		t.Errorf("cache paths must be double-quoted so $HOME expands:\n%s", script)
 	}
 }
 
@@ -150,5 +157,43 @@ func TestAgenticRunnerDockerfileToolcacheBakeLocalBlobs(t *testing.T) {
 	runIdx := strings.Index(agenticRunnerDockerfile, "while read -r url dir complete strip local")
 	if copyIdx < 0 || runIdx < 0 || copyIdx > runIdx {
 		t.Fatalf("toolcache-blobs COPY must precede the bake loop (copy=%d, loop=%d)", copyIdx, runIdx)
+	}
+}
+
+// TestAgenticRunnerDockerfileToolcacheBakeDoesNotShipBlobs guards the image
+// size of the host-side source cache. COPY lands the (GBs-scale) source
+// tarballs into a persisted layer, and deleting them in a later layer cannot
+// reclaim layer bytes — a single-stage bake would ship a second full copy of
+// every tarball next to the extracted tool cache. The bake must therefore run
+// in a throwaway stage that the final image only inherits the extracted
+// /home/runner/.toolcache from.
+func TestAgenticRunnerDockerfileToolcacheBakeDoesNotShipBlobs(t *testing.T) {
+	t.Parallel()
+
+	// The final stage must pull the tool cache across from the bake stage.
+	if !strings.Contains(agenticRunnerDockerfile,
+		"COPY --from=toolcache-bake /home/runner/.toolcache/ /home/runner/.toolcache/") {
+		t.Fatalf("final image must carry the baked tool cache across from the bake stage, got:\n%s", agenticRunnerDockerfile)
+	}
+	if !strings.Contains(agenticRunnerDockerfile, "FROM base-with-tools AS toolcache-bake") {
+		t.Fatalf("the bake (and its tarballs) must live in a throwaway stage, got:\n%s", agenticRunnerDockerfile)
+	}
+
+	// Everything from the final FROM onwards is what ships: the blobs COPY must
+	// not appear there, or the tarballs come back into the image.
+	finalFrom := strings.Index(agenticRunnerDockerfile, "\nFROM base-with-tools\n")
+	if finalFrom < 0 {
+		t.Fatalf("final image stage not found, got:\n%s", agenticRunnerDockerfile)
+	}
+	final := agenticRunnerDockerfile[finalFrom:]
+	if strings.Contains(final, "COPY toolcache-blobs/") || strings.Contains(final, "/tmp/toolcache-blobs/") {
+		t.Errorf("the shipped stage must not COPY or reference the source tarballs, got:\n%s", final)
+	}
+
+	// The bake stage must build its own tool-cache root: COPY --from fails on a
+	// missing source, and an empty manifest never creates one.
+	bakeStage := agenticRunnerDockerfile[strings.Index(agenticRunnerDockerfile, "FROM base-with-tools AS toolcache-bake"):finalFrom]
+	if !strings.Contains(bakeStage, "mkdir -p /home/runner/.toolcache") {
+		t.Errorf("bake stage must create the tool-cache root before the loop, got:\n%s", bakeStage)
 	}
 }

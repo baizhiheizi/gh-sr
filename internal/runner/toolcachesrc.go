@@ -21,9 +21,22 @@ import (
 	"github.com/an-lee/gh-sr/internal/hostshell"
 )
 
-// toolcacheSrcDir is the host-side cache directory ("$HOME/..." — resolved by
-// the remote shell itself, so no extra SSH round-trip for $HOME).
+// toolcacheSrcDir is the host-side cache directory, expressed as a
+// "$HOME/..." prefix so the *remote shell* expands $HOME — no extra SSH
+// round-trip to resolve it, exactly like the image's own build steps.
 const toolcacheSrcDir = "$HOME/.gh-sr/toolcache-src"
+
+// hostPath quotes a "$HOME/..." path for the remote shell with DOUBLE quotes,
+// so $HOME expands. Single quotes must not be used here: they would make the
+// shell create a literal directory named `$HOME` relative to the session's
+// working directory instead of ~/.gh-sr/toolcache-src, silently parking the
+// cache somewhere no other gh-sr path or cleanup knows about.
+//
+// Only the literal "$HOME" prefix can expand — the remainder is a constant and
+// the cache key is lowercase hex — so there is nothing else to guard against.
+func hostPath(p string) string {
+	return `"` + strings.ReplaceAll(p, `"`, `\"`) + `"`
+}
 
 // toolcacheSourceKey derives the cache key of a toolcache URL: the first 16
 // hex chars of sha256(url). URLs are validated (https, no whitespace) at
@@ -61,7 +74,7 @@ func syncToolcacheSources(h *host.Host, entries []config.ContainerToolcacheEntry
 
 	var script strings.Builder
 	script.WriteString("set -u\n")
-	script.WriteString("mkdir -p '" + toolcacheSrcDir + "' /tmp/gh-sr-agentic-runner-build/toolcache-blobs\n")
+	script.WriteString("mkdir -p " + hostPath(toolcacheSrcDir) + " /tmp/gh-sr-agentic-runner-build/toolcache-blobs\n")
 	script.WriteString(": > /tmp/gh-sr-agentic-runner-build/toolcache-blobs/.keep\n")
 	script.WriteString("echo READY\n")
 	for _, e := range entries {
@@ -76,20 +89,20 @@ func syncToolcacheSources(h *host.Host, entries []config.ContainerToolcacheEntry
   if curl -fsSL --retry 8 --retry-all-errors --retry-delay 20 --connect-timeout 20 --speed-limit 10240 --speed-time 60 --max-time 1800 %s -o %s.tmp 2>/dev/null && mv -f %s.tmp %s; then echo 'FETCHED %s'; else rm -f %s.tmp; echo 'MISS %s'; fi
 fi
 `,
-			hostshell.PosixSingleQuote(dest),
+			hostPath(dest),
 			key,
 			hostshell.PosixSingleQuote(e.URL),
-			hostshell.PosixSingleQuote(dest),
-			hostshell.PosixSingleQuote(dest),
-			hostshell.PosixSingleQuote(dest),
+			hostPath(dest),
+			hostPath(dest),
+			hostPath(dest),
 			key,
-			hostshell.PosixSingleQuote(dest),
+			hostPath(dest),
 			key,
 		))
 		// Link every cached-or-fetched blob into the build context.
 		script.WriteString(fmt.Sprintf(
 			"[ -s %[1]s ] && { cp -l %[1]s /tmp/gh-sr-agentic-runner-build/toolcache-blobs/%[2]s 2>/dev/null || cp %[1]s /tmp/gh-sr-agentic-runner-build/toolcache-blobs/%[2]s; } || true\n",
-			hostshell.PosixSingleQuote(dest), key))
+			hostPath(dest), key))
 	}
 	out, err := h.Run(script.String())
 	if err != nil {
