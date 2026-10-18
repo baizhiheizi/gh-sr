@@ -22,12 +22,16 @@ var hostMetricsHeaders = []string{"HOST", "CPU", "MEMORY", "DISK", "LOAD AVG", "
 // truncating "used/total UNIT (pct%)" would drop the trailing percentage
 // and with it the colorizePercent severity color. UPTIME is the one
 // droppable column — the least actionable metric when space runs out.
+// dropLast is the emergency tier for terminals too narrow for the floored
+// table: LOAD AVG goes first, then DISK, then MEMORY, then HOST, so CPU
+// (the single number people scan for) and one row label always survive.
+// Without it the table overflowed a 60-column terminal at 64 columns wide.
 var hostMetricsSpecs = []columnSpec{
-	{flex: true, min: 6},
+	{flex: true, min: 6, dropLast: 1},
 	{},
-	{},
-	{},
-	{flex: true, min: 5},
+	{dropLast: 2},
+	{flex: false, dropLast: 3},
+	{flex: true, min: 5, dropLast: 4},
 	{flex: true, min: 4, drop: 1},
 }
 

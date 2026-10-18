@@ -37,9 +37,21 @@ type columnSpec struct {
 	// means minTruncWidth. Floors above the column's natural width are
 	// clamped down by planColumns.
 	min int
-	// drop is the narrow-terminal drop priority: 0 = never dropped,
-	// higher values are dropped first.
+	// drop is the narrow-terminal drop priority: 0 = never dropped in the
+	// normal pass, higher values are dropped first.
 	drop int
+	// dropLast is the emergency drop priority, consulted only once every
+	// column carrying a nonzero drop has already been removed and the
+	// floored layout still overflows. Without this second tier a table
+	// whose remaining columns are all pinned has nothing left to shed and
+	// renders wider than the terminal — hard-wrapping into an unreadable
+	// mess, which is the exact failure this layout policy exists to
+	// prevent (host metrics overflowed a 60-column terminal at 64 columns
+	// wide; the runner table overflowed anything under ~52 columns).
+	// Dropping is safe where truncating is not: a removed column takes
+	// its status color with it intact, while a truncated status cell
+	// loses the color because the colorizers match exact cell text.
+	dropLast int
 }
 
 // statusColumn binds the responsive policy to the runner-status table's
@@ -59,22 +71,25 @@ type statusColumn struct {
 // runner-status table shared by PrintStatusTable (CLI) and the dashboard.
 //
 // Responsive policy: columns first truncate (with an ellipsis) down to
-// their per-column floor, and are dropped — LABELS first (widest, least
-// operational), then IMAGE, then BUILD — only when even the floored widths
-// do not fit. Floors sit at the "still readable" threshold rather than the
-// bare minimum, so an 80-column terminal keeps eight readable columns
-// instead of nine crushed ones. MODE/LOCAL/GITHUB are pinned (never
-// truncated) because truncating a status cell would also strip its color —
-// the colorizers match on exact cell text.
+// their per-column floor, then drop in two tiers — LABELS first (widest,
+// least operational), then IMAGE, then BUILD — and, only once those tiers
+// are exhausted and the table still does not fit, the dropLast tier sheds
+// REPO, MODE, HOST and INSTANCE, leaving LOCAL and GITHUB (the two state
+// signals) standing last. Floors sit at the "still readable" threshold
+// rather than the bare minimum, so an 80-column terminal keeps eight
+// readable columns instead of nine crushed ones. MODE/LOCAL/GITHUB are
+// never truncated (pinned) because truncating a status cell would also
+// strip its color — the colorizers match on exact cell text — but they can
+// still be dropped, which keeps the color intact.
 var runnerStatusColumns = []statusColumn{
-	{header: "INSTANCE", cell: func(s runner.RunnerStatus) string { return s.Instance }, columnSpec: columnSpec{flex: true, min: 6}},
-	{header: "HOST", cell: func(s runner.RunnerStatus) string { return s.Host }, columnSpec: columnSpec{flex: true, min: 6}},
-	{header: "REPO", cell: func(s runner.RunnerStatus) string { return s.Repo }, columnSpec: columnSpec{flex: true, min: 6}},
-	{header: "MODE", cell: func(s runner.RunnerStatus) string { return s.Mode }},
+	{header: "INSTANCE", cell: func(s runner.RunnerStatus) string { return s.Instance }, columnSpec: columnSpec{flex: true, min: 6, dropLast: 2}},
+	{header: "HOST", cell: func(s runner.RunnerStatus) string { return s.Host }, columnSpec: columnSpec{flex: true, min: 6, dropLast: 3}},
+	{header: "REPO", cell: func(s runner.RunnerStatus) string { return s.Repo }, columnSpec: columnSpec{flex: true, min: 6, dropLast: 5}},
+	{header: "MODE", cell: func(s runner.RunnerStatus) string { return s.Mode }, columnSpec: columnSpec{dropLast: 4}},
 	{header: "IMAGE", cell: imageCell, columnSpec: columnSpec{flex: true, min: 10, drop: 2}},
 	{header: "BUILD", cell: buildCell, color: colorizeImageBuild, columnSpec: columnSpec{drop: 1}},
 	{header: "LOCAL", cell: func(s runner.RunnerStatus) string { return s.Local }, color: colorizeLocalStatus},
-	{header: "GITHUB", cell: func(s runner.RunnerStatus) string { return formatGitHubStatus(s) }, color: colorizeGitHubStatus},
+	{header: "GITHUB", cell: func(s runner.RunnerStatus) string { return formatGitHubStatus(s) }, color: colorizeGitHubStatus, columnSpec: columnSpec{dropLast: 1}},
 	{header: "LABELS", cell: func(s runner.RunnerStatus) string { return s.Labels }, columnSpec: columnSpec{flex: true, min: 8, drop: 3}},
 }
 
@@ -128,12 +143,14 @@ func headersOf(cols []statusColumn) []string {
 
 // planColumns decides which columns to render and at what widths so the
 // table (cells + per-column padding) fits avail. Columns are dropped by
-// descending drop priority while even the floored widths overflow; the
-// surviving widths come from table.FitColumns (widest-flex-first
-// truncation). kept indexes into the specs/natural slices and is parallel
-// to widths. avail <= 0 keeps every column at natural width — the
-// pre-WindowSizeMsg frame falls back to a fixed layout instead of
-// truncating against an unknown terminal.
+// descending drop priority while the floored widths overflow; if that pass
+// exhausts every droppable column the dropLast tier sheds the rest so the
+// rendered row always fits (one column is always kept — a table with no
+// columns conveys nothing). The surviving widths come from
+// table.FitColumns (widest-flex-first truncation). kept indexes into the
+// specs/natural slices and is parallel to widths. avail <= 0 keeps every
+// column at natural width — the pre-WindowSizeMsg frame falls back to a
+// fixed layout instead of truncating against an unknown terminal.
 func planColumns(specs []columnSpec, natural []int, avail int) (kept, widths []int) {
 	kept = make([]int, len(specs))
 	for i := range specs {
@@ -154,12 +171,12 @@ func planColumns(specs []columnSpec, natural []int, avail int) (kept, widths []i
 		}
 	}
 	widths = fitKept(natural, mins, kept, avail)
-	for tableTotal(widths) > avail {
-		drop := -1
-		for k, i := range kept {
-			if specs[i].drop > 0 && (drop < 0 || specs[i].drop > specs[kept[drop]].drop) {
-				drop = k
-			}
+	for tableTotal(widths) > avail && len(kept) > 1 {
+		drop := widestPriority(kept, specs, true)
+		if drop < 0 {
+			// Normal tiers are exhausted; fall back to the emergency
+			// tier so a pinned-only remainder still fits.
+			drop = widestPriority(kept, specs, false)
 		}
 		if drop < 0 {
 			break
@@ -168,6 +185,30 @@ func planColumns(specs []columnSpec, natural []int, avail int) (kept, widths []i
 		widths = fitKept(natural, mins, kept, avail)
 	}
 	return kept, widths
+}
+
+// widestPriority returns the position within kept of the column with the
+// highest priority for the requested tier (drop, or dropLast when normal is
+// false), or -1 when no kept column has a nonzero priority in that tier.
+// Ties resolve to the lowest index, keeping the layout deterministic.
+func widestPriority(kept []int, specs []columnSpec, normal bool) int {
+	priority := func(sp columnSpec) int {
+		if normal {
+			return sp.drop
+		}
+		return sp.dropLast
+	}
+	best := -1
+	for k, i := range kept {
+		p := priority(specs[i])
+		if p <= 0 {
+			continue
+		}
+		if best < 0 || p > priority(specs[kept[best]]) {
+			best = k
+		}
+	}
+	return best
 }
 
 // fitKept runs table.FitColumns over the kept subset of natural/mins.
@@ -255,6 +296,12 @@ func wrapWordsToWidth(s string, width int) []string {
 			out = append(out, "")
 			continue
 		}
+		// A word longer than width (a repo slug, hostname, URL or file
+		// path — all common in filter lines and error text) has no break
+		// opportunity, so greedy packing would emit it verbatim and the
+		// line would run past the terminal edge no matter how narrow the
+		// terminal is. Split those up front.
+		words = splitOverlongWords(words, width)
 		cur := ""
 		for _, w := range words {
 			if cur == "" {
@@ -267,6 +314,33 @@ func wrapWordsToWidth(s string, width int) []string {
 			}
 		}
 		out = append(out, cur)
+	}
+	return out
+}
+
+// splitOverlongWords breaks any word wider than width into rune-safe
+// chunks of at most width bytes, preserving word order. Chunking is
+// byte-based (like truncateCell and table.ColumnWidths) and byte length is
+// always an upper bound on rendered columns for UTF-8, so a chunk can
+// never overflow.
+func splitOverlongWords(words []string, width int) []string {
+	var out []string
+	for _, w := range words {
+		for len(w) > width {
+			cut := width
+			for cut > 0 && !utf8.RuneStart(w[cut]) {
+				cut--
+			}
+			if cut == 0 {
+				// width is smaller than the leading rune; emit the whole
+				// rune so the loop always makes progress.
+				_, size := utf8.DecodeRuneInString(w)
+				cut = size
+			}
+			out = append(out, w[:cut])
+			w = w[cut:]
+		}
+		out = append(out, w)
 	}
 	return out
 }

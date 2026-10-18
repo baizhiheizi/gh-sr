@@ -85,7 +85,7 @@ func (m *dashboardModel) viewMain() tea.View {
 	var b strings.Builder
 	avail := m.termWidth() - cellPad
 
-	b.WriteString(m.renderTitleLine("gh sr dashboard", strconv.Itoa(len(m.statuses))+" runners"))
+	b.WriteString(m.renderTitleLine("gh sr dashboard", countLabel(len(m.statuses), "runner")))
 	b.WriteString("\n\n")
 
 	filterParts := []string{}
@@ -95,11 +95,14 @@ func (m *dashboardModel) viewMain() tea.View {
 	if m.tuiRepoFilter != "" {
 		filterParts = append(filterParts, "repo="+m.tuiRepoFilter)
 	}
+	// Both branches go through the width-aware renderer: the "(none)" case
+	// used to render a raw helpStyle string, which both overflowed narrow
+	// terminals and left a trailing run of spaces where lipgloss pads the
+	// style's MarginTop line to the block width.
 	if len(filterParts) == 0 {
-		b.WriteString(helpStyle.Render("  Filters: (none)  — press f to change"))
-		b.WriteByte('\n')
+		b.WriteString(renderIndentedWrapped("Filters: (none)  — press f to change", avail, helpStyle))
 	} else {
-		b.WriteString(renderIndentedWrapped("  Filters: "+strings.Join(filterParts, "  ")+"  — press f to change", avail, helpStyle))
+		b.WriteString(renderIndentedWrapped("Filters: "+strings.Join(filterParts, "  ")+"  — press f to change", avail, helpStyle))
 	}
 
 	if m.busy && m.busyOp != "" {
@@ -118,12 +121,14 @@ func (m *dashboardModel) viewMain() tea.View {
 	}
 
 	if m.lastErr != "" {
+		// renderIndentedWrapped already terminates its block with a
+		// newline, so only one more is needed for the blank separator.
 		b.WriteString(renderIndentedWrapped("Error: "+m.lastErr, avail, statusStopped))
-		b.WriteString("\n\n")
+		b.WriteString("\n")
 	}
 
 	if len(m.statuses) == 0 {
-		b.WriteString("  No runners in view (check filters or config).\n")
+		b.WriteString(renderIndentedWrapped("No runners in view (check filters or config).", avail, lipgloss.NewStyle()))
 		b.WriteString(m.footerMain())
 		if m.showHelp {
 			b.WriteByte('\n')
@@ -189,16 +194,26 @@ func (m *dashboardModel) viewMain() tea.View {
 // renderTitleLine renders a panel title with suffix right-aligned on the
 // same line, padded with plain spaces to the terminal width. When the two
 // cannot share a line (narrow terminal, long suffix) the suffix is
-// dropped rather than wrapping over the title. The title is rendered
-// through a margin-free copy of titleStyle — MarginBottom on the styled
-// string would insert a newline and push the suffix onto its own line;
-// the caller's following "\n\n" provides the spacing instead.
+// dropped rather than wrapping over the title. Both halves render through
+// margin-free copies of the panel styles — a margin on either side inserts
+// a newline and pushes the suffix onto its own line (helpStyle carries
+// MarginTop(1), which did exactly that); the caller's following "\n\n"
+// provides the spacing instead.
 func (m *dashboardModel) renderTitleLine(title, suffix string) string {
 	gap := m.termWidth() - len(title) - len(suffix) - 3
 	if suffix == "" || gap < 1 {
 		return titleStyle.MarginBottom(0).Render(title)
 	}
-	return titleStyle.MarginBottom(0).Render(title) + strings.Repeat(" ", gap) + helpStyle.Render(suffix)
+	return titleStyle.MarginBottom(0).Render(title) + strings.Repeat(" ", gap) + helpStyle.MarginTop(0).Render(suffix)
+}
+
+// countLabel renders the "<n> runners" / "<n> hosts" panel-title suffix,
+// pluralising so a single row reads "1 runner" rather than "1 runners".
+func countLabel(n int, singular string) string {
+	if n == 1 {
+		return "1 " + singular
+	}
+	return strconv.Itoa(n) + " " + singular + "s"
 }
 
 // renderIndentedWrapped writes s word-wrapped to width with a two-space
@@ -235,6 +250,20 @@ var footerMainSegments = []string{
 // footers so the shortcut hints themselves never move between states.
 const footerRefreshing = "(refreshing…)"
 
+// hintLine packs hint segments onto as many lines as the terminal width
+// needs and renders them as one styled block (so the style's MarginTop
+// applies once rather than between lines), with the block padding stripped.
+// Shared by footerMain and the panels whose hint lines would otherwise be
+// fixed-width strings that overflow a narrow terminal.
+func (m *dashboardModel) hintLine(segments ...string) string {
+	lines := packSegments(segments, m.termWidth()-cellPad)
+	block := make([]string, len(lines))
+	for i, line := range lines {
+		block[i] = "  " + line
+	}
+	return renderStyledBlock(block, helpStyle)
+}
+
 // footerMain renders the bottom help line, wrapping segments onto as many
 // lines as the terminal width requires. The leading newline (outside the
 // helpStyle render, so lipgloss treats the hints as one styled block and
@@ -249,14 +278,9 @@ func (m *dashboardModel) footerMain() string {
 	if m.loading {
 		segs = append(slices.Clone(segs), footerRefreshing)
 	}
-	lines := packSegments(segs, m.termWidth()-cellPad)
-	block := make([]string, len(lines))
-	for i, line := range lines {
-		block[i] = "  " + line
-	}
 	m.footerWidth = m.termWidth()
 	m.footerLoading = m.loading
-	m.footerText = "\n" + renderStyledBlock(block, helpStyle)
+	m.footerText = "\n" + m.hintLine(segs...)
 	return m.footerText
 }
 
@@ -355,12 +379,12 @@ func (m *dashboardModel) viewScroll() tea.View {
 	b.WriteString(titleStyle.Render(m.scrollTitle))
 	b.WriteString("\n\n")
 	if m.scrollOff > 0 || end < len(m.scrollLines) {
-		b.WriteString(helpStyle.Render(fmt.Sprintf(
-			"  lines %d–%d of %d  (j/k scroll, ctrl+u/ctrl+d page, esc back)\n\n",
-			m.scrollOff+1, end, len(m.scrollLines),
-		)))
+		b.WriteString(m.hintLine(fmt.Sprintf("lines %d–%d of %d", m.scrollOff+1, end, len(m.scrollLines)),
+			"j/k scroll", "ctrl+u/ctrl+d page", "esc back"))
+		b.WriteString("\n\n")
 	} else {
-		b.WriteString(helpStyle.Render("  j/k scroll · ctrl+u/ctrl+d page · esc back\n\n"))
+		b.WriteString(m.hintLine("j/k scroll", "ctrl+u/ctrl+d page", "esc back"))
+		b.WriteString("\n\n")
 	}
 	for i := m.scrollOff; i < end; i++ {
 		b.WriteString("  ")
@@ -372,7 +396,7 @@ func (m *dashboardModel) viewScroll() tea.View {
 
 func (m *dashboardModel) viewHostMetrics() tea.View {
 	var b strings.Builder
-	b.WriteString(m.renderTitleLine("Host Metrics", strconv.Itoa(len(m.hostMetrics))+" hosts"))
+	b.WriteString(m.renderTitleLine("Host Metrics", countLabel(len(m.hostMetrics), "host")))
 	b.WriteString("\n\n")
 
 	if m.metricsLoading && len(m.hostMetrics) == 0 {
@@ -419,6 +443,6 @@ func (m *dashboardModel) viewHostMetrics() tea.View {
 		}
 	}
 
-	b.WriteString(helpStyle.Render("\n  r: refresh  esc: back  q: back"))
+	b.WriteString("\n" + m.hintLine("r: refresh", "esc: back", "q: back"))
 	return newAltView(b.String())
 }
