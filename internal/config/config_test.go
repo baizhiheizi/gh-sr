@@ -1047,6 +1047,7 @@ func TestValidate_containerRunnerImage_toolcache(t *testing.T) {
 		{"strip over max", []ContainerToolcacheEntry{{URL: "https://example.com/t.tar.gz", Dir: "d", Strip: maxContainerRunnerToolcacheStripComponents + 1}}, true},
 		{"traversal complete", []ContainerToolcacheEntry{{URL: "https://example.com/t.tar.gz", Dir: "Ruby/4.0.5", Complete: "../x64.complete"}}, true},
 		{"absolute complete", []ContainerToolcacheEntry{{URL: "https://example.com/t.tar.gz", Dir: "Ruby/4.0.5", Complete: "/Ruby/x64.complete"}}, true},
+		{"reserved dash complete", []ContainerToolcacheEntry{{URL: "https://example.com/t.tar.gz", Dir: "Ruby/4.0.5", Complete: "-"}}, true},
 		{"http rejected", []ContainerToolcacheEntry{{URL: "http://example.com/t.tar.gz", Dir: "Ruby/x64"}}, true},
 		{"no scheme", []ContainerToolcacheEntry{{URL: "example.com/t.tar.gz", Dir: "Ruby/x64"}}, true},
 		{"empty url", []ContainerToolcacheEntry{{URL: "  ", Dir: "Ruby/x64"}}, true},

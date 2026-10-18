@@ -1,6 +1,7 @@
 package runner
 
 import (
+	"strconv"
 	"strings"
 	"testing"
 
@@ -17,8 +18,10 @@ func newToolcacheHost(t *testing.T, mock *testutil.MockExecutor) *host.Host {
 }
 
 // TestContainerToolcacheExtraFileWithBlobs pins the build-context manifest
-// contract: a cached source appends exactly one fifth column (the blob name),
-// entries without a cache keep the legacy 4-column line, and with no blobs at
+// contract: a cached source appends exactly one fifth column (the blob name)
+// with every column to its left materialized (unset complete pads to "-",
+// strip prints 0) so the bake loop's positional read cannot shift fields;
+// entries without a cache keep the padded 4-column line, and with no blobs at
 // all the output is byte-identical to containerToolcacheExtraFile (the bake
 // must be reproducible regardless of host cache state).
 func TestContainerToolcacheExtraFileWithBlobs(t *testing.T) {
@@ -36,14 +39,115 @@ func TestContainerToolcacheExtraFileWithBlobs(t *testing.T) {
 	keyFlutter := toolcacheSourceKey("https://example.com/flutter.tar.xz")
 	blobs := map[int]string{0: keyFlutter}
 	got := containerToolcacheExtraFileWithBlobs(entries, blobs)
-	if !strings.Contains(got, "https://example.com/flutter.tar.xz flutter "+keyFlutter+"\n") {
-		t.Fatalf("cached entry must carry the blob name as its fifth column, got:\n%q", got)
+	if !strings.Contains(got, "https://example.com/flutter.tar.xz flutter - 0 "+keyFlutter+"\n") {
+		t.Fatalf("cached entry must carry the blob name as its fifth column with complete/strip padded, got:\n%q", got)
 	}
-	if !strings.Contains(got, "https://example.com/jdk.tar.gz jdk-temurin-17 1\n") {
-		t.Fatalf("uncached entry must keep the 4-column line, got:\n%q", got)
+	if !strings.Contains(got, "https://example.com/jdk.tar.gz jdk-temurin-17 - 1\n") {
+		t.Fatalf("uncached entry must keep the padded 4-column line, got:\n%q", got)
 	}
 	if strings.Count(got, keyFlutter) != 1 {
 		t.Fatalf("blob name must appear exactly once, got:\n%q", got)
+	}
+}
+
+// TestContainerToolcacheExtraFileColumnsAlign is the regression test for the
+// 2026-10-18 x1-linux build failure: a cached blob key appended without
+// left-padding shifted into the strip column, so the bake ran
+// `tar --strip-components=fdf5a2a9ccdd284a` (GNU tar: "Invalid number of
+// elements") while bypassing the blob and re-downloading the tarball from
+// github.com — 8 connect timeouts before the tar error. This test re-parses
+// every rendered line with the bake loop's exact positional semantics
+// (`read -r url dir complete strip local` plus its "-" / empty defaults) and
+// asserts each field lands where the Dockerfile expects, across every
+// complete × strip × blob combination.
+func TestContainerToolcacheExtraFileColumnsAlign(t *testing.T) {
+	t.Parallel()
+	type shape struct {
+		name     string
+		entry    config.ContainerToolcacheEntry
+		cached   bool
+		wantBlob bool // entry is expected to consume a context blob
+	}
+	shapes := []shape{
+		{"bare", config.ContainerToolcacheEntry{URL: "https://e.com/a.tar.gz", Dir: "a"}, false, false},
+		{"bare cached", config.ContainerToolcacheEntry{URL: "https://e.com/b.tar.gz", Dir: "b"}, true, true},
+		{"complete only", config.ContainerToolcacheEntry{URL: "https://e.com/c.tar.gz", Dir: "c", Complete: "c/x.complete"}, false, false},
+		{"complete only cached", config.ContainerToolcacheEntry{URL: "https://e.com/d.tar.gz", Dir: "d", Complete: "d/x.complete"}, true, true},
+		{"strip only", config.ContainerToolcacheEntry{URL: "https://e.com/e.tar.gz", Dir: "e", Strip: 1}, false, false},
+		{"strip only cached", config.ContainerToolcacheEntry{URL: "https://e.com/f.tar.gz", Dir: "f", Strip: 1}, true, true},
+		{"complete+strip", config.ContainerToolcacheEntry{URL: "https://e.com/g.tar.gz", Dir: "g", Complete: "g.complete", Strip: 2}, false, false},
+		{"complete+strip cached", config.ContainerToolcacheEntry{URL: "https://e.com/h.tar.gz", Dir: "h", Complete: "h.complete", Strip: 2}, true, true},
+	}
+	entries := make([]config.ContainerToolcacheEntry, len(shapes))
+	blobs := make(map[int]string)
+	for i, s := range shapes {
+		entries[i] = s.entry
+		if s.cached {
+			blobs[i] = toolcacheSourceKey(s.entry.URL)
+		}
+	}
+	rendered := containerToolcacheExtraFileWithBlobs(entries, blobs)
+
+	byDir := make(map[string]shape)
+	for _, s := range shapes {
+		byDir[s.entry.Dir] = s
+	}
+	for _, line := range strings.Split(strings.TrimSuffix(rendered, "\n"), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 2 || len(fields) > 5 {
+			t.Fatalf("line must have 2–5 columns, got %d: %q", len(fields), line)
+		}
+		s := byDir[fields[1]]
+		if s.name == "" {
+			t.Fatalf("unexpected dir column in %q", line)
+		}
+		// read -r: trailing variables are set to empty strings.
+		var url, dir, complete, strip, local string
+		url, dir = fields[0], fields[1]
+		if len(fields) > 2 {
+			complete = fields[2]
+		}
+		if len(fields) > 3 {
+			strip = fields[3]
+		}
+		if len(fields) > 4 {
+			local = fields[4]
+		}
+		if url != s.entry.URL {
+			t.Fatalf("%s: url column shifted: %q", s.name, line)
+		}
+		// Bake-loop complete semantics: empty or "-" → "<dir>.complete".
+		if complete == "" || complete == "-" {
+			complete = dir + ".complete"
+		}
+		if want := s.entry.Complete; want != "" && complete != want {
+			t.Fatalf("%s: complete column landed as %q, want %q (line %q)", s.name, complete, want, line)
+		}
+		// Bake-loop strip semantics: empty → 0; anything else must be
+		// numeric (a hex blob key here previously became
+		// --strip-components=<16 hex chars>).
+		if strip == "" {
+			strip = "0"
+		}
+		if want := strconv.Itoa(s.entry.Strip); strip != want {
+			t.Fatalf("%s: strip column landed as %q, want %q (line %q)", s.name, strip, want, line)
+		}
+		for _, r := range strip {
+			if r < '0' || r > '9' {
+				t.Fatalf("%s: strip column must be numeric, got %q (line %q)", s.name, strip, line)
+			}
+		}
+		// Bake-loop local semantics: empty → "-" (WAN fallback); a cached
+		// entry must reference its own blob, not another column's value.
+		if local == "" {
+			local = "-"
+		}
+		if s.wantBlob && local != toolcacheSourceKey(s.entry.URL) {
+			t.Fatalf("%s: cached entry must name its blob in column 5, got %q (line %q)", s.name, local, line)
+		}
+		if !s.wantBlob && local != "-" {
+			t.Fatalf("%s: uncached entry must not reference a blob, got %q (line %q)", s.name, local, line)
+		}
 	}
 }
 

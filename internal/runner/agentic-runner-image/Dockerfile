@@ -152,7 +152,14 @@ COPY toolcache-extra.txt /tmp/toolcache-extra.txt
 RUN mkdir -p /home/runner/.toolcache \
     && while read -r url dir complete strip local; do \
         [ -n "$url" ] || continue; \
-        [ -n "$complete" ] || complete="$dir.complete"; \
+        # Columns are positional: "<url> <dir> <complete|-> <strip> [blob]".
+        # The writer pads with "-" for an unset complete marker and always
+        # materializes strip before a blob name, so fields can never shift
+        # left — but hand-edited manifests (or a stale one) must fail loudly
+        # here, not as a cryptic tar usage error mid-extraction.
+        case "$complete" in ''|'-') complete="$dir.complete";; esac; \
+        [ -n "$strip" ] || strip=0; \
+        case "$strip" in *[!0-9]*) echo "toolcache bake: invalid strip column '$strip' for $url" >&2; exit 1;; esac; \
         [ -n "$local" ] || local="-"; \
         if [ "$local" != "-" ] && [ -s "/tmp/toolcache-blobs/$local" ]; then \
             cp "/tmp/toolcache-blobs/$local" /tmp/toolcache.tar; \
@@ -197,7 +204,13 @@ RUN mkdir -p /home/runner/.toolcache && chown runner:runner /home/runner/.toolca
 # — paths relative to /home/runner/.toolcache, plus an optional fifth field:
 # the name of a blob pre-downloaded into the build context's toolcache-blobs/
 # by gh-sr's host-side source cache (~/.gh-sr/toolcache-src/<sha256(url)[:16]>;
-# issue #559). The tarball is extracted into <dir> and a zero-byte marker is
+# issue #559). Columns are POSITIONAL (the loop reads
+# "url dir complete strip local"), so the writer only emits a column once
+# every column to its left is materialized: an unset complete marker pads to
+# "-", and strip prints its real value (possibly 0) whenever a blob name
+# follows. A bare "<url> <dir>" line is the legacy 2-field form and parses
+# with the complete/strip/local defaults. The tarball is extracted into <dir>
+# and a zero-byte marker is
 # written at <complete> (default "<dir>.complete") — setup-ruby & co. treat
 # that marker as "already installed" and skip their runtime download
 # (GitHub-hosted images pre-seed rubies the same way). The explicit <complete>
