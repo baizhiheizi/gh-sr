@@ -448,6 +448,12 @@ func validateContainerToolcache(entries []ContainerToolcacheEntry) error {
 			if _, err := validateToolcacheDir(e.Complete); err != nil {
 				return fmt.Errorf("%s.complete: %w", field, err)
 			}
+			// "-" is the build-context manifest's placeholder for an unset
+			// complete marker (the bake file pads positional columns), so a
+			// literal "-" marker would silently flip back to the default.
+			if e.Complete == "-" {
+				return fmt.Errorf("%s.complete: \"-\" is reserved (unset means the default <dir>.complete)", field)
+			}
 		}
 		if e.Strip < 0 || e.Strip > maxContainerRunnerToolcacheStripComponents {
 			return fmt.Errorf("%s.strip: must be between 0 and %d (got %d)",

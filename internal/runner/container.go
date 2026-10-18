@@ -159,15 +159,33 @@ func containerToolcacheExtraFileLines(entries []config.ContainerToolcacheEntry, 
 		b.WriteString(l.e.URL)
 		b.WriteByte(' ')
 		b.WriteString(l.e.Dir)
-		if l.e.Complete != "" {
+		// The bake loop reads the line positionally as
+		// "url dir complete strip local", so a column may only be emitted
+		// when every column to its left is materialized: complete pads to
+		// "-" when unset, and strip prints its actual (possibly 0) value
+		// whenever anything follows it. Appending the blob key without
+		// that padding shifted it into the strip slot, where the bake ran
+		// `tar --strip-components=<sha256(url)[:16]>` — GNU tar rejects a
+		// non-numeric value ("tar: <hex>: Invalid number of elements") —
+		// while simultaneously bypassing the cached blob (local stayed
+		// empty), so the bake re-downloaded the tarball over the flaky WAN
+		// path the cache exists to avoid and then died at extraction.
+		// Same for complete-less strip entries rendered "url dir 1", which
+		// the loop misread as complete="1".
+		if l.e.Complete != "" || l.e.Strip != 0 || l.key != "" {
 			b.WriteByte(' ')
-			b.WriteString(l.e.Complete)
+			if l.e.Complete != "" {
+				b.WriteString(l.e.Complete)
+			} else {
+				b.WriteByte('-')
+			}
 		}
-		// The fourth field only appears when strip is set, so legacy
-		// 3-field-only lists render byte-identically (and fingerprint
-		// identically) to pre-strip output; the bake loop defaults a
-		// missing/empty fourth field to 0.
-		if l.e.Strip != 0 {
+		// The strip column prints only when it carries information (non-zero)
+		// or when the blob-key column behind it needs the slot held — so
+		// legacy 2-field lines still render byte-identically (and
+		// fingerprint identically) to pre-strip output, and the bake loop
+		// keeps defaulting a missing/empty fourth field to 0.
+		if l.e.Strip != 0 || l.key != "" {
 			b.WriteByte(' ')
 			b.WriteString(strconv.Itoa(l.e.Strip))
 		}

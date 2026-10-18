@@ -710,10 +710,12 @@ func TestAgenticRunnerDockerfileSymlinksHostedToolCache(t *testing.T) {
 	}
 	// The toolcache bake step must COPY the manifest (always present, even empty)
 	// and write the marker setup-ruby treats as "already installed" — default
-	// <dir>.complete, overridable per entry via the third manifest field.
+	// <dir>.complete, overridable per entry via the third manifest field ("-"
+	// pads an unset marker so positional columns cannot shift left).
 	for _, want := range []string{
 		"COPY toolcache-extra.txt /tmp/toolcache-extra.txt",
-		`[ -n "$complete" ] || complete="$dir.complete"`,
+		`case "$complete" in ''|'-') complete="$dir.complete";; esac`,
+		`case "$strip" in *[!0-9]*) echo "toolcache bake: invalid strip column '$strip' for $url" >&2; exit 1;; esac`,
 		`touch "/home/runner/.toolcache/$complete"`,
 		"--retry-all-errors",
 	} {
@@ -1186,12 +1188,14 @@ func TestContainerToolcacheExtraFile(t *testing.T) {
 		{URL: "https://example.com/ruby.tar.gz", Dir: "Ruby/4.0.5", Complete: "Ruby/4.0.5/x64.complete"},
 		{URL: "https://example.com/jdk.tar.gz", Dir: "jdk-temurin-17", Strip: 1},
 	}
-	// Lines are "<url> <dir> [complete] [strip]" (the Dockerfile bake reads
-	// them with `read -r url dir complete strip`), sorted by dir so the
-	// fingerprint is order-independent; the third field only appears when
-	// Complete is set, the fourth only when Strip is non-zero.
+	// Lines are "<url> <dir> [complete|'-'] [strip] [blob]" (the Dockerfile
+	// bake reads them with `read -r url dir complete strip local`), sorted by
+	// dir so the fingerprint is order-independent. Columns are positional, so
+	// the writer materializes every column to the left of one it emits: an
+	// unset complete pads to "-", and strip prints 0 whenever a blob name
+	// follows. Legacy 2-field lines are unchanged.
 	want := "https://example.com/ruby.tar.gz Ruby/4.0.5 Ruby/4.0.5/x64.complete\n" +
-		"https://example.com/jdk.tar.gz jdk-temurin-17 1\n" +
+		"https://example.com/jdk.tar.gz jdk-temurin-17 - 1\n" +
 		"https://example.com/node.tar.gz node/24.20.0/x64\n"
 	if got := containerToolcacheExtraFile(entries); got != want {
 		t.Fatalf("containerToolcacheExtraFile() =\n%q\nwant\n%q", got, want)

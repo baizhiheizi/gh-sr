@@ -75,7 +75,11 @@ type dashboardModel struct {
 
 	scrollTitle string
 	scrollLines []string
-	scrollOff   int
+	// scrollRaw is the unwrapped source of scrollLines; kept so a
+	// WindowSizeMsg can re-wrap the panel at the new width without
+	// re-fetching the content.
+	scrollRaw string
+	scrollOff int
 
 	filterHostChoices []string
 	filterRepoChoices []string
@@ -83,6 +87,16 @@ type dashboardModel struct {
 	hostMetrics    []host.HostMetrics
 	hostMetricsCur int
 	metricsLoading bool
+
+	// footerWidth / footerLoading / footerText memoize footerMain's
+	// rendering: the packed segments depend only on the terminal width
+	// and the loading flag, and View() runs on every keypress and
+	// refresh tick. The previous implementation pre-rendered both states
+	// at package init; the cache restores that cost for the common case
+	// while still re-packing when the terminal is resized.
+	footerWidth   int
+	footerLoading bool
+	footerText    string
 }
 
 type statusRefreshedMsg struct {
@@ -183,6 +197,37 @@ func (m *dashboardModel) refreshMetricsCmd() tea.Cmd {
 		metrics := ops.CollectHostMetrics(nil, cfg, hostF)
 		return hostMetricsMsg{metrics: metrics}
 	}
+}
+
+// termWidth returns the terminal width for layout decisions. Before the
+// first tea.WindowSizeMsg arrives (or on a non-TTY fallback) it defaults
+// to 80 — the de-facto width the previous fixed-layout views targeted —
+// so the first frame already matches a typical terminal instead of
+// truncating against an unknown width.
+func (m *dashboardModel) termWidth() int {
+	if m.width <= 0 {
+		return 80
+	}
+	return m.width
+}
+
+// scrollWrapWidth is the line width for scroll-panel content: the terminal
+// minus the panel's two-space indent and a small right margin. The floor
+// of 20 stays above wrapLines' own degenerate-width fallback (which uses
+// 80) so a genuinely narrow terminal still wraps narrowly.
+func (m *dashboardModel) scrollWrapWidth() int {
+	return max(20, m.termWidth()-4)
+}
+
+// setScroll opens the scroll panel with title and raw text, wrapped at
+// the current terminal width. Storing scrollRaw lets a later
+// WindowSizeMsg re-wrap the same content (see Update).
+func (m *dashboardModel) setScroll(title, raw string) {
+	m.scrollTitle = title
+	m.scrollRaw = raw
+	m.scrollLines = wrapLines(raw, m.scrollWrapWidth())
+	m.scrollOff = 0
+	m.panel = panelScroll
 }
 
 func (m *dashboardModel) selectedInstance() (string, bool) {
@@ -325,6 +370,9 @@ func (m *dashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+		if m.panel == panelScroll && m.scrollRaw != "" {
+			m.scrollLines = wrapLines(m.scrollRaw, m.scrollWrapWidth())
+		}
 
 	case statusRefreshedMsg:
 		m.loading = false
@@ -363,19 +411,13 @@ func (m *dashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.lastErr = ""
-		m.scrollTitle = "Logs"
-		m.scrollLines = wrapLines(msg.text, max(40, m.width-4))
-		m.scrollOff = 0
-		m.panel = panelScroll
+		m.setScroll("Logs", msg.text)
 		return m, nil
 
 	case doctorDoneMsg:
 		m.busy = false
 		m.busyOp = ""
-		m.scrollTitle = "Doctor"
-		m.scrollLines = wrapLines(msg.out, max(40, m.width-4))
-		m.scrollOff = 0
-		m.panel = panelScroll
+		m.setScroll("Doctor", msg.out)
 		return m, nil
 
 	case validateDoneMsg:
@@ -546,10 +588,7 @@ func (m *dashboardModel) updateGlobalMenu(key string) tea.Cmd {
 			m.panel = panelConfirmCleanup
 			m.menuCursor = 0
 		case 3:
-			m.scrollTitle = "Configuration"
-			m.scrollLines = wrapLines(FormatConfig(m.cfg), max(40, m.width-4))
-			m.scrollOff = 0
-			m.panel = panelScroll
+			m.setScroll("Configuration", FormatConfig(m.cfg))
 		case 4:
 			m.panel = panelMain
 			m.busy = true
@@ -706,6 +745,7 @@ func (m *dashboardModel) handleScrollKeys(key string) bool {
 	case "esc", "q":
 		m.panel = panelMain
 		m.scrollLines = nil
+		m.scrollRaw = ""
 		m.scrollOff = 0
 		return true
 	case "j", "down":
