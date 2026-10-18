@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"strconv"
 	"strings"
 	"testing"
 
@@ -130,6 +131,17 @@ func BenchmarkViewMain(b *testing.B) {
 			_ = m.viewMain()
 		}
 	})
+	b.Run("twelve_statuses", func(b *testing.B) {
+		// Twelve rows mirrors a typical large host fleet (the x1 case
+		// from #559). Single-row perf can stay flat while fleet-scale
+		// render cost regresses in the table-build loop.
+		m := newBenchDashboardModelN(12)
+		b.ReportAllocs()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			_ = m.viewMain()
+		}
+	})
 }
 
 // newBenchDashboardModel builds a dashboardModel wired with enough state
@@ -137,21 +149,30 @@ func BenchmarkViewMain(b *testing.B) {
 // matching widths). It is shared by BenchmarkViewMain and the surrounding
 // pinning tests so the bench state matches what users actually see.
 func newBenchDashboardModel() *dashboardModel {
-	return &dashboardModel{
-		statuses: []runner.RunnerStatus{
-			{
-				Instance:            "runner-1",
-				Host:                "host1.example",
-				Repo:                "o/r1",
-				Mode:                "container",
-				ContainerImage:      "gh-sr/agentic-runner:2.320.0",
-				ContainerImageBuild: "-",
-				Local:               "running",
-				Remote:              "online",
-				Labels:              "self-hosted,linux,x64",
-			},
-		},
+	return newBenchDashboardModelN(1)
+}
+
+// newBenchDashboardModelN builds the same dashboardModel with n populated
+// status rows (instance / host / repo differ so width-measurement has a
+// reason to think harder). It exists so BenchmarkViewMain can compare
+// single-row vs fleet-scale render cost.
+func newBenchDashboardModelN(n int) *dashboardModel {
+	hosts := []string{"host1.example", "host2.example", "host3.example", "host4.example"}
+	statuses := make([]runner.RunnerStatus, n)
+	for i := 0; i < n; i++ {
+		statuses[i] = runner.RunnerStatus{
+			Instance:            "runner-" + strconv.Itoa(i+1),
+			Host:                hosts[i%len(hosts)],
+			Repo:                "o/r" + strconv.Itoa(i+1),
+			Mode:                "container",
+			ContainerImage:      "gh-sr/agentic-runner:2.320.0",
+			ContainerImageBuild: "ok 2m ago",
+			Local:               "running",
+			Remote:              "online",
+			Labels:              "self-hosted,linux,x64",
+		}
 	}
+	return &dashboardModel{statuses: statuses}
 }
 
 // TestFooterMain_idleAndLoading pins the visible text for the dashboard

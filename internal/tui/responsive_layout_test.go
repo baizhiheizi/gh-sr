@@ -272,6 +272,24 @@ func TestSplitOverlongWords_runeSafe(t *testing.T) {
 	}
 }
 
+// TestSplitOverlongWords_zeroWidthSpansLeadingRune pins the defensive
+// cut==0 branch. With width=0 the loop never decrements cut (it would
+// require cut > 0), so we fall through to DecodeRuneInString and emit
+// the leading rune unchanged. The function must still make progress —
+// otherwise it would loop forever. The resulting chunks must rejoin to
+// the input exactly.
+func TestSplitOverlongWords_zeroWidthSpansLeadingRune(t *testing.T) {
+	t.Parallel()
+	got := splitOverlongWords([]string{"hello"}, 0)
+	var joined string
+	for _, chunk := range got {
+		joined += chunk
+	}
+	if joined != "hello" {
+		t.Errorf("chunks must rejoin to the original, got %q", got)
+	}
+}
+
 // visibleText strips ANSI escape sequences so assertions can target the
 // rendered text rather than the styled bytes.
 func visibleText(s string) string {

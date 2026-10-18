@@ -267,3 +267,59 @@ func TestNonTTYHint_nonempty(t *testing.T) {
 		t.Fatal("NonTTYHint empty")
 	}
 }
+
+// TestPrintConfig_writesToStdout verifies the fmt.Print wrapper around
+// FormatConfig actually emits the same content FormatConfig produces.
+// Without this, a future change could route PrintConfig to a different
+// writer (or no-op) without any signal at the call site.
+func TestPrintConfig_writesToStdout(t *testing.T) {
+	// No t.Parallel(): captureStdout mutates package-global os.Stdout.
+	cfg := &config.Config{
+		Hosts: map[string]config.HostConfig{
+			"h1": {Addr: "local", OS: "linux", Arch: "amd64"},
+		},
+		Runners: []config.RunnerConfig{
+			{Name: "r1", Repo: "o/r", Host: "h1", Count: 1},
+		},
+	}
+	got := captureStdout(t, func() { PrintConfig(cfg) })
+	want := FormatConfig(cfg)
+	if got != want {
+		t.Errorf("PrintConfig output does not match FormatConfig:\n---PrintConfig---\n%s\n---FormatConfig---\n%s", got, want)
+	}
+	if !strings.Contains(got, "r1") {
+		t.Errorf("PrintConfig output missing runner name: %q", got)
+	}
+}
+
+// TestPrintStatusTable_rendersHeaderAndRows verifies the os.Stdout-bound
+// wrapper around the runner-status PrintTable call. The entry-point
+// directly writes to stdout, so we capture it and assert the same
+// header/row material PrintTable would emit. Empty-input path is
+// covered separately so a regression there is flagged distinctly.
+func TestPrintStatusTable_rendersHeaderAndRows(t *testing.T) {
+	// No t.Parallel(): captureStdout mutates package-global os.Stdout.
+	statuses := []runner.RunnerStatus{
+		{Instance: "r1", Host: "h1", Repo: "o/r", Local: "running", Remote: "online", ContainerImage: "gh-sr/agentic-runner:2.320.0", ContainerImageBuild: "ok 2m ago", Labels: "self-hosted,linux"},
+		{Instance: "r2", Host: "h2", Repo: "o/r", Local: "stopped", Remote: "offline"},
+	}
+	out := captureStdout(t, func() { PrintStatusTable(statuses) })
+	for _, want := range []string{"Runner Status", "r1", "r2", "h1", "h2"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("PrintStatusTable output missing %q. Full output:\n%s", want, out)
+		}
+	}
+}
+
+// TestPrintStatusTable_emptyInput verifies the empty branch of the
+// status-table helper emits the configured EmptyMsg rather than an empty
+// stdout. The PrintTable empty path is called identically — this just
+// guards against a regression that mangles the EmptyMsg translation in
+// the entry-point wrapper.
+func TestPrintStatusTable_emptyInput(t *testing.T) {
+	// No t.Parallel(): captureStdout mutates package-global os.Stdout.
+	out := captureStdout(t, func() { PrintStatusTable(nil) })
+	if !strings.Contains(out, "No runners found.") {
+		t.Errorf("PrintStatusTable(nil) should print EmptyMsg, got %q", out)
+	}
+}
