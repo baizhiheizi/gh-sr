@@ -305,6 +305,12 @@ export RUNNER_TOOL_CACHE="/home/runner/.toolcache"
 {
     echo "RUNNER_TEMP=${RUNNER_TEMP_DIR}"
     echo "RUNNER_TOOL_CACHE=/home/runner/.toolcache"
+    # bun's install cache defaults to ~/.bun/install/cache, which lives in the
+    # container's private rootfs and dies with every container recreate — each
+    # fresh container then re-downloads every npm tarball. Point it under
+    # ~/.cache (the gh-sr-runner-cache volume when shared_caches.home_cache is
+    # on) so the tarball cache is paid once per host, like npm's cacache.
+    echo "BUN_INSTALL_CACHE_DIR=/home/runner/.cache/bun"
     if [ -n "${GH_SR_CACHE_URL:-}" ]; then
         echo "CUSTOM_ACTIONS_RESULTS_URL=${GH_SR_CACHE_URL}"
     fi
