@@ -7,46 +7,28 @@
   "issues": [],
   "checks": [
     {
-      "area": "docs",
-      "checked_at": "2026-10-13",
+      "area": "tests",
+      "checked_at": "2026-10-18",
       "result": "acted",
-      "follow_up": "Closed two #543 follow-up docs gaps in docs/content/commands.md on branch repo-assist/basics-docs-registry-disk-usage-2026-10-13 (commit ce723d9). Added gh sr registry one-liners to the quick-ref + noted the host-level gh-sr-cache / gh-sr-registry rows in the disk-usage intro. Doc-only PR."
+      "follow_up": "Filled tui gaps"
     },
     {
-      "area": "code",
-      "checked_at": "2026-10-13",
+      "area": "docs",
+      "checked_at": "2026-10-18",
       "result": "acted",
-      "follow_up": "Removed dead `svcShPresent` helper and unreachable `if h.OS == \"linux\" && svcShPresent(...)` branch in `PlanOrphanCleanup` (orphan code-path leftover from PR #358). PR opened on branch repo-assist/refactor-svcshpresent-dead-2026-10-13 (commit 56d3745). 3 files, +10/-25. No behaviour change."
+      "follow_up": "Doc-only commands.md surface"
     },
     {
       "area": "performance",
-      "checked_at": "2026-10-17",
+      "checked_at": "2026-10-18",
       "result": "no_actionable",
-      "follow_up": "Re-checked after #560–#563. Volume-mount wiring adds args per runner, not a hot path; renderRow / viewMain alloc reductions + viewScroll newline-concat remain speculative without profiling."
-    },
-    {
-      "area": "dependencies",
-      "checked_at": "2026-10-11",
-      "result": "no_actionable",
-      "follow_up": "All 6 direct deps still at head (or with minor/patch behind that Dependabot will surface). bubbletea/v2 v2.0.9→v2.1.0 minor now visible; defer to Dependabot weekly cadence. No Dependabot PRs to bundle."
-    },
-    {
-      "area": "qa",
-      "checked_at": "2026-10-14",
-      "result": "acted",
-      "follow_up": "Filled `internal/registry` coverage gap on branch repo-assist/test-registry-inspect-2026-10-14 (commit 6bb8f6d). Inspect + SettingsFromConfig 0% to 100%. Mirrors internal/cache test shape."
+      "follow_up": "viewMain cell-cache reverted; bench added"
     },
     {
       "area": "repo_assist_prs",
-      "checked_at": "2026-10-17",
+      "checked_at": "2026-10-18",
       "result": "acted",
-      "follow_up": "0 open Repo Assist PRs as of 2026-10-17 (Dependabot #547–#555, test-improver #558, and the previous registry-inspect branch all resolved). Nothing new opened this run — only #559 close plus monthly-activity accounting on #516."
-    },
-    {
-      "area": "tests",
-      "checked_at": "2026-10-14",
-      "result": "acted",
-      "follow_up": "Filled internal/registry coverage gap on branch repo-assist/test-registry-inspect-2026-10-14 (commit 6bb8f6d). Inspect 0% to 100% and SettingsFromConfig 0% to 100%. Mirrors internal/cache test shape."
+      "follow_up": "2 draft PRs opened 2026-10-18"
     }
   ],
   "completed_actions": [],
