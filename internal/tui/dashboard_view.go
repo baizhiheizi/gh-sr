@@ -2,9 +2,12 @@ package tui
 
 import (
 	"fmt"
+	"slices"
+	"strconv"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/lipgloss"
 
 	"github.com/an-lee/gh-sr/internal/table"
 )
@@ -80,8 +83,9 @@ func renderMenuItemsInto(b *strings.Builder, items []string, cursor int) {
 
 func (m *dashboardModel) viewMain() tea.View {
 	var b strings.Builder
+	avail := m.termWidth() - cellPad
 
-	b.WriteString(titleStyle.Render("gh sr dashboard"))
+	b.WriteString(m.renderTitleLine("gh sr dashboard", strconv.Itoa(len(m.statuses))+" runners"))
 	b.WriteString("\n\n")
 
 	filterParts := []string{}
@@ -95,8 +99,7 @@ func (m *dashboardModel) viewMain() tea.View {
 		b.WriteString(helpStyle.Render("  Filters: (none)  — press f to change"))
 		b.WriteByte('\n')
 	} else {
-		b.WriteString(helpStyle.Render("  Filters: " + strings.Join(filterParts, "  ")))
-		b.WriteByte('\n')
+		b.WriteString(renderIndentedWrapped("  Filters: "+strings.Join(filterParts, "  ")+"  — press f to change", avail, helpStyle))
 	}
 
 	if m.busy && m.busyOp != "" {
@@ -104,7 +107,7 @@ func (m *dashboardModel) viewMain() tea.View {
 		b.WriteByte('\n')
 	}
 	if m.toast != "" {
-		b.WriteString(statusOnline.Render("  " + m.toast))
+		b.WriteString(statusOnline.Render("  " + truncateCell(m.toast, max(1, avail))))
 		b.WriteByte('\n')
 	}
 	b.WriteString("\n")
@@ -115,7 +118,7 @@ func (m *dashboardModel) viewMain() tea.View {
 	}
 
 	if m.lastErr != "" {
-		b.WriteString(statusStopped.Render("  Error: " + m.lastErr))
+		b.WriteString(renderIndentedWrapped("Error: "+m.lastErr, avail, statusStopped))
 		b.WriteString("\n\n")
 	}
 
@@ -124,61 +127,156 @@ func (m *dashboardModel) viewMain() tea.View {
 		b.WriteString(m.footerMain())
 		if m.showHelp {
 			b.WriteByte('\n')
-			b.WriteString(helpOverlay())
+			b.WriteString(m.helpOverlay())
 		}
 		return newAltView(b.String())
 	}
 
-	rows := make([][]string, len(m.statuses))
-	for i, s := range m.statuses {
-		rows[i] = runnerStatusCells(s)
+	// Responsive table: measure natural widths, then let planColumns drop
+	// / truncate columns so the row line fits the terminal. Cells are
+	// truncated as plain text (before colorizing) so ANSI sequences are
+	// never cut mid-escape.
+	specs := make([]columnSpec, len(runnerStatusColumns))
+	natural := make([]int, len(runnerStatusColumns))
+	for i, c := range runnerStatusColumns {
+		specs[i] = c.columnSpec
+		natural[i] = len(c.header)
+		for _, s := range m.statuses {
+			if l := len(c.cell(s)); l > natural[i] {
+				natural[i] = l
+			}
+		}
 	}
-	widths := table.ColumnWidths(runnerStatusHeaders, rows)
+	kept, widths := planColumns(specs, natural, avail)
 
-	b.WriteString(renderHeader(runnerStatusHeaders, widths))
+	headers := make([]string, len(kept))
+	for k, i := range kept {
+		headers[k] = truncateCell(runnerStatusColumns[i].header, widths[k])
+	}
+	rows := make([][]string, len(m.statuses))
+	for r, s := range m.statuses {
+		row := make([]string, len(kept))
+		for k, i := range kept {
+			row[k] = truncateCell(runnerStatusColumns[i].cell(s), widths[k])
+		}
+		rows[r] = row
+	}
+	colorize := func(col int, cell string) string {
+		c := runnerStatusColumns[kept[col]]
+		if c.color == nil {
+			return cell
+		}
+		return c.color(cell)
+	}
+
+	b.WriteString(renderHeader(headers, widths))
 	b.WriteByte('\n')
 
 	for i, cells := range rows {
-		renderRowInto(&b, cells, widths, runnerStatusColorize, i == m.cursor)
+		renderRowInto(&b, cells, widths, colorize, i == m.cursor)
 		b.WriteByte('\n')
 	}
 
 	b.WriteString(m.footerMain())
 	if m.showHelp {
 		b.WriteByte('\n')
-		b.WriteString(helpOverlay())
+		b.WriteString(m.helpOverlay())
 	}
 
 	return newAltView(b.String())
 }
 
-// footerMainIdle and footerMainLoading are the two pre-built help-line
-// renderings footerMain returns. The body of the line is identical in both
-// states — the only difference is the trailing "  (refreshing…)" indicator
-// during a refresh tick. Pre-rendering once at package init avoids a
-// per-View() fmt.Sprintf (reflection + []interface{} boxing) for a string
-// with exactly two possible states. footerMain just picks the right one.
-var (
-	footerMainIdle    = helpStyle.Render("\n  j/k: move  enter: runner actions  g: global menu  h: host metrics  f: filters  r: refresh  ?: help  q: quit")
-	footerMainLoading = helpStyle.Render("\n  j/k: move  enter: runner actions  g: global menu  h: host metrics  f: filters  r: refresh  ?: help  q: quit  (refreshing…)")
-)
-
-func (m *dashboardModel) footerMain() string {
-	if m.loading {
-		return footerMainLoading
+// renderTitleLine renders a panel title with suffix right-aligned on the
+// same line, padded with plain spaces to the terminal width. When the two
+// cannot share a line (narrow terminal, long suffix) the suffix is
+// dropped rather than wrapping over the title. The title is rendered
+// through a margin-free copy of titleStyle — MarginBottom on the styled
+// string would insert a newline and push the suffix onto its own line;
+// the caller's following "\n\n" provides the spacing instead.
+func (m *dashboardModel) renderTitleLine(title, suffix string) string {
+	gap := m.termWidth() - len(title) - len(suffix) - 3
+	if suffix == "" || gap < 1 {
+		return titleStyle.MarginBottom(0).Render(title)
 	}
-	return footerMainIdle
+	return titleStyle.MarginBottom(0).Render(title) + strings.Repeat(" ", gap) + helpStyle.Render(suffix)
 }
 
-func helpOverlay() string {
-	return helpStyle.Render(`  — Help —
-  Main: j/k navigate rows, enter opens actions for the selected instance.
-  Actions: setup, up, down, restart, update, logs (esc back).
-  Host metrics (h): CPU, memory, disk, load average, uptime per host.
-  Global (g): doctor, host metrics, cleanup, show/validate config, edit yaml/env, filters.
-  Filters (f): narrow by host or repo; clear restores full list.
-  Scroll views (logs, doctor, config): j/k line, ctrl+u/ctrl+d page, home/end, esc back.
-  Cleanup asks for y/n confirmation. Run gh sr init from a shell (not in the TUI).`)
+// renderIndentedWrapped writes s word-wrapped to width with a two-space
+// indent on every line, all through style as a single block. Used for
+// prose lines (filters, errors) that would otherwise overflow narrow
+// terminals.
+func renderIndentedWrapped(s string, width int, style lipgloss.Style) string {
+	width = max(20, width)
+	var lines []string
+	for _, line := range wrapWordsToWidth(s, width-cellPad) {
+		lines = append(lines, "  "+line)
+	}
+	return renderStyledBlock(lines, style) + "\n"
+}
+
+// footerMainSegments are the main-panel key hints in display order.
+// footerMain packs them into lines that fit the terminal width, so a
+// narrow terminal gets wrapped hints instead of one overflowing line
+// (the previous fixed footer was ~103 columns — already too wide for an
+// 80-column terminal).
+var footerMainSegments = []string{
+	"j/k: move",
+	"enter: runner actions",
+	"g: global menu",
+	"h: host metrics",
+	"f: filters",
+	"r: refresh",
+	"?: help",
+	"q: quit",
+}
+
+// footerRefreshing is appended as the last segment while a refresh is in
+// flight. It must stay the only difference between the idle and loading
+// footers so the shortcut hints themselves never move between states.
+const footerRefreshing = "(refreshing…)"
+
+// footerMain renders the bottom help line, wrapping segments onto as many
+// lines as the terminal width requires. The leading newline (outside the
+// helpStyle render, so lipgloss treats the hints as one styled block and
+// applies MarginTop once) keeps the blank line between the table and the
+// footer that the previous pre-rendered constants produced. The result is
+// memoized per (width, loading) — see the dashboardModel field comment.
+func (m *dashboardModel) footerMain() string {
+	if m.footerText != "" && m.footerWidth == m.termWidth() && m.footerLoading == m.loading {
+		return m.footerText
+	}
+	segs := footerMainSegments
+	if m.loading {
+		segs = append(slices.Clone(segs), footerRefreshing)
+	}
+	lines := packSegments(segs, m.termWidth()-cellPad)
+	block := make([]string, len(lines))
+	for i, line := range lines {
+		block[i] = "  " + line
+	}
+	m.footerWidth = m.termWidth()
+	m.footerLoading = m.loading
+	m.footerText = "\n" + renderStyledBlock(block, helpStyle)
+	return m.footerText
+}
+
+// helpOverlayText is the expanded help block; the leading two-space indent
+// is added per line by helpOverlay so wrapping stays indent-aware.
+const helpOverlayText = `Main: j/k navigate rows, enter opens actions for the selected instance.
+Actions: setup, up, down, restart, update, logs (esc back).
+Host metrics (h): CPU, memory, disk, load average, uptime per host.
+Global (g): doctor, host metrics, cleanup, show/validate config, edit yaml/env, filters.
+Filters (f): narrow by host or repo; clear restores full list.
+Scroll views (logs, doctor, config): j/k line, ctrl+u/ctrl+d page, home/end, esc back.
+Cleanup asks for y/n confirmation. Run gh sr init from a shell (not in the TUI).`
+
+// helpOverlay renders the expanded help wrapped to the terminal width.
+func (m *dashboardModel) helpOverlay() string {
+	lines := []string{"  — Help —"}
+	for _, line := range wrapWordsToWidth(helpOverlayText, max(20, m.termWidth()-cellPad)-cellPad) {
+		lines = append(lines, "  "+line)
+	}
+	return renderStyledBlock(lines, helpStyle) + "\n"
 }
 
 func (m *dashboardModel) viewActionMenu() tea.View {
@@ -186,6 +284,7 @@ func (m *dashboardModel) viewActionMenu() tea.View {
 	inst, _ := m.selectedInstance()
 	b.WriteString(titleStyle.Render("Runner actions"))
 	b.WriteString("\n\n")
+	inst = truncateCell(inst, max(10, m.termWidth()-14))
 	b.WriteString(fmt.Sprintf("  Instance: %s\n\n", configVal.Render(inst)))
 	renderMenuItemsInto(&b, actionMenuLabels, m.menuCursor)
 	b.WriteString(helpStyle.Render("\n  enter: run  esc: back"))
@@ -273,7 +372,7 @@ func (m *dashboardModel) viewScroll() tea.View {
 
 func (m *dashboardModel) viewHostMetrics() tea.View {
 	var b strings.Builder
-	b.WriteString(titleStyle.Render("Host Metrics"))
+	b.WriteString(m.renderTitleLine("Host Metrics", strconv.Itoa(len(m.hostMetrics))+" hosts"))
 	b.WriteString("\n\n")
 
 	if m.metricsLoading && len(m.hostMetrics) == 0 {
@@ -285,14 +384,37 @@ func (m *dashboardModel) viewHostMetrics() tea.View {
 		b.WriteString("  No hosts found.\n")
 	} else {
 		rows := buildHostMetricsRows(m.hostMetrics)
+		avail := m.termWidth() - cellPad
 
-		widths := table.ColumnWidths(hostMetricsHeaders, rows)
+		// Same responsive layout as the runner table: HOST / LOAD AVG /
+		// UPTIME truncate with an ellipsis (floors chosen so a truncated
+		// cell still reads as a name/number), CPU/MEMORY/DISK keep their
+		// natural width so the trailing percentage — and with it the
+		// colorizePercent severity color — survives. UPTIME is dropped
+		// entirely when even the floors do not fit.
+		natural := table.ColumnWidths(hostMetricsHeaders, rows)
+		kept, widths := planColumns(hostMetricsSpecs, natural, avail)
 
-		b.WriteString(renderHeader(hostMetricsHeaders, widths))
+		headers := make([]string, len(kept))
+		for k, i := range kept {
+			headers[k] = truncateCell(hostMetricsHeaders[i], widths[k])
+		}
+		colorize := func(col int, cell string) string {
+			if i := kept[col]; i >= 1 && i <= 3 {
+				return colorizePercent(cell)
+			}
+			return cell
+		}
+
+		b.WriteString(renderHeader(headers, widths))
 		b.WriteByte('\n')
 
 		for _, row := range rows {
-			renderRowInto(&b, row, widths, hostMetricsColorize, false)
+			cells := make([]string, len(kept))
+			for k, i := range kept {
+				cells[k] = truncateCell(row[i], widths[k])
+			}
+			renderRowInto(&b, cells, widths, colorize, false)
 			b.WriteByte('\n')
 		}
 	}

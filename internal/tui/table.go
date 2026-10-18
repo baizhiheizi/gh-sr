@@ -5,7 +5,6 @@ import (
 	"io"
 	"strings"
 
-	"github.com/an-lee/gh-sr/internal/runner"
 	"github.com/an-lee/gh-sr/internal/table"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -39,41 +38,10 @@ func PrintTable(w io.Writer, opts TablePrintOptions) bool {
 	return true
 }
 
-// runnerStatusHeaders is the canonical column ordering for the runner-status
-// table shared by PrintStatusTable and the TUI dashboard view. Keep this
-// slice in sync with runnerStatusCells so a column rename does not silently
-// misalign the two renderers.
-var runnerStatusHeaders = []string{"INSTANCE", "HOST", "REPO", "MODE", "IMAGE", "BUILD", "LOCAL", "GITHUB", "LABELS"}
-
-// runnerStatusColorize is the per-column colorize callback shared by
-// PrintStatusTable and the TUI dashboard view. Column indices 5/6/7 map to
-// BUILD/LOCAL/GITHUB; adding or renaming a column requires a single edit
-// here (and matching runnerStatusHeaders + runnerStatusCells).
-func runnerStatusColorize(col int, cell string) string {
-	switch col {
-	case 5: // BUILD
-		return colorizeImageBuild(cell)
-	case 6: // LOCAL
-		return colorizeLocalStatus(cell)
-	case 7: // GITHUB
-		return colorizeGitHubStatus(cell)
-	default:
-		return cell
-	}
-}
-
-func runnerStatusCells(s runner.RunnerStatus) []string {
-	ghStatus := formatGitHubStatus(s)
-	img := s.ContainerImage
-	if img == "" {
-		img = "-"
-	}
-	build := s.ContainerImageBuild
-	if build == "" {
-		build = "-"
-	}
-	return []string{s.Instance, s.Host, s.Repo, s.Mode, img, build, s.Local, ghStatus, s.Labels}
-}
+// runnerStatusHeaders / runnerStatusCells / runnerStatusColorize (the
+// CLI-table accessors for the runner-status table) now live in columns.go,
+// derived from the single runnerStatusColumns descriptor so the CLI table
+// and the responsive dashboard view cannot drift apart.
 
 // renderHeader builds the styled header line. Each header cell is padded to
 // widths[i]+2 (matching the per-cell padding in renderRow) so header and body

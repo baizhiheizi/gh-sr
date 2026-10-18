@@ -15,6 +15,22 @@ import (
 // misalign the two renderers.
 var hostMetricsHeaders = []string{"HOST", "CPU", "MEMORY", "DISK", "LOAD AVG", "UPTIME"}
 
+// hostMetricsSpecs is the responsive-layout policy for the host-metrics
+// table (parallel to hostMetricsHeaders). HOST / LOAD AVG / UPTIME are
+// flex with floors wide enough that a truncated cell still reads as a
+// name or number; CPU / MEMORY / DISK keep their natural width because
+// truncating "used/total UNIT (pct%)" would drop the trailing percentage
+// and with it the colorizePercent severity color. UPTIME is the one
+// droppable column — the least actionable metric when space runs out.
+var hostMetricsSpecs = []columnSpec{
+	{flex: true, min: 6},
+	{},
+	{},
+	{},
+	{flex: true, min: 5},
+	{flex: true, min: 4, drop: 1},
+}
+
 // buildHostMetricsRows maps metrics → the per-row string slices used by both
 // host-metrics renderers. Centralising the row construction keeps the header
 // literal and metricsRow call in one place.

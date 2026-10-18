@@ -15,7 +15,7 @@
 ## Dashboard
 
 ```
-  gh sr dashboard                              [r]efresh  [?]help  [q]uit
+  gh sr dashboard                                              3 runners
 
   INSTANCE      HOST         REPO                MODE    LOCAL    GITHUB
   ─────────────────────────────────────────────────────────────────────────
@@ -23,8 +23,15 @@
   runner-2      linux-vps    org/frontend        docker  running  busy
   runner-3      win-pc       org/infra           native  stopped  offline
 
-  [enter] runner actions  [g] global menu  [f] filter  [j/k] navigate
+  j/k: move  enter: runner actions  g: global menu  h: host metrics  f: filters
+  r: refresh  ?: help  q: quit
 ```
+
+The dashboard adapts to the terminal width: on wide terminals it also shows
+the `IMAGE`, `BUILD`, and `LABELS` columns; as the terminal narrows, long
+columns truncate with an `…` and the least essential ones drop out (labels
+first), while the status columns stay intact. Hint lines, help text, and the
+log/doctor/config views wrap and re-wrap on resize.
 
 ## Documentation
 
