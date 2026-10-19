@@ -47,6 +47,26 @@ Use `gh sr add host <name> <addr>` and `gh sr add runner <name>` to append hosts
 
 The dashboard includes live status, per-runner actions (setup, up, down, restart, update, logs), global actions (doctor, cleanup, show/validate/edit config and env), and host/repo filters. Press `h` to open the host metrics panel (CPU, memory, disk, load, uptime) or `?` for the full key map.
 
+### Responsive layout
+
+The dashboard adapts to the terminal width instead of rendering fixed-width output that wraps or spills on narrow terminals:
+
+- **Tables** — Runner and host-metrics tables run through a shared responsive layout: columns first **truncate with an `…`** down to per-column readability floors, then **drop widest-first** (`LABELS` → `IMAGE` → `BUILD` for the runner table; `UPTIME` for host metrics) when even the floors do not fit. Status columns (`MODE` / `BUILD` / `LOCAL` / `GITHUB`, `CPU` / `MEMORY` / `DISK`) are pinned because truncating their text would also strip the status color — when a pinned-only remainder would still overflow a second, lower-priority tier keeps shedding (runner table: `REPO` → `MODE` → `HOST` → `INSTANCE`; host metrics: `LOAD AVG` → `DISK` → `MEMORY` → `HOST`) so no rendered row ever runs past the terminal edge. Cells truncate as plain text **before** styling so ANSI sequences are never cut mid-escape.
+- **Footer, help, error text, filter prose** — Pack or word-wrap to the current width (the footer hint is memoized per `(width, loading)` state — zero allocations in steady state).
+- **Panel titles** — Right-align a pluralised `<n> runners` / `<n> hosts` count (e.g. `1 runner`, not `1 runners`).
+- **Scroll views (logs / doctor / config)** — Keep the raw text and **re-wrap on terminal resize**; the wrap width tracks the terminal instead of a fixed 40-column floor.
+
+Observed runner-table layouts with a realistic config:
+
+| Terminal width | Columns shown |
+| --- | --- |
+| ≥ ~120 cols | all 9 columns, full width (`IMAGE`, `BUILD`, `LABELS` included) |
+| 80 cols | 8 columns; `IMAGE` / `HOST` / `REPO` truncated with `…` to readable floors |
+| 60 cols | operational core: `INSTANCE HOST REPO MODE BUILD LOCAL GITHUB` |
+| 45 cols | drops `BUILD` too |
+
+The CLI `gh sr status` / `gh sr host-metrics` tables are unchanged — they render all columns at natural width, with the nine-column contract preserved.
+
 **Backward compatibility:** older releases treated `gh sr config` as “print configuration”. That is now `gh sr config show`; plain `gh sr config` lists subcommands. Older scripts that expected bare `gh sr` to print usage should use `gh sr --help` instead.
 
 ## Filters
