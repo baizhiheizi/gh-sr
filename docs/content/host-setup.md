@@ -180,7 +180,7 @@ gh auth status
 ## All remote hosts
 
 - Confirm non-interactive SSH works: `ssh -o BatchMode=yes user@host true` (use the same user and host as in `hosts.*.addr`).
-- **Host keys:** when `~/.ssh/known_hosts` exists, gh sr verifies server keys the same way as the Go `knownhosts` package. Connect once with plain `ssh` if you need to accept a new host key before `gh sr doctor` or `gh sr setup`.
+- **Host keys:** when `~/.ssh/known_hosts` exists, gh sr verifies server keys the same way as the Go `knownhosts` package, and — like the OpenSSH client — prefers the host-key algorithms that already have a `known_hosts` entry for the host. So a host pinned with only an ed25519 key still verifies even when its SSH server also offers ecdsa/rsa keys. Host-key failures carry a hint: an unknown host asks you to connect once with plain `ssh` to pin the key; a mismatch asks you to verify and run `ssh-keygen -R <host>` if the key change is expected.
 - Remote commands run as the SSH user from your config; that user must have permission to install or run runners as documented for each OS below.
 
 Run **`gh sr doctor`** (optionally with `--host` / `--repo`) to confirm connectivity from your control machine.
