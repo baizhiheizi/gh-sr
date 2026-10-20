@@ -36,8 +36,10 @@ func NewConnection(user, addr string) (*Connection, error) {
 	}
 
 	hostKeyCallback := ssh.InsecureIgnoreHostKey()
-	if cb, err := knownHostsCallback(); err == nil {
+	knownHostsPath := ""
+	if cb, path, err := knownHostsCallback(); err == nil {
 		hostKeyCallback = cb
+		knownHostsPath = path
 	}
 
 	cfg := &ssh.ClientConfig{
@@ -45,10 +47,22 @@ func NewConnection(user, addr string) (*Connection, error) {
 		Auth:            authMethods,
 		HostKeyCallback: hostKeyCallback,
 	}
+	// Prefer host-key algorithms already pinned in known_hosts (like OpenSSH)
+	// so verification uses the pinned key type instead of Go's default
+	// RSA/ECDSA-first negotiation order.
+	if knownHostsPath != "" {
+		if algos := hostKeyAlgosForDial(knownHostsPath, addr); len(algos) > 0 {
+			cfg.HostKeyAlgorithms = algos
+		}
+	}
 
 	client, err := ssh.Dial("tcp", addr, cfg)
 	if err != nil {
-		return nil, fmt.Errorf("SSH dial %s@%s: %w", user, addr, err)
+		host, _, splitErr := net.SplitHostPort(addr)
+		if splitErr != nil {
+			host = addr
+		}
+		return nil, fmt.Errorf("SSH dial %s@%s: %w%s", user, addr, err, hostKeyHint(err, user, host))
 	}
 
 	return &Connection{client: client}, nil
@@ -168,11 +182,29 @@ func defaultKeyPaths() []string {
 	}
 }
 
-func knownHostsCallback() (ssh.HostKeyCallback, error) {
+func knownHostsCallback() (ssh.HostKeyCallback, string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	path := filepath.Join(home, ".ssh", "known_hosts")
-	return knownhosts.New(path)
+	cb, err := knownhosts.New(path)
+	if err != nil {
+		return nil, "", err
+	}
+	return cb, path, nil
+}
+
+// hostKeyHint appends a remediation hint to host-key verification failures,
+// which otherwise surface as a bare "knownhosts: key mismatch" / "key is
+// unknown" from the Go SSH handshake.
+func hostKeyHint(err error, user, host string) string {
+	msg := err.Error()
+	switch {
+	case strings.Contains(msg, "knownhosts: key mismatch"):
+		return fmt.Sprintf(" — the host key presented by %s differs from its ~/.ssh/known_hosts entry; if the host was rebuilt or its key changed on purpose, verify it and run `ssh-keygen -R %s`, then connect once with plain `ssh` to pin the new key", host, host)
+	case strings.Contains(msg, "knownhosts: key is unknown"):
+		return fmt.Sprintf(" — %s is not in ~/.ssh/known_hosts; connect once with plain `ssh %s` to accept and pin its host key", host, user+"@"+host)
+	}
+	return ""
 }

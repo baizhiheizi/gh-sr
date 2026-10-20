@@ -350,11 +350,16 @@ func TestAgenticRunnerEntrypointStartsDockerdOnce(t *testing.T) {
 
 // TestAgenticRunnerEntrypointWiresJobHooks verifies the per-job reset hooks are wired
 // into the runner .env so the Actions runner invokes them before/after every job.
+// It also pins BUN_INSTALL_CACHE_DIR: bun's default install cache (~/.bun/install/cache)
+// lives in the container's private rootfs and dies with every container recreate,
+// so each fresh container re-downloaded every npm tarball — pointing it under
+// ~/.cache keeps the tarball cache on the shared gh-sr-runner-cache volume.
 func TestAgenticRunnerEntrypointWiresJobHooks(t *testing.T) {
 	t.Parallel()
 	for _, want := range []string{
 		"ACTIONS_RUNNER_HOOK_JOB_STARTED=/opt/gh-sr/hooks/job-started.sh",
 		"ACTIONS_RUNNER_HOOK_JOB_COMPLETED=/opt/gh-sr/hooks/job-completed.sh",
+		"BUN_INSTALL_CACHE_DIR=/home/runner/.cache/bun",
 	} {
 		if !strings.Contains(agenticRunnerEntrypoint, want) {
 			t.Fatalf("entrypoint should wire %q into .env", want)
