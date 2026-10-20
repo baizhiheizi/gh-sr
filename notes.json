@@ -2,7 +2,7 @@
   "version": 1,
   "cursors": {
     "labelling_after": null,
-    "investigation_after": 559
+    "investigation_after": 568
   },
   "issues": [],
   "checks": [
@@ -20,18 +20,41 @@
     },
     {
       "area": "performance",
-      "checked_at": "2026-10-18",
+      "checked_at": "2026-10-20",
+      "result": "acted",
+      "follow_up": "Batched doctor's per-instance container probe: 4 SSH round-trips per instance -> 1 per host. Branch repo-assist/perf-doctor-batch-container-probe-2026-10-20."
+    },
+    {
+      "area": "ci",
+      "checked_at": "2026-10-20",
+      "result": "acted",
+      "follow_up": "Added a release-matrix build job so all 12 shipped platforms compile in CI. Branch repo-assist/eng-release-matrix-ci-2026-10-20."
+    },
+    {
+      "area": "dependencies",
+      "checked_at": "2026-10-20",
       "result": "no_actionable",
-      "follow_up": "viewMain cell-cache reverted; bench added"
+      "follow_up": "Only direct dep with an update is go-gh v2.17.0, published today with a Glamour v2 breaking change and a Go 1.26.7 minimum. Left to Dependabot."
     },
     {
       "area": "repo_assist_prs",
-      "checked_at": "2026-10-18",
+      "checked_at": "2026-10-20",
       "result": "acted",
-      "follow_up": "2 draft PRs opened 2026-10-18"
+      "follow_up": "2 new drafts opened (CI release-matrix, perf doctor batching); #565 and #566 rebased onto current main"
     }
   ],
   "completed_actions": [],
-  "priorities": [],
+  "priorities": [
+    {
+      "task": 8,
+      "item": "batch doctor agentic-hygiene probes per host",
+      "note": "checkContainerAgenticInnerHygiene still spends ~3 SSH round-trips per agentic instance (container state + inner-hygiene exec + fanout exec). The container probe batch landed the same pattern for checkContainerRunnerInstall."
+    },
+    {
+      "task": 8,
+      "item": "batch registry.Inspect per host",
+      "note": "registry.Inspect spends 3 round-trips per configured mirror (docker inspect, curl /v2/, du -sb). MirrorStorages already batches the du leg, so the same pattern applies."
+    }
+  ],
   "fixes": []
 }
