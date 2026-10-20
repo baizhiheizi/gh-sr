@@ -162,7 +162,7 @@ func IsStale(h *host.Host, instance string) (bool, error) {
 	// dir carries a literal $HOME that the remote sh must expand, so it is
 	// passed raw (PosixSingleQuote would freeze "$HOME" as a literal). The
 	// instance-name segment is sanitized by SanitizeInstance, so it is safe
-	// unquoted — matching the long-standing convention (see runner.resolveStateDirOrFallback).
+	// unquoted — matching the long-standing convention (see runner.containerStateDir).
 	present, err := hostshell.RemoteBoolCheck(h,
 		"test -d "+dir+" && test -f "+dir+"/run.sh")
 	if err != nil {
