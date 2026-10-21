@@ -1,52 +1,62 @@
 ---
 name: efficiency-improver-state
-description: Efficiency Improver persistent state — last run, work in progress, discovered commands, and validated optimization patterns for baizhiheizi/gh-sr.
+description: Efficiency Improver persistent state — last run, work in progress, discovered commands, validated optimization patterns, and the energy-efficiency backlog for baizhiheizi/gh-sr.
 metadata:
   type: project
 ---
 
 ## Last Run
 
-- Date: 2026-10-14
-- Run ID: 38642960211
+- Date: 2026-10-21
+- Run ID: 39681773081
 - Workflow: efficiency-improver
+- Round-robin slot this run: **Task 6 (measurement infrastructure)**. Tasks 2+3 were done on 2026-10-14.
 
 ## Work This Run
 
-- Re-validated build/test/vet/fmt against `go 1.26.0` via `GOTOOLCHAIN=auto`. All 17 packages green.
-- Identified 2 candidates via backlog (both HIGH); both live in the same file `internal/agentic/agentic.go`. Picked the more impactful one: dedup of `containerCheckDefs` rebuild on the fanout + per-check paths.
-- Created branch `efficiency/agentic-dedup-defs` and draft PR. Extracted 6 per-def constructors (`innerHostDockerInternalDef`, `nodeNPMDef`, `dockerSocketUserDef`, `zstdDef`, `cacheEnvDef`, `mtuDef`) so both `containerCheckDefs` (slice-of-all) and `containerCheckDefByName` (single-name lookup) compose from one source of truth. Added `containerAgenticFanoutCheckCommandFromDefs(outerContainer, defs)` and `containerAgenticFanoutSpecsFromDefs(defs)`. `ValidateContainerAgenticFanout` now builds the defs slice once and feeds both downstream helpers from it.
-- 3 new tests: `TestContainerCheckDefByName_MatchesFanoutDefs` (walks every slice entry, asserts byName returns the same fields — pins against drift between the two paths after the per-def split), `TestContainerCheckDefByName_GatedDefReturnsFalseOffGate` (cache-env + MTU gates, plus unknown-name returns false), `TestValidateContainerAgenticFanout_BuildDefsOnce` (production wrapper cmd/specs match what the slice builder produces via FromDefs).
-- Updated `[efficiency-improver] Monthly Activity 2026-10` issue #529 with new run-history entry + replaced the two addressed candidates in the backlog.
+- Added a new benchmark metric, `round-trips/op`, that measures the **SSH round trips** (remote command invocations) an operation costs. Rationale: for `gh-sr` the dominant energy cost is the remote round trip (network hop + remote shell start + remote probe CPU), and the existing suite (ns/op, B/op, allocs/op) only measures local CPU/allocations.
+- `internal/testutil/roundtrip.go` — new `RoundTripCounter` executor: counts `Run` calls but does **not** retain the command strings (retaining them would add per-iteration allocation churn inside the measured window and inflate allocs/op).
+- New benchmark files: `internal/runner/roundtrip_bench_test.go`, `internal/agentic/roundtrip_bench_test.go`, `internal/cache/roundtrip_bench_test.go`.
+- `scripts/benchstat/benchstat.go` — parse `round-trips/op`, compare it (absolute rule: any increase = fail), render a dedicated column (only when at least one row carries the metric, so existing report assertions are unchanged). New file `scripts/benchstat/roundtrip_test.go` with 7 tests.
+- `Makefile` — documented the new metric on the `bench` target.
+- Created draft PR on branch `efficiency/measure-ssh-round-trips` (PR number assigned after the run).
+- Filed an issue: "benchstat drops every sub-benchmark row, so the CI regression gate never sees them" (with the no-op-diff noise measurements).
+- Updated the `[efficiency-improver] Monthly Activity 2026-10` issue #529 by **appending** a dated update block (the issue body is unreadable through the MCP GitHub tools — see "Tooling limits" below — so a replace would have destroyed maintainer checkbox edits).
 
 ## Measurements (this run)
 
-- `BenchmarkValidateContainerAgenticFanout_Setup/always_on/shared` (5 reps, AMD Ryzen AI 9 HX 370):
-  - Before (split): 3124–3670 ns/op, 9492 B/op, 49 allocs/op
-  - After  (shared): 2050–2289 ns/op, 6640 B/op, 28 allocs/op
-  - **-35% wall-clock, -30% bytes, -43% allocs**
-- `BenchmarkValidateContainerAgenticFanout_Setup/all_gated/shared`:
-  - Before (split): 5488–7169 ns/op, 14939 B/op, 81 allocs/op
-  - After  (shared): 2941–4020 ns/op, 10005 B/op, 44 allocs/op
-  - **-43% wall-clock, -33% bytes, -46% allocs**
-- `BenchmarkContainerCheckDefByName/always_on_inner`:
-  - Before: 959–1164 ns/op, 1906 B/op, 19 allocs/op
-  - After:  371–417 ns/op, 624 B/op, 5 allocs/op
-  - **-64% wall-clock, -67% bytes, -74% allocs**
-- `BenchmarkContainerCheckDefByName/gated_cache_env`:
-  - Before: 1377–1623 ns/op, 3043 B/op, 24 allocs/op
-  - After:  224–253 ns/op, 368 B/op, 4 allocs/op
-  - **-84% wall-clock, -88% bytes, -83% allocs**
-- `BenchmarkContainerCheckDefByName/gated_mtu`:
-  - Before: 1568–2060 ns/op, 3620 B/op, 31 allocs/op
-  - After:  539–594 ns/op, 945 B/op, 11 allocs/op
-  - **-70% wall-clock, -74% bytes, -65% allocs**
+Round trips per operation (proxy metric = SSH round trips; exact counts, not wall-clock):
+
+| Operation | Round trips |
+| --------- | ----------- |
+| `Manager.Status`, 1 native instance | 2 |
+| `Manager.Status`, 4 native instances | 8 |
+| `Manager.Status`, 16 native instances | 32 |
+| `Manager.Status`, 4 container instances | 4 |
+| `MeasureDiskUsageBatch`, 1 instance | 1 |
+| `MeasureDiskUsageBatch`, 8 instances | 1 |
+| `ValidateContainerAgenticFanout` (cache off / on) | 1 / 1 |
+| `cache.Inspect` auto-bind / URL override | 5 / 4 |
+
+Why native Status costs 2 per instance: `linuxInstanceProbe` (1) + `statusNativeState`'s systemctl probe (1, taken when the S marker is present). Container Status costs 1 (`containerLocalStatusOneShot` folds bootstrap-marker + docker inspect).
+
+Metric stability: two back-to-back CI-equivalent bench runs (`go test ./... -run='^$' -bench=. -benchmem -count=3 -benchtime=500ms`) with **no code change** →
+- `round-trips/op`: **0 % delta on every row**
+- `ns/op`: up to **+47 %** on identical code, 5 rows over the fail threshold
+
+## Tooling limits (important for future runs)
+
+- **Issue #529 (the Monthly Activity issue) cannot be read** through the MCP GitHub tools — it is filtered by the integrity policy ("has lower integrity than agent requires"), as are the issue bodies created by this workflow's safeoutputs calls. `mcp__github__issue_read` and `search_issues` both return nothing for them.
+  - Consequence: use `update_issue` with `operation: append` for the monthly issue, never `replace`, so maintainer checkbox edits survive.
+  - Consequence: PR/issue numbers created via safeoutputs are **not visible** during the run — reference them by branch name / title instead of number.
+- `mcp__github__ui_get` is denied in this run's permission mode; `mcp__github__list_label` works for label discovery.
 
 ## Open Items
 
-- Draft PR `efficiency/agentic-dedup-defs` awaiting maintainer review.
-- Draft PR `efficiency/cache-dedup-gateway-ssh` (from 2026-10-07) still awaiting review.
+- Draft PR on branch `efficiency/measure-ssh-round-trips` — measure SSH round trips per operation as an energy proxy (awaiting maintainer review).
+- New issue: benchstat drops every sub-benchmark row (awaiting maintainer input on the noise-hardening approach).
 - `[efficiency-improver] Monthly Activity 2026-10` issue #529 open.
+- PR #570 (`[repo-assist] perf(doctor): batch the per-instance container probe into one SSH round-trip`) and PR #566 are other agents' work — not ours to maintain.
 
 ## Discovered Commands (validated)
 
@@ -64,37 +74,53 @@ make bench-save     # writes bench-results/bench-<UTC-stamp>.txt
 # Local CI mirror
 make ci             # vet + fmt + test
 
-# Targeted perf bench for cache work
-GOTOOLCHAIN=auto go test ./internal/cache/... -bench BenchmarkInspect -benchmem -count=3 -run='^$'
+# CI-equivalent bench (what bench-compare.yml runs)
+GOTOOLCHAIN=auto go test ./... -run='^$' -bench=. -benchmem -count=3 -benchtime=500ms | tee bench.txt
 
-# Targeted perf bench for agentic work
-GOTOOLCHAIN=auto go test ./internal/agentic/... \
-  -bench 'BenchmarkContainerCheckDefs|BenchmarkValidateContainerAgenticFanout_Setup|BenchmarkContainerCheckDefByName' \
-  -benchmem -count=5 -run='^$'
+# Round-trip metric benchmarks only
+GOTOOLCHAIN=auto go test ./internal/runner/ ./internal/agentic/ ./internal/cache/ \
+  -run='^$' -bench='RoundTrips' -benchmem -count=3 -benchtime=500ms
+
+# Diff two snapshots
+go run scripts/benchstat/main.go -base base.txt -head head.txt -packages internal/runner -output out.md
 ```
 
 Notes:
-- `go.mod` requires go 1.26.0; local toolchain is 1.25.9. Build needs `GOTOOLCHAIN=auto` (or running in an environment with 1.26.x pre-installed) so `go` auto-downloads 1.26.0.
-- `make bench-save` is the canonical "save before / after" workflow — pair with `scripts/benchstat` to diff snapshots.
-- SSH round-trip count (via `MockExecutor.Calls`) is the right proxy metric for cache work — wall-clock microbenchmarks with mocks understate network wins.
-- For the agentic work the wall-clock microbenchmarks with mocks are the right proxy — the dedup is pure CPU/alloc work; there is no network round-trip removed.
+- `go.mod` requires go 1.26.0; local toolchain is older. Build needs `GOTOOLCHAIN=auto`.
+- The full CI-equivalent bench run takes ~4 minutes on this box — run it in the background, not in the foreground of a 60 s Bash call.
+- `scripts/benchstat/main.go` has a `//go:build ignore` tag; run it with `go run scripts/benchstat/main.go` (as the workflow does), not as part of `go build ./...`.
 
 ## Validated Optimization Patterns
 
-- **`strings.Split` → `strings.SplitSeq`** for newline-delimited iteration: drops the upfront `[]string` slice allocation; project's convention since PR #458 / #461 / #463 (perf-improver / repo-assist) and #498 (efficiency-improver).
-- For bounded-line capture (≤ N lines), pre-size the destination: `make([]string, 0, N)`. Growing from `nil` via `append` regresses for short inputs because each append can reallocate the backing array.
-- For early-stop after N lines, break out of the `SplitSeq` loop — avoids materialising the tail slice entirely.
-- **Extract a private `xxxWithPreResolved(dep)` helper** when two callers both need to resolve the same external resource (e.g. gateway IP) and one already has it: public `xxx(h)` resolves-and-forwards, callers that already paid the cost pass the resolved value to the private helper. Mirrors the `localURL(gw)` pattern that already existed in `internal/cache`.
-- Only resolve external resources when actually needed — adding `if s.URLOverride == "" && (s.BindAddr == "" || s.BindAddr == "0.0.0.0")` guard avoids wasted calls in the short-circuit branches. Saves 100% (not just 50%) when applicable.
-- **Extract per-item constructors when an aggregate builder and a single-item lookup share metadata**. Both `containerCheckDefs` (build all) and `containerCheckDefByName` (build one) needed identical per-probe `Message`/`Remediation` strings. Splitting each def into its own helper (e.g. `innerHostDockerInternalDef`, `cacheEnvDef`) lets the slice builder compose `[]containerCheckDef{def1, def2, ...}` and the byName lookup `switch name { case "...": return helper(), true }` share the same source — eliminating the "build all to return one" cost (was 14 allocs/op for an always-on probe; now 5) and the "build twice in different helpers" cost (was 49 allocs/op for the fanout setup; now 28).
-- When the slice builder and a *From* helper both want the same upstream slice, introduce `xxxFromDefs(defs)` as the primary path and keep the legacy `xxx(args)` as a thin wrapper that calls `containerCheckDefs` once and delegates. New callers that already have the slice use the From form; legacy test fixtures and existing call sites keep working unchanged.
-- Pin the dedup with a test that walks every slice entry and asserts the per-item helper returns the same fields — guards against typo-level drift after the split.
-- Existing benchmarks live alongside production code; follow the `MockExecutor` pattern when adding new ones. Add paired `/split` vs `/shared` sub-benchmarks when measuring a dedup — the gap between them is the energy the refactor saves.
+- **`strings.Split` → `strings.SplitSeq`** for newline-delimited iteration (repo convention since PR #458/#461/#463/#498).
+- For bounded-line capture (≤ N lines), pre-size the destination: `make([]string, 0, N)`.
+- **Extract a private `xxxWithPreResolved(dep)` helper** when two callers resolve the same external resource.
+- **Extract per-item constructors when an aggregate builder and a single-item lookup share metadata** (the `containerCheckDefs` split, PR #545).
+- **Measure SSH round trips, not just CPU**, for any `gh-sr` operation that touches a host. `MockExecutor` records the command strings in `Calls`; a counting executor that does not retain them avoids polluting the alloc metrics.
+- **A deterministic count needs no threshold.** The round-trip count is exact (fixed mock output → fixed call sequence), so the comparison is absolute: any increase fails. Wall-clock metrics still need the percentage thresholds.
+- **Benchmark names must be flat.** `scripts/benchstat`'s regex `^Benchmark(\w+)(?:-\d+)?\s+(\d+)\s+(.*)$` does not match names containing `/`, so sub-benchmark rows are silently dropped from the CI comparison. Name new CI-relevant benchmarks flat (`BenchmarkFooCase1`) and put the case in the name.
+- **Measure the noise before widening a CI gate.** Two identical bench runs are enough to tell a real regression from runner contention.
 
 ## Backlog
 
-- `internal/cache/cache.go` `Prune` line 469 — gateway resolve once per call; not worth caching unless many prunes per session. LOW.
-- Continue `strings.Split` audit on remaining callers (`scripts/benchstat/main.go:56` — CLI flag splitting, low impact). LOW.
-- Audit `dashboard.View()` / TUI rendering for further allocation reductions (mostly covered by PR #502, `viewScroll` is the remaining sibling). LOW.
-- Review cache TTL/expiry policies in `internal/cache` and `internal/autostart` for data efficiency.
-- The two HIGH-priority `internal/agentic/agentic.go` items were addressed in this run's PR (`efficiency/agentic-dedup-defs`).
+- **HIGH — Network/IO:** batch `Manager.Status` across the instances of one host. Today 2 round trips per native instance (32 for a 16-runner host, on the TUI's per-tick refresh path). Target shape already exists: `buildDirSizesBatchPOSIXScript` does 1 round trip for 8 instances. Baseline numbers are now measured by `ManagerStatusRoundTrips*`.
+- **HIGH — Network/IO:** `cache.Inspect` costs 5 round trips per host (docker inspect, `echo $HOME`, gateway resolve, health curl, `du -sb`) → could be folded into one script like the other batched probes. Baseline measured by `InspectRoundTrips*`.
+- **MEDIUM — Measurement:** close the `scripts/benchstat` sub-benchmark hole with noise hardening (issue filed this run). Unblocks gating for every table-driven benchmark.
+- **MEDIUM — Measurement:** `gh sr doctor` round trips per host are not yet measured — `runHostChecks` needs a realistic mock fixture (the count depends on which checks short-circuit), so the benchmark was deferred.
+- LOW — Code-Level: `internal/cache/cache.go` `Prune` line 469 — gateway resolve once per call.
+- LOW — Code-Level: continue the `strings.Split` audit on remaining callers (`scripts/benchstat/main.go:56`).
+- LOW — Code-Level: audit `dashboard.View()` / TUI rendering for further allocation reductions (`viewScroll` is the remaining sibling of PR #502).
+- LOW — Data: review cache TTL / expiry policies in `internal/cache` and `internal/autostart`.
+- The two HIGH-priority `internal/agentic/agentic.go` items were addressed by PR #545 (merged 2026-10-15).
+
+## Last-Run Task Rotation
+
+| Task | Last run | Status |
+| ---- | -------- | ------ |
+| 1 — discover/validate commands | 2026-10-14 | stable, no changes needed |
+| 2 — identify opportunities | 2026-10-14 | done (agentic dedup) |
+| 3 — implement improvements | 2026-10-14 | done (PR #545, merged) |
+| 4 — maintain PRs | 2026-10-21 | no open `[efficiency-improver]` PRs of ours to maintain |
+| 5 — comment on efficiency issues | 2026-10-21 | no open human-authored efficiency issues found (search for performance/slow/energy/optimization returned 0) — no comment posted, by design |
+| 6 — measurement infrastructure | 2026-10-21 | done (round-trips/op metric) |
+| 7 — monthly activity summary | 2026-10-21 | done (appended to #529) |
