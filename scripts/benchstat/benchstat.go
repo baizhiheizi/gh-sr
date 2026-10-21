@@ -24,6 +24,10 @@ type Result struct {
 	NsPerOp     float64
 	BPerOp      float64
 	AllocsPerOp float64
+	// RoundTripsPerOp is the custom "round-trips/op" metric: the number of
+	// remote command invocations one operation costs. It is 0 when the
+	// benchmark did not report it.
+	RoundTripsPerOp float64
 }
 
 // Thresholds defines warn/fail percent-delta cutoffs per metric.
@@ -99,6 +103,8 @@ func ParseFile(path string) (map[string]Result, error) {
 				r.BPerOp = val
 			case "allocs/op":
 				r.AllocsPerOp = val
+			case "round-trips/op":
+				r.RoundTripsPerOp = val
 			}
 		}
 		a := samples[name]
@@ -118,6 +124,7 @@ func ParseFile(path string) (map[string]Result, error) {
 		agg.NsPerOp = median(a.ns)
 		agg.BPerOp = median(a.b)
 		agg.AllocsPerOp = median(a.all)
+		agg.RoundTripsPerOp = median(a.rt)
 		results[name] = agg
 	}
 	return results, nil
@@ -132,6 +139,7 @@ type benchAgg struct {
 	ns    []float64
 	b     []float64
 	all   []float64
+	rt    []float64
 }
 
 func (a *benchAgg) add(r Result) {
@@ -143,6 +151,9 @@ func (a *benchAgg) add(r Result) {
 	}
 	if r.AllocsPerOp > 0 {
 		a.all = append(a.all, r.AllocsPerOp)
+	}
+	if r.RoundTripsPerOp > 0 {
+		a.rt = append(a.rt, r.RoundTripsPerOp)
 	}
 }
 
@@ -173,15 +184,18 @@ type Row struct {
 	HasNs   bool
 	HasB    bool
 	HasAll  bool
+	HasRT   bool
 	NsD     float64
 	BD      float64
 	AllD    float64
+	RTD     float64
 	NsF     bool
 	NsW     bool
 	BF      bool
 	BW      bool
 	AllF    bool
 	AllW    bool
+	RTF     bool
 }
 
 // Compare returns rows comparing head to base. Rows are sorted by severity
@@ -238,6 +252,22 @@ func Compare(base, head map[string]Result, t Thresholds) []Row {
 				if r.Status != "fail" {
 					r.Status = "warn"
 				}
+			}
+		}
+		// Round trips are an exact, deterministic count — the mock executor
+		// returns fixed output, so the same operation always costs the same
+		// number of remote invocations. That makes the comparison absolute
+		// rather than percentage-based: any increase is a real extra remote
+		// round trip (a network hop, a remote shell start and the remote
+		// CPU to run the probe) and fails the comparison, while a decrease
+		// is an improvement. Unlike ns/op there is no run-to-run noise to
+		// absorb, so no threshold applies.
+		if b.RoundTripsPerOp > 0 && h.RoundTripsPerOp > 0 {
+			r.HasRT = true
+			r.RTD = (h.RoundTripsPerOp - b.RoundTripsPerOp) / b.RoundTripsPerOp * 100
+			if h.RoundTripsPerOp > b.RoundTripsPerOp {
+				r.RTF = true
+				r.Status = "fail"
 			}
 		}
 		if r.Status == "" {
@@ -417,8 +447,27 @@ func RenderMarkdown(rows []Row, baseRef, headRef string) string {
 		sb.WriteString("✅ No regressions detected.\n\n")
 	}
 
-	sb.WriteString("| Benchmark | ns/op (Δ) | B/op (Δ) | allocs/op (Δ) | Status |\n")
-	sb.WriteString("|-----------|-----------|----------|---------------|--------|\n")
+	// The round-trips/op column is only rendered when at least one row
+	// carries the metric, so benchmarks without it keep the original
+	// four-column table.
+	showRT := false
+	for _, r := range rows {
+		if r.HasRT {
+			showRT = true
+			break
+		}
+	}
+
+	sb.WriteString("| Benchmark | ns/op (Δ) | B/op (Δ) | allocs/op (Δ) |")
+	if showRT {
+		sb.WriteString(" round-trips/op (Δ) |")
+	}
+	sb.WriteString(" Status |\n")
+	sb.WriteString("|-----------|-----------|----------|---------------|")
+	if showRT {
+		sb.WriteString("------------------|")
+	}
+	sb.WriteString("--------|\n")
 
 	for _, r := range rows {
 		sb.WriteString("| ")
@@ -429,12 +478,21 @@ func RenderMarkdown(rows []Row, baseRef, headRef string) string {
 		writeMetricCell(&sb, r.Status, r.HasB, r.Head.BPerOp, r.Base.BPerOp, r.BD, r.BF, r.BW)
 		sb.WriteString(" | ")
 		writeMetricCell(&sb, r.Status, r.HasAll, r.Head.AllocsPerOp, r.Base.AllocsPerOp, r.AllD, r.AllF, r.AllW)
-		sb.WriteString(" | ")
+		sb.WriteString(" |")
+		if showRT {
+			sb.WriteString(" ")
+			writeRoundTripCell(&sb, r.Status, r.HasRT, r.Head.RoundTripsPerOp, r.Base.RoundTripsPerOp, r.RTD, r.RTF)
+			sb.WriteString(" |")
+		}
+		sb.WriteString(" ")
 		sb.WriteString(rowStatus(r.Status))
 		sb.WriteString(" |\n")
 	}
 
 	sb.WriteString("\n_Thresholds: ns/op ±10%/30%, B/op ±15%/50%, allocs/op ±10%/25% (warn/fail). Each value is the median of the -count repetitions._\n")
+	if showRT {
+		sb.WriteString("\n_round-trips/op counts remote command invocations per operation. It is an exact count, not a noisy measurement: any increase is an extra remote round trip and fails the comparison._\n")
+	}
 	if hasUngated {
 		sb.WriteString("\n_⚪ rows live in packages this PR does not change — shown for visibility, but they do not fail the job (unchanged code moved ±30-66% between runs on the shared runner)._\n")
 	}
@@ -493,4 +551,40 @@ func writeMetricCell(sb *strings.Builder, status string, hasMetric bool, headVal
 	} else if warn {
 		sb.WriteString(" ⚠️")
 	}
+}
+
+// writeRoundTripCell renders the round-trips/op cell. The shape matches
+// writeMetricCell, but the counts are whole numbers, so they are written
+// without the decimals writeNumber applies to small ns/op and B/op values.
+func writeRoundTripCell(sb *strings.Builder, status string, hasRT bool, headVal, baseVal, delta float64, fail bool) {
+	switch status {
+	case "new":
+		sb.WriteString("— → ")
+		writeCount(sb, headVal)
+		return
+	case "removed":
+		writeCount(sb, baseVal)
+		sb.WriteString(" → —")
+		return
+	}
+	if !hasRT {
+		sb.WriteString("—")
+		return
+	}
+	writeCount(sb, baseVal)
+	sb.WriteString(" → ")
+	writeCount(sb, headVal)
+	sb.WriteString(" (")
+	var b [24]byte
+	sb.Write(formatDeltaTo(b[:0], delta))
+	sb.WriteByte(')')
+	if fail {
+		sb.WriteString(" 🔥")
+	}
+}
+
+// writeCount appends a round-trip count as a whole number.
+func writeCount(sb *strings.Builder, f float64) {
+	var b [20]byte
+	sb.Write(strconv.AppendInt(b[:0], int64(f+0.5), 10))
 }

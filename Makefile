@@ -24,6 +24,16 @@ build:
 test:
 	go test ./... -race -count=1
 
+# bench runs the full Go benchmark suite.
+#
+# Besides the usual ns/op, B/op and allocs/op columns, some benchmarks also
+# report a custom "round-trips/op" metric: the number of SSH round trips
+# (remote command invocations) the measured operation costs. For gh-sr that
+# is the dominant energy proxy — every round trip is a network hop, a remote
+# shell start and the remote CPU to run the probe — and it is invisible to
+# the CPU-side columns. `scripts/benchstat` (used by the bench-compare
+# workflow) reports the metric in its own column and fails the comparison
+# when the count goes up.
 bench:
 	go test ./... -run='^$$' -bench=. -benchmem -count=3
 
