@@ -27,6 +27,7 @@ gh sr rebuild [names...]   # Rebuild container runner image and restart containe
 gh sr service install [--system] [names...]   # Native: OS autostart (systemd / launchd / task)
 gh sr service uninstall [names...]            # Remove gh sr-installed autostart
 gh sr service status [names...]               # Autostart + unit state (container: policy note)
+gh sr service cleanup [--dry-run]             # Remove orphan autostart units + runner dirs not in runners.yml
 gh sr cache status         # Cache server state, image, health, storage per host
 gh sr cache deploy         # Deploy (or start) the cache server container on hosts
 gh sr cache prune          # Delete all cache entries via the management API (best-effort)

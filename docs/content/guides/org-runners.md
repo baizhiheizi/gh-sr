@@ -35,7 +35,7 @@ runners:
 Add via CLI:
 
 ```bash
-gh sr runner add myorg-ci --org my-org --group ci-pool --host vps-1 --count 4
+gh sr add runner myorg-ci --org my-org --group ci-pool --host vps-1 --count 4
 ```
 
 Then `gh sr setup myorg-ci` and `gh sr up myorg-ci`.
@@ -99,7 +99,7 @@ Org runners have a broader blast radius than repo runners:
 You cannot convert an existing repo registration in place — register a new org-scoped runner and retire the old ones.
 
 1. **Create a runner group** in GitHub org settings (recommended).
-2. **Add an org-scoped runner** to `runners.yml` (or `gh sr runner add ... --org ...`).
+2. **Add an org-scoped runner** to `runners.yml` (or `gh sr add runner ... --org ...`).
 3. **Set up and start** — `gh sr setup <name>` then `gh sr up <name>`.
 4. **Update workflows** in org repos to target the org runner labels or group.
 5. **Stop old repo runners** — `gh sr down <old-name>` on each per-repo entry.
