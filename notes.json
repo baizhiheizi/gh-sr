@@ -2,33 +2,80 @@
   "version": 1,
   "cursors": {
     "labelling_after": null,
-    "investigation_after": 568
+    "investigation_after": 577
   },
-  "issues": [],
+  "issues": [
+    {
+      "number": 576,
+      "state": "commented",
+      "updated_at": "2026-10-22",
+      "note": "Confirmed and fixed: scripts/benchstat matched names with \\w+, excluding '/', so every table-driven sub-benchmark was skipped in silence - 7 of 37 rows never reached the comparison. The fix adds a 5 us absolute ns/op noise floor. PR: repo-assist/fix-issue-576-benchstat-subbenchmarks."
+    },
+    {
+      "number": 577,
+      "state": "commented",
+      "updated_at": "2026-10-22",
+      "note": "Root-caused: both failing jobs died in actions/checkout with 'fatal: not a git repository' right after the step deleted the workspace - concurrent checkouts sharing one workspace path on a host. safe_outputs then skipped Process Safe Outputs, so the run's writes were dropped."
+    },
+    {
+      "number": 569,
+      "state": "awaiting_approval",
+      "updated_at": "2026-10-22",
+      "note": "Release-matrix CI job is ready but cannot be pushed as a PR: the Repo Assist App is refused write access to .github/workflows/. Needs a human with workflow write access. Do not retry as a PR from the agent side."
+    },
+    {
+      "number": 559,
+      "state": "commented",
+      "updated_at": "2026-10-22",
+      "note": "Code-complete per the maintainer's audit (#560/#561/#562/#563); Repo Assist already commented 2026-10-17. Only the operational x1 egress re-measurement is left, on the maintainer's side. No follow-up comment unless a human replies."
+    }
+  ],
+  "fixes": [
+    {
+      "issue": 576,
+      "pr": null,
+      "branch": "repo-assist/fix-issue-576-benchstat-subbenchmarks",
+      "status": "open",
+      "updated_at": "2026-10-22",
+      "note": "Commit cb101dc, 4 files +397/-33. Parses sub-benchmark names (lazy name group) and adds a 5 us absolute ns/op floor so newly-visible rows do not false-fail. ParseFileWithStats counts unparsable result lines. -ns-min-delta tunes the floor; 0 restores relative-only gating."
+    }
+  ],
   "checks": [
     {
       "area": "tests",
-      "checked_at": "2026-10-18",
+      "checked_at": "2026-10-22",
       "result": "acted",
-      "follow_up": "Filled tui gaps"
+      "follow_up": "7 new benchstat tests: sub-benchmark parsing, GOMAXPROCS suffix, dropped-line counting, noise floor (suppressed below / gated above), an alloc regression gating below the ns/op floor, the zero-floor escape hatch, and the report footer."
     },
     {
       "area": "docs",
-      "checked_at": "2026-10-18",
+      "checked_at": "2026-10-22",
       "result": "acted",
-      "follow_up": "Doc-only commands.md surface"
+      "follow_up": "Fixed 'gh sr runner add' (no such command; it is 'gh sr add runner') in guides/org-runners.md and added the one undocumented command path, 'gh sr service cleanup', to commands.md. Branch repo-assist/docs-runner-add-command-fix."
     },
     {
-      "area": "performance",
-      "checked_at": "2026-10-20",
+      "area": "qa",
+      "checked_at": "2026-10-22",
       "result": "acted",
-      "follow_up": "Batched doctor's per-instance container probe: 4 SSH round-trips per instance -> 1 per host. Branch repo-assist/perf-doctor-batch-container-probe-2026-10-20."
+      "follow_up": "Cross-checked every 'gh sr ...' invocation in docs/content against the CLI's own --help output. After this run all 29 real command paths are documented and no documented invocation names a command that does not exist. Re-run after CLI changes."
+    },
+    {
+      "area": "hygiene",
+      "checked_at": "2026-10-22",
+      "result": "acted",
+      "follow_up": "Diagnosed the Repo Assist workflow's recurring checkout failures as a workspace collision between concurrent checkouts on one host. Fix is a per-workflow 'checkout.path' in the gh-aw frontmatter plus a recompile; blocked on workflow write access."
     },
     {
       "area": "ci",
-      "checked_at": "2026-10-20",
+      "checked_at": "2026-10-22",
       "result": "acted",
-      "follow_up": "Added a release-matrix build job so all 12 shipped platforms compile in CI. Branch repo-assist/eng-release-matrix-ci-2026-10-20."
+      "follow_up": "Release-matrix build job (all 12 shipped platforms) is ready but its push is refused (no workflows permission); it sits as issue #569 awaiting a human."
+    },
+    {
+      "area": "build",
+      "checked_at": "2026-10-22",
+      "result": "passed",
+      "follow_up": "go build ./..., go vet ./..., gofmt -l . clean and go test ./... -count=1 (18 packages) all pass on both branches opened this run."
     },
     {
       "area": "dependencies",
@@ -37,10 +84,16 @@
       "follow_up": "Only direct dep with an update is go-gh v2.17.0, published today with a Glamour v2 breaking change and a Go 1.26.7 minimum. Left to Dependabot."
     },
     {
-      "area": "repo_assist_prs",
-      "checked_at": "2026-10-20",
+      "area": "performance",
+      "checked_at": "2026-10-22",
       "result": "acted",
-      "follow_up": "2 new drafts opened (CI release-matrix, perf doctor batching); #565 and #566 rebased onto current main"
+      "follow_up": "Batched doctor's per-instance container probe: 4 SSH round-trips per instance -> 1 per host (PR #570, branch repo-assist/perf-doctor-batch-container-probe-2026-10-20). Remaining batches tracked under priorities."
+    },
+    {
+      "area": "repo_assist_prs",
+      "checked_at": "2026-10-22",
+      "result": "acted",
+      "follow_up": "5 open Repo Assist drafts: #565 (docs), #566 (tui tests), #570 (doctor batching), plus this run's benchstat fix (branch repo-assist/fix-issue-576-benchstat-subbenchmarks) and docs fix (branch repo-assist/docs-runner-add-command-fix)."
     }
   ],
   "completed_actions": [],
@@ -48,13 +101,17 @@
     {
       "task": 8,
       "item": "batch doctor agentic-hygiene probes per host",
-      "note": "checkContainerAgenticInnerHygiene still spends ~3 SSH round-trips per agentic instance (container state + inner-hygiene exec + fanout exec). The container probe batch landed the same pattern for checkContainerRunnerInstall."
+      "note": "checkContainerAgenticInnerHygiene still spends ~3 SSH round-trips per agentic instance (container state + inner-hygiene exec + fanout exec). PR #570 batches checkContainerRunnerInstall but does not touch it."
     },
     {
       "task": 8,
       "item": "batch registry.Inspect per host",
       "note": "registry.Inspect spends 3 round-trips per configured mirror (docker inspect, curl /v2/, du -sb). MirrorStorages already batches the du leg, so the same pattern applies."
+    },
+    {
+      "task": 7,
+      "item": "openspec spec names a command that does not exist",
+      "note": "openspec/specs/org-runner-configuration/spec.md specifies 'gh sr runner add'; the CLI is 'gh sr add runner'. The user-facing guide is fixed. The spec is requirement text, so it likely wants an openspec change proposal, not an ad-hoc edit."
     }
-  ],
-  "fixes": []
+  ]
 }
