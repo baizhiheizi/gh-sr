@@ -37,6 +37,7 @@ func main() {
 	output := flag.String("output", "", "optional output file (default: stdout)")
 	packages := flag.String("packages", "", "comma-separated directory-style import paths (e.g. internal/runner) whose benchmarks gate the exit code; empty gates everything")
 	gate := flag.Bool("gate", true, "gate the exit code on fail-level regressions; false renders the report but never fails (for diffs that change no Go files)")
+	nsMinDelta := flag.Float64("ns-min-delta", benchstat.DefaultNsMinDeltaNs, "minimum absolute ns/op delta (ns) for an ns/op regression to gate the job; below it the delta is reported but not gated (shared-runner timing noise)")
 	flag.Parse()
 
 	if *basePath == "" || *headPath == "" {
@@ -44,18 +45,23 @@ func main() {
 		os.Exit(2)
 	}
 
-	base, err := benchstat.ParseFile(*basePath)
+	base, baseStats, err := benchstat.ParseFileWithStats(*basePath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error reading base: %v\n", err)
 		os.Exit(2)
 	}
-	head, err := benchstat.ParseFile(*headPath)
+	head, headStats, err := benchstat.ParseFileWithStats(*headPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error reading head: %v\n", err)
 		os.Exit(2)
 	}
+	reportDropped("base", baseStats)
+	reportDropped("head", headStats)
 
-	rows := benchstat.Compare(base, head, benchstat.DefaultThresholds())
+	thresholds := benchstat.DefaultThresholds()
+	thresholds.NsMinDeltaNs = *nsMinDelta
+
+	rows := benchstat.Compare(base, head, thresholds)
 	var pkgs []string
 	if *packages != "" {
 		for _, p := range strings.Split(*packages, ",") {
@@ -71,7 +77,7 @@ func main() {
 		benchstat.ApplyNoScope(rows)
 		fmt.Fprintf(os.Stderr, "scope: gating disabled (diff changes no Go files); report-only, exit code forced to 0\n")
 	}
-	md := benchstat.RenderMarkdown(rows, *baseRef, *headRef)
+	md := benchstat.RenderMarkdown(rows, *baseRef, *headRef, thresholds)
 
 	if *output != "" {
 		if err := os.WriteFile(*output, []byte(md), 0o644); err != nil {
@@ -85,4 +91,15 @@ func main() {
 	if benchstat.HasFail(rows) {
 		os.Exit(1)
 	}
+}
+
+// reportDropped surfaces benchmark result lines the parser could not read.
+// A non-zero count means measurements are being discarded, which used to
+// happen silently: table-driven sub-benchmarks ("BenchmarkParent/case-1")
+// were skipped without a word, so the gate never saw them.
+func reportDropped(label string, stats benchstat.ParseStats) {
+	if stats.Dropped == 0 {
+		return
+	}
+	fmt.Fprintf(os.Stderr, "warning: %s: dropped %d unparsable benchmark result line(s) out of %d; those measurements are NOT compared\n", label, stats.Dropped, stats.Lines)
 }

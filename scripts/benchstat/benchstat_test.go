@@ -114,14 +114,14 @@ func TestCompare_NoRegression(t *testing.T) {
 
 func TestCompare_WarnAndFail(t *testing.T) {
 	base := map[string]Result{
-		"OK":   {Name: "OK", NsPerOp: 1000, BPerOp: 100, AllocsPerOp: 4},
-		"Warn": {Name: "Warn", NsPerOp: 1000, BPerOp: 100, AllocsPerOp: 4},
-		"Fail": {Name: "Fail", NsPerOp: 1000, BPerOp: 100, AllocsPerOp: 4},
+		"OK":   {Name: "OK", NsPerOp: 100000, BPerOp: 100, AllocsPerOp: 4},
+		"Warn": {Name: "Warn", NsPerOp: 100000, BPerOp: 100, AllocsPerOp: 4},
+		"Fail": {Name: "Fail", NsPerOp: 100000, BPerOp: 100, AllocsPerOp: 4},
 	}
 	head := map[string]Result{
-		"OK":   {Name: "OK", NsPerOp: 1005, BPerOp: 100, AllocsPerOp: 4},
-		"Warn": {Name: "Warn", NsPerOp: 1150, BPerOp: 100, AllocsPerOp: 4},
-		"Fail": {Name: "Fail", NsPerOp: 1500, BPerOp: 100, AllocsPerOp: 4},
+		"OK":   {Name: "OK", NsPerOp: 100500, BPerOp: 100, AllocsPerOp: 4},
+		"Warn": {Name: "Warn", NsPerOp: 115000, BPerOp: 100, AllocsPerOp: 4},
+		"Fail": {Name: "Fail", NsPerOp: 150000, BPerOp: 100, AllocsPerOp: 4},
 	}
 	rows := Compare(base, head, DefaultThresholds())
 	statuses := map[string]string{}
@@ -192,14 +192,14 @@ func TestCompare_FailWinsOverWarn(t *testing.T) {
 
 func TestCompare_SortBySeverity(t *testing.T) {
 	base := map[string]Result{
-		"A": {Name: "A", NsPerOp: 1000, BPerOp: 100, AllocsPerOp: 4},
-		"B": {Name: "B", NsPerOp: 1000, BPerOp: 100, AllocsPerOp: 4},
-		"C": {Name: "C", NsPerOp: 1000, BPerOp: 100, AllocsPerOp: 4},
+		"A": {Name: "A", NsPerOp: 100000, BPerOp: 100, AllocsPerOp: 4},
+		"B": {Name: "B", NsPerOp: 100000, BPerOp: 100, AllocsPerOp: 4},
+		"C": {Name: "C", NsPerOp: 100000, BPerOp: 100, AllocsPerOp: 4},
 	}
 	head := map[string]Result{
-		"A": {Name: "A", NsPerOp: 1000, BPerOp: 100, AllocsPerOp: 4}, // ok
-		"B": {Name: "B", NsPerOp: 1100, BPerOp: 100, AllocsPerOp: 4}, // warn
-		"C": {Name: "C", NsPerOp: 2000, BPerOp: 100, AllocsPerOp: 4}, // fail
+		"A": {Name: "A", NsPerOp: 100000, BPerOp: 100, AllocsPerOp: 4}, // ok
+		"B": {Name: "B", NsPerOp: 110000, BPerOp: 100, AllocsPerOp: 4}, // warn
+		"C": {Name: "C", NsPerOp: 200000, BPerOp: 100, AllocsPerOp: 4}, // fail
 	}
 	rows := Compare(base, head, DefaultThresholds())
 	if len(rows) != 3 || rows[0].Name != "C" || rows[1].Name != "B" || rows[2].Name != "A" {
@@ -220,7 +220,7 @@ func TestRenderMarkdown_HeaderAndTable(t *testing.T) {
 			HasNs: true, HasB: true, HasAll: true,
 		},
 	}
-	md := RenderMarkdown(rows, "main", "PR")
+	md := RenderMarkdown(rows, "main", "PR", DefaultThresholds())
 	if !strings.Contains(md, "## Benchstat: `PR` → `main`") {
 		t.Errorf("missing header; got:\n%s", md)
 	}
@@ -244,7 +244,7 @@ func TestRenderMarkdown_FailSummary(t *testing.T) {
 			HasNs: true, HasB: true, HasAll: true, NsF: true,
 		},
 	}
-	md := RenderMarkdown(rows, "main", "PR")
+	md := RenderMarkdown(rows, "main", "PR", DefaultThresholds())
 	if !strings.Contains(md, "🔥") {
 		t.Errorf("missing fire emoji; got:\n%s", md)
 	}
@@ -262,7 +262,7 @@ func TestRenderMarkdown_WarnSummary(t *testing.T) {
 			HasNs: true, HasB: true, HasAll: true, NsW: true,
 		},
 	}
-	md := RenderMarkdown(rows, "main", "PR")
+	md := RenderMarkdown(rows, "main", "PR", DefaultThresholds())
 	if !strings.Contains(md, "⚠️") {
 		t.Errorf("missing warning emoji; got:\n%s", md)
 	}
@@ -353,8 +353,8 @@ func TestEndToEnd_NoRegression(t *testing.T) {
 
 func TestEndToEnd_FailTriggersExit(t *testing.T) {
 	dir := t.TempDir()
-	basePath := writeBench(t, dir, "base.txt", "BenchmarkFoo-8   	1000000	     1000 ns/op\n")
-	headPath := writeBench(t, dir, "head.txt", "BenchmarkFoo-8   	1000000	     2000 ns/op\n")
+	basePath := writeBench(t, dir, "base.txt", "BenchmarkFoo-8   	1000000	    100000 ns/op\n")
+	headPath := writeBench(t, dir, "head.txt", "BenchmarkFoo-8   	1000000	    200000 ns/op\n")
 
 	base, _ := ParseFile(basePath)
 	head, _ := ParseFile(headPath)
@@ -372,7 +372,7 @@ func TestEndToEnd_RoundTripThroughMarkdown(t *testing.T) {
 	base, _ := ParseFile(basePath)
 	head, _ := ParseFile(headPath)
 	rows := Compare(base, head, DefaultThresholds())
-	md := RenderMarkdown(rows, "main", "PR")
+	md := RenderMarkdown(rows, "main", "PR", DefaultThresholds())
 	for _, want := range []string{
 		"## Benchstat",
 		"| Foo ",
@@ -581,7 +581,7 @@ func TestApplyNoScope_PreservesMeasurements(t *testing.T) {
 	if !rows[0].NsF || rows[0].NsD != 100 {
 		t.Errorf("metric flags must survive demotion, got %+v", rows[0])
 	}
-	md := RenderMarkdown(rows, "main", "PR")
+	md := RenderMarkdown(rows, "main", "PR", DefaultThresholds())
 	if !strings.Contains(md, "| Noisy ") || !strings.Contains(md, "⚪") {
 		t.Errorf("demoted row must still render, got:\n%s", md)
 	}
@@ -632,7 +632,7 @@ BenchmarkManager_Status-8   	1000	   61706 ns/op	170789.0 B/op	75.00 allocs/op
 	if HasFail(rows) {
 		t.Error("a diff changing no Go files must not fail the job")
 	}
-	if !strings.Contains(RenderMarkdown(rows, "main", "PR"), "⚪") {
+	if !strings.Contains(RenderMarkdown(rows, "main", "PR", DefaultThresholds()), "⚪") {
 		t.Error("report-only mode must still show the rows as ungated")
 	}
 }
@@ -693,7 +693,7 @@ func TestRenderMarkdown_Ungated(t *testing.T) {
 			Head: Result{NsPerOp: 600}, Base: Result{NsPerOp: 300}, HasNs: true, NsD: 100, NsF: true,
 		},
 	}
-	md := RenderMarkdown(rows, "main", "PR")
+	md := RenderMarkdown(rows, "main", "PR", DefaultThresholds())
 	for _, want := range []string{
 		"✅ No regressions in the packages this PR changes",
 		"| Noisy ",
@@ -707,5 +707,232 @@ func TestRenderMarkdown_Ungated(t *testing.T) {
 	// The ungated row keeps its regression visible.
 	if !strings.Contains(md, "+100.0%") {
 		t.Errorf("ungated row should still show its +100%% delta\n%s", md)
+	}
+}
+
+// TestParseFile_ParsesSubBenchmarks pins the fix for the hole where every
+// table-driven sub-benchmark was silently discarded. `go test -bench` emits
+// "BenchmarkParent/case-1-24" — the parent name, the sub-benchmark name and
+// the GOMAXPROCS suffix — and the old name pattern (word characters only)
+// never matched the "/", so the row never reached the comparison at all.
+func TestParseFile_ParsesSubBenchmarks(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	path := writeBench(t, dir, "bench.txt", `pkg: github.com/an-lee/gh-sr/internal/tui
+BenchmarkViewMain/one_status-24   	10000	    65697 ns/op	  10160 B/op	     314 allocs/op
+BenchmarkViewMain/two_status-24   	10000	    12345 ns/op	   2048 B/op	      32 allocs/op
+BenchmarkPlain-24   	10000	     1000 ns/op	     100 B/op	       4 allocs/op
+`)
+
+	got, stats, err := ParseFileWithStats(path)
+	if err != nil {
+		t.Fatalf("ParseFileWithStats: %v", err)
+	}
+	if stats.Dropped != 0 {
+		t.Errorf("Dropped = %d, want 0", stats.Dropped)
+	}
+	if stats.Lines != 3 {
+		t.Errorf("Lines = %d, want 3", stats.Lines)
+	}
+	if len(got) != 3 {
+		t.Fatalf("want 3 benchmarks, got %d (%v)", len(got), keys(got))
+	}
+	r, ok := got["ViewMain/one_status"]
+	if !ok {
+		t.Fatalf("sub-benchmark missing; got keys %v", keys(got))
+	}
+	if r.NsPerOp != 65697 {
+		t.Errorf("NsPerOp = %v, want 65697", r.NsPerOp)
+	}
+	if r.BPerOp != 10160 {
+		t.Errorf("BPerOp = %v, want 10160", r.BPerOp)
+	}
+	if r.AllocsPerOp != 314 {
+		t.Errorf("AllocsPerOp = %v, want 314", r.AllocsPerOp)
+	}
+	if r.Package != "github.com/an-lee/gh-sr/internal/tui" {
+		t.Errorf("Package = %q", r.Package)
+	}
+}
+
+// TestParseFile_SubBenchmarkNameKeepsDashSuffix pins that only the GOMAXPROCS
+// tag is stripped: a sub-benchmark whose own name ends in a number
+// ("case-1") keeps it.
+func TestParseFile_SubBenchmarkNameKeepsDashSuffix(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	path := writeBench(t, dir, "bench.txt", "BenchmarkParent/case-1-24   	1000	     123 ns/op\n")
+
+	got, err := ParseFile(path)
+	if err != nil {
+		t.Fatalf("ParseFile: %v", err)
+	}
+	if _, ok := got["Parent/case-1"]; !ok {
+		t.Errorf("want key Parent/case-1, got %v", keys(got))
+	}
+}
+
+// TestParseFileWithStats_CountsDroppedLines pins that a result line the
+// parser cannot read is counted instead of vanishing. The old parser skipped
+// such lines with no warning, which is how the sub-benchmark hole stayed
+// invisible for so long.
+func TestParseFileWithStats_CountsDroppedLines(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	path := writeBench(t, dir, "bench.txt", `BenchmarkGood-8   	1000	     123 ns/op
+BenchmarkBroken no-iteration-count
+BenchmarkAlsoGood-8   	1000	     456 ns/op
+`)
+
+	got, stats, err := ParseFileWithStats(path)
+	if err != nil {
+		t.Fatalf("ParseFileWithStats: %v", err)
+	}
+	if stats.Lines != 3 {
+		t.Errorf("Lines = %d, want 3", stats.Lines)
+	}
+	if stats.Dropped != 1 {
+		t.Errorf("Dropped = %d, want 1", stats.Dropped)
+	}
+	if len(got) != 2 {
+		t.Errorf("want 2 parsed benchmarks, got %d (%v)", len(got), keys(got))
+	}
+}
+
+// TestCompare_NsNoiseFloorSuppressesSmallAbsoluteDelta replays the noise the
+// shared self-hosted runner produces: a benchmark that moved +45% but only by
+// ~2 us per operation. The relative threshold is crossed, so the old gate
+// failed the build on a run of identical code.
+func TestCompare_NsNoiseFloorSuppressesSmallAbsoluteDelta(t *testing.T) {
+	t.Parallel()
+
+	base := map[string]Result{
+		"Noisy": {Name: "Noisy", NsPerOp: 4587, BPerOp: 1024, AllocsPerOp: 45},
+	}
+	head := map[string]Result{
+		"Noisy": {Name: "Noisy", NsPerOp: 6680, BPerOp: 1024, AllocsPerOp: 45},
+	}
+	rows := Compare(base, head, DefaultThresholds())
+	r := rows[0]
+	if r.Status != "ok" {
+		t.Errorf("status = %q, want ok (the +45%% delta is only %v ns)", r.Status, r.NsAbsD)
+	}
+	if r.NsF || r.NsW {
+		t.Errorf("noise-floor row must not be flagged (NsF=%v NsW=%v)", r.NsF, r.NsW)
+	}
+	if !r.NsSuppressed {
+		t.Error("NsSuppressed should be set so the report can explain the row")
+	}
+	if r.NsD < 40 {
+		t.Errorf("NsD = %v, want the delta to still be computed", r.NsD)
+	}
+}
+
+// TestCompare_NsGatesAboveNoiseFloor pins the other half of the contract: a
+// real slowdown that adds enough absolute time still fails the job.
+func TestCompare_NsGatesAboveNoiseFloor(t *testing.T) {
+	t.Parallel()
+
+	base := map[string]Result{
+		"Real": {Name: "Real", NsPerOp: 40312, BPerOp: 170789, AllocsPerOp: 75},
+	}
+	head := map[string]Result{
+		"Real": {Name: "Real", NsPerOp: 61706, BPerOp: 170789, AllocsPerOp: 75},
+	}
+	rows := Compare(base, head, DefaultThresholds())
+	if rows[0].Status != "fail" {
+		t.Errorf("status = %q, want fail (+53%% and %v ns)", rows[0].Status, rows[0].NsAbsD)
+	}
+	if rows[0].NsSuppressed {
+		t.Error("NsSuppressed must be false for a gated row")
+	}
+}
+
+// TestCompare_AllocRegressionGatesBelowNsNoiseFloor pins that the noise
+// floor applies to ns/op only. Allocation counts are exactly reproducible, so
+// an extra allocation is a real regression even when the timing delta is
+// microscopic — which is the common case for a hot path that grew by one
+// allocation.
+func TestCompare_AllocRegressionGatesBelowNsNoiseFloor(t *testing.T) {
+	t.Parallel()
+
+	base := map[string]Result{
+		"Alloc": {Name: "Alloc", NsPerOp: 42, BPerOp: 0, AllocsPerOp: 1},
+	}
+	head := map[string]Result{
+		"Alloc": {Name: "Alloc", NsPerOp: 60, BPerOp: 0, AllocsPerOp: 2},
+	}
+	rows := Compare(base, head, DefaultThresholds())
+	if rows[0].Status != "fail" {
+		t.Errorf("status = %q, want fail (allocs/op doubled)", rows[0].Status)
+	}
+	if !rows[0].AllF {
+		t.Error("AllF should be set: the allocation regression gates")
+	}
+}
+
+// TestCompare_NsFloorZeroDisablesHardening pins the escape hatch: a zero
+// floor restores the plain relative-threshold behaviour.
+func TestCompare_NsFloorZeroDisablesHardening(t *testing.T) {
+	t.Parallel()
+
+	th := DefaultThresholds()
+	th.NsMinDeltaNs = 0
+	base := map[string]Result{
+		"Noisy": {Name: "Noisy", NsPerOp: 4587, BPerOp: 1024, AllocsPerOp: 45},
+	}
+	head := map[string]Result{
+		"Noisy": {Name: "Noisy", NsPerOp: 6680, BPerOp: 1024, AllocsPerOp: 45},
+	}
+	rows := Compare(base, head, th)
+	if rows[0].Status != "fail" {
+		t.Errorf("status = %q, want fail with the floor disabled", rows[0].Status)
+	}
+	if rows[0].NsSuppressed {
+		t.Error("NsSuppressed must be false when the floor is disabled")
+	}
+}
+
+// TestRenderMarkdown_ReportsNoiseFloor pins that the report says which
+// thresholds and floor were in force and how many rows the floor held back,
+// so a reader can tell "no regression" from "regression too small to gate".
+func TestRenderMarkdown_ReportsNoiseFloor(t *testing.T) {
+	t.Parallel()
+
+	th := DefaultThresholds()
+	rows := []Row{
+		{
+			Name: "Noisy", Status: "ok",
+			Base: Result{NsPerOp: 4587}, Head: Result{NsPerOp: 6680},
+			HasNs: true, NsD: 45.6, NsAbsD: 2093, NsSuppressed: true,
+		},
+	}
+	md := RenderMarkdown(rows, "main", "PR", th)
+	for _, want := range []string{
+		"5000 ns per operation",
+		"1 row(s) moved past the ns/op warn threshold",
+		"ns/op ±10%/30%",
+	} {
+		if !strings.Contains(md, want) {
+			t.Errorf("markdown missing %q\nfull output:\n%s", want, md)
+		}
+	}
+}
+
+// TestRenderMarkdown_ThresholdsFollowConfig pins that the footer reports the
+// thresholds that actually gated the job. The footer used to hardcode the
+// defaults, so changing a threshold silently made the report lie.
+func TestRenderMarkdown_ThresholdsFollowConfig(t *testing.T) {
+	t.Parallel()
+
+	th := DefaultThresholds()
+	th.NsWarn, th.NsFail = 5, 20
+	rows := []Row{{Name: "Foo", Status: "ok", HasNs: true, NsD: 1}}
+	md := RenderMarkdown(rows, "main", "PR", th)
+	if !strings.Contains(md, "ns/op ±5%/20%") {
+		t.Errorf("footer must use the configured thresholds\n%s", md)
 	}
 }
