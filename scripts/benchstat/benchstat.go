@@ -7,6 +7,7 @@ package benchstat
 
 import (
 	"bufio"
+	"math"
 	"os"
 	"regexp"
 	"sort"
@@ -31,23 +32,74 @@ type Thresholds struct {
 	NsWarn, NsFail      float64
 	BWarn, BFail        float64
 	AllocsWarn, AllocsF float64
+	// NsMinDeltaNs is the minimum ABSOLUTE ns/op delta (in nanoseconds) for
+	// the ns/op metric to gate the build. A relative delta that is large but
+	// small in absolute terms is timing noise on the shared self-hosted
+	// runner, not a regression: the runner adds a roughly fixed amount of
+	// wall-clock time per operation, so a sub-microsecond benchmark can
+	// report +45% while the code under test is byte-identical. Deltas below
+	// this floor are still reported, but they do not fail or warn the job.
+	//
+	// B/op and allocs/op are unaffected: allocation counts are deterministic
+	// for a given code path, so they gate without a floor.
+	//
+	// A zero value disables the floor (every relative delta gates), which is
+	// the pre-floor behaviour.
+	NsMinDeltaNs float64
 }
 
 // DefaultThresholds returns the warn/fail cutoffs used by the bench-compare
 // workflow. The numbers are intentionally conservative: real refactors should
 // stay well below them, while genuine regressions (e.g. +50% ns/op) fail.
+//
+// NsMinDeltaNs is calibrated against the noise this repository's shared
+// self-hosted runner produces. See DefaultNsMinDeltaNs for the reasoning.
 func DefaultThresholds() Thresholds {
 	return Thresholds{
 		NsWarn: 10, NsFail: 30,
 		BWarn: 15, BFail: 50,
 		AllocsWarn: 10, AllocsF: 25,
+		NsMinDeltaNs: DefaultNsMinDeltaNs,
 	}
 }
 
+// DefaultNsMinDeltaNs is the absolute ns/op delta below which a relative
+// regression is treated as runner noise rather than a code regression.
+//
+// The floor is absolute rather than relative because the shared self-hosted
+// runner's contention shows up as a roughly fixed amount of added latency
+// per operation. Measured on this repository's benchmark suite, two runs of
+// *identical* code moved a 42 ns benchmark by +42% (18 ns of real time) and
+// a 4.6 us benchmark by +45% (2.1 us of real time), while allocs/op stayed
+// exactly flat and B/op moved by under 3%. A relative-only threshold
+// therefore flags the noise; a floor above the largest observed noise delta
+// (2.1 us) rejects it, while still catching the regressions that matter —
+// a 40 us benchmark that grows to 60 us adds 20 us, far above the floor.
+//
+// Sub-floor regressions are not invisible: the delta is still reported, and
+// an extra allocation still fails the job through the allocs/op metric,
+// which is exactly reproducible.
+const DefaultNsMinDeltaNs = 5000
+
 var (
-	benchRe = regexp.MustCompile(`^Benchmark(\w+)(?:-\d+)?\s+(\d+)\s+(.*)$`)
+	// benchRe matches a `go test -bench` result line. The name group is
+	// lazy and accepts any character, so table-driven sub-benchmarks
+	// ("BenchmarkParent/case-1-8") are captured whole instead of being
+	// silently dropped. The optional "-\d+" suffix is the GOMAXPROCS tag
+	// `go test` appends; the lazy name stops before it.
+	benchRe = regexp.MustCompile(`^Benchmark(.+?)(?:-\d+)?\s+(\d+)\s+(.*)$`)
 	pkgRe   = regexp.MustCompile(`^pkg:\s+(\S+)`)
 )
+
+// ParseStats describes what a bench output file contained.
+type ParseStats struct {
+	// Lines counts the result lines that look like a benchmark measurement.
+	Lines int
+	// Dropped counts those lines that could not be parsed. A non-zero value
+	// means the parser is missing a result format, so measurements are
+	// being discarded without anybody noticing.
+	Dropped int
+}
 
 // ParseFile reads `go test -bench` output and returns one Result per
 // benchmark name. Names without `-N` suffix or with various metric columns
@@ -60,9 +112,19 @@ var (
 // ±30-66% on sub-microsecond benchmarks (runner contention from concurrent
 // test/bench jobs). The median discards those one-off outliers.
 func ParseFile(path string) (map[string]Result, error) {
+	results, _, err := ParseFileWithStats(path)
+	return results, err
+}
+
+// ParseFileWithStats is ParseFile plus a count of the result lines it could
+// not parse. The count is what turns a silent parser gap into a visible
+// one: before, a table-driven sub-benchmark ("BenchmarkParent/case-1") was
+// skipped without a word and the report simply did not mention it.
+func ParseFileWithStats(path string) (map[string]Result, ParseStats, error) {
+	var stats ParseStats
 	f, err := os.Open(path)
 	if err != nil {
-		return nil, err
+		return nil, stats, err
 	}
 	defer f.Close()
 
@@ -75,13 +137,19 @@ func ParseFile(path string) (map[string]Result, error) {
 			pkg = m[1]
 			continue
 		}
+		if !strings.HasPrefix(line, "Benchmark") {
+			continue
+		}
+		stats.Lines++
 		m := benchRe.FindStringSubmatch(line)
 		if m == nil {
+			stats.Dropped++
 			continue
 		}
 		name := m[1]
 		n, err := strconv.ParseInt(m[2], 10, 64)
 		if err != nil {
+			stats.Dropped++
 			continue
 		}
 		var r Result
@@ -109,7 +177,7 @@ func ParseFile(path string) (map[string]Result, error) {
 		a.add(r)
 	}
 	if err := scanner.Err(); err != nil {
-		return nil, err
+		return nil, stats, err
 	}
 
 	results := make(map[string]Result, len(samples))
@@ -120,7 +188,7 @@ func ParseFile(path string) (map[string]Result, error) {
 		agg.AllocsPerOp = median(a.all)
 		results[name] = agg
 	}
-	return results, nil
+	return results, stats, nil
 }
 
 // benchAgg accumulates the per-repetition metric columns for one benchmark
@@ -182,6 +250,13 @@ type Row struct {
 	BW      bool
 	AllF    bool
 	AllW    bool
+	// NsAbsD is the absolute ns/op delta in nanoseconds.
+	NsAbsD float64
+	// NsSuppressed is set when the relative ns/op delta crossed the warn
+	// threshold but the absolute delta stayed below the noise floor: the
+	// measurement moved, but not by enough to mean anything on a shared
+	// runner. The delta is still reported.
+	NsSuppressed bool
 }
 
 // Compare returns rows comparing head to base. Rows are sorted by severity
@@ -201,7 +276,12 @@ func Compare(base, head map[string]Result, t Thresholds) []Row {
 		if b.NsPerOp > 0 {
 			r.HasNs = true
 			r.NsD = (h.NsPerOp - b.NsPerOp) / b.NsPerOp * 100
+			r.NsAbsD = h.NsPerOp - b.NsPerOp
 			switch {
+			case r.NsD >= t.NsWarn && t.NsMinDeltaNs > 0 && math.Abs(r.NsAbsD) < t.NsMinDeltaNs:
+				// The relative delta is large but the absolute one is tiny:
+				// shared-runner timing noise, not a code regression.
+				r.NsSuppressed = true
 			case r.NsD >= t.NsFail:
 				r.NsF = true
 				r.Status = "fail"
@@ -382,7 +462,7 @@ func formatDeltaTo(dst []byte, d float64) []byte {
 }
 
 // RenderMarkdown returns a human-readable regression report.
-func RenderMarkdown(rows []Row, baseRef, headRef string) string {
+func RenderMarkdown(rows []Row, baseRef, headRef string, t Thresholds) string {
 	// Pre-size: header + per-row line. A typical row is ~80 bytes; header is
 	// fixed; summary line is ~80 bytes. Pre-growing avoids repeated
 	// strings.Builder growth reallocations under load.
@@ -395,6 +475,7 @@ func RenderMarkdown(rows []Row, baseRef, headRef string) string {
 	sb.WriteString("`\n\n")
 
 	hasFail, hasWarn, hasUngated := false, false, false
+	suppressed := 0
 	for _, r := range rows {
 		switch r.Status {
 		case "fail":
@@ -403,6 +484,9 @@ func RenderMarkdown(rows []Row, baseRef, headRef string) string {
 			hasWarn = true
 		case "ungated":
 			hasUngated = true
+		}
+		if r.NsSuppressed {
+			suppressed++
 		}
 	}
 
@@ -434,11 +518,48 @@ func RenderMarkdown(rows []Row, baseRef, headRef string) string {
 		sb.WriteString(" |\n")
 	}
 
-	sb.WriteString("\n_Thresholds: ns/op ±10%/30%, B/op ±15%/50%, allocs/op ±10%/25% (warn/fail). Each value is the median of the -count repetitions._\n")
+	sb.WriteString("\n_Thresholds: ")
+	sb.WriteString(formatThresholds(t))
+	sb.WriteString(". Each value is the median of the -count repetitions._\n")
+	if t.NsMinDeltaNs > 0 {
+		sb.WriteString("\n_An ns/op regression only gates the job when it also adds at least ")
+		sb.WriteString(strconv.FormatFloat(t.NsMinDeltaNs, 'f', 0, 64))
+		sb.WriteString(" ns per operation; below that the shared runner's timing noise is indistinguishable from a real change. B/op and allocs/op always gate._\n")
+	}
+	if suppressed > 0 {
+		sb.WriteString("\n_")
+		sb.WriteString(strconv.Itoa(suppressed))
+		sb.WriteString(" row(s) moved past the ns/op warn threshold but stayed under the absolute noise floor — reported above, not gated._\n")
+	}
 	if hasUngated {
 		sb.WriteString("\n_⚪ rows live in packages this PR does not change — shown for visibility, but they do not fail the job (unchanged code moved ±30-66% between runs on the shared runner)._\n")
 	}
 	return sb.String()
+}
+
+// formatThresholds renders the warn/fail cutoffs as they are configured, so
+// the report cannot drift away from the thresholds that actually gated the
+// job.
+func formatThresholds(t Thresholds) string {
+	var sb strings.Builder
+	sb.WriteString("ns/op ±")
+	sb.WriteString(formatPercent(t.NsWarn))
+	sb.WriteString("/")
+	sb.WriteString(formatPercent(t.NsFail))
+	sb.WriteString(", B/op ±")
+	sb.WriteString(formatPercent(t.BWarn))
+	sb.WriteString("/")
+	sb.WriteString(formatPercent(t.BFail))
+	sb.WriteString(", allocs/op ±")
+	sb.WriteString(formatPercent(t.AllocsWarn))
+	sb.WriteString("/")
+	sb.WriteString(formatPercent(t.AllocsF))
+	sb.WriteString(" (warn/fail)")
+	return sb.String()
+}
+
+func formatPercent(f float64) string {
+	return strconv.FormatFloat(f, 'f', -1, 64) + "%"
 }
 
 func rowStatus(s string) string {
