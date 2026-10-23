@@ -48,21 +48,21 @@ The `group` field MUST only be valid on org-scoped runners. It MUST be passed as
 
 ### Requirement: CLI supports org runner creation
 
-`gh sr runner add` MUST accept `--org` as an alternative to `--repo`, and `--group` for org-level runner groups.
+`gh sr add runner` MUST accept `--org` as an alternative to `--repo`, and `--group` for org-level runner groups.
 
 #### Scenario: Add org runner via CLI
 
-- **WHEN** user runs `gh sr runner add myorg-ci --org mycompany --host vps-1`
+- **WHEN** user runs `gh sr add runner myorg-ci --org mycompany --host vps-1`
 - **THEN** the runner entry MUST be written to config with `org: mycompany` and no `repo` field
 
 #### Scenario: CLI rejects both repo and org
 
-- **WHEN** user runs `gh sr runner add x --repo o/r --org mycompany --host h1`
+- **WHEN** user runs `gh sr add runner x --repo o/r --org mycompany --host h1`
 - **THEN** the command MUST fail before writing config
 
 #### Scenario: CLI requires one target
 
-- **WHEN** user runs `gh sr runner add x --host h1` without `--repo` or `--org`
+- **WHEN** user runs `gh sr add runner x --host h1` without `--repo` or `--org`
 - **THEN** the command MUST fail indicating `--repo` or `--org` is required
 
 ### Requirement: Org-wide runner name uniqueness
