@@ -22,37 +22,42 @@ make ci                                            # vet + fmt + test
 make coverage                                      # coverage summary sorted asc + total
 ```
 
-## Coverage snapshot (2026-10-16)
+## Coverage snapshot (2026-10-23)
 
 ```
 cmd/gh-sr           0.0%   (Cobra wiring only)
 internal/agentic   96.2%
 internal/autostart 95.7%
 internal/cache     89.8%
-internal/config    86.3%
+internal/config    87.0%
 internal/diskschedule 88.4%
-internal/doctor    81.2%  (checkContainerHostPrereqs still partial)
+internal/doctor    83.2%
 internal/editor    92.3%
-internal/host      70.8%  (SSH/auth heavy, out of scope)
+internal/host      95.1%  (was 72.7%; connection.go 0% → 90-100%)
 internal/hostshell 93.0%
 internal/hostshell/ps 100.0%
-internal/ops       83.3%  (ConnectHost still 0%)
-internal/registry  96.5%  (was 55.9%; +40.6 pp from registry_orchestrator_test.go)
-internal/runner    84.7%
+internal/ops       78.2%  (ConnectHost + registry.go orchestrators still 0%)
+internal/registry  90.8%
+internal/runner    85.2%
 internal/strfmt    100.0%
-internal/table     86.0%
+internal/table     91.0%
 internal/testutil  88.2%
-internal/tui       37.2%  (low priority per memory)
+internal/tui       55.3%  (lowest package)
 scripts/benchstat  92.0%
 ```
 
-## Top low-covered functions (sorted asc, 2026-10-16)
+Repo total: 77.4% of statements.
 
-internal/doctor/doctor.go:
-- checkContainerHostPrereqs (60%) — needs agentic.ValidateContainerPrereqs mock
+## Top low-covered functions (0%, 2026-10-23)
 
-internal/ops/ops.go: ConnectHost (0%) - host bootstrap
-internal/runner/native.go Windows branches: startNative (0%), statusNativeOneshotNonLinux (44.4%), statusNativeFromProbe (52.9%), nativeRunnerVersion (35.7%), removeNativeServices (60%), logsNative (66.7%)
+- internal/ops/registry.go: registryTargets, forEachRegistryHost, RegistryDeploy, RegistryStatus, printRegistryStatus, RegistryRemove — mirrors internal/ops/cache.go, which is fully covered
+- internal/ops/ops.go: ConnectHost
+- internal/doctor/doctor.go: checkRegistryMirror, probeMirrorURLFromRunner
+- internal/runner/github.go: ListLockWorkflows; internal/runner/container.go: stopContainer, ContainerBootstrapFailed
+- internal/config: CacheStoragePath, ContainerRunnerImageToolcache, InstanceCount, hasLabel, EnvFilePath, BootstrapEnv
+- internal/hostshell: PowerShellExec, PowerShellCombinedOutput, PowerShellCommand
+- internal/cache: EffectivePort
+- internal/agentic: containerNodeNPMCheckCommand
 
 ## Reusable test patterns
 
@@ -74,8 +79,20 @@ internal/runner/native.go Windows branches: startNative (0%), statusNativeOnesho
 - For `du -sb ... | cut -f1` mock output, return ONLY the number (`"12345\n"`), not the path — the orchestrator parses with `strconv.ParseInt` which fails on whitespace-padded paths.
 - For `Remove(purgeData=true, StoragePath="$HOME/...")` to exercise the storage resolve path, the resolve error needs `echo $HOME` to fail — `purgeData=false` with `$HOME/...` skips resolve entirely.
 
+## SSH / in-process server patterns (internal/host)
+
+- `golang.org/x/crypto/ssh` (already a dependency) provides both halves of the protocol, so the whole `internal/host/connection.go` surface can be tested without a real host:
+  - Server: `net.Listen("tcp","127.0.0.1:0")` + `ssh.NewServerConn`; accept `session` channels, reply to `exec` requests with the `struct{Command string}` payload, then run a per-test handler. Send an exit status with `ch.SendRequest("exit-status", false, ssh.Marshal(struct{Status uint32}{code}))`.
+  - Host keys: `ssh.NewSignerFromKey(ed25519Priv)`; `ssh.MarshalPrivateKey(priv, "test")` + `pem.EncodeToMemory` writes a parseable client key.
+  - `known_hosts`: a line is `<host-pattern> <keytype> <base64 pubkey>`. For a non-22 port the pattern must be `[host]:port` (OpenSSH spelling) — that is also what `hostKeyAlgosForDial` matches against.
+  - The client picks the negotiated host key by iterating **its own** `HostKeyAlgorithms` list first (x/crypto `findCommon`), so putting the pinned algo first really does change which key the server presents. That is what makes the b2b6d40 regression test possible.
+  - `x/crypto/ssh/agent`: `agent.NewKeyring()` + `keyring.Add(agent.AddedKey{PrivateKey: rawPrivKey})` + `agent.ServeAgent(keyring, conn)` over a unix socket gives a live `SSH_AUTH_SOCK`. The keyring only accepts raw `*rsa/*ecdsa/ed25519.PrivateKey` values — an `ssh.Signer` is rejected with "unsupported key type".
+- `t.Setenv` forbids `t.Parallel`; set `HOME` (→ `os.UserHomeDir`) and `SSH_AUTH_SOCK` per test. `HOME=""` makes `os.UserHomeDir` fail, which covers the "no home" branches.
+- The scp upload protocol: the client sends `C0644 <size> <name>\n`, then the bytes, then a NUL. `fields[1]` is the size, `fields[2]` is the name. The server must read exactly that much before replying `0x00` and exiting, otherwise the client can race the session close.
+
 ## Completed work
 
+- 2026-10-23: Cover all of `internal/host/connection.go` (was 0% on 11 functions) with an in-process SSH server: dial, exec capture, scp upload, auth-method selection, known_hosts lookup, host-key hints. Includes a regression test for the known_hosts host-key ordering fix (b2b6d40), verified by mutation. internal/host 72.7% → 95.1% (+22.4 pp). Draft PR on branch `test-assist/ssh-connection` (commit 557bce7). 21 tests in `internal/host/connection_test.go`.
 - 2026-10-16: Cover Inspect + MeasureStorage + SettingsFromConfig + localURL + Ensure/Remove error branches + deploy gateway/bind branches. internal/registry 55.9% → 96.5% (+40.6 pp). Draft PR on branch `test-assist/registry-orchestrator` (commit ab35238). 22 sub-tests in `internal/registry/registry_orchestrator_test.go`.
 - 2026-10-09: Cover PlanOrphanCleanup + CleanupOrphanInstance + instanceDirectoryExists (orphans.go). PR #538 merged 2026-10-10. internal/runner 82.6% → 84.7%.
 - 2026-10-02: Cover `checkCacheReachability` + `probeCacheFromRunner` + `effectiveBind` (all 0% → 100%); internal/doctor 81.4% → 91.7% (+10.3 pp). PR draft on branch `test-assist/cache-reachability-orchestrator` (commit 6edc2a9). 17 sub-tests in `internal/doctor/cache_reachability_orchestrator_test.go`. Merged 2026-10-04 (PR #518).
