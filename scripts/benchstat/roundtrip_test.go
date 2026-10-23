@@ -148,7 +148,7 @@ func TestRenderMarkdown_RoundTripColumn(t *testing.T) {
 	head := map[string]Result{
 		"Foo": {Name: "Foo", NsPerOp: 1000, BPerOp: 100, AllocsPerOp: 4, RoundTripsPerOp: 6},
 	}
-	md := RenderMarkdown(Compare(base, head, DefaultThresholds()), "main", "pr")
+	md := RenderMarkdown(Compare(base, head, DefaultThresholds()), "main", "pr", DefaultThresholds())
 	if !strings.Contains(md, "round-trips/op (Δ)") {
 		t.Errorf("markdown is missing the round-trips/op column:\n%s", md)
 	}
@@ -164,7 +164,7 @@ func TestRenderMarkdown_NoRoundTripColumnWithoutMetric(t *testing.T) {
 	head := map[string]Result{
 		"Foo": {Name: "Foo", NsPerOp: 1000, BPerOp: 100, AllocsPerOp: 4},
 	}
-	md := RenderMarkdown(Compare(base, head, DefaultThresholds()), "main", "pr")
+	md := RenderMarkdown(Compare(base, head, DefaultThresholds()), "main", "pr", DefaultThresholds())
 	if strings.Contains(md, "round-trips/op") {
 		t.Errorf("markdown has a round-trips/op column but no row reports the metric:\n%s", md)
 	}

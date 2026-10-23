@@ -22,9 +22,8 @@ import (
 // and no URL override): it resolves the docker0 gateway so the runner can
 // reach the cache server. The URL-override case skips that resolve.
 //
-// The names are flat (no "/" sub-benchmark parts): scripts/benchstat's
-// parser only recognises flat names, so a sub-benchmark row would never
-// reach the CI comparison report.
+// Each case is a separate top-level benchmark so it gets its own row in the
+// benchstat report.
 func BenchmarkInspectRoundTripsAutoBind(b *testing.B) {
 	benchmarkInspectRoundTrips(b, Settings{Enabled: true})
 }

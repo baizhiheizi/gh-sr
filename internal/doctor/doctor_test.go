@@ -1432,69 +1432,64 @@ func TestCheckContainerRunnerInstall_Empty(t *testing.T) {
 func TestCheckContainerRunnerInstall(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
-		name             string
-		bootstrapFailed  bool
-		inspectOut       string
-		inspectErr       error
-		execOut          string
-		wantFail         int
-		wantWarn         int
-		wantInspectCalls int
-		wantExecCalls    int
-		wantContains     []string
-		wantNotContains  []string
+		name            string
+		batchOut        string
+		batchErr        error
+		wantFail        int
+		wantWarn        int
+		wantContains    []string
+		wantNotContains []string
 	}{
 		{
 			name:            "bootstrap failed",
-			bootstrapFailed: true,
+			batchOut:        "running|no|no|yes|aw-1\n",
 			wantFail:        1,
 			wantContains:    []string{"bootstrap failed", "gh sr up aw", "gh sr rebuild aw"},
 			wantNotContains: []string{"Docker container"},
 		},
 		{
-			name:             "container missing",
-			inspectOut:       "missing\n",
-			wantFail:         1,
-			wantInspectCalls: 1,
-			wantContains:     []string{"Docker container gh-sr-aw-1 not found", "gh sr setup aw"},
+			name:         "container missing",
+			batchOut:     "missing|no|no|no|aw-1\n",
+			wantFail:     1,
+			wantContains: []string{"Docker container gh-sr-aw-1 not found", "gh sr setup aw"},
 		},
 		{
-			name:             "inspect error",
-			inspectErr:       errors.New("docker unavailable"),
-			wantFail:         1,
-			wantInspectCalls: 1,
-			wantContains:     []string{"Docker container gh-sr-aw-1 not found", "gh sr setup aw"},
+			name:         "probe error",
+			batchErr:     errors.New("docker unavailable"),
+			wantFail:     1,
+			wantContains: []string{"container: probe failed"},
 		},
 		{
-			name:             "not accepting jobs",
-			inspectOut:       "exited\n",
-			wantWarn:         1,
-			wantInspectCalls: 1,
-			wantContains:     []string{`state is "exited"`, "gh sr up aw"},
-			wantNotContains:  []string{"inner dockerd"},
+			name:            "not accepting jobs",
+			batchOut:        "exited|no|no|no|aw-1\n",
+			wantWarn:        1,
+			wantContains:    []string{`state is "exited"`, "gh sr up aw"},
+			wantNotContains: []string{"inner dockerd"},
 		},
 		{
 			// A container that exists but never registered needs the teardown
 			// step spelled out: EnsureSetup skips runners whose container
 			// already exists, and the token baked at `docker create` is
 			// single-use, so a bare `gh sr setup` restarts the same stale token.
-			name:             "inner dockerd and registration missing",
-			inspectOut:       "running\n",
-			execOut:          "no\nno\n",
-			wantFail:         1,
-			wantWarn:         1,
-			wantInspectCalls: 1,
-			wantExecCalls:    1,
-			wantContains:     []string{"inner dockerd not responding", "missing .runner", "gh sr down aw && gh sr setup aw"},
+			name:         "inner dockerd and registration missing",
+			batchOut:     "running|no|no|no|aw-1\n",
+			wantFail:     1,
+			wantWarn:     1,
+			wantContains: []string{"inner dockerd not responding", "missing .runner", "gh sr down aw && gh sr setup aw"},
 		},
 		{
-			name:             "healthy",
-			inspectOut:       "running\n",
-			execOut:          "dockerd-ok\nok\n",
-			wantInspectCalls: 1,
-			wantExecCalls:    1,
-			wantContains:     []string{"inner dockerd healthy", "registered (.runner present"},
-			wantNotContains:  []string{"not found", "not configured"},
+			name:            "healthy",
+			batchOut:        "running|yes|yes|no|aw-1\n",
+			wantContains:    []string{"inner dockerd healthy", "registered (.runner present"},
+			wantNotContains: []string{"not found", "not configured"},
+		},
+		{
+			// The batched probe prints one line per instance. A missing line
+			// means the remote script was cut short, which must not be
+			// reported as "container not found".
+			name:         "no probe result",
+			wantWarn:     1,
+			wantContains: []string{"no probe result returned"},
 		},
 	}
 
@@ -1502,28 +1497,14 @@ func TestCheckContainerRunnerInstall(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			h := host.NewHost("h1", config.HostConfig{OS: "linux", Addr: "local"})
-			inspectCalls := 0
-			execCalls := 0
+			calls := 0
 			h.SetConn(&testutil.MockExecutor{
 				RunFn: func(cmd string) (string, error) {
-					switch {
-					case cmd == "echo $HOME":
-						return "/home/test\n", nil
-					case strings.Contains(cmd, "bootstrap-failed"):
-						if tt.bootstrapFailed {
-							return "yes\n", nil
-						}
-						return "no\n", nil
-					case strings.Contains(cmd, "docker inspect --format"):
-						inspectCalls++
-						return tt.inspectOut, tt.inspectErr
-					case strings.Contains(cmd, "docker exec"):
-						execCalls++
-						return tt.execOut, nil
-					default:
+					calls++
+					if !strings.Contains(cmd, "docker inspect --format") {
 						t.Fatalf("unexpected command: %s", cmd)
-						return "", nil
 					}
+					return tt.batchOut, tt.batchErr
 				},
 			})
 			runners := []config.RunnerConfig{
@@ -1536,8 +1517,8 @@ func TestCheckContainerRunnerInstall(t *testing.T) {
 			if r.Fail != tt.wantFail || r.Warn != tt.wantWarn {
 				t.Fatalf("counters: got %+v, want Fail=%d Warn=%d", r, tt.wantFail, tt.wantWarn)
 			}
-			if inspectCalls != tt.wantInspectCalls || execCalls != tt.wantExecCalls {
-				t.Fatalf("probe calls: inspect=%d exec=%d, want inspect=%d exec=%d", inspectCalls, execCalls, tt.wantInspectCalls, tt.wantExecCalls)
+			if calls != 1 {
+				t.Fatalf("expected 1 batched round-trip, got %d", calls)
 			}
 			out := buf.String()
 			for _, want := range tt.wantContains {
@@ -1551,6 +1532,42 @@ func TestCheckContainerRunnerInstall(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestCheckContainerRunnerInstall_RoundTripsDoNotScaleWithInstances pins the
+// property the batched probe exists for: the check must cost a constant
+// number of SSH round-trips no matter how many container-mode instances the
+// host runs. The per-instance chain it replaced (state-dir resolve + marker
+// test + docker inspect + docker exec) cost four round-trips per instance,
+// so a 12-container host spent ~48 of them on this one check.
+func TestCheckContainerRunnerInstall_RoundTripsDoNotScaleWithInstances(t *testing.T) {
+	t.Parallel()
+	for _, count := range []int{1, 4, 12} {
+		mock := &testutil.MockExecutor{
+			RunFn: func(cmd string) (string, error) {
+				var b strings.Builder
+				for i := 1; i <= count; i++ {
+					fmt.Fprintf(&b, "running|yes|yes|no|aw-%d\n", i)
+				}
+				return b.String(), nil
+			},
+		}
+		h := host.NewHost("h1", config.HostConfig{OS: "linux", Addr: "local"})
+		h.SetConn(mock)
+		runners := []config.RunnerConfig{
+			{Name: "aw", Host: "h1", Repo: "o/r", Count: count, RunnerMode: config.RunnerModeContainer},
+		}
+		var buf bytes.Buffer
+		r := Result{}
+		checkContainerRunnerInstall(&buf, "h1", h, runners, &r)
+
+		if len(mock.Calls) != 1 {
+			t.Fatalf("count=%d: expected 1 round-trip, got %d: %v", count, len(mock.Calls), mock.Calls)
+		}
+		if r.Fail != 0 || r.Warn != 0 {
+			t.Fatalf("count=%d: unexpected counters %+v: %s", count, r, buf.String())
+		}
 	}
 }
 

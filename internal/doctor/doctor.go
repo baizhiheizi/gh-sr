@@ -661,11 +661,39 @@ func checkContainerHostPrereqs(w io.Writer, hostName string, h *host.Host, r *Re
 // checkContainerRunnerInstall verifies each DinD runner container exists on the host,
 // is running (warn otherwise), inner dockerd responds, and .runner is present inside the image path.
 func checkContainerRunnerInstall(w io.Writer, hostName string, h *host.Host, runners []config.RunnerConfig, r *Result) {
-	for _, pair := range installTargetsForHost(runners, hostName, func(rc *config.RunnerConfig) bool { return rc.IsContainerMode() }) {
+	targets := installTargetsForHost(runners, hostName, func(rc *config.RunnerConfig) bool { return rc.IsContainerMode() })
+	if len(targets) == 0 {
+		return
+	}
+	instances := make([]string, 0, len(targets))
+	for _, pair := range targets {
+		instances = append(instances, pair[0])
+	}
+	// One batched probe for the whole host. The per-instance chain this
+	// replaces (state-dir resolve + marker test + docker inspect + docker
+	// exec) cost four SSH round-trips per instance, so a 12-container host
+	// spent ~48 of them on this single check.
+	probes, err := runner.ProbeContainersBatch(h, instances)
+	if err != nil {
+		printLine(w, sevFail, hostName, fmt.Sprintf("container: probe failed: %v", err))
+		r.Fail++
+		return
+	}
+	for _, pair := range targets {
 		inst, runnerName := pair[0], pair[1]
 		cname := runner.ContainerDockerName(inst)
 
-		if runner.ContainerBootstrapFailed(h, inst) {
+		probe, reported := probes[inst]
+		if !reported {
+			// The batched probe prints one line per instance, so a missing
+			// line means the remote script was cut short — report that
+			// instead of claiming the container is gone.
+			printLine(w, sevWarn, hostName, fmt.Sprintf("container: instance %s (%s) — no probe result returned; re-run: gh sr doctor %s", inst, runnerName, hostName))
+			r.Warn++
+			continue
+		}
+
+		if probe.BootstrapFailed {
 			printLine(w, sevFail, hostName, fmt.Sprintf(
 				"container: instance %s (%s) — bootstrap failed (inner dockerd did not start after repeated attempts); fix the host then run: gh sr up %s (or gh sr rebuild %s)",
 				inst, runnerName, runnerName, runnerName))
@@ -673,26 +701,25 @@ func checkContainerRunnerInstall(w io.Writer, hostName string, h *host.Host, run
 			continue
 		}
 
-		rep, err := runner.ProbeDinDContainerReadiness(h, cname)
-		if err != nil || rep.State == "missing" || rep.State == "" {
+		if probe.State == "missing" || probe.State == "" {
 			printLine(w, sevFail, hostName, fmt.Sprintf("container: instance %s (%s) — Docker container %s not found; run: gh sr setup %s", inst, runnerName, cname, runnerName))
 			r.Fail++
 			continue
 		}
-		if !runner.IsContainerAcceptingJobs(rep.State) {
-			printLine(w, sevWarn, hostName, fmt.Sprintf("container: instance %s (%s) — %s state is %q (expected running); run: gh sr up %s", inst, runnerName, cname, rep.State, runnerName))
+		if !runner.IsContainerAcceptingJobs(probe.State) {
+			printLine(w, sevWarn, hostName, fmt.Sprintf("container: instance %s (%s) — %s state is %q (expected running); run: gh sr up %s", inst, runnerName, cname, probe.State, runnerName))
 			r.Warn++
 			continue
 		}
 
-		if !rep.InnerDockerdOK {
+		if !probe.InnerDockerdOK {
 			printLine(w, sevWarn, hostName, fmt.Sprintf("container: instance %s — inner dockerd not responding inside %s", inst, cname))
 			r.Warn++
 		} else {
 			printLine(w, sevOK, hostName, fmt.Sprintf("container: instance %s — inner dockerd healthy (%s)", inst, cname))
 		}
 
-		if !rep.Registered {
+		if !probe.Registered {
 			// "run: gh sr setup" alone does not fix this. The registration
 			// token is baked in at `docker create` (one-time use, ~1h TTL), and
 			// EnsureSetup skips any runner whose container already exists — so

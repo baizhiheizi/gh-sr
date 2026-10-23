@@ -21,9 +21,8 @@ import (
 // The count is the energy proxy — each round trip costs a network hop, a
 // remote shell start, and the remote CPU to run the probe.
 //
-// The names are flat (no "/" sub-benchmark parts): scripts/benchstat's
-// parser only recognises flat names, so a sub-benchmark row would never
-// reach the CI comparison report.
+// Each case is a separate top-level benchmark so it gets its own row in the
+// benchstat report.
 func BenchmarkValidateContainerAgenticFanoutRoundTrips(b *testing.B) {
 	benchmarkValidateContainerAgenticFanoutRoundTrips(b, false)
 }

@@ -404,19 +404,6 @@ func resolveAbsoluteRunnerDir(h *host.Host, instanceName string) (string, error)
 	return home + dir[len("$HOME"):], nil
 }
 
-// resolveStateDirOrFallback returns the absolute runner state directory for
-// best-effort host-side paths where an unresolved "$HOME/..." literal is still
-// safe (the shell expands $HOME on the subsequent h.Run call). Use this when
-// the path is being passed into a `rm -f` / `test -f` shell command — for
-// `docker create -v`, use resolveAbsoluteRunnerDir instead, since Docker does
-// not perform shell expansion.
-func resolveStateDirOrFallback(h *host.Host, instanceName string) string {
-	if dir, err := resolveAbsoluteRunnerDir(h, instanceName); err == nil {
-		return dir
-	}
-	return containerStateDir(h, instanceName)
-}
-
 // containerRunnerPresent returns true when the Docker container for the instance exists
 // (regardless of whether it is running or stopped).
 func containerRunnerPresent(h *host.Host, instanceName string) bool {
@@ -1005,14 +992,6 @@ func (m *Manager) recoverContainerStaleRegistration(h *host.Host, rc config.Runn
 	return m.startContainer(h, instanceName)
 }
 
-// ContainerBootstrapFailed reports whether the runner instance gave up after repeated
-// inner-dockerd bootstrap failures (bootstrap-failed marker in the state bind-mount).
-func ContainerBootstrapFailed(h *host.Host, instanceName string) bool {
-	stateDir := resolveStateDirOrFallback(h, instanceName)
-	ok, _ := hostshell.RemoteFileExists(h, stateDir+"/"+bootstrapFailedMarker)
-	return ok
-}
-
 // stopContainer stops a running runner container (docker stop).
 func (m *Manager) stopContainer(h *host.Host, instanceName string) error {
 	name := containerName(instanceName)
@@ -1034,7 +1013,7 @@ func (m *Manager) stopContainer(h *host.Host, instanceName string) error {
 //  3. `rm -rf "$HOME/.gh-sr/runners/<inst>"` — remove the host state dir.
 //     Uses the unresolved `$HOME/...` form (double-quoted so the shell
 //     expands `$HOME`) so we skip the previous `echo $HOME` resolve that
-//     `resolveStateDirOrFallback` made. Same `$HOME`-form pattern as
+//     `resolveAbsoluteRunnerDir` made. Same `$HOME`-form pattern as
 //     startContainer (PR #342) and containerLocalStatusOneShot.
 //
 // All three are best-effort (`|| true` on the rm legs): host-level failures

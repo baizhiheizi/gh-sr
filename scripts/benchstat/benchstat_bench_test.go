@@ -77,7 +77,7 @@ func BenchmarkRenderMarkdown(b *testing.B) {
 	b.ResetTimer()
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
-		_ = RenderMarkdown(rows, "main", "PR")
+		_ = RenderMarkdown(rows, "main", "PR", DefaultThresholds())
 	}
 }
 
@@ -98,6 +98,6 @@ func BenchmarkFullPipeline(b *testing.B) {
 			b.Fatal(err)
 		}
 		rows := Compare(base, head, DefaultThresholds())
-		_ = RenderMarkdown(rows, "main", "PR")
+		_ = RenderMarkdown(rows, "main", "PR", DefaultThresholds())
 	}
 }

@@ -20,10 +20,8 @@ import (
 // (scripts/benchstat) can flag a change in remote I/O the same way it flags
 // a CPU regression.
 //
-// The benchmark names are deliberately flat (no "/" sub-benchmark parts):
-// scripts/benchstat's parser only recognises flat names, so a sub-benchmark
-// row would be dropped from the CI comparison entirely and the metric would
-// never reach the report.
+// Each mode is a separate top-level benchmark so it gets its own row in the
+// benchstat report.
 
 // nativeStatusMock returns the canned output for a healthy native Linux
 // runner: svc.sh present, a user-level systemd unit installed, and a

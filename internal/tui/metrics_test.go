@@ -181,6 +181,57 @@ func TestPrintHostMetricsTable_emptyInput(t *testing.T) {
 	}
 }
 
+// TestWritePad_threeBranches pins the three branches of writePad's
+// allocation-free split: n <= 0 (no-op), n within tableSpaces80 (fast
+// slice), and n > 80 (defensive strings.Repeat fallback). The function is
+// called per cell on every render loop so an obvious regression (n<0
+// writing the wrong thing, or pad>80 producing a shorter-than-expected
+// padding) would silently misalign every columns table in the dashboard.
+func TestWritePad_threeBranches(t *testing.T) {
+	t.Parallel()
+	t.Run("zero width writes nothing", func(t *testing.T) {
+		t.Parallel()
+		var b strings.Builder
+		writePad(&b, 0)
+		if b.Len() != 0 {
+			t.Errorf("writePad(0) should write nothing, got %q", b.String())
+		}
+	})
+	t.Run("negative width writes nothing", func(t *testing.T) {
+		t.Parallel()
+		var b strings.Builder
+		writePad(&b, -3)
+		if b.Len() != 0 {
+			t.Errorf("writePad(-3) should write nothing, got %q", b.String())
+		}
+	})
+	t.Run("in-range width slices tableSpaces80", func(t *testing.T) {
+		t.Parallel()
+		var b strings.Builder
+		writePad(&b, 12)
+		if got := b.String(); got != strings.Repeat(" ", 12) {
+			t.Errorf("writePad(12) = %q, want 12 spaces", got)
+		}
+	})
+	t.Run("max-width slice boundary", func(t *testing.T) {
+		t.Parallel()
+		// 80 is exactly len(tableSpaces80) — must still produce 80 spaces.
+		var b strings.Builder
+		writePad(&b, 80)
+		if got := b.String(); got != strings.Repeat(" ", 80) {
+			t.Errorf("writePad(80) should produce 80 spaces, got %d chars", len(got))
+		}
+	})
+	t.Run("over-budget width falls back to strings.Repeat", func(t *testing.T) {
+		t.Parallel()
+		var b strings.Builder
+		writePad(&b, 120)
+		if got := b.String(); got != strings.Repeat(" ", 120) {
+			t.Errorf("writePad(120) = %d chars, want 120 spaces", len(got))
+		}
+	})
+}
+
 // TestExtractTrailingPercent_edgeCases pins the defensive guards in the
 // zero-alloc manual byte scan (PR #340) that drives colorizePercent's
 // severity threshold. The function is on the TUI render hot path

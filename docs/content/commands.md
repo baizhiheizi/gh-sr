@@ -27,6 +27,7 @@ gh sr rebuild [names...]   # Rebuild container runner image and restart containe
 gh sr service install [--system] [names...]   # Native: OS autostart (systemd / launchd / task)
 gh sr service uninstall [names...]            # Remove gh sr-installed autostart
 gh sr service status [names...]               # Autostart + unit state (container: policy note)
+gh sr service cleanup [--dry-run]             # Remove orphan autostart units + runner dirs not in runners.yml
 gh sr cache status         # Cache server state, image, health, storage per host
 gh sr cache deploy         # Deploy (or start) the cache server container on hosts
 gh sr cache prune          # Delete all cache entries via the management API (best-effort)
@@ -41,6 +42,8 @@ gh sr config edit-env      # Edit ~/.gh-sr/env in $VISUAL / $EDITOR
 gh sr config validate      # Validate config (exit 0 if OK)
 gh sr dashboard            # Same as bare gh sr: launch interactive TUI dashboard
 gh sr version              # Print gh sr version
+gh sr remove [names...]    # Remove runners from hosts + GitHub + config (no re-setup)
+gh sr images sync          # Pull prefetch images once per host, load into runners
 ```
 
 Use `gh sr add host <name> <addr>` and `gh sr add runner <name>` to append hosts and runners to your resolved `runners.yml` from the CLI; see [Add host / runner](#add-host--runner) below for flags and examples.
@@ -122,6 +125,33 @@ gh sr add runner aw-runner --repo owner/repo --host vps-1 --profile agentic
 - `--profile agentic` — register as a GitHub Agentic Workflows runner; always runs in container (DinD) mode.
 
 After either subcommand, run `gh sr doctor && gh sr setup && gh sr up` to roll the new host/runner out. For background and field-by-field reference, see the [Organization runners guide](https://an-lee.github.io/gh-sr/guides/org-runners/) (for `--org` / `--group`) and [Host setup](host-setup.md) (for the full `host:` / `runner:` schema).
+
+## Remove runner
+
+**`gh sr remove`** removes each runner from its host, deregisters it from GitHub, and drops the entry from your resolved `runners.yml`. It does **not** re-setup afterward (use `gh sr update` if you want a tear-down + setup). The same filters as the runner lifecycle commands apply (`--host`, `--repo`):
+
+```bash
+gh sr remove backend-1           # remove one runner (stops + deregisters + drops config entry)
+gh sr remove --host vps-1        # remove every runner on vps-1
+gh sr remove --repo owner/web    # remove every runner scoped to owner/web
+```
+
+The host-side services `gh sr` may have deployed on that host are **not** touched by a per-runner remove — they outlive any single runner and are removed only by their own uninstall commands:
+
+- `gh sr remove <name>` does **not** delete the cache container — `gh sr cache remove` is the only uninstall path.
+- `gh sr remove <name>` does **not** delete any registry-mirror container — `gh sr registry remove` is the only uninstall path.
+- `gh sr remove <name>` does **not** delete the per-host `gh-sr-*` shared-cache volumes. The data on disk belongs to the host and survives per-runner teardown; recreate the runner and the cache will be served again.
+
+## Sync images (gh-aw stack)
+
+The gh-aw stack images (`ghcr.io/github/gh-aw-firewall/agent`, `gh-aw-mcpg`, `squid`, `api-proxy`, …) are not visible to dockerd's Docker-Hub-only `registry-mirrors` mechanism ([moby/moby#41456](https://github.com/moby/moby/issues/41456)), so each runner fetches them itself today — one WAN pull per runner per version bump. `gh sr images sync` fixes that: list the images under `registry_mirror.prefetch` in `runners.yml` and the next `gh sr up` / `gh sr rebuild` will, per host, pull each image **once** (through the matching mirror's pull-through cache when one exists, else directly) and `docker save | docker load` it into every container runner's inner dockerd. Run it manually after editing the prefetch list:
+
+```bash
+gh sr images sync                   # pull every prefetch image once per host, then load into each runner
+gh sr images sync --host vps-1      # sync on one host only
+```
+
+See the [Registry mirror guide](guides/registry-mirror.md#beyond-docker-hub-ghcrio-and-friends) for the full `prefetch:` field reference, scope / concurrency notes, and the mirror access log recipe for verifying "fetched at most once per host".
 
 ## Host metrics
 
