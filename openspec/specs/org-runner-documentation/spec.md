@@ -60,10 +60,10 @@ Documentation MUST describe how to consolidate multiple per-repo runner entries 
 
 ### Requirement: CLI help references org runners
 
-`gh sr runner add --help` MUST mention `--org` and `--group` with brief usage context.
+`gh sr add runner --help` MUST mention `--org` and `--group` with brief usage context.
 
 #### Scenario: Help text mentions org scope
 
-- **WHEN** a user runs `gh sr runner add --help`
+- **WHEN** a user runs `gh sr add runner --help`
 - **THEN** the long description MUST mention `--org` for organization-level runners and `--group` for runner groups
 
