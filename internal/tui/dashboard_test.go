@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/an-lee/gh-sr/internal/config"
 )
@@ -297,5 +298,26 @@ func TestEnsureEnvFile_preservesExistingFile(t *testing.T) {
 	}
 	if string(got) != original {
 		t.Errorf("ensureEnvFile should not overwrite existing file; got %q, want %q", got, original)
+	}
+}
+
+// TestTickEvery_returnsTickMsgAfterSleep verifies the ticker shell around
+// time.Sleep — the cmd must return a tickMsg wrapping the time captured
+// right after the sleep. A regression that swallowed the message would
+// silently freeze the dashboard's auto-refresh loop, since the only
+// thing that schedules the next refresh is the tickMsg.
+func TestTickEvery_returnsTickMsgAfterSleep(t *testing.T) {
+	// No t.Parallel(): the cmd uses real time.Sleep.
+	before := time.Now()
+	msg := tickEvery(10 * time.Millisecond)()
+	after := time.Now()
+
+	tick, ok := msg.(tickMsg)
+	if !ok {
+		t.Fatalf("tickEvery returned %T, want tickMsg", msg)
+	}
+	got := time.Time(tick)
+	if got.Before(before) || got.After(after) {
+		t.Errorf("tickMsg time %v outside [%v, %v]", got, before, after)
 	}
 }
