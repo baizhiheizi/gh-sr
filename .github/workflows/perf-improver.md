@@ -28,7 +28,7 @@ network:
     - rust
     - java
 imports:
-  - shared/engine-minimax.md
+  - shared/engine-glm.md
   - shared/runtime.md
 safe-outputs:
   report-failure-as-issue: false
