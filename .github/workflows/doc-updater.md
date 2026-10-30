@@ -58,7 +58,7 @@ tools:
   github:
     toolsets:
       - default
-source: githubnext/agentics/workflows/doc-updater.md@4bc8419fad05e6b032741cbfd189986700bcf71c
+source: githubnext/agentics/workflows/doc-updater.md@139fa09ef17cde4135e696ff8e7af09bc5ddfa6e
 ---
 
 # Documentation Updater

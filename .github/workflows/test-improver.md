@@ -8,49 +8,44 @@ on:
     name: test-assist
     strategy: centralized
   steps:
-    - id: check
-      env:
-        GH_TOKEN: ${{ github.token }}
-      run: |
-        MAX_OPEN_PRS=8
-        if [[ "$GITHUB_EVENT_NAME" != "schedule" ]]; then exit 0; fi
-        COUNT=$(gh pr list --repo ${{ github.repository }} --state open --search 'in:title "[test-improver]"' --json number --jq 'length' 2>/dev/null || echo 0)
-        [[ "$COUNT" -lt "$MAX_OPEN_PRS" ]]
+  - env:
+      GH_TOKEN: ${{ github.token }}
+    id: check
+    run: |
+      MAX_OPEN_PRS=8
+      if [[ "$GITHUB_EVENT_NAME" != "schedule" ]]; then exit 0; fi
+      COUNT=$(gh pr list --repo ${{ github.repository }} --state open --search 'in:title "[test-improver]"' --json number --jq 'length' 2>/dev/null || echo 0)
+      [[ "$COUNT" -lt "$MAX_OPEN_PRS" ]]
   workflow_dispatch: null
 permissions: read-all
 if: needs.pre_activation.outputs.check_result == 'success'
 network:
   allowed:
-    - defaults
-    - dotnet
-    - node
-    - python
-    - rust
-    - java
+  - defaults
+  - dotnet
+  - node
+  - python
+  - rust
+  - java
 imports:
-  - shared/engine-glm.md
-  - shared/runtime.md
+- shared/engine-glm.md
+- shared/runtime.md
 safe-outputs:
-  report-failure-as-issue: false
-  threat-detection:
-    runs-on:
-      - self-hosted
-      - agentic
   add-comment:
     hide-older-comments: true
     max: 10
     target: "*"
   create-issue:
     labels:
-      - automation
-      - testing
+    - automation
+    - testing
     max: 4
     title-prefix: "[test-improver] "
   create-pull-request:
     draft: true
     labels:
-      - automation
-      - testing
+    - automation
+    - testing
     max: 4
     protected-files: fallback-to-issue
     title-prefix: "[test-improver] "
@@ -58,6 +53,11 @@ safe-outputs:
     max: 4
     required-title-prefix: "[test-improver] "
     target: "*"
+  report-failure-as-issue: false
+  threat-detection:
+    runs-on:
+    - self-hosted
+    - agentic
   update-issue:
     max: 1
     required-title-prefix: "[test-improver] "
@@ -73,23 +73,25 @@ description: |
   - Updates a monthly activity summary for maintainer visibility
   Always thoughtful, quality-focused, and mindful of test maintainability.
 runs-on:
-  - self-hosted
-  - agentic
+- self-hosted
+- agentic
 runs-on-slim:
-  - self-hosted
-  - agentic
+- self-hosted
+- agentic
 timeout-minutes: 30
 tools:
   bash: true
   github:
     toolsets:
-      - all
+    - all
   repo-memory: true
   web-fetch: null
-source: githubnext/agentics/workflows/test-improver.md@4bc8419fad05e6b032741cbfd189986700bcf71c
+source: githubnext/agentics/workflows/test-improver.md@139fa09ef17cde4135e696ff8e7af09bc5ddfa6e
 ---
 
 # Test Improver
+
+Use GitHub read tools for repository content and proxy-aware `curl` through bash for external references. Stay within the configured network allowlist, keep TLS verification enabled, and report blocked requests rather than bypassing the firewall or guessing missing content.
 
 ## Command Mode
 

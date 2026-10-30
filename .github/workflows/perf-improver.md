@@ -86,10 +86,12 @@ tools:
       - all
   repo-memory: true
   web-fetch: null
-source: githubnext/agentics/workflows/perf-improver.md@4bc8419fad05e6b032741cbfd189986700bcf71c
+source: githubnext/agentics/workflows/perf-improver.md@139fa09ef17cde4135e696ff8e7af09bc5ddfa6e
 ---
 
 # Perf Improver
+
+Use GitHub read tools for repository content and proxy-aware `curl` through bash for external references. Stay within the configured network allowlist, keep TLS verification enabled, and report blocked requests rather than bypassing the firewall or guessing missing content.
 
 ## Command Mode
 
