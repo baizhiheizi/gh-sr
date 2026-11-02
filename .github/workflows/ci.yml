@@ -35,6 +35,87 @@ jobs:
           CGO_ENABLED: "1"
         run: go test ./... -race -count=1
 
+  build:
+    name: build (release matrix)
+    # ubuntu-latest, NOT the shared self-hosted runner. release.yml ships these
+    # binaries from a GitHub-hosted runner, so matching it keeps the checked
+    # path and the shipped path identical. It also keeps 12 cross-compiles off
+    # the one self-hosted runner, where the `bench` job's own note records that
+    # extra load makes bench timings flap (and bench-compare.yml gates on them).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # Same toolchain selection as release.yml's `go_version_file: go.mod`,
+      # so the compiler that gates the PR is the compiler that ships the tag.
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      # The real release script, not a parallel reimplementation: release.yml
+      # invokes scripts/gh-extension-release-build.sh through
+      # cli/gh-extension-precompile, so this job exercises the exact matrix
+      # and the exact flags that produce the published binaries. The `test`
+      # job only compiles for the runner's own GOOS/GOARCH, leaving the other
+      # eleven targets unchecked until a tagged release fails to produce them.
+      #
+      # CGO_ENABLED is deliberately left unset: the script defaults it to 0,
+      # which is what the release path gets.
+      - name: Build release matrix
+        run: |
+          set -o pipefail
+          bash scripts/gh-extension-release-build.sh v0.0.0-ci 2>&1 | tee release-build.log
+
+      # The script only *warns* when it skips a platform ("warning: skipping
+      # unsupported platform"), so a target that drops out of the matrix would
+      # ship fewer binaries than the matrix claims, silently. Turn that path
+      # into a hard failure.
+      - name: Verify release binaries
+        run: |
+          set -euo pipefail
+          if grep -q 'skipping unsupported platform' release-build.log; then
+            echo "::error::release script skipped a platform:"
+            grep 'skipping unsupported platform' release-build.log
+            exit 1
+          fi
+
+          # Single source of truth: read the matrix straight out of the release
+          # script that release.yml ships, so this gate cannot drift from the
+          # published platform list.
+          mapfile -t platforms < <(
+            sed -n '/^platforms=(/,/^)/p' scripts/gh-extension-release-build.sh |
+              grep -oE '[a-z0-9]+-[a-z0-9]+'
+          )
+          if [ "${#platforms[@]}" -eq 0 ]; then
+            echo "::error::could not parse the platform matrix from scripts/gh-extension-release-build.sh"
+            exit 1
+          fi
+          echo "matrix declares ${#platforms[@]} platforms"
+
+          missing=()
+          for p in "${platforms[@]}"; do
+            ext=""
+            if [ "${p%%-*}" = "windows" ]; then
+              ext=".exe"
+            fi
+            if [ ! -f "dist/${p}${ext}" ]; then
+              missing+=("${p}${ext}")
+            fi
+          done
+          if [ "${#missing[@]}" -gt 0 ]; then
+            echo "::error::missing release binaries: ${missing[*]}"
+            exit 1
+          fi
+
+          built=$(ls -1 dist | wc -l)
+          if [ "$built" -ne "${#platforms[@]}" ]; then
+            echo "::error::expected ${#platforms[@]} binaries in dist/, found ${built}"
+            ls -1 dist
+            exit 1
+          fi
+          echo "all ${#platforms[@]} release binaries present"
+
   bench:
     name: bench
     runs-on: [self-hosted, linux]
