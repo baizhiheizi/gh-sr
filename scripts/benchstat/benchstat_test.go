@@ -114,14 +114,18 @@ func TestCompare_NoRegression(t *testing.T) {
 
 func TestCompare_WarnAndFail(t *testing.T) {
 	base := map[string]Result{
-		"OK":   {Name: "OK", NsPerOp: 100000, BPerOp: 100, AllocsPerOp: 4},
-		"Warn": {Name: "Warn", NsPerOp: 100000, BPerOp: 100, AllocsPerOp: 4},
-		"Fail": {Name: "Fail", NsPerOp: 100000, BPerOp: 100, AllocsPerOp: 4},
+		"OK":     {Name: "OK", NsPerOp: 100000, BPerOp: 100, AllocsPerOp: 4},
+		"Warn":   {Name: "Warn", NsPerOp: 100000, BPerOp: 100, AllocsPerOp: 4},
+		"NsOnly": {Name: "NsOnly", NsPerOp: 100000, BPerOp: 100, AllocsPerOp: 4},
+		"Fail":   {Name: "Fail", NsPerOp: 100000, BPerOp: 100, AllocsPerOp: 4},
 	}
 	head := map[string]Result{
 		"OK":   {Name: "OK", NsPerOp: 100500, BPerOp: 100, AllocsPerOp: 4},
 		"Warn": {Name: "Warn", NsPerOp: 115000, BPerOp: 100, AllocsPerOp: 4},
-		"Fail": {Name: "Fail", NsPerOp: 150000, BPerOp: 100, AllocsPerOp: 4},
+		// ns/op is warn-only: +50% wall clock with flat deterministic counters
+		// is the shared-runner contention signature, not a code regression.
+		"NsOnly": {Name: "NsOnly", NsPerOp: 150000, BPerOp: 100, AllocsPerOp: 4},
+		"Fail":   {Name: "Fail", NsPerOp: 150000, BPerOp: 200, AllocsPerOp: 4}, // B/op +100% is fail-level
 	}
 	rows := Compare(base, head, DefaultThresholds())
 	statuses := map[string]string{}
@@ -135,7 +139,10 @@ func TestCompare_WarnAndFail(t *testing.T) {
 		t.Errorf("Warn status = %q, want warn", statuses["Warn"])
 	}
 	if statuses["Fail"] != "fail" {
-		t.Errorf("Fail status = %q, want fail", statuses["Fail"])
+		t.Errorf("Fail status = %q, want fail (B/op +100%% is fail-level)", statuses["Fail"])
+	}
+	if statuses["NsOnly"] != "warn" {
+		t.Errorf("NsOnly status = %q, want warn (ns/op is warn-only)", statuses["NsOnly"])
 	}
 }
 
@@ -198,8 +205,8 @@ func TestCompare_SortBySeverity(t *testing.T) {
 	}
 	head := map[string]Result{
 		"A": {Name: "A", NsPerOp: 100000, BPerOp: 100, AllocsPerOp: 4}, // ok
-		"B": {Name: "B", NsPerOp: 110000, BPerOp: 100, AllocsPerOp: 4}, // warn
-		"C": {Name: "C", NsPerOp: 200000, BPerOp: 100, AllocsPerOp: 4}, // fail
+		"B": {Name: "B", NsPerOp: 110000, BPerOp: 100, AllocsPerOp: 4}, // warn (ns/op)
+		"C": {Name: "C", NsPerOp: 200000, BPerOp: 100, AllocsPerOp: 8}, // fail (allocs/op +100%)
 	}
 	rows := Compare(base, head, DefaultThresholds())
 	if len(rows) != 3 || rows[0].Name != "C" || rows[1].Name != "B" || rows[2].Name != "A" {
@@ -241,7 +248,7 @@ func TestRenderMarkdown_FailSummary(t *testing.T) {
 			Name: "Foo", Status: "fail",
 			Base:  Result{NsPerOp: 1000, BPerOp: 100, AllocsPerOp: 4},
 			Head:  Result{NsPerOp: 2000, BPerOp: 100, AllocsPerOp: 4},
-			HasNs: true, HasB: true, HasAll: true, NsF: true,
+			HasNs: true, HasB: true, HasAll: true, BF: true,
 		},
 	}
 	md := RenderMarkdown(rows, "main", "PR", DefaultThresholds())
@@ -351,7 +358,9 @@ func TestEndToEnd_NoRegression(t *testing.T) {
 	}
 }
 
-func TestEndToEnd_FailTriggersExit(t *testing.T) {
+// +100% ns/op with no deterministic-counter change is the shared-runner
+// contention signature: it must warn, and it must not fail the job.
+func TestEndToEnd_NsOnlyWarns(t *testing.T) {
 	dir := t.TempDir()
 	basePath := writeBench(t, dir, "base.txt", "BenchmarkFoo-8   	1000000	    100000 ns/op\n")
 	headPath := writeBench(t, dir, "head.txt", "BenchmarkFoo-8   	1000000	    200000 ns/op\n")
@@ -359,8 +368,30 @@ func TestEndToEnd_FailTriggersExit(t *testing.T) {
 	base, _ := ParseFile(basePath)
 	head, _ := ParseFile(headPath)
 	rows := Compare(base, head, DefaultThresholds())
+	if HasFail(rows) {
+		t.Errorf("+100%% ns/op should not trigger fail (ns/op is warn-only)")
+	}
+	warned := false
+	for _, r := range rows {
+		if r.Status == "warn" {
+			warned = true
+		}
+	}
+	if !warned {
+		t.Errorf("+100%% ns/op should warn, got no warn rows")
+	}
+}
+
+func TestEndToEnd_FailTriggersExit(t *testing.T) {
+	dir := t.TempDir()
+	basePath := writeBench(t, dir, "base.txt", "BenchmarkFoo-8   	1000000	    100000 ns/op	     100 B/op	       4 allocs/op\n")
+	headPath := writeBench(t, dir, "head.txt", "BenchmarkFoo-8   	1000000	    100000 ns/op	     100 B/op	       6 allocs/op\n")
+
+	base, _ := ParseFile(basePath)
+	head, _ := ParseFile(headPath)
+	rows := Compare(base, head, DefaultThresholds())
 	if !HasFail(rows) {
-		t.Errorf("+100%% ns/op should trigger fail, got ok")
+		t.Errorf("+50%% allocs/op should trigger fail, got ok")
 	}
 }
 
@@ -500,7 +531,7 @@ func TestApplyPackageScope_DemotesUntouched(t *testing.T) {
 
 	rows := []Row{
 		{Name: "RunnerBench", Package: "github.com/an-lee/gh-sr/internal/runner", Status: "ok"},
-		{Name: "ConfigBench", Package: "github.com/an-lee/gh-sr/internal/config", Status: "fail", NsF: true},
+		{Name: "ConfigBench", Package: "github.com/an-lee/gh-sr/internal/config", Status: "fail", BF: true},
 		{Name: "HostBench", Package: "github.com/an-lee/gh-sr/internal/host", Status: "warn", NsW: true},
 	}
 	gated, ungated := ApplyPackageScope(rows, []string{"internal/runner"})
@@ -516,7 +547,7 @@ func TestApplyPackageScope_DemotesUntouched(t *testing.T) {
 			t.Errorf("%s status = %q, want ungated", r.Name, r.Status)
 		}
 	}
-	if !rows[1].NsF {
+	if !rows[1].BF {
 		t.Errorf("ungated row should keep its fail metric flag for the report")
 	}
 	if HasFail(rows) {
@@ -575,10 +606,10 @@ func TestApplyNoScope_PreservesMeasurements(t *testing.T) {
 
 	rows := []Row{{
 		Name: "Noisy", Package: "github.com/an-lee/gh-sr/internal/host", Status: "fail",
-		Head: Result{NsPerOp: 600}, Base: Result{NsPerOp: 300}, HasNs: true, NsD: 100, NsF: true,
+		Head: Result{NsPerOp: 600}, Base: Result{NsPerOp: 300}, HasNs: true, NsD: 100, NsW: true,
 	}}
 	ApplyNoScope(rows)
-	if !rows[0].NsF || rows[0].NsD != 100 {
+	if !rows[0].NsW || rows[0].NsD != 100 {
 		t.Errorf("metric flags must survive demotion, got %+v", rows[0])
 	}
 	md := RenderMarkdown(rows, "main", "PR", DefaultThresholds())
@@ -602,10 +633,13 @@ BenchmarkLoad_Small-8   	1000	     870 ns/op	 936.0 B/op	23.00 allocs/op
 pkg: github.com/an-lee/gh-sr/internal/runner
 BenchmarkManager_Status-8   	1000	   40312 ns/op	170789.0 B/op	75.00 allocs/op
 `)
-	// Same allocations, ~2-4x the time: contention, not a code change.
+	// Same allocations, ~2-4x the time: contention, not a code change — plus
+	// one real allocation regression (Load_Small 23 → 30 allocs/op, +30% ≥
+	// the 25% fail cutoff) so the empty-scope fallback still has a fail-level
+	// row to trip on now that ns/op alone never fails.
 	headPath := writeBench(t, dir, "head.txt", `pkg: github.com/an-lee/gh-sr/internal/config
 BenchmarkDefaultLabels-8   	1000	     120 ns/op	 64.00 B/op	 1.00 allocs/op
-BenchmarkLoad_Small-8   	1000	    1795 ns/op	 936.0 B/op	23.00 allocs/op
+BenchmarkLoad_Small-8   	1000	    1795 ns/op	 936.0 B/op	30.00 allocs/op
 pkg: github.com/an-lee/gh-sr/internal/runner
 BenchmarkManager_Status-8   	1000	   61706 ns/op	170789.0 B/op	75.00 allocs/op
 `)
@@ -690,7 +724,7 @@ func TestRenderMarkdown_Ungated(t *testing.T) {
 		},
 		{
 			Name: "Noisy", Package: "github.com/an-lee/gh-sr/internal/host", Status: "ungated",
-			Head: Result{NsPerOp: 600}, Base: Result{NsPerOp: 300}, HasNs: true, NsD: 100, NsF: true,
+			Head: Result{NsPerOp: 600}, Base: Result{NsPerOp: 300}, HasNs: true, NsD: 100, BF: true,
 		},
 	}
 	md := RenderMarkdown(rows, "main", "PR", DefaultThresholds())
@@ -820,8 +854,8 @@ func TestCompare_NsNoiseFloorSuppressesSmallAbsoluteDelta(t *testing.T) {
 	if r.Status != "ok" {
 		t.Errorf("status = %q, want ok (the +45%% delta is only %v ns)", r.Status, r.NsAbsD)
 	}
-	if r.NsF || r.NsW {
-		t.Errorf("noise-floor row must not be flagged (NsF=%v NsW=%v)", r.NsF, r.NsW)
+	if r.NsW {
+		t.Errorf("noise-floor row must not be flagged (NsW=%v)", r.NsW)
 	}
 	if !r.NsSuppressed {
 		t.Error("NsSuppressed should be set so the report can explain the row")
@@ -831,9 +865,12 @@ func TestCompare_NsNoiseFloorSuppressesSmallAbsoluteDelta(t *testing.T) {
 	}
 }
 
-// TestCompare_NsGatesAboveNoiseFloor pins the other half of the contract: a
-// real slowdown that adds enough absolute time still fails the job.
-func TestCompare_NsGatesAboveNoiseFloor(t *testing.T) {
+// TestCompare_NsWarnsAboveNoiseFloor pins the other half of the contract: a
+// slowdown above the noise floor warns (and is not suppressed) but does not
+// fail the job. This exact shape — a 40 µs benchmark at +53% with flat
+// counters — is the 2026-11-02 contention signature that failed four
+// bench-compare runs on byte-identical code.
+func TestCompare_NsWarnsAboveNoiseFloor(t *testing.T) {
 	t.Parallel()
 
 	base := map[string]Result{
@@ -843,11 +880,14 @@ func TestCompare_NsGatesAboveNoiseFloor(t *testing.T) {
 		"Real": {Name: "Real", NsPerOp: 61706, BPerOp: 170789, AllocsPerOp: 75},
 	}
 	rows := Compare(base, head, DefaultThresholds())
-	if rows[0].Status != "fail" {
-		t.Errorf("status = %q, want fail (+53%% and %v ns)", rows[0].Status, rows[0].NsAbsD)
+	if rows[0].Status != "warn" {
+		t.Errorf("status = %q, want warn (+53%% and %v ns; ns/op is warn-only)", rows[0].Status, rows[0].NsAbsD)
 	}
 	if rows[0].NsSuppressed {
-		t.Error("NsSuppressed must be false for a gated row")
+		t.Error("NsSuppressed must be false for a row above the noise floor")
+	}
+	if HasFail(rows) {
+		t.Error("a ns/op-only regression must not fail the job")
 	}
 }
 
@@ -875,7 +915,8 @@ func TestCompare_AllocRegressionGatesBelowNsNoiseFloor(t *testing.T) {
 }
 
 // TestCompare_NsFloorZeroDisablesHardening pins the escape hatch: a zero
-// floor restores the plain relative-threshold behaviour.
+// floor restores the plain relative-threshold behaviour for warnings (ns/op
+// warns at every magnitude regardless — it never fails).
 func TestCompare_NsFloorZeroDisablesHardening(t *testing.T) {
 	t.Parallel()
 
@@ -888,11 +929,14 @@ func TestCompare_NsFloorZeroDisablesHardening(t *testing.T) {
 		"Noisy": {Name: "Noisy", NsPerOp: 6680, BPerOp: 1024, AllocsPerOp: 45},
 	}
 	rows := Compare(base, head, th)
-	if rows[0].Status != "fail" {
-		t.Errorf("status = %q, want fail with the floor disabled", rows[0].Status)
+	if rows[0].Status != "warn" {
+		t.Errorf("status = %q, want warn with the floor disabled", rows[0].Status)
 	}
 	if rows[0].NsSuppressed {
 		t.Error("NsSuppressed must be false when the floor is disabled")
+	}
+	if HasFail(rows) {
+		t.Error("a ns/op-only regression must not fail the job, floor or no floor")
 	}
 }
 
@@ -914,7 +958,7 @@ func TestRenderMarkdown_ReportsNoiseFloor(t *testing.T) {
 	for _, want := range []string{
 		"5000 ns per operation",
 		"1 row(s) moved past the ns/op warn threshold",
-		"ns/op ±10%/30%",
+		"ns/op ≥10% (warn-only)",
 	} {
 		if !strings.Contains(md, want) {
 			t.Errorf("markdown missing %q\nfull output:\n%s", want, md)
@@ -929,10 +973,10 @@ func TestRenderMarkdown_ThresholdsFollowConfig(t *testing.T) {
 	t.Parallel()
 
 	th := DefaultThresholds()
-	th.NsWarn, th.NsFail = 5, 20
+	th.NsWarn = 5
 	rows := []Row{{Name: "Foo", Status: "ok", HasNs: true, NsD: 1}}
 	md := RenderMarkdown(rows, "main", "PR", th)
-	if !strings.Contains(md, "ns/op ±5%/20%") {
+	if !strings.Contains(md, "ns/op ≥5% (warn-only)") {
 		t.Errorf("footer must use the configured thresholds\n%s", md)
 	}
 }

@@ -14,7 +14,10 @@ permissions:
 # Compares the PR's `go test -bench=.` output against the latest successful
 # `bench` artifact uploaded by ci.yml on `main`. Posts (or updates) a single
 # markdown comment tagged with `<!-- benchstat-report -->`. Exit code is
-# non-zero on fail-level regressions, so the PR check fails loudly.
+# non-zero on fail-level regressions (B/op, allocs/op, round-trips/op — the
+# deterministic counters), so the PR check fails loudly. ns/op is
+# warn-only: wall-clock time on this shared self-hosted runner is load
+# noise at any magnitude, so it never gates.
 #
 # Noise hardening (each guards a real false-failure mode this workflow hit):
 #   - Benchmarks run with -count=3 and benchstat takes the per-metric MEDIAN.
@@ -29,6 +32,13 @@ permissions:
 #     the repo's own benchmark code, and scoping it to an empty package list
 #     used to fall back to "gate everything" — failing all seven dependabot
 #     PRs of the 2026-10-15 batch on pure self-hosted-runner noise.
+#   - ns/op regressions warn but never fail (benchstat -gate semantics).
+#     Contention inflates wall clock proportionally — the 2026-11-02 #591
+#     wave measured +92% on a 61.7 µs benchmark of byte-identical code,
+#     four runs in a row, allocs/op flat at 0.0% — so no absolute floor can
+#     separate load from a real timing regression. Deterministic counters
+#     stay fail-level and catch the regressions that are exactly
+#     reproducible.
 #   - The PR is checked out via refs/pull/N/head instead of refs/pull/N/merge.
 #     The merge ref is cached by GitHub: reruns of a PR whose base moved kept
 #     fetching a pre-merge snapshot and compared stale code against fresh

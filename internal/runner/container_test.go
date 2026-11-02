@@ -531,6 +531,37 @@ func TestAgenticRunnerJobHooksPreserveImageCache(t *testing.T) {
 	}
 }
 
+// TestAgenticRunnerJobStartedHookSweepElevated pins the _work ownership sweep's
+// failure modes: the removal must run under sudo (a bare rm piped from the
+// sudo'd find runs as the runner user and stops at the first root-owned
+// directory — issue #589: a half-deleted .git left only root-owned
+// commit-graph files, and every later checkout failed with "not a git
+// repository" while the hook still logged "workspace ownership repaired"),
+// the hook must re-verify the sweep and fail loudly if entries survive, and
+// the no-sudo fallback must stay best-effort.
+func TestAgenticRunnerJobStartedHookSweepElevated(t *testing.T) {
+	t.Parallel()
+
+	for _, want := range []string{
+		// The removal itself must be elevated, not just the scan.
+		"_sweep_foreign | sudo -n xargs -r -0 rm -rf --",
+		// Post-removal verification and the loud failure path.
+		"foreign-owned ${RUNNER_WORK_DIR} entries survived the removal",
+		"exit 1",
+		// Sudo-less environments stay best-effort (warn, continue).
+		"passwordless sudo unavailable",
+	} {
+		if !strings.Contains(agenticRunnerJobStartedHook, want) {
+			t.Fatalf("job-started hook must contain %q", want)
+		}
+	}
+
+	// The exact bug from #589: scan elevated, removal not.
+	if strings.Contains(agenticRunnerJobStartedHook, "| xargs -r -0 rm -rf --") {
+		t.Fatalf("job-started hook must not pipe the sweep into a non-elevated rm:\n%s", agenticRunnerJobStartedHook)
+	}
+}
+
 func TestAgenticRunnerDockerfileInstallsNodeLTS(t *testing.T) {
 	t.Parallel()
 

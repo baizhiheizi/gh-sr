@@ -32,57 +32,75 @@ type Result struct {
 }
 
 // Thresholds defines warn/fail percent-delta cutoffs per metric.
+//
+// ns/op is warn-only (there is deliberately no NsFail): wall-clock time on
+// the shared self-hosted runner is load-contaminated by construction — the
+// same host runs the agentic workflow fleet (scheduled Repo Assist runs,
+// PR-triggered reviewers), and contention inflates every benchmark roughly
+// proportionally. Measured on 2026-11-02 with byte-identical code: a
+// 61.7 µs benchmark reported +92% (+56.7 µs) while B/op and allocs/op
+// stayed flat at 0.0% — four runs in a row, the inflation growing on an
+// idle-host rerun. The old model assumed contention adds a roughly fixed
+// amount of latency per operation and put a 5 µs absolute floor under the
+// fail threshold; proportional inflation breaks that model at any floor
+// size, so ns/op regressions are reported (⚠️) but never fail the job.
+// The deterministic counters — B/op, allocs/op, round-trips/op — are
+// load-invariant and keep failing.
 type Thresholds struct {
-	NsWarn, NsFail      float64
+	NsWarn              float64
 	BWarn, BFail        float64
 	AllocsWarn, AllocsF float64
 	// NsMinDeltaNs is the minimum ABSOLUTE ns/op delta (in nanoseconds) for
-	// the ns/op metric to gate the build. A relative delta that is large but
-	// small in absolute terms is timing noise on the shared self-hosted
-	// runner, not a regression: the runner adds a roughly fixed amount of
-	// wall-clock time per operation, so a sub-microsecond benchmark can
-	// report +45% while the code under test is byte-identical. Deltas below
-	// this floor are still reported, but they do not fail or warn the job.
+	// the ns/op metric to warn. A relative delta that is large but small in
+	// absolute terms is timing noise on the shared self-hosted runner, not
+	// a regression: a sub-microsecond benchmark can report +45% while the
+	// code under test is byte-identical. Deltas below this floor are still
+	// reported, but they do not warn the job.
 	//
 	// B/op and allocs/op are unaffected: allocation counts are deterministic
 	// for a given code path, so they gate without a floor.
 	//
-	// A zero value disables the floor (every relative delta gates), which is
+	// A zero value disables the floor (every relative delta warns), which is
 	// the pre-floor behaviour.
 	NsMinDeltaNs float64
 }
 
 // DefaultThresholds returns the warn/fail cutoffs used by the bench-compare
 // workflow. The numbers are intentionally conservative: real refactors should
-// stay well below them, while genuine regressions (e.g. +50% ns/op) fail.
+// stay well below them, while genuine memory/round-trip regressions (e.g.
+// +50% B/op, an extra SSH round trip) fail. ns/op regressions never fail —
+// see Thresholds.
 //
 // NsMinDeltaNs is calibrated against the noise this repository's shared
 // self-hosted runner produces. See DefaultNsMinDeltaNs for the reasoning.
 func DefaultThresholds() Thresholds {
 	return Thresholds{
-		NsWarn: 10, NsFail: 30,
-		BWarn: 15, BFail: 50,
+		NsWarn: 10,
+		BWarn:  15, BFail: 50,
 		AllocsWarn: 10, AllocsF: 25,
 		NsMinDeltaNs: DefaultNsMinDeltaNs,
 	}
 }
 
 // DefaultNsMinDeltaNs is the absolute ns/op delta below which a relative
-// regression is treated as runner noise rather than a code regression.
+// regression is treated as runner noise rather than reported as a warning.
 //
-// The floor is absolute rather than relative because the shared self-hosted
-// runner's contention shows up as a roughly fixed amount of added latency
-// per operation. Measured on this repository's benchmark suite, two runs of
-// *identical* code moved a 42 ns benchmark by +42% (18 ns of real time) and
-// a 4.6 us benchmark by +45% (2.1 us of real time), while allocs/op stayed
-// exactly flat and B/op moved by under 3%. A relative-only threshold
-// therefore flags the noise; a floor above the largest observed noise delta
-// (2.1 us) rejects it, while still catching the regressions that matter —
-// a 40 us benchmark that grows to 60 us adds 20 us, far above the floor.
+// The floor is absolute rather than relative because sub-microsecond
+// benchmarks can swing tens of percent in absolute terms that are far too
+// small to mean anything. Measured on this repository's benchmark suite,
+// two runs of *identical* code moved a 42 ns benchmark by +42% (18 ns of
+// real time) and a 4.6 us benchmark by +45% (2.1 us of real time), while
+// allocs/op stayed exactly flat and B/op moved by under 3%.
 //
-// Sub-floor regressions are not invisible: the delta is still reported, and
-// an extra allocation still fails the job through the allocs/op metric,
-// which is exactly reproducible.
+// The floor only bounds warn-level noise on small benchmarks: it can no
+// longer rescue ns/op gating at any size, because contention on the shared
+// runner inflates wall clock proportionally, not by a fixed offset — on
+// 2026-11-02 a byte-identical suite reported a 61.7 µs benchmark at +92%
+// (+56.7 µs) with allocs/op flat at 0.0%, four runs in a row. That is why
+// ns/op regressions warn and never fail; see Thresholds. The deltas that
+// matter stay gated through the deterministic counters — an extra
+// allocation fails the job through allocs/op, which is exactly
+// reproducible.
 const DefaultNsMinDeltaNs = 5000
 
 var (
@@ -257,7 +275,6 @@ type Row struct {
 	BD      float64
 	AllD    float64
 	RTD     float64
-	NsF     bool
 	NsW     bool
 	BF      bool
 	BW      bool
@@ -296,10 +313,11 @@ func Compare(base, head map[string]Result, t Thresholds) []Row {
 				// The relative delta is large but the absolute one is tiny:
 				// shared-runner timing noise, not a code regression.
 				r.NsSuppressed = true
-			case r.NsD >= t.NsFail:
-				r.NsF = true
-				r.Status = "fail"
 			case r.NsD >= t.NsWarn:
+				// ns/op is warn-only by design: wall-clock deltas on the
+				// shared self-hosted runner are load noise at any magnitude
+				// (see Thresholds), while a real allocation/round-trip
+				// regression still fails through the deterministic counters.
 				r.NsW = true
 				if r.Status != "fail" {
 					r.Status = "warn"
@@ -557,7 +575,7 @@ func RenderMarkdown(rows []Row, baseRef, headRef string, t Thresholds) string {
 		sb.WriteString("| ")
 		sb.WriteString(r.Name)
 		sb.WriteString(" | ")
-		writeMetricCell(&sb, r.Status, r.HasNs, r.Head.NsPerOp, r.Base.NsPerOp, r.NsD, r.NsF, r.NsW)
+		writeMetricCell(&sb, r.Status, r.HasNs, r.Head.NsPerOp, r.Base.NsPerOp, r.NsD, false, r.NsW)
 		sb.WriteString(" | ")
 		writeMetricCell(&sb, r.Status, r.HasB, r.Head.BPerOp, r.Base.BPerOp, r.BD, r.BF, r.BW)
 		sb.WriteString(" | ")
@@ -577,9 +595,9 @@ func RenderMarkdown(rows []Row, baseRef, headRef string, t Thresholds) string {
 	sb.WriteString(formatThresholds(t))
 	sb.WriteString(". Each value is the median of the -count repetitions._\n")
 	if t.NsMinDeltaNs > 0 {
-		sb.WriteString("\n_An ns/op regression only gates the job when it also adds at least ")
+		sb.WriteString("\n_ns/op is warn-only: shared-runner wall clock is load noise at any magnitude. B/op, allocs/op and the round-trip count gate; deltas under ")
 		sb.WriteString(strconv.FormatFloat(t.NsMinDeltaNs, 'f', 0, 64))
-		sb.WriteString(" ns per operation; below that the shared runner's timing noise is indistinguishable from a real change. B/op and allocs/op always gate._\n")
+		sb.WriteString(" ns per operation do not even warn._\n")
 	}
 	if showRT {
 		sb.WriteString("\n_round-trips/op counts remote command invocations per operation. It is an exact count, not a noisy measurement: any increase is an extra remote round trip and fails the comparison._\n")
@@ -587,7 +605,7 @@ func RenderMarkdown(rows []Row, baseRef, headRef string, t Thresholds) string {
 	if suppressed > 0 {
 		sb.WriteString("\n_")
 		sb.WriteString(strconv.Itoa(suppressed))
-		sb.WriteString(" row(s) moved past the ns/op warn threshold but stayed under the absolute noise floor — reported above, not gated._\n")
+		sb.WriteString(" row(s) moved past the ns/op warn threshold but stayed under the absolute noise floor — reported above, no warning._\n")
 	}
 	if hasUngated {
 		sb.WriteString("\n_⚪ rows live in packages this PR does not change — shown for visibility, but they do not fail the job (unchanged code moved ±30-66% between runs on the shared runner)._\n")
@@ -600,11 +618,9 @@ func RenderMarkdown(rows []Row, baseRef, headRef string, t Thresholds) string {
 // job.
 func formatThresholds(t Thresholds) string {
 	var sb strings.Builder
-	sb.WriteString("ns/op ±")
+	sb.WriteString("ns/op ≥")
 	sb.WriteString(formatPercent(t.NsWarn))
-	sb.WriteString("/")
-	sb.WriteString(formatPercent(t.NsFail))
-	sb.WriteString(", B/op ±")
+	sb.WriteString(" (warn-only), B/op ±")
 	sb.WriteString(formatPercent(t.BWarn))
 	sb.WriteString("/")
 	sb.WriteString(formatPercent(t.BFail))

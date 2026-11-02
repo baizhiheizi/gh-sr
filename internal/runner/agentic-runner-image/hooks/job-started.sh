@@ -18,7 +18,13 @@
 #      "Deleting the contents of ..." then fails with EACCES and EVERY subsequent job
 #      on this long-lived runner fails at Checkout until an operator intervenes.
 #      Sweep foreign-owned entries in the job-free hook window (same safety argument
-#      as step 1). Best-effort: needs passwordless sudo; never fails the job.
+#      as step 1). Both the scan AND the removal run under passwordless sudo: a bare
+#      rm runs as the runner user, and a half-completed removal is worse than none —
+#      it leaves a corrupt workspace (e.g. a .git stripped down to root-owned
+#      commit-graph leftovers) that makes checkout fail with "not a git repository"
+#      (issue #589). When sudo is unavailable the sweep stays best-effort; when sudo
+#      works but entries still survive the removal, fail the job loudly in "Set up
+#      runner" — checkout would fail anyway, and the hook message names the fix.
 #   3. Verify the inner dockerd is responsive. This is the only hard failure: if
 #      dockerd is down the job cannot run anyway, and failing here surfaces a clear
 #      message in "Set up runner" instead of a confusing failure minutes later.
@@ -48,7 +54,15 @@ if sudo -n true 2>/dev/null; then
     _orphans=$(_sweep_foreign | tr '\0' '\n' | grep -c . || true)
     if [ "${_orphans}" -gt 0 ]; then
         log "removing ${_orphans} ${RUNNER_WORK_DIR} entry/entries not owned by uid ${_gh_sr_uid} (left by root-privileged jobs)..."
-        _sweep_foreign | xargs -r -0 rm -rf --
+        # Elevate the removal too: piped into a bare rm it would run as the runner
+        # user and stop at the first root-owned directory (issue #589 — a stripped
+        # .git left every later checkout failing with "not a git repository").
+        _sweep_foreign | sudo -n xargs -r -0 rm -rf --
+        _left=$(_sweep_foreign | tr '\0' '\n' | grep -c . || true)
+        if [ "${_left}" -gt 0 ]; then
+            log "ERROR: ${_left} foreign-owned ${RUNNER_WORK_DIR} entries survived the removal (immutable bits or a read-only mount?); checkout would fail — clear ${RUNNER_WORK_DIR} as root, then re-run the job"
+            exit 1
+        fi
         log "workspace ownership repaired"
     fi
 else
