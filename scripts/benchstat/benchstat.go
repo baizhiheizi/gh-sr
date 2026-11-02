@@ -595,9 +595,9 @@ func RenderMarkdown(rows []Row, baseRef, headRef string, t Thresholds) string {
 	sb.WriteString(formatThresholds(t))
 	sb.WriteString(". Each value is the median of the -count repetitions._\n")
 	if t.NsMinDeltaNs > 0 {
-		sb.WriteString("\n_ns/op is warn-only: wall-clock time on the shared self-hosted runner is load noise at any magnitude (the same host runs the agentic workflow fleet), so ns/op regressions never fail the job. The deterministic counters — B/op, allocs/op and the round-trip count — gate. Deltas that add less than ")
+		sb.WriteString("\n_ns/op is warn-only: shared-runner wall clock is load noise at any magnitude. B/op, allocs/op and the round-trip count gate; deltas under ")
 		sb.WriteString(strconv.FormatFloat(t.NsMinDeltaNs, 'f', 0, 64))
-		sb.WriteString(" ns per operation do not even warn: sub-microsecond timing noise is indistinguishable from a real change._\n")
+		sb.WriteString(" ns per operation do not even warn._\n")
 	}
 	if showRT {
 		sb.WriteString("\n_round-trips/op counts remote command invocations per operation. It is an exact count, not a noisy measurement: any increase is an extra remote round trip and fails the comparison._\n")
