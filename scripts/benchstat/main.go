@@ -13,6 +13,13 @@
 // files (dependency bump, workflow/docs-only edit) and therefore cannot
 // regress the repo's own benchmark code.
 //
+// What gates: B/op, allocs/op and round-trips/op are deterministic counters
+// and fail the job. ns/op is wall-clock on a shared self-hosted runner that
+// also runs the agentic workflow fleet, so it only warns — contention
+// inflates every benchmark proportionally (measured +92% on byte-identical
+// code with allocs/op flat at 0.0%), which no threshold can separate from a
+// real regression.
+//
 // Exit codes:
 //
 //	0 — no fail-level regressions (warn-level OK)
@@ -37,7 +44,7 @@ func main() {
 	output := flag.String("output", "", "optional output file (default: stdout)")
 	packages := flag.String("packages", "", "comma-separated directory-style import paths (e.g. internal/runner) whose benchmarks gate the exit code; empty gates everything")
 	gate := flag.Bool("gate", true, "gate the exit code on fail-level regressions; false renders the report but never fails (for diffs that change no Go files)")
-	nsMinDelta := flag.Float64("ns-min-delta", benchstat.DefaultNsMinDeltaNs, "minimum absolute ns/op delta (ns) for an ns/op regression to gate the job; below it the delta is reported but not gated (shared-runner timing noise)")
+	nsMinDelta := flag.Float64("ns-min-delta", benchstat.DefaultNsMinDeltaNs, "minimum absolute ns/op delta (ns) for an ns/op regression to warn; below it the delta is reported without a warning (shared-runner timing noise). ns/op never fails the job — wall-clock deltas on the shared runner are load noise; the deterministic counters (B/op, allocs/op, round-trips/op) gate")
 	flag.Parse()
 
 	if *basePath == "" || *headPath == "" {
