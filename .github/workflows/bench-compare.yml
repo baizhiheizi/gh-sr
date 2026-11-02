@@ -41,6 +41,15 @@ jobs:
     name: bench-compare
     runs-on: [self-hosted, linux]
     steps:
+      # Same stale-workspace repair as the test job in ci.yml: move a .git
+      # that is neither a usable repo nor deletable (EACCES) into RUNNER_TEMP
+      # so the checkout below starts from a fresh clone.
+      - name: Repair stale workspace
+        run: |
+          if [ -e .git ] && ! git rev-parse --git-dir >/dev/null 2>&1; then
+            mv .git "${RUNNER_TEMP}/broken-git.$(date +%s%N)"
+          fi
+
       - uses: actions/checkout@v7
         with:
           ref: refs/pull/${{ github.event.pull_request.number }}/head

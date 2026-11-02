@@ -11,6 +11,18 @@ jobs:
     name: test
     runs-on: [self-hosted, linux]
     steps:
+      # Shared runner workspaces occasionally end up with a stale .git that
+      # actions/checkout can neither reuse ("not a git repository") nor
+      # delete (EACCES on root-owned .git/objects/info/commit-graphs/*),
+      # failing the job at checkout. rm -rf hits the same EACCES, but rename
+      # only needs write access to the workspace itself: move the broken .git
+      # into RUNNER_TEMP so the checkout below starts from a fresh clone.
+      - name: Repair stale workspace
+        run: |
+          if [ -e .git ] && ! git rev-parse --git-dir >/dev/null 2>&1; then
+            mv .git "${RUNNER_TEMP}/broken-git.$(date +%s%N)"
+          fi
+
       - uses: actions/checkout@v7
 
       - uses: actions/setup-go@v7
@@ -125,6 +137,13 @@ jobs:
     # self-hosted runner and adds the contention that makes timings flap.
     if: github.event_name == 'push'
     steps:
+      # Same stale-workspace repair as the test job above.
+      - name: Repair stale workspace
+        run: |
+          if [ -e .git ] && ! git rev-parse --git-dir >/dev/null 2>&1; then
+            mv .git "${RUNNER_TEMP}/broken-git.$(date +%s%N)"
+          fi
+
       - uses: actions/checkout@v7
 
       - uses: actions/setup-go@v7
