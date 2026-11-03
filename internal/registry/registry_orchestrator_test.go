@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/an-lee/gh-sr/internal/config"
+	"github.com/an-lee/gh-sr/internal/host"
 	"github.com/an-lee/gh-sr/internal/testutil"
 )
 
@@ -370,20 +371,40 @@ func TestDeploy_pullErrorIgnored(t *testing.T) {
 // Inspect
 // ----------------------------------------------------------------------------
 
+// inspectBatchOut renders the batched stream the remote Inspect script emits
+// for one mirror: the section marker, the inspect state|image line, and —
+// only when the container exists — the health and du tags.
+func inspectBatchOut(n int, stateImage, health, du string) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "@@m:%d\n", n)
+	fmt.Fprintf(&b, "@@st:%d|%s\n", n, stateImage)
+	if stateImage != "" {
+		fmt.Fprintf(&b, "@@health:%d|%s\n", n, health)
+		fmt.Fprintf(&b, "@@du:%d|%s\n", n, du)
+	}
+	return b.String()
+}
+
+// threeMirrorSettings is a direct 3-mirror Settings (no config round-trip) so
+// multi-mirror tests don't depend on SettingsFromConfig's defaults.
+func threeMirrorSettings() Settings {
+	return Settings{Enabled: true, Mirrors: []MirrorSettings{
+		{Name: "dockerhub", Upstream: DefaultUpstream, Port: DefaultPort},
+		{Name: "ghcr", Upstream: "https://ghcr.io", Port: 5578},
+		{Name: "quay", Upstream: "https://quay.io", Port: 5579},
+	}}
+}
+
 func TestInspect_runningHealthy(t *testing.T) {
 	t.Parallel()
 	mock := &testutil.MockExecutor{RunFn: func(cmd string) (string, error) {
 		switch {
-		case strings.Contains(cmd, ".State.Status}}"):
-			return "running|registry:2\n", nil
+		case strings.Contains(cmd, "@@m:1"):
+			return inspectBatchOut(1, "running|registry:2", "ok", "1234567"), nil
 		case strings.Contains(cmd, "echo $HOME"):
 			return "/root\n", nil
 		case strings.Contains(cmd, "ip -4 -o addr show docker0"):
 			return gwOutput, nil
-		case strings.Contains(cmd, "curl -fsS"):
-			return "", nil
-		case strings.Contains(cmd, "du -sb"):
-			return "1234567\n", nil
 		}
 		return "", nil
 	}}
@@ -408,20 +429,14 @@ func TestInspect_runningHealthy(t *testing.T) {
 
 func TestInspect_absentNoHealthProbe(t *testing.T) {
 	t.Parallel()
-	calls := 0
 	mock := &testutil.MockExecutor{RunFn: func(cmd string) (string, error) {
 		switch {
-		case strings.Contains(cmd, ".State.Status}}"):
-			return "", nil
+		case strings.Contains(cmd, "@@m:1"):
+			return inspectBatchOut(1, "", "", ""), nil
 		case strings.Contains(cmd, "echo $HOME"):
 			return "/root\n", nil
 		case strings.Contains(cmd, "ip -4 -o addr show docker0"):
 			return gwOutput, nil
-		case strings.Contains(cmd, "curl -fsS"):
-			calls++
-			return "", nil
-		case strings.Contains(cmd, "du -sb"):
-			return "", errors.New("no dir")
 		}
 		return "", nil
 	}}
@@ -433,11 +448,11 @@ func TestInspect_absentNoHealthProbe(t *testing.T) {
 	if info.State != "" {
 		t.Errorf("State: got %q", info.State)
 	}
-	if calls != 0 {
-		t.Errorf("absent container must skip health probe, got %d calls", calls)
-	}
 	if info.Healthy {
 		t.Errorf("absent container must report Healthy=false")
+	}
+	if info.StorageBytes != 0 {
+		t.Errorf("absent container must report StorageBytes=0, got %d", info.StorageBytes)
 	}
 }
 
@@ -445,14 +460,12 @@ func TestInspect_unhealthyProbe(t *testing.T) {
 	t.Parallel()
 	mock := &testutil.MockExecutor{RunFn: func(cmd string) (string, error) {
 		switch {
-		case strings.Contains(cmd, ".State.Status}}"):
-			return "running|registry:2\n", nil
+		case strings.Contains(cmd, "@@m:1"):
+			return inspectBatchOut(1, "running|registry:2", "fail", "500"), nil
 		case strings.Contains(cmd, "echo $HOME"):
 			return "/root\n", nil
 		case strings.Contains(cmd, "ip -4 -o addr show docker0"):
 			return gwOutput, nil
-		case strings.Contains(cmd, "curl -fsS"):
-			return "", errors.New("connection refused")
 		}
 		return "", nil
 	}}
@@ -460,26 +473,79 @@ func TestInspect_unhealthyProbe(t *testing.T) {
 	if err != nil || len(infos) != 1 {
 		t.Fatalf("Inspect: len=%d err=%v", len(infos), err)
 	}
-	info := infos[0].Info
-	if info.Healthy {
-		t.Errorf("expected Healthy=false when curl fails")
+	if infos[0].Info.Healthy {
+		t.Errorf("expected Healthy=false when the /v2/ probe fails")
 	}
 }
 
-func TestInspect_storageResolveError(t *testing.T) {
+// TestInspect_healthProbeCapturesCurlExit pins the health semantics: the
+// remote script branches on curl's own exit status (`curl ... >/dev/null
+// 2>&1; then echo ... ok ... fail`) instead of appending `|| true`. The old
+// per-mirror probe masked a failed curl behind a 0 shell exit, so Healthy
+// reported SSH-transport success rather than the mirror answering /v2/ —
+// doctor's "mirror healthy" line was true for a dead mirror.
+func TestInspect_healthProbeCapturesCurlExit(t *testing.T) {
 	t.Parallel()
+	var batchCmd string
 	mock := &testutil.MockExecutor{RunFn: func(cmd string) (string, error) {
 		switch {
-		case strings.Contains(cmd, ".State.Status}}"):
-			return "running|registry:2\n", nil
+		case strings.Contains(cmd, "@@m:1"):
+			batchCmd = cmd
+			return inspectBatchOut(1, "running|registry:2", "ok", "1"), nil
 		case strings.Contains(cmd, "echo $HOME"):
-			return "", errors.New("ssh gone")
+			return "/root\n", nil
+		case strings.Contains(cmd, "ip -4 -o addr show docker0"):
+			return gwOutput, nil
 		}
 		return "", nil
 	}}
-	_, err := Inspect(newRegistryHost(t, mock), Settings{Enabled: true, StoragePath: "$HOME/mirror"})
-	if err == nil {
-		t.Fatal("expected error when storage resolve fails")
+	if _, err := Inspect(newRegistryHost(t, mock), Settings{Enabled: true}); err != nil {
+		t.Fatalf("Inspect: %v", err)
+	}
+	if !strings.Contains(batchCmd, `/v2/ >/dev/null 2>&1; then echo "@@health:1|ok"`) ||
+		!strings.Contains(batchCmd, `else echo "@@health:1|fail"`) {
+		t.Errorf("health probe must branch on curl's exit status:\n%s", batchCmd)
+	}
+	if strings.Contains(batchCmd, "/v2/ 2>/dev/null || true") {
+		t.Errorf("health probe must not mask curl failures with `|| true`:\n%s", batchCmd)
+	}
+}
+
+func TestInspect_multiMirrorBatched(t *testing.T) {
+	t.Parallel()
+	out := inspectBatchOut(1, "running|registry:2", "ok", "111") +
+		inspectBatchOut(2, "exited|registry:2", "", "") +
+		inspectBatchOut(3, "", "", "")
+	mock := &testutil.MockExecutor{RunFn: func(cmd string) (string, error) {
+		switch {
+		case strings.Contains(cmd, "@@m:1"):
+			return out, nil
+		case strings.Contains(cmd, "echo $HOME"):
+			return "/root\n", nil
+		case strings.Contains(cmd, "ip -4 -o addr show docker0"):
+			return gwOutput, nil
+		}
+		return "", nil
+	}}
+	infos, err := Inspect(newRegistryHost(t, mock), threeMirrorSettings())
+	if err != nil || len(infos) != 3 {
+		t.Fatalf("Inspect: len=%d err=%v", len(infos), err)
+	}
+	if infos[0].Info.State != "running" || !infos[0].Info.Healthy || infos[0].Info.StorageBytes != 111 {
+		t.Errorf("mirror 1: %+v", infos[0].Info)
+	}
+	if infos[1].Info.State != "exited" || infos[1].Info.Healthy {
+		t.Errorf("mirror 2: exited without a health tag must be unhealthy: %+v", infos[1].Info)
+	}
+	if infos[2].Info.State != "" || infos[2].Info.Healthy || infos[2].Info.StorageBytes != 0 {
+		t.Errorf("mirror 3: absent must stay clean-zero: %+v", infos[2].Info)
+	}
+	if infos[1].Container != ContainerNamePrefix+"ghcr" || infos[2].Container != ContainerNamePrefix+"quay" {
+		t.Errorf("containers: %q %q", infos[1].Container, infos[2].Container)
+	}
+	// Three mirrors, one probe: gateway + storage resolve + the batch.
+	if len(mock.Calls) != 3 {
+		t.Errorf("round-trips: got %d calls, want 3 (gateway + $HOME + batch): %q", len(mock.Calls), mock.Calls)
 	}
 }
 
@@ -487,16 +553,12 @@ func TestInspect_duGarbage(t *testing.T) {
 	t.Parallel()
 	mock := &testutil.MockExecutor{RunFn: func(cmd string) (string, error) {
 		switch {
-		case strings.Contains(cmd, ".State.Status}}"):
-			return "running|registry:2\n", nil
+		case strings.Contains(cmd, "@@m:1"):
+			return inspectBatchOut(1, "running|registry:2", "ok", "not a number"), nil
 		case strings.Contains(cmd, "echo $HOME"):
 			return "/root\n", nil
 		case strings.Contains(cmd, "ip -4 -o addr show docker0"):
 			return gwOutput, nil
-		case strings.Contains(cmd, "curl -fsS"):
-			return "", nil
-		case strings.Contains(cmd, "du -sb"):
-			return "not a number\n", nil
 		}
 		return "", nil
 	}}
@@ -510,20 +572,33 @@ func TestInspect_duGarbage(t *testing.T) {
 	}
 }
 
+func TestInspect_storageResolveError(t *testing.T) {
+	t.Parallel()
+	mock := &testutil.MockExecutor{RunFn: func(cmd string) (string, error) {
+		switch {
+		case strings.Contains(cmd, "echo $HOME"):
+			return "", errors.New("ssh gone")
+		}
+		return "", nil
+	}}
+	_, err := Inspect(newRegistryHost(t, mock), Settings{Enabled: true, StoragePath: "$HOME/mirror"})
+	if err == nil {
+		t.Fatal("expected error when storage resolve fails")
+	}
+}
+
 func TestInspect_urlOverrideSkipsGateway(t *testing.T) {
 	t.Parallel()
 	calls := 0
 	mock := &testutil.MockExecutor{RunFn: func(cmd string) (string, error) {
 		switch {
-		case strings.Contains(cmd, ".State.Status}}"):
-			return "running|registry:2\n", nil
+		case strings.Contains(cmd, "@@m:1"):
+			return inspectBatchOut(1, "running|registry:2", "ok", "1234567"), nil
 		case strings.Contains(cmd, "echo $HOME"):
 			return "/root\n", nil
 		case strings.Contains(cmd, "ip -4 -o addr show docker0"):
 			calls++
 			return gwOutput, nil
-		case strings.Contains(cmd, "curl -fsS"):
-			return "", nil
 		}
 		return "", nil
 	}}
@@ -538,6 +613,41 @@ func TestInspect_urlOverrideSkipsGateway(t *testing.T) {
 	if calls != 0 {
 		t.Errorf("URL override must skip gateway lookup, got %d calls", calls)
 	}
+}
+
+// BenchmarkInspectRoundTrips pins Inspect's per-host round-trip cost at 3
+// (gateway resolve + storage resolve + one batched probe) regardless of the
+// mirror count. Re-splitting the probes into per-mirror round-trips would
+// multiply `gh sr registry status` / doctor's remote I/O by the mirror count,
+// and this metric is what would show it.
+func BenchmarkInspectRoundTrips(b *testing.B) {
+	out := inspectBatchOut(1, "running|registry:2", "ok", "111") +
+		inspectBatchOut(2, "running|registry:2", "ok", "222") +
+		inspectBatchOut(3, "exited|registry:2", "fail", "333")
+	mock := &testutil.RoundTripCounter{RunFn: func(cmd string) (string, error) {
+		switch {
+		case strings.Contains(cmd, "@@m:1"):
+			return out, nil
+		case strings.Contains(cmd, "echo $HOME"):
+			return "/root\n", nil
+		case strings.Contains(cmd, "ip -4 -o addr show docker0"):
+			return gwOutput, nil
+		}
+		return "", nil
+	}}
+	h := host.NewHost("h", config.HostConfig{Addr: "runner@vps", OS: "linux", Arch: "amd64"})
+	h.SetConn(mock)
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		mock.Reset()
+		if _, err := Inspect(h, threeMirrorSettings()); err != nil {
+			b.Fatalf("Inspect: %v", err)
+		}
+	}
+	b.StopTimer()
+	b.ReportMetric(float64(mock.RoundTrips), "round-trips/op")
 }
 
 // ----------------------------------------------------------------------------

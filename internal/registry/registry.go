@@ -453,10 +453,9 @@ func deployMirror(w io.Writer, h *host.Host, s Settings, i int) error {
 }
 
 // Inspect gathers the state of every configured mirror for `gh sr registry
-// status` and doctor. The health probe is best-effort: failures set
-// Healthy=false instead of erroring.
+// status` and doctor. The health probe is best-effort: a mirror whose /v2/
+// endpoint does not answer sets Healthy=false instead of erroring.
 func Inspect(h *host.Host, s Settings) ([]MirrorStatus, error) {
-	var out []MirrorStatus
 	var gw string
 	if s.URLOverride == "" && (s.BindAddr == "" || s.BindAddr == "0.0.0.0") {
 		gw, _ = cache.ResolveGatewayIP(h)
@@ -467,41 +466,113 @@ func Inspect(h *host.Host, s Settings) ([]MirrorStatus, error) {
 	if err != nil {
 		return nil, err
 	}
+	list := s.mirrorList()
+	out := make([]MirrorStatus, len(list))
+	for i := range list {
+		out[i] = MirrorStatus{Name: list[i].Name, Container: s.containerName(i)}
+		out[i].Info.StoragePath = storages[i]
+		out[i].Info.URL = s.mirrorRunnerURL(i, gw)
+	}
+	// One batched probe for the whole list. The per-mirror chain this
+	// replaces (docker inspect + curl /v2/ + du -sb) cost three SSH
+	// round-trips per mirror.
+	batchOut, err := h.Run(buildInspectBatchScript(s, gw, storages))
+	if err != nil {
+		return nil, fmt.Errorf("inspecting registry mirror container: %w", err)
+	}
+	parseInspectBatchOutput(batchOut, out)
+	return out, nil
+}
+
+// buildInspectBatchScript renders the single remote command that probes every
+// configured mirror. Per mirror it emits:
+//
+//	@@m:<n>
+//	@@st:<n>|<state>|<image>            (inspect; empty state = absent)
+//	[@@health:<n>|ok|fail]              (curl /v2/, only when the container exists)
+//	[@@du:<n>|<bytes>]                  (storage size, only when the container exists)
+//
+// Mirror container names are config-validated ([a-z0-9-]) so they embed raw;
+// URLs and storage paths are single-quoted. The health probe captures curl's
+// exit status explicitly — the previous per-mirror probe appended `|| true`,
+// which made the remote command exit 0 even when curl failed, so Healthy
+// reported SSH-transport success instead of the mirror answering /v2/.
+func buildInspectBatchScript(s Settings, gw string, storages []string) string {
+	var b strings.Builder
 	for i := range s.mirrorList() {
-		cname := s.containerName(i)
-		info := StatusInfo{}
-		outRaw, err := h.Run(fmt.Sprintf(
-			"docker inspect --format='{{.State.Status}}|{{.Config.Image}}' %s 2>/dev/null || true", cname))
-		if err != nil {
-			return out, fmt.Errorf("inspecting registry mirror container: %w", err)
-		}
-		if parts := strings.SplitN(strings.TrimSpace(outRaw), "|", 2); parts[0] != "" {
-			info.State = parts[0]
-			if len(parts) == 2 {
-				info.Image = parts[1]
+		n := i + 1
+		fmt.Fprintf(&b, "echo \"@@m:%d\"\n", n)
+		fmt.Fprintf(&b, "out=$(docker inspect --format='{{.State.Status}}|{{.Config.Image}}' %s 2>/dev/null || true)\n", s.containerName(i))
+		fmt.Fprintf(&b, "echo \"@@st:%d|$out\"\n", n)
+		fmt.Fprintf(&b, "if [ -n \"$out\" ]; then\n")
+		fmt.Fprintf(&b, "  if curl -fsS -m 3 %s/v2/ >/dev/null 2>&1; then echo \"@@health:%d|ok\"; else echo \"@@health:%d|fail\"; fi\n",
+			hostshell.PosixSingleQuote(s.localURL(i, gw)), n, n)
+		fmt.Fprintf(&b, "  echo \"@@du:%d|$(du -sb %s 2>/dev/null | cut -f1)\"\n", n, hostshell.PosixSingleQuote(storages[i]))
+		fmt.Fprintf(&b, "fi\n")
+	}
+	return b.String()
+}
+
+// parseInspectBatchOutput fills statuses from the batched probe stream.
+// Sections keyed by a marker for a mirror that was never probed, or lines
+// outside any section, are ignored.
+func parseInspectBatchOutput(out string, statuses []MirrorStatus) {
+	cur := -1
+	for _, line := range strings.Split(out, "\n") {
+		line = strings.TrimRight(line, "\r")
+		switch {
+		case strings.HasPrefix(line, "@@m:"):
+			if n := atoiInspect(line[len("@@m:"):]); n >= 1 && n <= len(statuses) {
+				cur = n - 1
 			}
-		}
-
-		storage := storages[i]
-		info.StoragePath = storage
-		info.URL = s.mirrorRunnerURL(i, gw)
-
-		if info.State != "" {
-			// GET /v2/ answers 200 on an anonymous pull-through mirror.
-			_, healthErr := h.Run(fmt.Sprintf(
-				"curl -fsS -m 3 %s/v2/ 2>/dev/null || true", hostshell.PosixSingleQuote(s.localURL(i, gw))))
-			info.Healthy = healthErr == nil
-
-			if duOut, duErr := h.Run(fmt.Sprintf(
-				"du -sb %s 2>/dev/null | cut -f1", hostshell.PosixSingleQuote(storage))); duErr == nil {
-				if n, perr := strconv.ParseInt(strings.TrimSpace(duOut), 10, 64); perr == nil {
-					info.StorageBytes = n
+		case cur >= 0 && strings.HasPrefix(line, "@@st:"):
+			if n, rest, ok := splitInspectMarker(line, "@@st:"); ok && n-1 == cur {
+				if parts := strings.SplitN(rest, "|", 2); parts[0] != "" {
+					statuses[cur].Info.State = parts[0]
+					if len(parts) == 2 {
+						statuses[cur].Info.Image = parts[1]
+					}
+				}
+			}
+		case cur >= 0 && strings.HasPrefix(line, "@@health:"):
+			if n, rest, ok := splitInspectMarker(line, "@@health:"); ok && n-1 == cur {
+				statuses[cur].Info.Healthy = rest == "ok"
+			}
+		case cur >= 0 && strings.HasPrefix(line, "@@du:"):
+			if n, rest, ok := splitInspectMarker(line, "@@du:"); ok && n-1 == cur {
+				if v, err := strconv.ParseInt(strings.TrimSpace(rest), 10, 64); err == nil {
+					statuses[cur].Info.StorageBytes = v
 				}
 			}
 		}
-		out = append(out, MirrorStatus{Name: s.mirrorList()[i].Name, Container: cname, Info: info})
 	}
-	return out, nil
+}
+
+func atoiInspect(s string) int {
+	n, err := strconv.Atoi(strings.TrimSpace(s))
+	if err != nil {
+		return -1
+	}
+	return n
+}
+
+// splitInspectMarker parses "<prefix><n>|<tail>" into n and the tail (the
+// state|image pair on @@st, ok/fail on @@health, the byte count on @@du).
+func splitInspectMarker(line, prefix string) (int, string, bool) {
+	rest := strings.TrimPrefix(line, prefix)
+	if rest == line {
+		return -1, "", false
+	}
+	num := rest
+	tail := ""
+	if i := strings.IndexByte(rest, '|'); i >= 0 {
+		num, tail = rest[:i], rest[i+1:]
+	}
+	n := atoiInspect(num)
+	if n < 0 {
+		return -1, "", false
+	}
+	return n, tail, true
 }
 
 // MirrorStatus is the state of one mirror: its config name, Docker container
