@@ -490,6 +490,14 @@ func containerAgenticFanoutCheckCommand(outerContainer, runnerName string, hostE
 // defs to containerAgenticFanoutSpecsFromDefs so the command body and the
 // parser specs come from one source.
 func containerAgenticFanoutCheckCommandFromDefs(outerContainer string, defs []containerCheckDef) string {
+	return runner.DockerExecCommand(outerContainer, "sh -lc "+hostshell.PosixSingleQuote(containerAgenticFanoutInnerScript(defs)))
+}
+
+// containerAgenticFanoutInnerScript renders the tagged probe blocks (and the
+// trailing `true`) WITHOUT the docker-exec wrapper. The batched inner-hygiene
+// probe reuses it verbatim — the probe bodies are instance-independent, so the
+// batch wraps this same script in `docker exec "gh-sr-$i" sh -lc` per instance.
+func containerAgenticFanoutInnerScript(defs []containerCheckDef) string {
 	var inner strings.Builder
 	for _, d := range defs {
 		inner.WriteString("{ ")
@@ -499,7 +507,7 @@ func containerAgenticFanoutCheckCommandFromDefs(outerContainer string, defs []co
 		inner.WriteString(":$?\"\n")
 	}
 	inner.WriteString("true")
-	return runner.DockerExecCommand(outerContainer, "sh -lc "+hostshell.PosixSingleQuote(inner.String()))
+	return inner.String()
 }
 
 // containerAgenticFanoutSpecs returns the per-check metadata used by the
