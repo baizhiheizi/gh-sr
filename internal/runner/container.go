@@ -23,7 +23,7 @@ const AgenticRunnerImageTag = "gh-sr/agentic-runner"
 // runner image build, overridable via runners.yml
 // container_runner_image.base_image; pin by digest for reproducible builds.
 // The cache server image default lives in the cache package (cache.DefaultImage).
-const DefaultForkRunnerImage = "ghcr.io/falcondev-oss/actions-runner:2.338.0"
+const DefaultForkRunnerImage = "ghcr.io/falcondev-oss/actions-runner:2.338.2"
 
 // Docker image labels stamped at build time (see buildAgenticRunnerImage).
 const (
