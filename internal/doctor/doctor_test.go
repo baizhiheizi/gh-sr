@@ -1605,12 +1605,9 @@ func TestCheckContainerAgenticInnerHygiene_Empty(t *testing.T) {
 type agenticInnerHygieneExecutor struct {
 	mu sync.Mutex
 
-	inspectOut  string
-	inspectErr  error
-	mtuOut      string
-	orphansOut  string
-	networksOut string
-	fanoutOut   string
+	mtuOut   string
+	batchOut string
+	batchErr error
 
 	calls      []string
 	unexpected []string
@@ -1624,14 +1621,8 @@ func (e *agenticInnerHygieneExecutor) Run(cmd string) (string, error) {
 	switch {
 	case strings.Contains(cmd, "ip -o route get 1.1.1.1"):
 		return e.mtuOut, nil
-	case strings.Contains(cmd, "docker inspect --format"):
-		return e.inspectOut, e.inspectErr
-	case strings.Contains(cmd, `echo "#container-inner-host-docker-internal:$?"`):
-		return e.fanoutOut, nil
-	case strings.Contains(cmd, `docker network ls --filter "name=awf-net"`):
-		return e.networksOut, nil
-	case strings.Contains(cmd, `--filter "name=awmg-mcpg" --filter "name=awf-" --filter "name=gh-aw"`):
-		return e.orphansOut, nil
+	case strings.Contains(cmd, "@@begin:$n"):
+		return e.batchOut, e.batchErr
 	default:
 		e.unexpected = append(e.unexpected, cmd)
 		return "", fmt.Errorf("unexpected command: %s", cmd)
@@ -1647,9 +1638,38 @@ func (e *agenticInnerHygieneExecutor) snapshot() (calls, unexpected []string) {
 	return append([]string(nil), e.calls...), append([]string(nil), e.unexpected...)
 }
 
+// batchSection renders one instance's tagged section the way the batched
+// remote script emits it: state line, then — only for a running container —
+// the two hygiene capture windows and the fanout tags.
+func batchSection(n int, state, orphans, networks, fanout string) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "@@begin:%d\n", n)
+	fmt.Fprintf(&b, "@@state:%d|%s\n", n, state)
+	if state == "running" {
+		fmt.Fprintf(&b, "@@hyg:%d|0\n", n)
+		if orphans != "" {
+			fmt.Fprintf(&b, "%s\n", orphans)
+		}
+		fmt.Fprintf(&b, "@@hygend:%d|0\n", n)
+		fmt.Fprintf(&b, "@@hyg:%d|1\n", n)
+		if networks != "" {
+			fmt.Fprintf(&b, "%s\n", networks)
+		}
+		fmt.Fprintf(&b, "@@hygend:%d|1\n", n)
+		if fanout != "" {
+			fmt.Fprintf(&b, "%s\n", fanout)
+		}
+	}
+	fmt.Fprintf(&b, "@@end:%d", n)
+	return b.String()
+}
+
 // TestCheckContainerAgenticInnerHygiene covers the strict running-state gate,
 // clean result, both hygiene warning sources, the fanout probe warning, the
-// host-MTU fanout gate, and the cache-enabled OK wording.
+// host-MTU fanout gate, the cache-enabled OK wording, multi-instance hosts,
+// truncated sections, and the batch transport error. The whole check must cost
+// exactly two SSH round-trips: one MTU detect + one batched probe, regardless
+// of instance count.
 func TestCheckContainerAgenticInnerHygiene(t *testing.T) {
 	t.Parallel()
 
@@ -1659,69 +1679,74 @@ func TestCheckContainerAgenticInnerHygiene(t *testing.T) {
 		"#container-zstd:0"
 
 	tests := []struct {
-		name            string
-		inspectOut      string
-		inspectErr      error
-		mtuOut          string
-		orphansOut      string
-		networksOut     string
-		fanoutOut       string
-		cacheEnabled    bool
-		wantWarn        int
-		wantExecCalls   int
-		wantFanoutCalls int
-		wantMTUBlock    bool
-		wantCacheBlock  bool
-		wantContains    []string
-		wantNotContains []string
+		name           string
+		instances      int
+		batchOut       string
+		batchErr       error
+		mtuOut         string
+		cacheEnabled   bool
+		wantFail       int
+		wantWarn       int
+		wantMTUBlock   bool
+		wantCacheBlock bool
+		wantContains   []string
+		wantNotContain []string
 	}{
 		{
-			name:            "inspect error skips inner probes",
-			inspectErr:      errors.New("docker unavailable"),
-			mtuOut:          "1400\n",
-			wantNotContains: []string{"container(agent):"},
+			name:           "batch transport error fails loudly",
+			instances:      1,
+			batchErr:       errors.New("ssh dropped"),
+			mtuOut:         "1400\n",
+			wantMTUBlock:   true,
+			wantFail:       1,
+			wantContains:   []string{"container(agent): probe failed"},
+			wantNotContain: []string{"inner Docker clean"},
 		},
 		{
-			name:            "restarting skips inner probes",
-			inspectOut:      "restarting\n",
-			mtuOut:          "1400\n",
-			wantNotContains: []string{"container(agent):"},
+			name:           "restarting skips inner probes",
+			instances:      1,
+			batchOut:       batchSection(1, "restarting", "", "", ""),
+			mtuOut:         "1400\n",
+			wantMTUBlock:   true,
+			wantNotContain: []string{"container(agent):"},
 		},
 		{
-			name:            "healthy standard MTU",
-			inspectOut:      "running\n",
-			mtuOut:          "1500\n",
-			fanoutOut:       cleanFanout,
-			wantExecCalls:   3,
-			wantFanoutCalls: 1,
+			name:           "missing container skips inner probes",
+			instances:      1,
+			batchOut:       batchSection(1, "missing", "", "", ""),
+			mtuOut:         "1400\n",
+			wantMTUBlock:   true,
+			wantNotContain: []string{"container(agent):"},
+		},
+		{
+			name:      "healthy standard MTU",
+			instances: 1,
+			batchOut:  batchSection(1, "running", "", "", cleanFanout),
+			mtuOut:    "1500\n",
 			wantContains: []string{
 				"container(agent): inner Docker clean, host-gateway alias resolvable, node/npm + zstd on PATH, socket user ok (gh-sr-aw-1)",
 			},
-			wantNotContains: []string{"[WARN]", "[FAIL]", "cache URL wired"},
+			wantNotContain: []string{"[WARN]", "[FAIL]", "cache URL wired"},
 		},
 		{
-			name:            "healthy with cache enabled mentions cache URL",
-			inspectOut:      "running\n",
-			mtuOut:          "1500\n",
-			fanoutOut:       cleanFanout + "\n#container-cache-env:0",
-			cacheEnabled:    true,
-			wantExecCalls:   3,
-			wantFanoutCalls: 1,
-			wantCacheBlock:  true,
+			name:           "healthy with cache enabled mentions cache URL",
+			instances:      1,
+			batchOut:       batchSection(1, "running", "", "", cleanFanout+"\n#container-cache-env:0"),
+			mtuOut:         "1500\n",
+			cacheEnabled:   true,
+			wantCacheBlock: true,
 			wantContains: []string{
 				"container(agent): inner Docker clean, host-gateway alias resolvable, node/npm + zstd on PATH, socket user ok, cache URL wired (gh-sr-aw-1)",
 			},
 		},
 		{
-			name:            "cache-env missing surfaces warning when cache enabled",
-			inspectOut:      "running\n",
-			mtuOut:          "1500\n",
-			fanoutOut:       cleanFanout + "\n#container-cache-env:1",
-			cacheEnabled:    true,
-			wantWarn:        1,
-			wantExecCalls:   3,
-			wantFanoutCalls: 1,
-			wantCacheBlock:  true,
+			name:           "cache-env missing surfaces warning when cache enabled",
+			instances:      1,
+			batchOut:       batchSection(1, "running", "", "", cleanFanout+"\n#container-cache-env:1"),
+			mtuOut:         "1500\n",
+			cacheEnabled:   true,
+			wantCacheBlock: true,
+			wantWarn:       1,
 			wantContains: []string{
 				"container(agent): runner container gh-sr-aw-1 has no CUSTOM_ACTIONS_RESULTS_URL",
 				"gh sr cache deploy",
@@ -1729,14 +1754,11 @@ func TestCheckContainerAgenticInnerHygiene(t *testing.T) {
 			},
 		},
 		{
-			name:            "orphan agentic container warning",
-			inspectOut:      "running\n",
-			mtuOut:          "1500\n",
-			orphansOut:      "awmg-mcpg-stale\n",
-			fanoutOut:       cleanFanout,
-			wantWarn:        1,
-			wantExecCalls:   3,
-			wantFanoutCalls: 1,
+			name:      "orphan agentic container warning",
+			instances: 1,
+			batchOut:  batchSection(1, "running", "awmg-mcpg-stale", "", cleanFanout),
+			mtuOut:    "1500\n",
+			wantWarn:  1,
 			wantContains: []string{
 				"container(agent): orphan awmg-mcpg/awf/gh-aw containers in inner Docker",
 				"docker exec -it gh-sr-aw-1 bash",
@@ -1744,28 +1766,23 @@ func TestCheckContainerAgenticInnerHygiene(t *testing.T) {
 			},
 		},
 		{
-			name:            "orphan agentic network warning",
-			inspectOut:      "running\n",
-			mtuOut:          "1500\n",
-			networksOut:     "awf-net-old\n",
-			fanoutOut:       cleanFanout,
-			wantWarn:        1,
-			wantExecCalls:   3,
-			wantFanoutCalls: 1,
+			name:      "orphan agentic network warning",
+			instances: 1,
+			batchOut:  batchSection(1, "running", "", "awf-net-old", cleanFanout),
+			mtuOut:    "1500\n",
+			wantWarn:  1,
 			wantContains: []string{
 				"container(agent): orphan awf-net networks in inner Docker",
-				"docker network prune -f --filter \"name=awf-net\"",
+				`docker network prune -f --filter "name=awf-net"`,
 				"See: agentic-workflows.md §12",
 			},
 		},
 		{
-			name:            "fanout probe warning",
-			inspectOut:      "running\n",
-			mtuOut:          "1500\n",
-			fanoutOut:       "#container-node-npm:1",
-			wantWarn:        1,
-			wantExecCalls:   3,
-			wantFanoutCalls: 1,
+			name:      "fanout probe warning",
+			instances: 1,
+			batchOut:  batchSection(1, "running", "", "", "#container-node-npm:1"),
+			mtuOut:    "1500\n",
+			wantWarn:  1,
 			wantContains: []string{
 				"container(agent): node LTS/npm are not on PATH",
 				"gh sr rebuild aw",
@@ -1773,15 +1790,34 @@ func TestCheckContainerAgenticInnerHygiene(t *testing.T) {
 			},
 		},
 		{
-			name:            "healthy reduced MTU includes probe",
-			inspectOut:      "running\n",
-			mtuOut:          "1400\n",
-			fanoutOut:       cleanFanout + "\n#container-mtu:0",
-			wantExecCalls:   3,
-			wantFanoutCalls: 1,
-			wantMTUBlock:    true,
+			name:         "healthy reduced MTU includes probe",
+			instances:    1,
+			batchOut:     batchSection(1, "running", "", "", cleanFanout+"\n#container-mtu:0"),
+			mtuOut:       "1400\n",
+			wantMTUBlock: true,
 			wantContains: []string{
 				"container(agent): inner Docker clean, host-gateway alias resolvable, node/npm + zstd on PATH, socket user ok (gh-sr-aw-1)",
+			},
+		},
+		{
+			name:      "multi-instance host probes once, skips non-running",
+			instances: 2,
+			batchOut: batchSection(1, "running", "", "", cleanFanout) + "\n" +
+				batchSection(2, "exited", "", "", ""),
+			mtuOut: "1500\n",
+			wantContains: []string{
+				"container(agent): inner Docker clean, host-gateway alias resolvable, node/npm + zstd on PATH, socket user ok (gh-sr-aw-1)",
+			},
+			wantNotContain: []string{"gh-sr-aw-2", "[WARN]", "[FAIL]"},
+		},
+		{
+			name:      "truncated section reports missing probe result",
+			instances: 1,
+			batchOut:  "@@begin:1\n@@state:1|running",
+			mtuOut:    "1500\n",
+			wantWarn:  1,
+			wantContains: []string{
+				"container(agent): instance aw-1 (aw) — no probe result returned; re-run: gh sr doctor h1",
 			},
 		},
 	}
@@ -1790,32 +1826,29 @@ func TestCheckContainerAgenticInnerHygiene(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			exec := &agenticInnerHygieneExecutor{
-				inspectOut:  tt.inspectOut,
-				inspectErr:  tt.inspectErr,
-				mtuOut:      tt.mtuOut,
-				orphansOut:  tt.orphansOut,
-				networksOut: tt.networksOut,
-				fanoutOut:   tt.fanoutOut,
+				batchOut: tt.batchOut,
+				batchErr: tt.batchErr,
+				mtuOut:   tt.mtuOut,
 			}
 			h := host.NewHost("h1", config.HostConfig{OS: "linux", Addr: "local"})
 			h.SetConn(exec)
 			runners := []config.RunnerConfig{
-				{Name: "aw", Host: "h1", Repo: "o/r", Count: 1, Profile: "agentic"},
+				{Name: "aw", Host: "h1", Repo: "o/r", Count: tt.instances, Profile: "agentic"},
 			}
 			var buf bytes.Buffer
 			r := Result{}
 			checkContainerAgenticInnerHygiene(&buf, "h1", h, runners, &r, tt.cacheEnabled)
 
-			if r.Fail != 0 || r.Warn != tt.wantWarn {
-				t.Fatalf("counters: got %+v, want Fail=0 Warn=%d", r, tt.wantWarn)
-			}
 			out := buf.String()
+			if r.Fail != tt.wantFail || r.Warn != tt.wantWarn {
+				t.Fatalf("counters: got Fail=%d Warn=%d, want Fail=%d Warn=%d\noutput:\n%s", r.Fail, r.Warn, tt.wantFail, tt.wantWarn, out)
+			}
 			for _, want := range tt.wantContains {
 				if !strings.Contains(out, want) {
 					t.Errorf("missing %q in output:\n%s", want, out)
 				}
 			}
-			for _, unwanted := range tt.wantNotContains {
+			for _, unwanted := range tt.wantNotContain {
 				if strings.Contains(out, unwanted) {
 					t.Errorf("unexpected %q in output:\n%s", unwanted, out)
 				}
@@ -1825,36 +1858,19 @@ func TestCheckContainerAgenticInnerHygiene(t *testing.T) {
 			if len(unexpected) != 0 {
 				t.Fatalf("unexpected commands: %q", unexpected)
 			}
-			var mtuCalls, inspectCalls, execCalls, fanoutCalls int
-			var fanoutCommand string
-			for _, cmd := range calls {
-				switch {
-				case strings.Contains(cmd, "ip -o route get 1.1.1.1"):
-					mtuCalls++
-				case strings.Contains(cmd, "docker inspect --format"):
-					inspectCalls++
-				}
-				if strings.Contains(cmd, `docker exec "gh-sr-aw-1"`) {
-					execCalls++
-				}
-				if strings.Contains(cmd, `echo "#container-inner-host-docker-internal:$?"`) {
-					fanoutCalls++
-					fanoutCommand = cmd
-				}
+			// The whole check must stay at two round-trips: one MTU detect
+			// plus one batched host probe, whatever the instance count.
+			if len(calls) != 2 {
+				t.Fatalf("round-trips: got %d calls, want 2 (mtu + batch)\nall calls: %q", len(calls), calls)
 			}
-			if mtuCalls != 1 || inspectCalls != 1 || execCalls != tt.wantExecCalls || fanoutCalls != tt.wantFanoutCalls {
-				t.Fatalf("probe calls: mtu=%d inspect=%d exec=%d fanout=%d; want 1, 1, %d, %d\nall calls: %q",
-					mtuCalls, inspectCalls, execCalls, fanoutCalls, tt.wantExecCalls, tt.wantFanoutCalls, calls)
+			batchCmd := calls[1]
+			hasMTUBlock := strings.Contains(batchCmd, `echo "#container-mtu:$?"`) && strings.Contains(batchCmd, "host=1400")
+			if hasMTUBlock != tt.wantMTUBlock {
+				t.Errorf("batch MTU block = %v, want %v\ncommand: %s", hasMTUBlock, tt.wantMTUBlock, batchCmd)
 			}
-			if tt.wantFanoutCalls != 0 {
-				hasMTUBlock := strings.Contains(fanoutCommand, `echo "#container-mtu:$?"`) && strings.Contains(fanoutCommand, "host=1400")
-				if hasMTUBlock != tt.wantMTUBlock {
-					t.Errorf("fanout MTU block = %v, want %v\ncommand: %s", hasMTUBlock, tt.wantMTUBlock, fanoutCommand)
-				}
-				hasCacheBlock := strings.Contains(fanoutCommand, `echo "#container-cache-env:$?"`)
-				if hasCacheBlock != tt.wantCacheBlock {
-					t.Errorf("fanout cache-env block = %v, want %v\ncommand: %s", hasCacheBlock, tt.wantCacheBlock, fanoutCommand)
-				}
+			hasCacheBlock := strings.Contains(batchCmd, `echo "#container-cache-env:$?"`)
+			if hasCacheBlock != tt.wantCacheBlock {
+				t.Errorf("batch cache-env block = %v, want %v\ncommand: %s", hasCacheBlock, tt.wantCacheBlock, batchCmd)
 			}
 		})
 	}

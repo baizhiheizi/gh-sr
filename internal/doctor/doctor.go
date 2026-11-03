@@ -747,30 +747,47 @@ func checkContainerAgenticInnerHygiene(w io.Writer, hostName string, h *host.Hos
 	// Host egress MTU is host-level; detect once and reuse for every instance's MTU check.
 	hostEgressMTU := runner.DetectHostEgressMTU(h)
 
-	for _, pair := range targets {
-		inst := pair[0]
-		runnerName := pair[1]
+	// One batched probe for the whole host. The per-instance chain this
+	// replaces (state inspect + 2 hygiene probes + agentic fanout) cost four
+	// SSH round-trips per instance, so an 8-agentic-container host spent ~32
+	// of them on this single check.
+	batch := make([]agentic.AgenticInnerTarget, len(targets))
+	for i, pair := range targets {
+		batch[i] = agentic.AgenticInnerTarget{Instance: pair[0], RunnerName: pair[1]}
+	}
+	probes, err := agentic.ValidateAgenticInnerBatch(h, batch, hostEgressMTU, cacheEnabled)
+	if err != nil {
+		printLine(w, sevFail, hostName, fmt.Sprintf("container(agent): probe failed: %v", err))
+		r.Fail++
+		return
+	}
+	for i, pair := range targets {
+		inst, runnerName := pair[0], pair[1]
 		cname := runner.ContainerDockerName(inst)
 
-		out, err := runner.ContainerStateStatus(h, cname)
-		status := out
-		// Stricter than IsContainerAcceptingJobs: the inner agentic probes
-		// below need a fully-running container, not a transient "restarting"
-		// state, so we require exactly "running".
-		if err != nil || status != "running" {
+		probe := probes[i]
+		if !probe.Reported {
+			// The batched probe prints one section per instance, so a missing
+			// section means the remote script was cut short (or the instance
+			// name was rejected before probing) — report that instead of
+			// claiming the container is clean.
+			printLine(w, sevWarn, hostName, fmt.Sprintf("container(agent): instance %s (%s) — no probe result returned; re-run: gh sr doctor %s", inst, runnerName, hostName))
+			r.Warn++
 			continue
 		}
 
-		failures := agentic.ValidateAWFHygieneInner(h, cname)
-		// Fan the inner-docker agentic prereq probes (InnerNetwork, NodeNPM,
-		// DockerSocketUser, Zstd, gated CacheEnv/MTU) into a single
-		// `docker exec` round-trip via ValidateContainerAgenticFanout.
-		failures = append(failures, agentic.ValidateContainerAgenticFanout(h, cname, runnerName, hostEgressMTU, cacheEnabled)...)
-		if len(failures) == 0 {
+		// Stricter than IsContainerAcceptingJobs: the inner agentic probes
+		// need a fully-running container, not a transient "restarting"
+		// state, so we require exactly "running".
+		if probe.State != "running" {
+			continue
+		}
+
+		if len(probe.Failures) == 0 {
 			printLine(w, sevOK, hostName, fmt.Sprintf("container(agent): inner Docker clean, host-gateway alias resolvable, node/npm + zstd on PATH, socket user ok%s (%s)", cacheGateSummary(cacheEnabled), cname))
 			continue
 		}
-		printAgenticFailures(w, hostName, r, sevWarn, "container(agent): ", failures)
+		printAgenticFailures(w, hostName, r, sevWarn, "container(agent): ", probe.Failures)
 	}
 }
 
