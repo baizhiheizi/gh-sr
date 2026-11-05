@@ -6,8 +6,8 @@
 # runner self-update while it is set. The base ships: Ubuntu 24.04, the runner
 # binaries at /home/runner (user `runner`, uid 1001, docker group 123), a full
 # static Docker bundle (dockerd/containerd/runc/docker CLI) — but NO gh, Node,
-# zstd, or iptables; those are layered below. No ENTRYPOINT: /entrypoint.sh is
-# ours.
+# zstd, or iptables; those are layered below. The base declares no ENTRYPOINT;
+# we supply our own `tini -- /entrypoint.sh` (see the ENTRYPOINT below).
 #
 # From gh-aw's point of view the container is a GitHub-hosted-VM equivalent:
 # runner FS == inner daemon FS, default bridge network, socket reachable, and the

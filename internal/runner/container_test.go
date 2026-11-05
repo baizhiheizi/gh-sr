@@ -720,12 +720,16 @@ func TestAgenticRunnerEntrypointPID1ReapsOrphans(t *testing.T) {
 // outlive the step that started them. job-completed must kill them by exact
 // comm name so PID 1 (tini) reaps them, without ever touching the runner
 // itself or the inner dockerd/containerd tree (whose lifecycle belongs to the
-// daemon — killing a shim would corrupt its container's state).
+// daemon — killing a shim would corrupt its container's state). Dart's VM
+// names its processes `dart:<component>` (comm truncated to 15 chars — e.g.
+// `dart:dartdev_ao`, `dart:build_runn`), so it needs a comm-prefix match, not
+// the exact `dart` that would never hit any of them.
 func TestAgenticRunnerJobCompletedHookSweepsLeftoverProcesses(t *testing.T) {
 	t.Parallel()
 	for _, want := range []string{
-		"for proc in chrome chrome_crashpad chromedriver dart; do",
+		"for proc in chrome chrome_crashpad chromedriver; do",
 		`pkill -x "$proc"`,
+		`pkill '^dart'`,
 	} {
 		if !strings.Contains(agenticRunnerJobCompletedHook, want) {
 			t.Fatalf("job-completed hook should sweep leftover job processes, missing %q, got:\n%s", want, agenticRunnerJobCompletedHook)

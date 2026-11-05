@@ -63,9 +63,14 @@ pkill -f /opt/gh-sr/hooks/awf-service-bridge.sh >/dev/null 2>&1
 #    runner itself (Runner.Listener/Runner.Worker) and never the inner
 #    dockerd/containerd tree, whose lifecycle belongs to the daemon — killing
 #    a shim would corrupt its container's state.
-for proc in chrome chrome_crashpad chromedriver dart; do
+#    Dart is the exception: its VM names processes `dart:<component>` (also
+#    truncated to 15 chars — issue #605 measured `dart:dartdev_ao` and
+#    `dart:build_runn`), so an exact `dart` never matches them. Match the whole
+#    family by comm prefix instead.
+for proc in chrome chrome_crashpad chromedriver; do
     pkill -x "$proc" >/dev/null 2>&1
 done
+pkill '^dart' >/dev/null 2>&1
 
 # 5. Prune unused networks (awf-net, awmg-* sidecar networks, github_network_* once
 #    their containers are gone).
