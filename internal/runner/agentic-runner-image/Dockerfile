@@ -6,8 +6,8 @@
 # runner self-update while it is set. The base ships: Ubuntu 24.04, the runner
 # binaries at /home/runner (user `runner`, uid 1001, docker group 123), a full
 # static Docker bundle (dockerd/containerd/runc/docker CLI) — but NO gh, Node,
-# zstd, or iptables; those are layered below. No ENTRYPOINT: /entrypoint.sh is
-# ours.
+# zstd, or iptables; those are layered below. The base declares no ENTRYPOINT;
+# we supply our own `tini -- /entrypoint.sh` (see the ENTRYPOINT below).
 #
 # From gh-aw's point of view the container is a GitHub-hosted-VM equivalent:
 # runner FS == inner daemon FS, default bridge network, socket reachable, and the
@@ -319,5 +319,11 @@ RUN chmod +x /entrypoint.sh
 
 # Container starts as root (see USER root above): the entrypoint boots the inner
 # dockerd before switching to the runner user for the actions runner loop.
+# tini is PID 1: the kernel reparents every orphan in the container's PID
+# namespace to PID 1, and tini wait()s them — without it, `su` (the previous
+# PID 1) accumulated each job's orphaned processes as permanent zombies
+# (browser renderers, Dart analysis servers, inner-Docker shims; ~48k zombies
+# observed on a busy host — issue #605). tini also forwards SIGTERM to the
+# entrypoint's shutdown handler. tini is installed via apt-packages-core.txt.
 USER root
-ENTRYPOINT ["/entrypoint.sh"]
+ENTRYPOINT ["/usr/bin/tini", "--", "/entrypoint.sh"]

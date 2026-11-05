@@ -51,11 +51,32 @@ done
 #    (timeout), or here — so it can never leak into the next job.
 pkill -f /opt/gh-sr/hooks/awf-service-bridge.sh >/dev/null 2>&1
 
-# 4. Prune unused networks (awf-net, awmg-* sidecar networks, github_network_* once
+# 4. Kill leftover processes a job spawned in the OUTER container. Workflow
+#    steps run directly in this container (browser suites, Flutter/Dart jobs),
+#    and the daemons they start routinely outlive the step that launched them:
+#    Chrome, its crashpad handler, chromedriver and the Dart analysis server.
+#    Left running they hold memory for the rest of the container's life; killed
+#    here they are reaped by PID 1 (tini) instead of piling up as zombies
+#    (issue #605). Exact comm names only (pgrep matches comm, truncated to 15
+#    chars — chrome_crashpad_handler's comm is chrome_crashpad) and only
+#    process names a job can plausibly leave behind between jobs: never the
+#    runner itself (Runner.Listener/Runner.Worker) and never the inner
+#    dockerd/containerd tree, whose lifecycle belongs to the daemon — killing
+#    a shim would corrupt its container's state.
+#    Dart is the exception: its VM names processes `dart:<component>` (also
+#    truncated to 15 chars — issue #605 measured `dart:dartdev_ao` and
+#    `dart:build_runn`), so an exact `dart` never matches them. Match the whole
+#    family by comm prefix instead.
+for proc in chrome chrome_crashpad chromedriver; do
+    pkill -x "$proc" >/dev/null 2>&1
+done
+pkill '^dart' >/dev/null 2>&1
+
+# 5. Prune unused networks (awf-net, awmg-* sidecar networks, github_network_* once
 #    their containers are gone).
 docker network prune -f >/dev/null 2>&1
 
-# 5. Remove the gh-aw runtime tree so the next job's setup starts from a clean slate.
+# 6. Remove the gh-aw runtime tree so the next job's setup starts from a clean slate.
 rm -rf /tmp/gh-aw >/dev/null 2>&1
 
 log "teardown complete"
