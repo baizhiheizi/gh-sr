@@ -177,7 +177,7 @@ func TestEnsure_layoutCurrentError(t *testing.T) {
 	}}
 	err := Ensure(io.Discard, newRegistryHost(t, mock), Settings{Enabled: true})
 	if !errors.Is(err, layoutErr) {
-		t.Fatalf("expected registryLayoutCurrent error %v, got %v", layoutErr, err)
+		t.Fatalf("expected layout inspect error %v, got %v", layoutErr, err)
 	}
 	if calls != 1 {
 		t.Errorf("expected 1 layout inspect call, got %d", calls)

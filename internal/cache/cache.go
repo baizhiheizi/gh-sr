@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/an-lee/gh-sr/internal/dockerutil"
 	"github.com/an-lee/gh-sr/internal/host"
 	"github.com/an-lee/gh-sr/internal/hostshell"
 )
@@ -94,37 +95,6 @@ func WithTrailingSlash(u string) string {
 	return strings.TrimRight(u, "/") + "/"
 }
 
-// ResolveGatewayIP returns the docker0 bridge gateway IPv4 on the host — the
-// address runner containers use to reach host-published ports. Empty when the
-// host has no docker0 interface (rootless/podman setups).
-func ResolveGatewayIP(h *host.Host) (string, error) {
-	out, err := h.Run("ip -4 -o addr show docker0 2>/dev/null")
-	if err != nil {
-		return "", err
-	}
-	return parseGatewayIPOutput(out), nil
-}
-
-// parseGatewayIPOutput extracts the IPv4 address from `ip -4 -o addr show
-// docker0` output: "2: docker0    inet 172.17.0.1/16 brd ... " → "172.17.0.1".
-func parseGatewayIPOutput(out string) string {
-	// SplitSeq avoids the upfront []string allocation that strings.Split makes.
-	for line := range strings.SplitSeq(out, "\n") {
-		fields := strings.Fields(line)
-		for i, f := range fields {
-			if f != "inet" || i+1 >= len(fields) {
-				continue
-			}
-			ip := fields[i+1]
-			if idx := strings.Index(ip, "/"); idx >= 0 {
-				ip = ip[:idx]
-			}
-			return ip
-		}
-	}
-	return ""
-}
-
 // RunnerURL returns the cache base URL to inject into runners on this host
 // (with trailing slash), or "" when injection must be skipped.
 //
@@ -138,7 +108,7 @@ func parseGatewayIPOutput(out string) string {
 // need one allow rule — `gh sr doctor` probes the exact URL from inside a
 // runner and prints the command when it is blocked.
 func (s Settings) RunnerURL(h *host.Host) string {
-	gw, _ := ResolveGatewayIP(h)
+	gw, _ := dockerutil.ResolveGatewayIP(h)
 	return s.runnerURL(gw)
 }
 
@@ -195,40 +165,6 @@ func (s Settings) resolvedStoragePath(h *host.Host) (string, error) {
 	return home + p[len("$HOME"):], nil
 }
 
-// containerState reports "running", "exists" (present but not running) or ""
-// (absent) for the cache container.
-func containerState(h *host.Host) (string, error) {
-	out, err := h.Run(fmt.Sprintf(
-		"docker inspect --format='{{.State.Status}}' %s 2>/dev/null || true", ContainerName))
-	if err != nil {
-		return "", fmt.Errorf("inspecting cache container: %w", err)
-	}
-	state := strings.TrimSpace(out)
-	switch state {
-	case "running":
-		return "running", nil
-	case "":
-		return "", nil
-	default:
-		return "exists", nil
-	}
-}
-
-// cacheLayoutCurrent reports whether an existing cache container carries the
-// current deploy layout label. Used by Ensure to converge deployments made by
-// older gh-sr versions (or after a layout change): a stale container cannot
-// be updated in place (its env and ports are baked at create), so it is
-// recreated.
-func cacheLayoutCurrent(h *host.Host) (bool, error) {
-	out, err := h.Run(fmt.Sprintf(
-		"docker inspect --format '{{.State.Status}}|{{index .Config.Labels %q}}' %s 2>/dev/null || true",
-		LayoutLabel, ContainerName))
-	if err != nil {
-		return false, fmt.Errorf("inspecting cache container layout: %w", err)
-	}
-	return strings.Contains(out, "|"+cacheLayoutRev), nil
-}
-
 // Ensure deploys the cache server idempotently: a running container with the
 // current layout label is a no-op, a stopped one is started, a missing one is
 // pulled and created, and one stamped with an older layout (e.g. deployed by
@@ -239,38 +175,19 @@ func Ensure(w io.Writer, h *host.Host, s Settings) error {
 	if !s.Enabled {
 		return nil
 	}
-	state, err := containerState(h)
-	if err != nil {
-		return err
-	}
-	if state != "" {
-		current, err := cacheLayoutCurrent(h)
-		if err != nil {
-			return err
-		}
-		if !current {
-			fmt.Fprintf(w, "  cache: %s was deployed by an older gh-sr layout; recreating...\n", ContainerName)
-			if _, err := h.Run("docker rm -f " + ContainerName); err != nil {
-				return fmt.Errorf("removing outdated cache container: %w", err)
-			}
-			// Best-effort cleanup of the bridge network a retired deploy
-			// layout attached the cache and runners to.
+	return dockerutil.Converge(w, h, dockerutil.ConvergeOpts{
+		Container:   ContainerName,
+		LayoutLabel: LayoutLabel,
+		LayoutRev:   cacheLayoutRev,
+		Service:     "cache",
+		Noun:        "cache container",
+		// Best-effort cleanup of the bridge network a retired deploy
+		// layout attached the cache and runners to.
+		AfterRemove: func() {
 			_, _ = h.Run("docker network rm " + networkNamePrev + " 2>/dev/null || true")
-			state = ""
-		}
-	}
-	switch state {
-	case "running":
-		return nil
-	case "exists":
-		fmt.Fprintf(w, "  cache: starting %s...\n", ContainerName)
-		if _, err := h.Run("docker start " + ContainerName); err != nil {
-			return fmt.Errorf("starting cache container: %w", err)
-		}
-		return nil
-	default:
-		return deploy(w, h, s)
-	}
+		},
+		Deploy: func() error { return deploy(w, h, s) },
+	})
 }
 
 func deploy(w io.Writer, h *host.Host, s Settings) error {
@@ -290,23 +207,10 @@ func deploy(w io.Writer, h *host.Host, s Settings) error {
 		}
 	}
 
-	fmt.Fprintf(w, "  cache: pulling %s...\n", s.image())
-	// Pull is best-effort: a pre-pulled image must still deploy on hosts
-	// without registry access. A genuinely missing image fails at docker run.
-	_, _ = h.Run("docker pull " + hostshell.PosixSingleQuote(s.image()))
+	dockerutil.PullImage(w, h, "cache", s.image())
 
-	bind := s.BindAddr
-	var gw string
-	if bind == "" {
-		var err error
-		gw, err = ResolveGatewayIP(h)
-		if err != nil || gw == "" {
-			bind = "0.0.0.0"
-			fmt.Fprintf(w, "  cache: warning: docker0 gateway not found; binding %s (cache API is exposed on every host interface)\n", bind)
-		} else {
-			bind = gw
-		}
-	}
+	bind, gw := dockerutil.ResolveBind(w, h, "cache", s.BindAddr,
+		"cache API is exposed on every host interface")
 
 	envs := []string{
 		// Runner-facing base URL: the server signs cache download URLs with
@@ -439,7 +343,7 @@ func inspectOneShotScript(s Settings) string {
 	b.WriteString("printf 'H:%s\\n' \"$HOME\"\n")
 	if s.autoBind() {
 		// First line of `ip -4 -o addr show docker0`; parseInspectOneShot runs
-		// it through parseGatewayIPOutput, and the shell-side extraction below
+		// it through ParseGatewayIPOutput, and the shell-side extraction below
 		// mirrors that parse so the health probe hits the same address the
 		// runner-facing URL reports.
 		b.WriteString("gw=$(ip -4 -o addr show docker0 2>/dev/null | head -n 1)\n")
@@ -500,7 +404,7 @@ func parseInspectOneShot(out string, s Settings) (StatusInfo, error) {
 
 	var gw string
 	if s.autoBind() {
-		gw = parseGatewayIPOutput(gwRaw)
+		gw = dockerutil.ParseGatewayIPOutput(gwRaw)
 	}
 	info.URL = s.runnerURL(gw)
 
@@ -557,7 +461,7 @@ func Prune(w io.Writer, h *host.Host, s Settings) error {
 		return nil
 	}
 
-	gw, _ := ResolveGatewayIP(h)
+	gw, _ := dockerutil.ResolveGatewayIP(h)
 	base := s.localURL(gw)
 	fmt.Fprintf(w, "  cache: pruning all cache entries via %s...\n", base)
 	cmd := fmt.Sprintf("curl -fsS -m 60 -X DELETE -H 'X-Api-Key: %s' %s/management-api/cache-entries/",

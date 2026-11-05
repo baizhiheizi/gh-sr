@@ -43,24 +43,6 @@ func oneShotOutput(st, home, gwRaw, healthBody, du string) string {
 	return b.String()
 }
 
-func TestParseGatewayIPOutput(t *testing.T) {
-	t.Parallel()
-	cases := []struct {
-		in, want string
-	}{
-		{gwOutput, "172.17.0.1"},
-		{"2: docker0    inet 10.0.0.1/16 scope global docker0\n", "10.0.0.1"},
-		{"2: docker0    inet6 fe80::1/64 scope link\n", ""},
-		{"", ""},
-		{"command not found\n", ""},
-	}
-	for _, tc := range cases {
-		if got := parseGatewayIPOutput(tc.in); got != tc.want {
-			t.Errorf("parseGatewayIPOutput(%q) = %q, want %q", tc.in, got, tc.want)
-		}
-	}
-}
-
 func TestWithTrailingSlash(t *testing.T) {
 	t.Parallel()
 	cases := []struct{ in, want string }{
@@ -151,7 +133,7 @@ func TestEnsure_runningNoop(t *testing.T) {
 	t.Parallel()
 	mock := &testutil.MockExecutor{RunFn: func(cmd string) (string, error) {
 		if strings.Contains(cmd, "Config.Labels") {
-			return "running|" + cacheLayoutRev + "\n", nil
+			return cacheLayoutRev + "\n", nil
 		}
 		if strings.Contains(cmd, ".State.Status") {
 			return "running\n", nil
@@ -173,7 +155,7 @@ func TestEnsure_existsStarts(t *testing.T) {
 	mock := &testutil.MockExecutor{RunFn: func(cmd string) (string, error) {
 		switch {
 		case strings.Contains(cmd, "Config.Labels"):
-			return "exited|" + cacheLayoutRev + "\n", nil
+			return cacheLayoutRev + "\n", nil
 		case strings.Contains(cmd, ".State.Status"):
 			return "exited\n", nil
 		default:
@@ -198,7 +180,7 @@ func TestEnsure_recreatesWhenLayoutStale(t *testing.T) {
 	mock := &testutil.MockExecutor{RunFn: func(cmd string) (string, error) {
 		switch {
 		case strings.Contains(cmd, "Config.Labels"):
-			return "running|<no value>\n", nil
+			return "<no value>\n", nil
 		case strings.Contains(cmd, ".State.Status"):
 			return "running\n", nil
 		case strings.Contains(cmd, "docker rm -f"):
