@@ -10,29 +10,25 @@ import (
 
 // TestInspect covers the Inspect orchestrator that reports the per-host cache
 // server's docker state, image, runner URL, storage path, health, and storage
-// size. It pins every branch:
-//   - docker inspect error → wrapped error
-//   - absent container (empty output) → State="", no health probe, no du
+// size. Inspect issues ONE SSH round trip (the one-shot script), so the mocks
+// answer with the composed tag-prefixed output via oneShotOutput. It pins
+// every branch:
+//   - one-shot script error → wrapped error
+//   - absent container (empty state) → State="", Healthy=false, no du bytes
 //   - state only (no image in output) → State set, Image ""
 //   - state+image → both populated
 //   - healthy probe → Healthy=true
 //   - unhealthy probe (non-"healthy" body) → Healthy=false
-//   - health probe fails (non-zero curl) → Healthy=false
-//   - du returns valid int → StorageBytes set
-//   - du returns garbage → StorageBytes=0
-//   - du command errors → StorageBytes=0
-//   - resolvedStoragePath fails → wrapped error
+//   - empty $HOME → resolving-home-dir error
+//   - du returns garbage or empty → StorageBytes=0
 func TestInspect(t *testing.T) {
 	t.Parallel()
 
-	t.Run("docker inspect error wraps cleanly", func(t *testing.T) {
+	t.Run("script error wraps cleanly", func(t *testing.T) {
 		t.Parallel()
 		sentinel := errors.New("ssh gone")
 		mock := &testutil.MockExecutor{RunFn: func(cmd string) (string, error) {
-			if strings.Contains(cmd, "docker inspect") {
-				return "", sentinel
-			}
-			return "", nil
+			return "", sentinel
 		}}
 		_, err := Inspect(newCacheHost(t, mock), Settings{Enabled: true})
 		if err == nil || !strings.Contains(err.Error(), "inspecting cache container") {
@@ -43,17 +39,10 @@ func TestInspect(t *testing.T) {
 		}
 	})
 
-	t.Run("absent container leaves State empty and skips probes", func(t *testing.T) {
+	t.Run("absent container leaves State empty and skips probes in one round trip", func(t *testing.T) {
 		t.Parallel()
 		mock := &testutil.MockExecutor{RunFn: func(cmd string) (string, error) {
-			switch {
-			case strings.Contains(cmd, "docker inspect --format="):
-				return "", nil
-			case strings.Contains(cmd, "echo $HOME"):
-				return "/root\n", nil
-			default:
-				return "", nil
-			}
+			return oneShotOutput("", "/root", gwOutput, "", ""), nil
 		}}
 		info, err := Inspect(newCacheHost(t, mock), Settings{Enabled: true})
 		if err != nil {
@@ -68,30 +57,15 @@ func TestInspect(t *testing.T) {
 		if info.StorageBytes != 0 {
 			t.Errorf("absent container must not record storage size, got %d", info.StorageBytes)
 		}
-		for _, c := range mock.Calls {
-			if strings.Contains(c, "/health") || strings.Contains(c, "du -sb") {
-				t.Errorf("absent container must not probe health/du, call=%q", c)
-			}
+		if len(mock.Calls) != 1 {
+			t.Errorf("Inspect must cost exactly one round trip, got %d: %v", len(mock.Calls), mock.Calls)
 		}
 	})
 
 	t.Run("state only output yields State without Image", func(t *testing.T) {
 		t.Parallel()
 		mock := &testutil.MockExecutor{RunFn: func(cmd string) (string, error) {
-			switch {
-			case strings.Contains(cmd, "docker inspect --format="):
-				return "running\n", nil
-			case strings.Contains(cmd, "ip -4 -o addr show docker0"):
-				return gwOutput, nil
-			case strings.Contains(cmd, "curl -fsS"):
-				return "healthy", nil
-			case strings.Contains(cmd, "echo $HOME"):
-				return "/root\n", nil
-			case strings.Contains(cmd, "du -sb"):
-				return "1024\n", nil
-			default:
-				return "", nil
-			}
+			return oneShotOutput("running", "/root", gwOutput, "healthy", "1024"), nil
 		}}
 		info, err := Inspect(newCacheHost(t, mock), Settings{Enabled: true})
 		if err != nil {
@@ -108,20 +82,8 @@ func TestInspect(t *testing.T) {
 	t.Run("state and image captured from pipe-delimited output", func(t *testing.T) {
 		t.Parallel()
 		mock := &testutil.MockExecutor{RunFn: func(cmd string) (string, error) {
-			switch {
-			case strings.Contains(cmd, "docker inspect --format="):
-				return "running|ghcr.io/falcondev-oss/github-actions-cache-server:latest\n", nil
-			case strings.Contains(cmd, "ip -4 -o addr show docker0"):
-				return gwOutput, nil
-			case strings.Contains(cmd, "curl -fsS"):
-				return "healthy", nil
-			case strings.Contains(cmd, "echo $HOME"):
-				return "/root\n", nil
-			case strings.Contains(cmd, "du -sb"):
-				return "2048\n", nil
-			default:
-				return "", nil
-			}
+			return oneShotOutput("running|ghcr.io/falcondev-oss/github-actions-cache-server:latest",
+				"/root", gwOutput, "healthy", "2048"), nil
 		}}
 		info, err := Inspect(newCacheHost(t, mock), Settings{Enabled: true})
 		if err != nil {
@@ -144,18 +106,7 @@ func TestInspect(t *testing.T) {
 	t.Run("unhealthy body marks Healthy false", func(t *testing.T) {
 		t.Parallel()
 		mock := &testutil.MockExecutor{RunFn: func(cmd string) (string, error) {
-			switch {
-			case strings.Contains(cmd, "docker inspect --format="):
-				return "running|example/image:1\n", nil
-			case strings.Contains(cmd, "ip -4 -o addr show docker0"):
-				return gwOutput, nil
-			case strings.Contains(cmd, "curl -fsS"):
-				return "starting", nil
-			case strings.Contains(cmd, "echo $HOME"):
-				return "/root\n", nil
-			default:
-				return "", nil
-			}
+			return oneShotOutput("running|example/image:1", "/root", gwOutput, "starting", ""), nil
 		}}
 		info, err := Inspect(newCacheHost(t, mock), Settings{Enabled: true})
 		if err != nil {
@@ -166,21 +117,10 @@ func TestInspect(t *testing.T) {
 		}
 	})
 
-	t.Run("health probe failure leaves Healthy false", func(t *testing.T) {
+	t.Run("failed health probe leaves Healthy false", func(t *testing.T) {
 		t.Parallel()
 		mock := &testutil.MockExecutor{RunFn: func(cmd string) (string, error) {
-			switch {
-			case strings.Contains(cmd, "docker inspect --format="):
-				return "running|example/image:1\n", nil
-			case strings.Contains(cmd, "ip -4 -o addr show docker0"):
-				return gwOutput, nil
-			case strings.Contains(cmd, "curl -fsS"):
-				return "", errors.New("connection refused")
-			case strings.Contains(cmd, "echo $HOME"):
-				return "/root\n", nil
-			default:
-				return "", nil
-			}
+			return oneShotOutput("running|example/image:1", "/root", gwOutput, "", ""), nil
 		}}
 		info, err := Inspect(newCacheHost(t, mock), Settings{Enabled: true})
 		if err != nil {
@@ -194,20 +134,7 @@ func TestInspect(t *testing.T) {
 	t.Run("du garbage leaves StorageBytes at 0", func(t *testing.T) {
 		t.Parallel()
 		mock := &testutil.MockExecutor{RunFn: func(cmd string) (string, error) {
-			switch {
-			case strings.Contains(cmd, "docker inspect --format="):
-				return "running|example/image:1\n", nil
-			case strings.Contains(cmd, "ip -4 -o addr show docker0"):
-				return gwOutput, nil
-			case strings.Contains(cmd, "curl -fsS"):
-				return "healthy", nil
-			case strings.Contains(cmd, "echo $HOME"):
-				return "/root\n", nil
-			case strings.Contains(cmd, "du -sb"):
-				return "not-a-number\n", nil
-			default:
-				return "", nil
-			}
+			return oneShotOutput("running|example/image:1", "/root", gwOutput, "healthy", "not-a-number"), nil
 		}}
 		info, err := Inspect(newCacheHost(t, mock), Settings{Enabled: true})
 		if err != nil {
@@ -218,23 +145,10 @@ func TestInspect(t *testing.T) {
 		}
 	})
 
-	t.Run("du command error leaves StorageBytes at 0", func(t *testing.T) {
+	t.Run("empty du leaves StorageBytes at 0", func(t *testing.T) {
 		t.Parallel()
 		mock := &testutil.MockExecutor{RunFn: func(cmd string) (string, error) {
-			switch {
-			case strings.Contains(cmd, "docker inspect --format="):
-				return "running|example/image:1\n", nil
-			case strings.Contains(cmd, "ip -4 -o addr show docker0"):
-				return gwOutput, nil
-			case strings.Contains(cmd, "curl -fsS"):
-				return "healthy", nil
-			case strings.Contains(cmd, "echo $HOME"):
-				return "/root\n", nil
-			case strings.Contains(cmd, "du -sb"):
-				return "", errors.New("storage gone")
-			default:
-				return "", nil
-			}
+			return oneShotOutput("running|example/image:1", "/root", gwOutput, "healthy", ""), nil
 		}}
 		info, err := Inspect(newCacheHost(t, mock), Settings{Enabled: true})
 		if err != nil {
@@ -245,34 +159,24 @@ func TestInspect(t *testing.T) {
 		}
 	})
 
-	t.Run("resolvedStoragePath error surfaces", func(t *testing.T) {
+	t.Run("empty $HOME surfaces resolving error", func(t *testing.T) {
 		t.Parallel()
 		mock := &testutil.MockExecutor{RunFn: func(cmd string) (string, error) {
-			if strings.Contains(cmd, "echo $HOME") {
-				return "", errors.New("shell gone")
-			}
-			return "", nil
+			return oneShotOutput("", "", gwOutput, "", ""), nil
 		}}
 		_, err := Inspect(newCacheHost(t, mock), Settings{
 			Enabled:     true,
 			StoragePath: "$HOME/cache",
 		})
 		if err == nil || !strings.Contains(err.Error(), "resolving home dir") {
-			t.Fatalf("got %v; want wrapped resolvedStoragePath error", err)
+			t.Fatalf("got %v; want resolving-home-dir error", err)
 		}
 	})
 
 	t.Run("URL populated from URLOverride when present", func(t *testing.T) {
 		t.Parallel()
 		mock := &testutil.MockExecutor{RunFn: func(cmd string) (string, error) {
-			switch {
-			case strings.Contains(cmd, "docker inspect --format="):
-				return "", nil
-			case strings.Contains(cmd, "echo $HOME"):
-				return "/root\n", nil
-			default:
-				return "", nil
-			}
+			return oneShotOutput("", "/root", "", "", ""), nil
 		}}
 		info, err := Inspect(newCacheHost(t, mock), Settings{
 			Enabled:     true,

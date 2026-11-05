@@ -582,41 +582,50 @@ func TestCheckCacheReachability(t *testing.T) {
 	})
 }
 
-// reachabilityMock returns a MockExecutor that responds to the four SSH
-// commands cache.Inspect may issue:
-//   - dockerInspectReply: docker inspect --format='{{.State.Status}}|{{.Config.Image}}' gh-sr-cache ...
-//   - duReply: du -sb <storage> ... | cut -f1
-//   - curlReply: curl -fsS -m 3 <url>/health ...
-//   - ipReply: ip -4 -o addr show docker0
+// reachabilityMock returns a MockExecutor that answers cache.Inspect's single
+// one-shot round trip with the tag-prefixed sections its parser consumes,
+// composed from per-probe replies:
+//   - dockerInspectReply → S:<state|image>
+//   - duReply            → D:<du> (only when the container is present)
+//   - curlReply          → K:1 when it trims to "healthy", else K:0
+//   - ipReply            → G:<ip -o line>
 //
-// Pass "no docker0" for ipReply to simulate a gateway lookup failure (the
-// helper returns an error so cache.ResolveGatewayIP returns ("", err)).
+// Pass "no docker0" for ipReply to simulate a gateway lookup failure: the G
+// section is dropped and the health probe fails, since in production the
+// probe then falls back to loopback and the curl cannot succeed through the
+// docker0 path the test models.
 // Other commands (notably probeCacheFromRunner's docker exec curl) get
 // healthy/empty so the function does not contribute extra warns/fails in
 // tests that don't intend to exercise the probe.
 func reachabilityMock(dockerInspectReply, duReply, curlReply, ipReply string) *testutil.MockExecutor {
 	return &testutil.MockExecutor{
 		RunFn: func(cmd string) (string, error) {
-			switch {
-			case strings.Contains(cmd, "docker inspect --format='{{.State.Status}}|{{.Config.Image}}'"):
-				return dockerInspectReply, nil
-			case strings.Contains(cmd, "du -sb"):
-				return duReply, nil
-			case strings.Contains(cmd, "curl -fsS -m 3") && strings.Contains(cmd, "/health"):
-				if ipReply == "no docker0" {
-					return "", errors.New("connect: connection refused")
+			if strings.Contains(cmd, "docker inspect --format '{{.State.Status}}|{{.Config.Image}}") {
+				noDocker0 := ipReply == "no docker0"
+				gw, body := ipReply, curlReply
+				if noDocker0 {
+					gw, body = "", ""
 				}
-				return curlReply, nil
-			case strings.Contains(cmd, "ip -4 -o addr show docker0"):
-				if ipReply == "no docker0" {
-					return "", errors.New("no docker0")
+				var b strings.Builder
+				b.WriteString("S:" + dockerInspectReply + "\n")
+				b.WriteString("H:/root\n")
+				if gw != "" {
+					b.WriteString("G:" + gw + "\n")
 				}
-				return ipReply, nil
-			case strings.Contains(cmd, "docker exec") && strings.Contains(cmd, "curl -fsS"):
-				return "healthy\n", nil
-			default:
-				return "", nil
+				if dockerInspectReply != "" {
+					if strings.TrimSpace(body) == "healthy" {
+						b.WriteString("K:1\n")
+					} else {
+						b.WriteString("K:0\n")
+					}
+					b.WriteString("D:" + duReply + "\n")
+				}
+				return b.String(), nil
 			}
+			if strings.Contains(cmd, "docker exec") && strings.Contains(cmd, "curl -fsS") {
+				return "healthy\n", nil
+			}
+			return "", nil
 		},
 	}
 }
