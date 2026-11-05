@@ -14,7 +14,7 @@ import (
 )
 
 // gatewayIP returns a docker0 `ip -4 -o addr show` line for the given gateway.
-// The exact field order matches what dockerutil.parseGatewayIPOutput walks.
+// The exact field order matches what dockerutil.ParseGatewayIPOutput walks.
 func gatewayIP(ip string) string {
 	return "2: docker0    inet " + ip + "/16 brd 172.17.255.255 scope global docker0\n"
 }
@@ -492,7 +492,7 @@ func TestCheckCacheReachability(t *testing.T) {
 
 	t.Run("healthy cache warns when effective bind is 0.0.0.0", func(t *testing.T) {
 		t.Parallel()
-		// BindAddr="0.0.0.0" → effectiveBind returns "0.0.0.0" verbatim, but
+		// BindAddr="0.0.0.0" → dockerutil.EffectiveBind returns "0.0.0.0" verbatim, but
 		// localURL still falls through to the docker0 gateway so the /health
 		// probe can succeed. The 0.0.0.0 warning only fires when the cache is
 		// actually healthy.

@@ -343,7 +343,7 @@ func inspectOneShotScript(s Settings) string {
 	b.WriteString("printf 'H:%s\\n' \"$HOME\"\n")
 	if s.autoBind() {
 		// First line of `ip -4 -o addr show docker0`; parseInspectOneShot runs
-		// it through ParseGatewayIPOutput, and the shell-side extraction below
+		// it through dockerutil.ParseGatewayIPOutput, and the shell-side extraction below
 		// mirrors that parse so the health probe hits the same address the
 		// runner-facing URL reports.
 		b.WriteString("gw=$(ip -4 -o addr show docker0 2>/dev/null | head -n 1)\n")

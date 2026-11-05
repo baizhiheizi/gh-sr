@@ -211,6 +211,40 @@ func TestEnsure_recreatesWhenLayoutStale(t *testing.T) {
 	}
 }
 
+// TestEnsure_prefixCollisionLabelRecreates pins the exact-label semantics at
+// the cache.Ensure boundary. The old cache-layout check used a substring match
+// ("|"+rev), so a container labeled "v33" counted as current under rev "v3";
+// it must now be treated as stale and recreated.
+func TestEnsure_prefixCollisionLabelRecreates(t *testing.T) {
+	t.Parallel()
+	created := false
+	mock := &testutil.MockExecutor{RunFn: func(cmd string) (string, error) {
+		switch {
+		case strings.Contains(cmd, "Config.Labels"):
+			return cacheLayoutRev + "3\n", nil // "v33" — prefix of "v3", but not equal
+		case strings.Contains(cmd, ".State.Status"):
+			return "running\n", nil
+		case strings.Contains(cmd, "docker rm -f"):
+			return "", nil
+		case strings.Contains(cmd, "docker run"):
+			created = true
+			return "", nil
+		case strings.Contains(cmd, "echo $HOME"):
+			return "/root\n", nil
+		case strings.Contains(cmd, "ip -4 -o addr show docker0"):
+			return gwOutput, nil
+		default:
+			return "", nil
+		}
+	}}
+	if err := Ensure(io.Discard, newCacheHost(t, mock), Settings{Enabled: true}); err != nil {
+		t.Fatalf("Ensure prefix-collision label: %v", err)
+	}
+	if !contains(mock.Calls, "docker rm -f gh-sr-cache") || !created {
+		t.Errorf("prefix-collision label must be recreated, calls: %v", mock.Calls)
+	}
+}
+
 func TestEnsure_missingDeploys(t *testing.T) {
 	t.Parallel()
 	mock := &testutil.MockExecutor{RunFn: func(cmd string) (string, error) {
