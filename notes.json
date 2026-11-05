@@ -4,38 +4,72 @@
     "labelling_after": null,
     "investigation_after": null
   },
-  "issues": [],
-  "fixes": [],
+  "issues": [
+    {
+      "number": 597,
+      "state": "deferred",
+      "updated_at": "2026-11-05",
+      "note": "Ops orchestration twins (cache vs registry, ~120 lines); generics consolidation proposed. Overlaps #601 edit to internal/ops/cache_orchestrators_test.go; act after #601 resolves."
+    },
+    {
+      "number": 599,
+      "state": "deferred",
+      "updated_at": "2026-11-05",
+      "note": "Cache vs registry container lifecycle twins (~100 lines). Directly overlaps #601 internal/cache rewrite; act after #601 merges."
+    }
+  ],
+  "fixes": [
+    {
+      "issue": 600,
+      "pr": null,
+      "branch": "repo-assist/improve-marker-parser-strfmt",
+      "status": "open",
+      "updated_at": "2026-11-05",
+      "note": "strfmt.SplitMarker/AtoiOrNeg + direct table tests; markerNum stays local (strict no-tail). Draft PR created; PR number pending."
+    }
+  ],
   "checks": [
     {
       "area": "repo_assist_prs",
-      "checked_at": "2026-11-03",
+      "checked_at": "2026-11-05",
       "result": "acted",
-      "follow_up": "All five 2026-10-22 drafts merged 2026-10-23 (#565 #566 #570 #580 #581, +#582). Two new drafts 2026-11-03: #593 (agentic probe batch) and #594 (registry batch + health-probe fix)."
+      "follow_up": "#593/#594 merged. Two new drafts 2026-11-05: repo-assist/improve-marker-parser-strfmt (Closes #600) and repo-assist/test-ssh-auth-coverage (host SSH auth tests)."
+    },
+    {
+      "area": "code",
+      "checked_at": "2026-11-05",
+      "result": "acted",
+      "follow_up": "#600 marker-parser duplication fixed via strfmt draft PR. #597/#599 deferred (see issues): overlap the open efficiency-improver cache-Inspect PR #601."
+    },
+    {
+      "area": "tests",
+      "checked_at": "2026-11-05",
+      "result": "acted",
+      "follow_up": "internal/host/connection.go auth stack tested (72.7%->82.9%) incl. live in-process ssh-agent. Untested: Run/Upload/Close/dial need live SSH. tui 56.5% next-lowest but interactive."
+    },
+    {
+      "area": "ci",
+      "checked_at": "2026-11-05",
+      "result": "no_actionable",
+      "follow_up": "CI mature (workspace repair, bench stability, release-matrix gates all invested). go 1.26.7 current."
+    },
+    {
+      "area": "dependencies",
+      "checked_at": "2026-11-05",
+      "result": "no_actionable",
+      "follow_up": "Only direct-dep update: bubbletea/v2 v2.1.0->v2.1.1 patch; weekly Dependabot gomod schedule covers it. go-gh v2.17.0 current."
     },
     {
       "area": "performance",
       "checked_at": "2026-11-03",
       "result": "acted",
-      "follow_up": "Both queued batchings delivered via the two 2026-11-03 drafts: doctor agentic probes 1 RT/host; registry.Inspect 1 RT/list. No further batching candidates; remaining probes are once-per-host."
-    },
-    {
-      "area": "tests",
-      "checked_at": "2026-11-03",
-      "result": "acted",
-      "follow_up": "Doctor agentic table rewritten for the batch (gating, multi-instance, truncation, transport error, 2-RT pin); new agentic marker-parser tests; registry curl-exit + 3-mirror batch tests. build/vet/gofmt/test/-race all pass."
+      "follow_up": "Both batchings delivered (#593/#594). No further batching candidates; remaining probes are once-per-host."
     },
     {
       "area": "hygiene",
       "checked_at": "2026-11-03",
       "result": "no_actionable",
       "follow_up": "Workspace saga resolved by #590/#591 (#589 closed). gh-aw generated workflows still need regeneration for the same guard; blocked on workflow write access."
-    },
-    {
-      "area": "dependencies",
-      "checked_at": "2026-10-20",
-      "result": "no_actionable",
-      "follow_up": "go-gh v2.17.0 bump landed via #582 (2026-10-23). Left to Dependabot."
     }
   ],
   "completed_actions": [],
