@@ -3,6 +3,7 @@ package ops
 import (
 	"testing"
 
+	"github.com/an-lee/gh-sr/internal/cache"
 	"github.com/an-lee/gh-sr/internal/config"
 )
 
@@ -42,9 +43,9 @@ func TestCacheSettings_mapping(t *testing.T) {
 	}
 }
 
-func TestEnsureCacheForHost_nilSettingsNoop(t *testing.T) {
+func TestEnsureServiceForHost_nilSettingsNoop(t *testing.T) {
 	t.Parallel()
-	if err := ensureCacheForHost(nil, nil, nil); err != nil {
+	if err := ensureServiceForHost(nil, nil, nil, cache.Ensure); err != nil {
 		t.Errorf("nil settings must be a no-op: %v", err)
 	}
 }

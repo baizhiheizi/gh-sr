@@ -3,7 +3,6 @@ package ops
 import (
 	"fmt"
 	"io"
-	"sort"
 
 	"github.com/an-lee/gh-sr/internal/config"
 	"github.com/an-lee/gh-sr/internal/host"
@@ -18,57 +17,10 @@ func registrySettings(cfg *config.Config) *registry.Settings {
 	return registry.SettingsFromConfig(cfg)
 }
 
-// ensureRegistryForHost deploys the per-host registry mirror container before
-// container runner work. Idempotent and cheap when already running (one docker
-// inspect).
-func ensureRegistryForHost(w io.Writer, h *host.Host, s *registry.Settings) error {
-	if s == nil {
-		return nil
-	}
-	return registry.Ensure(w, h, *s)
-}
-
 // registryTargets returns the sorted host names a registry command should run
-// on: Linux hosts only (the mirror is a Linux/Docker workload), optionally
-// narrowed by --host.
+// on, narrowed by serviceTargets' shared Linux-only/--host filtering.
 func registryTargets(w io.Writer, cfg *config.Config, filterHost string) ([]string, error) {
-	if err := ResolveHostInfo(w, cfg); err != nil {
-		return nil, err
-	}
-	var hosts []string
-	for name, h := range cfg.Hosts {
-		if filterHost != "" && name != filterHost {
-			continue
-		}
-		if h.OS != "linux" {
-			fmt.Fprintf(w, "Skipping host %s (os: %s; the registry mirror requires Linux)\n", name, h.OS)
-			continue
-		}
-		hosts = append(hosts, name)
-	}
-	sort.Strings(hosts)
-	return hosts, nil
-}
-
-// forEachRegistryHost mirrors forEachCacheHost's lifecycle: banner → connect →
-// fn → close, fail-fast on errors. fn receives the effective mirror settings
-// (nil when disabled in runners.yml) so it can render the per-host disabled
-// note itself.
-func forEachRegistryHost(w io.Writer, cfg *config.Config, hosts []string, bannerVerb string, fn func(w io.Writer, h *host.Host, s *registry.Settings) error) error {
-	s := registrySettings(cfg)
-	for _, name := range hosts {
-		writeHostBanner(w, bannerVerb+" on "+name, cfg.Hosts[name].Addr)
-		h, err := connectHostFn(name, cfg.Hosts[name])
-		if err != nil {
-			return err
-		}
-		err = fn(w, h, s)
-		h.Close()
-		if err != nil {
-			return err
-		}
-	}
-	return nil
+	return serviceTargets(w, cfg, filterHost, "the registry mirror")
 }
 
 // RegistryDeploy ensures the per-host registry mirror container exists and
@@ -81,7 +33,7 @@ func RegistryDeploy(w io.Writer, cfg *config.Config, filterHost string) error {
 	if err != nil {
 		return err
 	}
-	return forEachRegistryHost(w, cfg, hosts, "Deploying registry", func(w io.Writer, h *host.Host, s *registry.Settings) error {
+	return forEachServiceHost(w, cfg, hosts, "Deploying registry", registrySettings, func(w io.Writer, h *host.Host, s *registry.Settings) error {
 		return registry.Ensure(w, h, *s)
 	})
 }
@@ -93,7 +45,7 @@ func RegistryStatus(w io.Writer, cfg *config.Config, filterHost string) error {
 	if err != nil {
 		return err
 	}
-	return forEachRegistryHost(w, cfg, hosts, "Registry status", func(w io.Writer, h *host.Host, s *registry.Settings) error {
+	return forEachServiceHost(w, cfg, hosts, "Registry status", registrySettings, func(w io.Writer, h *host.Host, s *registry.Settings) error {
 		if s == nil {
 			fmt.Fprintf(w, "  registry: disabled in runners.yml\n")
 			return nil
@@ -138,7 +90,7 @@ func RegistryRemove(w io.Writer, cfg *config.Config, filterHost string, purgeDat
 	if err != nil {
 		return err
 	}
-	return forEachRegistryHost(w, cfg, hosts, "Removing registry", func(w io.Writer, h *host.Host, s *registry.Settings) error {
+	return forEachServiceHost(w, cfg, hosts, "Removing registry", registrySettings, func(w io.Writer, h *host.Host, s *registry.Settings) error {
 		var settings registry.Settings
 		if s != nil {
 			settings = *s
