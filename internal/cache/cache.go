@@ -394,46 +394,120 @@ func (s Settings) managementKey(h *host.Host, storage string) string {
 
 // Inspect gathers the cache server state for `gh sr cache status`. The health
 // probe is best-effort: failures set Healthy=false instead of erroring.
+//
+// All probes (docker inspect, $HOME resolve, docker0 gateway, health curl,
+// du) run in ONE SSH round trip via inspectOneShotScript — each used to be a
+// separate h.Run call, which cost 5 network round trips + remote shell starts
+// per host per status/doctor invocation.
 func Inspect(h *host.Host, s Settings) (StatusInfo, error) {
 	info := StatusInfo{}
-	out, err := h.Run(fmt.Sprintf(
-		"docker inspect --format='{{.State.Status}}|{{.Config.Image}}' %s 2>/dev/null || true", ContainerName))
+	out, err := h.Run(inspectOneShotScript(s))
 	if err != nil {
 		return info, fmt.Errorf("inspecting cache container: %w", err)
 	}
-	if parts := strings.SplitN(strings.TrimSpace(out), "|", 2); parts[0] != "" {
+	return parseInspectOneShot(out, s)
+}
+
+// autoBind reports whether the published port is bound without an explicit
+// host address: the docker0 gateway must be resolved for both the
+// runner-facing URL and the on-host health probe.
+func (s Settings) autoBind() bool {
+	return s.URLOverride == "" && (s.BindAddr == "" || s.BindAddr == "0.0.0.0")
+}
+
+// inspectOneShotScript builds a POSIX script that gathers every Inspect probe
+// in one remote invocation. Sections are emitted as tag-prefixed lines
+// (S: state|image, H: home, G: docker0 line, K: health 1/0, D: du bytes);
+// parseInspectOneShot consumes them. The health curl and du run only when the
+// container exists, mirroring the pre-fold Go-side skip.
+func inspectOneShotScript(s Settings) string {
+	var b strings.Builder
+	p := s.StoragePath
+	if p == "" {
+		p = DefaultStoragePath
+	}
+	// storage=$HOME'/rest' splices the remote shell's $HOME (unquoted, so it
+	// expands) with a literal single-quoted remainder; an absolute path is
+	// single-quoted verbatim.
+	if strings.HasPrefix(p, "$HOME") {
+		b.WriteString("storage=$HOME" + hostshell.PosixSingleQuote(p[len("$HOME"):]) + "\n")
+	} else {
+		b.WriteString("storage=" + hostshell.PosixSingleQuote(p) + "\n")
+	}
+	fmt.Fprintf(&b, "st=$(docker inspect --format '{{.State.Status}}|{{.Config.Image}}' %s 2>/dev/null) || st=\n", ContainerName)
+	b.WriteString("printf 'S:%s\\n' \"$st\"\n")
+	b.WriteString("printf 'H:%s\\n' \"$HOME\"\n")
+	if s.autoBind() {
+		// First line of `ip -4 -o addr show docker0`; parseInspectOneShot runs
+		// it through parseGatewayIPOutput, and the shell-side extraction below
+		// mirrors that parse so the health probe hits the same address the
+		// runner-facing URL reports.
+		b.WriteString("gw=$(ip -4 -o addr show docker0 2>/dev/null | head -n 1)\n")
+		b.WriteString("printf 'G:%s\\n' \"$gw\"\n")
+		b.WriteString(`case "$gw" in *"inet "*) g=${gw#*inet }; g=${g%% *}; g=${g%%/*};; *) g=;; esac` + "\n")
+		fmt.Fprintf(&b, "probe=\"http://${g:-127.0.0.1}:%d\"\n", s.port())
+	} else {
+		b.WriteString("probe=" + hostshell.PosixSingleQuote(s.localURL("")) + "\n")
+	}
+	b.WriteString("if [ -n \"$st\" ]; then\n")
+	b.WriteString("  body=$(curl -fsS -m 3 \"$probe/health\" 2>/dev/null) || true\n")
+	b.WriteString("  if [ \"$body\" = healthy ]; then printf 'K:1\\n'; else printf 'K:0\\n'; fi\n")
+	b.WriteString("  printf 'D:%s\\n' \"$(du -sb \"$storage\" 2>/dev/null | cut -f1)\"\n")
+	b.WriteString("fi\n")
+	return b.String()
+}
+
+// parseInspectOneShot decodes the tag-prefixed sections inspectOneShotScript
+// emits. Missing K:/D: lines mean the container is absent (Healthy=false,
+// StorageBytes=0), matching the pre-fold skip.
+func parseInspectOneShot(out string, s Settings) (StatusInfo, error) {
+	info := StatusInfo{}
+	var st, home, gwRaw, du string
+	healthy := false
+	for line := range strings.SplitSeq(out, "\n") {
+		switch {
+		case strings.HasPrefix(line, "S:"):
+			st = strings.TrimSpace(line[2:])
+		case strings.HasPrefix(line, "H:"):
+			home = strings.TrimSpace(line[2:])
+		case strings.HasPrefix(line, "G:"):
+			gwRaw = strings.TrimSpace(line[2:])
+		case strings.HasPrefix(line, "K:"):
+			healthy = strings.TrimSpace(line[2:]) == "1"
+		case strings.HasPrefix(line, "D:"):
+			du = strings.TrimSpace(line[2:])
+		}
+	}
+
+	if parts := strings.SplitN(st, "|", 2); parts[0] != "" {
 		info.State = parts[0]
 		if len(parts) == 2 {
 			info.Image = parts[1]
 		}
 	}
 
-	storage, err := s.resolvedStoragePath(h)
-	if err != nil {
-		return info, err
+	storage := s.StoragePath
+	if storage == "" {
+		storage = DefaultStoragePath
+	}
+	if strings.HasPrefix(storage, "$HOME") {
+		if home == "" {
+			return info, fmt.Errorf("resolving home dir: empty $HOME")
+		}
+		storage = home + storage[len("$HOME"):]
 	}
 	info.StoragePath = storage
 
-	// Resolve the docker0 gateway once when neither URLOverride nor an
-	// explicit BindAddr short-circuit. The pre-fix code resolved it twice
-	// in the common auto-bind case (RunnerURL + the health probe) and once
-	// unnecessarily when BindAddr was set (the local probe ignores gw then).
 	var gw string
-	if s.URLOverride == "" && (s.BindAddr == "" || s.BindAddr == "0.0.0.0") {
-		gw, _ = ResolveGatewayIP(h)
+	if s.autoBind() {
+		gw = parseGatewayIPOutput(gwRaw)
 	}
 	info.URL = s.runnerURL(gw)
 
-	if info.State != "" {
-		healthOut, healthErr := h.Run(fmt.Sprintf(
-			"curl -fsS -m 3 %s/health 2>/dev/null || true", hostshell.PosixSingleQuote(s.localURL(gw))))
-		info.Healthy = healthErr == nil && strings.TrimSpace(healthOut) == "healthy"
-
-		if duOut, duErr := h.Run(fmt.Sprintf(
-			"du -sb %s 2>/dev/null | cut -f1", hostshell.PosixSingleQuote(storage))); duErr == nil {
-			if n, perr := strconv.ParseInt(strings.TrimSpace(duOut), 10, 64); perr == nil {
-				info.StorageBytes = n
-			}
+	info.Healthy = healthy
+	if info.State != "" && du != "" {
+		if n, perr := strconv.ParseInt(du, 10, 64); perr == nil {
+			info.StorageBytes = n
 		}
 	}
 	return info, nil

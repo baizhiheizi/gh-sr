@@ -1,7 +1,6 @@
 package cache
 
 import (
-	"strings"
 	"testing"
 
 	"github.com/an-lee/gh-sr/internal/config"
@@ -13,14 +12,17 @@ import (
 // costs.
 //
 // Inspect is on the `gh sr doctor` cache-reachability path, which runs once
-// per host per doctor invocation. Each of its probes is a separate remote
-// invocation — container state, storage path, gateway address, health, and
-// disk usage — so the round-trip count is the network/energy cost of the
-// check, and the metric below is what a batching change would move.
+// per host per doctor invocation (plus `gh sr cache status`). Its probes used
+// to be five separate remote invocations — container state, storage path,
+// gateway address, health, and disk usage — so the round-trip count was the
+// network/energy cost of the check. They are folded into one script now; the
+// benchmark pins that count at 1 so the probes cannot silently regress to
+// per-probe calls (each one costs a network round trip, a remote shell start,
+// and remote CPU).
 //
 // The auto-bind case is the default configuration (no explicit bind address
-// and no URL override): it resolves the docker0 gateway so the runner can
-// reach the cache server. The URL-override case skips that resolve.
+// and no URL override): the script also resolves the docker0 gateway so the
+// runner can reach the cache server. The URL-override case skips that probe.
 //
 // Each case is a separate top-level benchmark so it gets its own row in the
 // benchstat report.
@@ -34,21 +36,12 @@ func BenchmarkInspectRoundTripsURLOverride(b *testing.B) {
 
 func benchmarkInspectRoundTrips(b *testing.B, settings Settings) {
 	b.Helper()
+	gw := ""
+	if settings.autoBind() {
+		gw = gwOutput
+	}
 	mock := &testutil.RoundTripCounter{RunFn: func(cmd string) (string, error) {
-		switch {
-		case strings.Contains(cmd, "docker inspect --format="):
-			return "running|example/image:1\n", nil
-		case strings.Contains(cmd, "ip -4 -o addr show docker0"):
-			return gwOutput, nil
-		case strings.Contains(cmd, "curl -fsS"):
-			return "healthy", nil
-		case strings.Contains(cmd, "echo $HOME"):
-			return "/root\n", nil
-		case strings.Contains(cmd, "du -sb"):
-			return "1024\n", nil
-		default:
-			return "", nil
-		}
+		return oneShotOutput("running|example/image:1", "/root", gw, "healthy", "1024"), nil
 	}}
 	h := host.NewHost("h", config.HostConfig{Addr: "runner@vps", OS: "linux", Arch: "amd64"})
 	h.SetConn(mock)
