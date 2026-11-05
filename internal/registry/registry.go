@@ -21,7 +21,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/an-lee/gh-sr/internal/cache"
+	"github.com/an-lee/gh-sr/internal/dockerutil"
 	"github.com/an-lee/gh-sr/internal/host"
 	"github.com/an-lee/gh-sr/internal/hostshell"
 	"github.com/an-lee/gh-sr/internal/strfmt"
@@ -173,7 +173,7 @@ func (s Settings) RunnerURL(h *host.Host) string {
 	if s.URLOverride != "" {
 		return s.URLOverride
 	}
-	gw, err := cache.ResolveGatewayIP(h)
+	gw, err := dockerutil.ResolveGatewayIP(h)
 	if err != nil || gw == "" {
 		return ""
 	}
@@ -291,40 +291,6 @@ func (s Settings) mirrorStoragePaths(h *host.Host) ([]string, error) {
 	return paths, nil
 }
 
-// containerState reports "running", "exists" (present but not running) or ""
-// (absent) for one mirror container.
-func containerState(h *host.Host, cname string) (string, error) {
-	out, err := h.Run(fmt.Sprintf(
-		"docker inspect --format='{{.State.Status}}' %s 2>/dev/null || true", cname))
-	if err != nil {
-		return "", fmt.Errorf("inspecting registry mirror container: %w", err)
-	}
-	state := strings.TrimSpace(out)
-	switch state {
-	case "running":
-		return "running", nil
-	case "":
-		return "", nil
-	default:
-		return "exists", nil
-	}
-}
-
-// registryLayoutCurrent reports whether an existing mirror container carries
-// the current deploy layout label. Used by Ensure to converge deployments made
-// by older gh-sr versions (or after a layout change): a stale container cannot
-// be updated in place (its env and ports are baked at create), so it is
-// recreated.
-func registryLayoutCurrent(h *host.Host, cname string) (bool, error) {
-	out, err := h.Run(fmt.Sprintf(
-		"docker inspect --format='{{index .Config.Labels \"%s\"}}' %s 2>/dev/null || true",
-		LayoutLabel, cname))
-	if err != nil {
-		return false, err
-	}
-	return strings.TrimSpace(out) == registryLayoutRev, nil
-}
-
 // Ensure deploys every configured mirror idempotently: a running container
 // with the current layout label is a no-op, a stopped one is started, a
 // missing one is pulled and created, and one stamped with an older layout is
@@ -343,36 +309,14 @@ func Ensure(w io.Writer, h *host.Host, s Settings) error {
 
 // ensureMirror is the per-mirror unit of Ensure.
 func ensureMirror(w io.Writer, h *host.Host, s Settings, i int) error {
-	cname := s.containerName(i)
-	state, err := containerState(h, cname)
-	if err != nil {
-		return err
-	}
-	if state != "" {
-		current, err := registryLayoutCurrent(h, cname)
-		if err != nil {
-			return err
-		}
-		if !current {
-			fmt.Fprintf(w, "  registry: %s was deployed by an older gh-sr layout; recreating...\n", cname)
-			if _, err := h.Run("docker rm -f " + cname); err != nil {
-				return fmt.Errorf("removing outdated registry mirror container: %w", err)
-			}
-			state = ""
-		}
-	}
-	switch state {
-	case "running":
-		return nil
-	case "exists":
-		fmt.Fprintf(w, "  registry: starting %s...\n", cname)
-		if _, err := h.Run("docker start " + cname); err != nil {
-			return fmt.Errorf("starting registry mirror container: %w", err)
-		}
-		return nil
-	default:
-		return deployMirror(w, h, s, i)
-	}
+	return dockerutil.Converge(w, h, dockerutil.ConvergeOpts{
+		Container:   s.containerName(i),
+		LayoutLabel: LayoutLabel,
+		LayoutRev:   registryLayoutRev,
+		Service:     "registry",
+		Noun:        "registry mirror container",
+		Deploy:      func() error { return deployMirror(w, h, s, i) },
+	})
 }
 
 func deployMirror(w io.Writer, h *host.Host, s Settings, i int) error {
@@ -392,23 +336,10 @@ func deployMirror(w io.Writer, h *host.Host, s Settings, i int) error {
 		return fmt.Errorf("creating registry mirror storage dir: %w", err)
 	}
 
-	fmt.Fprintf(w, "  registry: pulling %s...\n", s.image())
-	// Pull is best-effort: a pre-pulled image must still deploy on hosts
-	// without registry access. A genuinely missing image fails at docker run.
-	_, _ = h.Run("docker pull " + hostshell.PosixSingleQuote(s.image()))
+	dockerutil.PullImage(w, h, "registry", s.image())
 
-	bind := s.BindAddr
-	var gw string
-	if bind == "" {
-		var err error
-		gw, err = cache.ResolveGatewayIP(h)
-		if err != nil || gw == "" {
-			bind = "0.0.0.0"
-			fmt.Fprintf(w, "  registry: warning: docker0 gateway not found; binding %s (the mirror is exposed on every host interface)\n", bind)
-		} else {
-			bind = gw
-		}
-	}
+	bind, _ := dockerutil.ResolveBind(w, h, "registry", s.BindAddr,
+		"the mirror is exposed on every host interface")
 
 	args := []string{
 		"docker", "run", "-d",
@@ -459,7 +390,7 @@ func deployMirror(w io.Writer, h *host.Host, s Settings, i int) error {
 func Inspect(h *host.Host, s Settings) ([]MirrorStatus, error) {
 	var gw string
 	if s.URLOverride == "" && (s.BindAddr == "" || s.BindAddr == "0.0.0.0") {
-		gw, _ = cache.ResolveGatewayIP(h)
+		gw, _ = dockerutil.ResolveGatewayIP(h)
 	}
 	// Resolve every mirror's storage dir up front: one $HOME round-trip for
 	// the whole list instead of one per mirror.

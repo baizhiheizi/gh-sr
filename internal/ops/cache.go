@@ -3,7 +3,6 @@ package ops
 import (
 	"fmt"
 	"io"
-	"sort"
 
 	"github.com/an-lee/gh-sr/internal/cache"
 	"github.com/an-lee/gh-sr/internal/config"
@@ -18,58 +17,10 @@ func cacheSettings(cfg *config.Config) *cache.Settings {
 	return cache.SettingsFromConfig(cfg)
 }
 
-// ensureCacheForHost deploys the per-host cache container before container
-// runner work. Idempotent and cheap when already running (one docker inspect).
-func ensureCacheForHost(w io.Writer, h *host.Host, s *cache.Settings) error {
-	if s == nil {
-		return nil
-	}
-	return cache.Ensure(w, h, *s)
-}
-
-// cacheTargets returns the sorted host names a cache command should run on:
-// Linux hosts only (the cache server is a Linux/Docker workload), optionally
-// narrowed by --host.
+// cacheTargets returns the sorted host names a cache command should run on,
+// narrowed by serviceTargets' shared Linux-only/--host filtering.
 func cacheTargets(w io.Writer, cfg *config.Config, filterHost string) ([]string, error) {
-	if err := ResolveHostInfo(w, cfg); err != nil {
-		return nil, err
-	}
-	var hosts []string
-	for name, h := range cfg.Hosts {
-		if filterHost != "" && name != filterHost {
-			continue
-		}
-		if h.OS != "linux" {
-			fmt.Fprintf(w, "Skipping host %s (os: %s; the cache server requires Linux)\n", name, h.OS)
-			continue
-		}
-		hosts = append(hosts, name)
-	}
-	sort.Strings(hosts)
-	return hosts, nil
-}
-
-// forEachCacheHost runs fn for each target host sequentially with the shared
-// lifecycle every cache orchestrator repeats: banner → connect → fn → close.
-// Connect and fn errors are fail-fast (the loop aborts and the error
-// propagates), matching the pre-existing per-orchestrator loops. fn receives
-// the effective cache settings (nil when the cache is disabled in
-// runners.yml) so it can render the per-host disabled note itself.
-func forEachCacheHost(w io.Writer, cfg *config.Config, hosts []string, bannerVerb string, fn func(w io.Writer, h *host.Host, s *cache.Settings) error) error {
-	s := cacheSettings(cfg)
-	for _, name := range hosts {
-		writeHostBanner(w, bannerVerb+" on "+name, cfg.Hosts[name].Addr)
-		h, err := connectHostFn(name, cfg.Hosts[name])
-		if err != nil {
-			return err
-		}
-		err = fn(w, h, s)
-		h.Close()
-		if err != nil {
-			return err
-		}
-	}
-	return nil
+	return serviceTargets(w, cfg, filterHost, "the cache server")
 }
 
 // CacheDeploy ensures the per-host cache server container exists and runs.
@@ -81,7 +32,7 @@ func CacheDeploy(w io.Writer, cfg *config.Config, filterHost string) error {
 	if err != nil {
 		return err
 	}
-	return forEachCacheHost(w, cfg, hosts, "Deploying cache", func(w io.Writer, h *host.Host, s *cache.Settings) error {
+	return forEachServiceHost(w, cfg, hosts, "Deploying cache", cacheSettings, func(w io.Writer, h *host.Host, s *cache.Settings) error {
 		return cache.Ensure(w, h, *s)
 	})
 }
@@ -92,7 +43,7 @@ func CacheStatus(w io.Writer, cfg *config.Config, filterHost string) error {
 	if err != nil {
 		return err
 	}
-	return forEachCacheHost(w, cfg, hosts, "Cache status", func(w io.Writer, h *host.Host, s *cache.Settings) error {
+	return forEachServiceHost(w, cfg, hosts, "Cache status", cacheSettings, func(w io.Writer, h *host.Host, s *cache.Settings) error {
 		if s == nil {
 			fmt.Fprintf(w, "  cache: disabled in runners.yml\n")
 			return nil
@@ -129,7 +80,7 @@ func CachePrune(w io.Writer, cfg *config.Config, filterHost string) error {
 	if err != nil {
 		return err
 	}
-	return forEachCacheHost(w, cfg, hosts, "Pruning cache", func(w io.Writer, h *host.Host, s *cache.Settings) error {
+	return forEachServiceHost(w, cfg, hosts, "Pruning cache", cacheSettings, func(w io.Writer, h *host.Host, s *cache.Settings) error {
 		if s == nil {
 			fmt.Fprintf(w, "  cache: disabled in runners.yml\n")
 			return nil
@@ -146,7 +97,7 @@ func CacheRemove(w io.Writer, cfg *config.Config, filterHost string, purgeData b
 	if err != nil {
 		return err
 	}
-	return forEachCacheHost(w, cfg, hosts, "Removing cache", func(w io.Writer, h *host.Host, s *cache.Settings) error {
+	return forEachServiceHost(w, cfg, hosts, "Removing cache", cacheSettings, func(w io.Writer, h *host.Host, s *cache.Settings) error {
 		var settings cache.Settings
 		if s != nil {
 			settings = *s

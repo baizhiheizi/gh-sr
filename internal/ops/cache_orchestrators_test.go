@@ -14,15 +14,18 @@ import (
 )
 
 // runningStateMock returns a MockExecutor that reports the cache container as
-// already running on the docker inspect call (so cache.Ensure short-circuits
-// at the `case "running": return nil` branch). Returns "" for everything else,
-// which keeps the orchestrator's per-host loop focused on dispatch + printing
-// — not on re-testing cache.Ensure's many sub-paths (which has its own
-// dedicated tests in internal/cache).
+// already running with the current layout label (so cache.Ensure short-circuits
+// at the converged no-op branch). Returns "" for everything else, which keeps
+// the orchestrator's per-host loop focused on dispatch + printing — not on
+// re-testing cache.Ensure's many sub-paths (which has its own dedicated tests
+// in internal/cache).
 func runningStateMock() *testutil.MockExecutor {
 	return &testutil.MockExecutor{
 		RunFn: func(cmd string) (string, error) {
-			if strings.Contains(cmd, "docker inspect --format='{{.State.Status}}") {
+			switch {
+			case strings.Contains(cmd, "Config.Labels"):
+				return "v3", nil
+			case strings.Contains(cmd, ".State.Status"):
 				return "running", nil
 			}
 			return "", nil
@@ -31,23 +34,22 @@ func runningStateMock() *testutil.MockExecutor {
 }
 
 // existsStateMock reports the cache container as present-but-not-running with
-// the current layout label, so cache.Ensure falls into the `case "exists"`
-// branch and issues `docker start` without falling through to a recreate.
-// Two docker inspect commands are issued by Ensure:
-//   - containerState     : `docker inspect --format='{{.State.Status}}'` (no `|`)
-//   - cacheLayoutCurrent : `docker inspect --format '...|<label query>'` (has `|`)
+// the current layout label, so cache.Ensure falls into the start branch and
+// issues `docker start` without falling through to a recreate. Two docker
+// inspect commands are issued by Ensure:
+//   - state    : `docker inspect --format='{{.State.Status}}' ...`
+//   - layout   : `docker inspect --format '{{index .Config.Labels ...}}' ...`
 //
-// cacheLayoutCurrent returns true when the output contains `|<cacheLayoutRev>`
-// (currently `|v3`); the containerState reply is "exists" so Ensure reaches
-// the `case "exists": docker start` branch.
+// the layout reply is the cache layout revision (currently `v3`) so the
+// container counts as current, and the "exists" state reaches `docker start`.
 func existsStateMock() *testutil.MockExecutor {
 	return &testutil.MockExecutor{
 		RunFn: func(cmd string) (string, error) {
 			switch {
-			case strings.Contains(cmd, "docker inspect --format") && !strings.Contains(cmd, "|"):
+			case strings.Contains(cmd, "Config.Labels"):
+				return "v3", nil
+			case strings.Contains(cmd, ".State.Status"):
 				return "exists", nil
-			case strings.Contains(cmd, "docker inspect --format") && strings.Contains(cmd, "|"):
-				return "exited|v3", nil
 			default:
 				return "", nil
 			}
@@ -551,10 +553,10 @@ func TestCachePrune(t *testing.T) {
 	})
 }
 
-// TestForEachCacheHost covers the shared lifecycle helper itself: banner
+// TestForEachServiceHost covers the shared lifecycle helper itself: banner
 // before connect (per the CacheDeploy contract), fail-fast on connect error,
 // and fail-fast on fn error after closing the host.
-func TestForEachCacheHost(t *testing.T) {
+func TestForEachServiceHost(t *testing.T) {
 	t.Parallel()
 
 	t.Run("fn error aborts remaining hosts", func(t *testing.T) {
@@ -566,7 +568,7 @@ func TestForEachCacheHost(t *testing.T) {
 		})
 		sentinel := errors.New("action failed")
 		var buf bytes.Buffer
-		err := forEachCacheHost(&buf, cfgWithLocalHost("h1", "h2"), []string{"h1", "h2"}, "Testing",
+		err := forEachServiceHost(&buf, cfgWithLocalHost("h1", "h2"), []string{"h1", "h2"}, "Testing", cacheSettings,
 			func(_ io.Writer, _ *host.Host, _ *cache.Settings) error { return sentinel })
 		if !errors.Is(err, sentinel) {
 			t.Fatalf("got %v; want %v", err, sentinel)
@@ -588,7 +590,7 @@ func TestForEachCacheHost(t *testing.T) {
 		sentinel := errors.New("ssh handshake failed")
 		installFailingConnectHost(t, sentinel)
 		var buf bytes.Buffer
-		err := forEachCacheHost(&buf, cfgWithLocalHost("h1"), []string{"h1"}, "Testing",
+		err := forEachServiceHost(&buf, cfgWithLocalHost("h1"), []string{"h1"}, "Testing", cacheSettings,
 			func(_ io.Writer, _ *host.Host, _ *cache.Settings) error {
 				t.Error("fn must not run when connect fails")
 				return nil

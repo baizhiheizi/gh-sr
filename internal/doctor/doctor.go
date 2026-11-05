@@ -13,6 +13,7 @@ import (
 	"github.com/an-lee/gh-sr/internal/agentic"
 	"github.com/an-lee/gh-sr/internal/cache"
 	"github.com/an-lee/gh-sr/internal/config"
+	"github.com/an-lee/gh-sr/internal/dockerutil"
 	"github.com/an-lee/gh-sr/internal/host"
 	"github.com/an-lee/gh-sr/internal/hostshell"
 	"github.com/an-lee/gh-sr/internal/registry"
@@ -830,7 +831,7 @@ func checkCacheReachability(w io.Writer, hostName string, h *host.Host, hostRunn
 	probeCacheFromRunner(w, hostName, h, hostRunners, s, r)
 
 	// A 0.0.0.0 bind means the cache API answers on every host interface.
-	if effectiveBind(s, h) == "0.0.0.0" {
+	if dockerutil.EffectiveBind(h, s.BindAddr) == "0.0.0.0" {
 		printLine(w, sevWarn, hostName, "cache: bound to 0.0.0.0 — the cache API is reachable from your LAN; set cache.bind_addr (e.g. the docker0 gateway IP) in runners.yml")
 		r.Warn++
 	}
@@ -878,7 +879,7 @@ func probeCacheFromRunner(w io.Writer, hostName string, h *host.Host, hostRunner
 		printLine(w, sevWarn, hostName, fmt.Sprintf("cache: could not probe from runner container %s: %v", cname, err))
 		r.Warn++
 	case strings.Contains(strings.TrimSpace(out), "PROBE_FAIL"):
-		bind := effectiveBind(s, h)
+		bind := dockerutil.EffectiveBind(h, s.BindAddr)
 		printLine(w, sevFail, hostName, fmt.Sprintf(
 			"cache: not reachable from runner container %s at %s (host-side health is fine — the host INPUT firewall is blocking container traffic); allow it with: sudo ufw allow in on docker0 to %s port %d proto tcp comment 'allow-docker-cache' (or the equivalent nftables/iptables rule), then run: gh sr cache deploy && gh sr rebuild %s",
 			cname, url, bind, s.EffectivePort(), inst))
@@ -886,20 +887,6 @@ func probeCacheFromRunner(w io.Writer, hostName string, h *host.Host, hostRunner
 	default:
 		printLine(w, sevOK, hostName, fmt.Sprintf("cache: reachable from runner container %s at %s", cname, url))
 	}
-}
-
-// effectiveBind resolves the bind address the deploy actually chose: an
-// explicit cache.bind_addr wins; the auto path binds the docker0 gateway, or
-// 0.0.0.0 when no gateway was found.
-func effectiveBind(s *cache.Settings, h *host.Host) string {
-	if s.BindAddr != "" {
-		return s.BindAddr
-	}
-	gw, err := cache.ResolveGatewayIP(h)
-	if err != nil || gw == "" {
-		return "0.0.0.0"
-	}
-	return gw
 }
 
 // checkRegistryMirror verifies every per-host Docker registry pull-through
@@ -951,7 +938,7 @@ func checkRegistryMirror(w io.Writer, hostName string, h *host.Host, hostRunners
 	checkOrphanMirrors(w, hostName, h, s, r)
 
 	// A 0.0.0.0 bind means the mirror answers on every host interface.
-	if mirrorEffectiveBind(s, h) == "0.0.0.0" {
+	if dockerutil.EffectiveBind(h, s.BindAddr) == "0.0.0.0" {
 		printLine(w, sevWarn, hostName, "registry: bound to 0.0.0.0 — the mirror is reachable from your LAN; set registry_mirror.bind_addr (e.g. the docker0 gateway IP) in runners.yml")
 		r.Warn++
 	}
@@ -1032,7 +1019,7 @@ func probeRegistryFromRunner(w io.Writer, hostName string, h *host.Host, hostRun
 		printLine(w, sevWarn, hostName, fmt.Sprintf("registry: could not probe from runner container %s: %v", cname, err))
 		r.Warn++
 	case strings.Contains(strings.TrimSpace(out), "PROBE_FAIL") || strings.TrimSpace(out) != "200":
-		bind := mirrorEffectiveBind(s, h)
+		bind := dockerutil.EffectiveBind(h, s.BindAddr)
 		printLine(w, sevFail, hostName, fmt.Sprintf(
 			"registry: not reachable from runner container %s at %s (host-side health is fine — the host INPUT firewall is blocking container traffic); allow it with: sudo ufw allow in on docker0 to %s port %d proto tcp comment 'allow-docker-registry-mirror' (or the equivalent nftables/iptables rule)",
 			cname, url, bind, s.EffectivePort()))
@@ -1076,20 +1063,6 @@ func probeMirrorURLFromRunner(w io.Writer, hostName string, h *host.Host, hostRu
 	default:
 		printLine(w, sevOK, hostName, fmt.Sprintf("%s: reachable from runner container %s at %s", label, cname, url))
 	}
-}
-
-// mirrorEffectiveBind resolves the bind address the mirror deploy actually
-// chose: an explicit registry_mirror.bind_addr wins; the auto path binds the
-// docker0 gateway, or 0.0.0.0 when no gateway was found.
-func mirrorEffectiveBind(s *registry.Settings, h *host.Host) string {
-	if s.BindAddr != "" {
-		return s.BindAddr
-	}
-	gw, err := cache.ResolveGatewayIP(h)
-	if err != nil || gw == "" {
-		return "0.0.0.0"
-	}
-	return gw
 }
 
 func checkOrphanRunners(w io.Writer, hostName string, h *host.Host, runners []config.RunnerConfig, r *Result) {

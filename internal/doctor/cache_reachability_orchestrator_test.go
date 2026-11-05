@@ -14,75 +14,9 @@ import (
 )
 
 // gatewayIP returns a docker0 `ip -4 -o addr show` line for the given gateway.
-// The exact field order matches what cache.parseGatewayIPOutput walks.
+// The exact field order matches what dockerutil.ParseGatewayIPOutput walks.
 func gatewayIP(ip string) string {
 	return "2: docker0    inet " + ip + "/16 brd 172.17.255.255 scope global docker0\n"
-}
-
-// TestEffectiveBind pins the four-branch resolver: explicit BindAddr wins;
-// otherwise the auto path returns the docker0 gateway from cache.ResolveGatewayIP;
-// a failed/empty gateway lookup falls back to 0.0.0.0.
-func TestEffectiveBind(t *testing.T) {
-	t.Parallel()
-	h := host.NewHost("linux", config.HostConfig{OS: "linux", Addr: "local"})
-	h.SetConn(&testutil.MockExecutor{
-		RunFn: func(cmd string) (string, error) {
-			if strings.Contains(cmd, "ip -4 -o addr show docker0") {
-				return gatewayIP("172.17.0.1"), nil
-			}
-			return "", nil
-		},
-	})
-
-	cases := []struct {
-		name     string
-		settings cache.Settings
-		want     string
-	}{
-		{"explicit bind addr wins", cache.Settings{BindAddr: "192.168.5.10"}, "192.168.5.10"},
-		{"auto resolves docker0 gateway", cache.Settings{}, "172.17.0.1"},
-		{"0.0.0.0 bind returns verbatim", cache.Settings{BindAddr: "0.0.0.0"}, "0.0.0.0"},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			if got := effectiveBind(&tc.settings, h); got != tc.want {
-				t.Errorf("effectiveBind = %q; want %q", got, tc.want)
-			}
-		})
-	}
-
-	t.Run("gateway lookup failure falls back to 0.0.0.0", func(t *testing.T) {
-		t.Parallel()
-		fail := host.NewHost("linux", config.HostConfig{OS: "linux", Addr: "local"})
-		fail.SetConn(&testutil.MockExecutor{
-			RunFn: func(cmd string) (string, error) {
-				if strings.Contains(cmd, "ip -4 -o addr show docker0") {
-					return "", errors.New("no docker0")
-				}
-				return "", nil
-			},
-		})
-		if got := effectiveBind(&cache.Settings{}, fail); got != "0.0.0.0" {
-			t.Errorf("fallback = %q; want 0.0.0.0", got)
-		}
-	})
-
-	t.Run("empty gateway output falls back to 0.0.0.0", func(t *testing.T) {
-		t.Parallel()
-		empty := host.NewHost("linux", config.HostConfig{OS: "linux", Addr: "local"})
-		empty.SetConn(&testutil.MockExecutor{
-			RunFn: func(cmd string) (string, error) {
-				if strings.Contains(cmd, "ip -4 -o addr show docker0") {
-					return "   \n", nil
-				}
-				return "", nil
-			},
-		})
-		if got := effectiveBind(&cache.Settings{}, empty); got != "0.0.0.0" {
-			t.Errorf("fallback = %q; want 0.0.0.0", got)
-		}
-	})
 }
 
 // TestProbeCacheFromRunner covers the five branches of the inner-container
@@ -558,7 +492,7 @@ func TestCheckCacheReachability(t *testing.T) {
 
 	t.Run("healthy cache warns when effective bind is 0.0.0.0", func(t *testing.T) {
 		t.Parallel()
-		// BindAddr="0.0.0.0" → effectiveBind returns "0.0.0.0" verbatim, but
+		// BindAddr="0.0.0.0" → dockerutil.EffectiveBind returns "0.0.0.0" verbatim, but
 		// localURL still falls through to the docker0 gateway so the /health
 		// probe can succeed. The 0.0.0.0 warning only fires when the cache is
 		// actually healthy.

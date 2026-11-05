@@ -43,24 +43,6 @@ func oneShotOutput(st, home, gwRaw, healthBody, du string) string {
 	return b.String()
 }
 
-func TestParseGatewayIPOutput(t *testing.T) {
-	t.Parallel()
-	cases := []struct {
-		in, want string
-	}{
-		{gwOutput, "172.17.0.1"},
-		{"2: docker0    inet 10.0.0.1/16 scope global docker0\n", "10.0.0.1"},
-		{"2: docker0    inet6 fe80::1/64 scope link\n", ""},
-		{"", ""},
-		{"command not found\n", ""},
-	}
-	for _, tc := range cases {
-		if got := parseGatewayIPOutput(tc.in); got != tc.want {
-			t.Errorf("parseGatewayIPOutput(%q) = %q, want %q", tc.in, got, tc.want)
-		}
-	}
-}
-
 func TestWithTrailingSlash(t *testing.T) {
 	t.Parallel()
 	cases := []struct{ in, want string }{
@@ -151,7 +133,7 @@ func TestEnsure_runningNoop(t *testing.T) {
 	t.Parallel()
 	mock := &testutil.MockExecutor{RunFn: func(cmd string) (string, error) {
 		if strings.Contains(cmd, "Config.Labels") {
-			return "running|" + cacheLayoutRev + "\n", nil
+			return cacheLayoutRev + "\n", nil
 		}
 		if strings.Contains(cmd, ".State.Status") {
 			return "running\n", nil
@@ -173,7 +155,7 @@ func TestEnsure_existsStarts(t *testing.T) {
 	mock := &testutil.MockExecutor{RunFn: func(cmd string) (string, error) {
 		switch {
 		case strings.Contains(cmd, "Config.Labels"):
-			return "exited|" + cacheLayoutRev + "\n", nil
+			return cacheLayoutRev + "\n", nil
 		case strings.Contains(cmd, ".State.Status"):
 			return "exited\n", nil
 		default:
@@ -198,7 +180,7 @@ func TestEnsure_recreatesWhenLayoutStale(t *testing.T) {
 	mock := &testutil.MockExecutor{RunFn: func(cmd string) (string, error) {
 		switch {
 		case strings.Contains(cmd, "Config.Labels"):
-			return "running|<no value>\n", nil
+			return "<no value>\n", nil
 		case strings.Contains(cmd, ".State.Status"):
 			return "running\n", nil
 		case strings.Contains(cmd, "docker rm -f"):
@@ -226,6 +208,40 @@ func TestEnsure_recreatesWhenLayoutStale(t *testing.T) {
 	}
 	if !created {
 		t.Errorf("expected redeploy, calls: %v", mock.Calls)
+	}
+}
+
+// TestEnsure_prefixCollisionLabelRecreates pins the exact-label semantics at
+// the cache.Ensure boundary. The old cache-layout check used a substring match
+// ("|"+rev), so a container labeled "v33" counted as current under rev "v3";
+// it must now be treated as stale and recreated.
+func TestEnsure_prefixCollisionLabelRecreates(t *testing.T) {
+	t.Parallel()
+	created := false
+	mock := &testutil.MockExecutor{RunFn: func(cmd string) (string, error) {
+		switch {
+		case strings.Contains(cmd, "Config.Labels"):
+			return cacheLayoutRev + "3\n", nil // "v33" — prefix of "v3", but not equal
+		case strings.Contains(cmd, ".State.Status"):
+			return "running\n", nil
+		case strings.Contains(cmd, "docker rm -f"):
+			return "", nil
+		case strings.Contains(cmd, "docker run"):
+			created = true
+			return "", nil
+		case strings.Contains(cmd, "echo $HOME"):
+			return "/root\n", nil
+		case strings.Contains(cmd, "ip -4 -o addr show docker0"):
+			return gwOutput, nil
+		default:
+			return "", nil
+		}
+	}}
+	if err := Ensure(io.Discard, newCacheHost(t, mock), Settings{Enabled: true}); err != nil {
+		t.Fatalf("Ensure prefix-collision label: %v", err)
+	}
+	if !contains(mock.Calls, "docker rm -f gh-sr-cache") || !created {
+		t.Errorf("prefix-collision label must be recreated, calls: %v", mock.Calls)
 	}
 }
 

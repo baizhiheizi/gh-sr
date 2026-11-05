@@ -5,8 +5,10 @@ import (
 	"io"
 	"sync"
 
+	"github.com/an-lee/gh-sr/internal/cache"
 	"github.com/an-lee/gh-sr/internal/config"
 	"github.com/an-lee/gh-sr/internal/host"
+	"github.com/an-lee/gh-sr/internal/registry"
 	"github.com/an-lee/gh-sr/internal/runner"
 )
 
@@ -271,10 +273,10 @@ func setupHost(w io.Writer, cfg *config.Config, mgr *runner.Manager, rc config.R
 	}
 	defer h.Close()
 	if rc.IsContainerMode() {
-		if err := ensureCacheForHost(w, h, cacheSettings(cfg)); err != nil {
+		if err := ensureServiceForHost(w, h, cacheSettings(cfg), cache.Ensure); err != nil {
 			return err
 		}
-		if err := ensureRegistryForHost(w, h, registrySettings(cfg)); err != nil {
+		if err := ensureServiceForHost(w, h, registrySettings(cfg), registry.Ensure); err != nil {
 			return err
 		}
 	}
@@ -296,10 +298,10 @@ func Up(w io.Writer, cfg *config.Config, mgr *runner.Manager, filterHost, filter
 	registrySet := registrySettings(cfg)
 	err = runPerHostParallel(w, cfg, runners, func(w io.Writer, h *host.Host, rc config.RunnerConfig) error {
 		if rc.IsContainerMode() {
-			if err := ensureCacheForHost(w, h, cacheSet); err != nil {
+			if err := ensureServiceForHost(w, h, cacheSet, cache.Ensure); err != nil {
 				return err
 			}
-			if err := ensureRegistryForHost(w, h, registrySet); err != nil {
+			if err := ensureServiceForHost(w, h, registrySet, registry.Ensure); err != nil {
 				return err
 			}
 		}
@@ -384,10 +386,10 @@ func RebuildImage(w io.Writer, cfg *config.Config, mgr *runner.Manager, filterHo
 	cacheSet := cacheSettings(cfg)
 	registrySet := registrySettings(cfg)
 	err = runPerHostParallel(w, cfg, containerRunners, func(w io.Writer, h *host.Host, rc config.RunnerConfig) error {
-		if err := ensureCacheForHost(w, h, cacheSet); err != nil {
+		if err := ensureServiceForHost(w, h, cacheSet, cache.Ensure); err != nil {
 			return err
 		}
-		if err := ensureRegistryForHost(w, h, registrySet); err != nil {
+		if err := ensureServiceForHost(w, h, registrySet, registry.Ensure); err != nil {
 			return err
 		}
 		fmt.Fprintf(w, "Rebuilding image for %s on %s...\n", rc.Name, rc.Host)
@@ -417,10 +419,10 @@ func Update(w io.Writer, cfg *config.Config, mgr *runner.Manager, filterHost, fi
 	registrySet := registrySettings(cfg)
 	if err := runPerHostParallel(w, cfg, runners, func(w io.Writer, h *host.Host, rc config.RunnerConfig) error {
 		if rc.IsContainerMode() {
-			if err := ensureCacheForHost(w, h, cacheSet); err != nil {
+			if err := ensureServiceForHost(w, h, cacheSet, cache.Ensure); err != nil {
 				return err
 			}
-			if err := ensureRegistryForHost(w, h, registrySet); err != nil {
+			if err := ensureServiceForHost(w, h, registrySet, registry.Ensure); err != nil {
 				return err
 			}
 		}
