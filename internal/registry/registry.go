@@ -24,6 +24,7 @@ import (
 	"github.com/an-lee/gh-sr/internal/cache"
 	"github.com/an-lee/gh-sr/internal/host"
 	"github.com/an-lee/gh-sr/internal/hostshell"
+	"github.com/an-lee/gh-sr/internal/strfmt"
 )
 
 const (
@@ -522,11 +523,11 @@ func parseInspectBatchOutput(out string, statuses []MirrorStatus) {
 		line = strings.TrimRight(line, "\r")
 		switch {
 		case strings.HasPrefix(line, "@@m:"):
-			if n := atoiInspect(line[len("@@m:"):]); n >= 1 && n <= len(statuses) {
+			if n := strfmt.AtoiOrNeg(line[len("@@m:"):]); n >= 1 && n <= len(statuses) {
 				cur = n - 1
 			}
 		case cur >= 0 && strings.HasPrefix(line, "@@st:"):
-			if n, rest, ok := splitInspectMarker(line, "@@st:"); ok && n-1 == cur {
+			if n, rest, ok := strfmt.SplitMarker(line, "@@st:"); ok && n-1 == cur {
 				if parts := strings.SplitN(rest, "|", 2); parts[0] != "" {
 					statuses[cur].Info.State = parts[0]
 					if len(parts) == 2 {
@@ -535,44 +536,17 @@ func parseInspectBatchOutput(out string, statuses []MirrorStatus) {
 				}
 			}
 		case cur >= 0 && strings.HasPrefix(line, "@@health:"):
-			if n, rest, ok := splitInspectMarker(line, "@@health:"); ok && n-1 == cur {
+			if n, rest, ok := strfmt.SplitMarker(line, "@@health:"); ok && n-1 == cur {
 				statuses[cur].Info.Healthy = rest == "ok"
 			}
 		case cur >= 0 && strings.HasPrefix(line, "@@du:"):
-			if n, rest, ok := splitInspectMarker(line, "@@du:"); ok && n-1 == cur {
+			if n, rest, ok := strfmt.SplitMarker(line, "@@du:"); ok && n-1 == cur {
 				if v, err := strconv.ParseInt(strings.TrimSpace(rest), 10, 64); err == nil {
 					statuses[cur].Info.StorageBytes = v
 				}
 			}
 		}
 	}
-}
-
-func atoiInspect(s string) int {
-	n, err := strconv.Atoi(strings.TrimSpace(s))
-	if err != nil {
-		return -1
-	}
-	return n
-}
-
-// splitInspectMarker parses "<prefix><n>|<tail>" into n and the tail (the
-// state|image pair on @@st, ok/fail on @@health, the byte count on @@du).
-func splitInspectMarker(line, prefix string) (int, string, bool) {
-	rest := strings.TrimPrefix(line, prefix)
-	if rest == line {
-		return -1, "", false
-	}
-	num := rest
-	tail := ""
-	if i := strings.IndexByte(rest, '|'); i >= 0 {
-		num, tail = rest[:i], rest[i+1:]
-	}
-	n := atoiInspect(num)
-	if n < 0 {
-		return -1, "", false
-	}
-	return n, tail, true
 }
 
 // MirrorStatus is the state of one mirror: its config name, Docker container

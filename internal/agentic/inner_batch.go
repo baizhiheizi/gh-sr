@@ -2,12 +2,12 @@ package agentic
 
 import (
 	"fmt"
-	"strconv"
 	"strings"
 
 	"github.com/an-lee/gh-sr/internal/host"
 	"github.com/an-lee/gh-sr/internal/hostshell"
 	"github.com/an-lee/gh-sr/internal/runner"
+	"github.com/an-lee/gh-sr/internal/strfmt"
 )
 
 // AgenticInnerTarget identifies one agentic container-mode runner instance for
@@ -188,17 +188,17 @@ func parseAgenticInnerBatchOutput(out string, specs []agenticInnerSpecs, probes 
 				}
 			}
 		case strings.HasPrefix(line, "@@state:"):
-			if n, rest, ok := splitMarker(line, "@@state:"); ok && cur >= 0 && n-1 == cur {
+			if n, rest, ok := strfmt.SplitMarker(line, "@@state:"); ok && cur >= 0 && n-1 == cur {
 				probes[cur].State = rest
 			}
 		case strings.HasPrefix(line, "@@hyg:"):
-			if n, rest, ok := splitMarker(line, "@@hyg:"); ok && cur >= 0 && n-1 == cur {
-				hyg = atoiOrNeg(rest)
+			if n, rest, ok := strfmt.SplitMarker(line, "@@hyg:"); ok && cur >= 0 && n-1 == cur {
+				hyg = strfmt.AtoiOrNeg(rest)
 				hygBuf.Reset()
 			}
 		case strings.HasPrefix(line, "@@hygend:"):
-			if n, rest, ok := splitMarker(line, "@@hygend:"); ok && cur >= 0 && n-1 == cur {
-				probes[cur].Failures = append(probes[cur].Failures, hygieneFailureFromOutput(specs[cur].hygiene, atoiOrNeg(rest), hygBuf.String())...)
+			if n, rest, ok := strfmt.SplitMarker(line, "@@hygend:"); ok && cur >= 0 && n-1 == cur {
+				probes[cur].Failures = append(probes[cur].Failures, hygieneFailureFromOutput(specs[cur].hygiene, strfmt.AtoiOrNeg(rest), hygBuf.String())...)
 				hyg = -1
 			}
 		case strings.HasPrefix(line, "@@end:"):
@@ -243,39 +243,14 @@ func hygieneFailureFromOutput(checks []awfHygieneCheck, k int, output string) []
 	}}
 }
 
-// markerNum parses "<prefix><n>" into n.
+// markerNum parses "<prefix><n>" into n. It stays strict about a trailing
+// "|<tail>" (unlike strfmt.SplitMarker, which accepts it) so a malformed
+// begin/end marker is ignored rather than partially honoured.
 func markerNum(line, prefix string) (int, bool) {
 	rest := strings.TrimPrefix(line, prefix)
 	if rest == line {
 		return -1, false
 	}
-	n := atoiOrNeg(rest)
+	n := strfmt.AtoiOrNeg(rest)
 	return n, n >= 0
-}
-
-// splitMarker parses "<prefix><n>|<tail>" into n and the tail (the state on
-// @@state, the check index on @@hyg/@@hygend).
-func splitMarker(line, prefix string) (int, string, bool) {
-	rest := strings.TrimPrefix(line, prefix)
-	if rest == line {
-		return -1, "", false
-	}
-	num := rest
-	tail := ""
-	if i := strings.IndexByte(rest, '|'); i >= 0 {
-		num, tail = rest[:i], rest[i+1:]
-	}
-	n := atoiOrNeg(num)
-	if n < 0 {
-		return -1, "", false
-	}
-	return n, tail, true
-}
-
-func atoiOrNeg(s string) int {
-	n, err := strconv.Atoi(strings.TrimSpace(s))
-	if err != nil {
-		return -1
-	}
-	return n
 }
