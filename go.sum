@@ -1,5 +1,5 @@
-charm.land/bubbletea/v2 v2.1.0 h1:A9fj9h5LFrvQhQHFNggp8K8rvY6CUfgn9dMbb6p2HIw=
-charm.land/bubbletea/v2 v2.1.0/go.mod h1:xWHeyxIX9/wiFU2kgPW04ojOZyTzrWf+8lGjUCaftiU=
+charm.land/bubbletea/v2 v2.1.1 h1:S1S9l37pCZGrj1JexBcr9x4Nr3MVeM42InqCYM/tDpU=
+charm.land/bubbletea/v2 v2.1.1/go.mod h1:xWHeyxIX9/wiFU2kgPW04ojOZyTzrWf+8lGjUCaftiU=
 github.com/aymanbagabas/go-osc52/v2 v2.0.1 h1:HwpRHbFMcZLEVr42D4p7XBqjyuxQH5SMiErDT4WkJ2k=
 github.com/aymanbagabas/go-osc52/v2 v2.0.1/go.mod h1:uYgXzlJ7ZpABp8OJ+exZzJJhRNQ2ASbcXHWsFqH8hp8=
 github.com/aymanbagabas/go-udiff v0.3.1 h1:LV+qyBQ2pqe0u42ZsUEtPiCaUoqgA9gYRDs3vj1nolY=
