@@ -64,6 +64,15 @@ python3-dev
 redis
 sudo
 tar
+# PID 1 init for the runner container (Dockerfile ENTRYPOINT). The kernel
+# reparents every orphaned process in the container's PID namespace to PID 1
+# (implicit child-subreaper rule); without an init that wait()s them — the
+# entrypoint used to exec `su` into PID 1, which only waits its own child —
+# each job's orphaned processes (browser renderers, Dart analysis servers,
+# inner-Docker shims) stayed a zombie for the life of the container (~48k
+# zombies observed on a busy host). tini reaps them all and forwards signals
+# (issue #605).
+tini
 uidmap
 unzip
 wget

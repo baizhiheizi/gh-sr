@@ -15,7 +15,10 @@
 #      --disableupdate so the fork's CUSTOM_ACTIONS_RESULTS_URL-aware runner
 #      never self-updates back to stock behavior).
 #   5. Wire the per-job reset hooks + cache URL into the runner .env.
-#   6. exec run.sh (the actions runner loop).
+#   6. Supervise run.sh (the actions runner loop) from this shell — tini (the
+#      image ENTRYPOINT) is PID 1, reaps every orphaned process and forwards
+#      SIGTERM to the shutdown handler below; this shell must NOT exec into su,
+#      which would make su PID 1 and leak every job's orphans as zombies.
 #
 # Per-job environment hygiene (clean /tmp/gh-aw, remove leftover containers,
 # prune networks, repair _work ownership left by root-privileged jobs) is
@@ -362,9 +365,15 @@ su - runner -c "
 " 2>/dev/null || true
 
 # ── 7. Graceful shutdown handler ────────────────────────────────────────────────
-# On SIGTERM (sent by `docker stop`, the Docker daemon, or systemd), tear down
-# the inner dockerd so its containers/networks do not leak. We deliberately do
-# NOT call `config.sh remove --token ...` here:
+# On SIGTERM (sent by `docker stop`, the Docker daemon, or systemd — tini, as
+# PID 1, forwards it here), stop the runner and tear down the inner dockerd so
+# its containers/networks do not leak. This handler used to be dead code: the
+# run section below `exec`'d into su, which replaced this shell, discarded the
+# trap and handed PID 1 to a process that never reaps orphans (issue #605) —
+# so on stop, both the runner and the inner dockerd were left to the PID-
+# namespace teardown (SIGKILL) with no graceful path at all.
+#
+# We deliberately do NOT call `config.sh remove --token ...` here:
 #
 #   - RUNNER_TOKEN is the GitHub *registration* token (one-time, ~1h TTL). After
 #     it expires, `config.sh remove` fails silently and the call is a no-op.
@@ -377,8 +386,17 @@ su - runner -c "
 # Exit 0 so `docker stop` is honored as an explicit operator action; the
 # `--restart unless-stopped` policy on the container is what decides whether
 # the next event (crash, OOM, daemon restart, host reboot) brings it back.
+RUNNER_PID=""
 _shutdown() {
     echo "[entrypoint] received SIGTERM — stopping runner..."
+    # TERM Runner.Listener directly: a TERM to `su` only kills the intermediate
+    # `bash -c` / run.sh shells, orphaning the listener — which would keep
+    # serving jobs until the namespace teardown killed everything.
+    pkill -TERM -f '/Runner\.Listener' 2>/dev/null || true
+    if [ -n "${RUNNER_PID}" ]; then
+        kill "${RUNNER_PID}" 2>/dev/null || true
+        wait "${RUNNER_PID}" 2>/dev/null || true
+    fi
     # Shut down the inner dockerd.
     kill "${DOCKERD_PID}" 2>/dev/null && wait "${DOCKERD_PID}" 2>/dev/null || true
     exit 0
@@ -386,5 +404,22 @@ _shutdown() {
 trap _shutdown SIGTERM SIGINT
 
 # ── 8. Run ──────────────────────────────────────────────────────────────────────
+# Supervise the runner from this shell; tini (Dockerfile ENTRYPOINT) is PID 1
+# and owns orphan reaping. Do NOT `exec su` here: that handed PID 1 to su,
+# which never calls wait() on the processes the kernel reparents to it (PID 1
+# is an implicit child subreaper), so every job's orphaned children — browser
+# renderers, Dart analysis servers, inner-Docker shims — stayed a zombie for
+# the life of the container (~48k zombies observed on one busy host;
+# issue #605).
+#
+# The runner runs in the background so the §7 trap stays armed for `docker
+# stop` / `gh sr down`. The entrypoint — and with it the container — exits
+# with the runner's own exit status, exactly as the old `exec su` did:
+# non-zero exits keep the `unless-stopped` policy restarting on crashes, and
+# exit 0 keeps `docker stop` honored as an explicit operator action.
+RUNNER_EXIT=0
 echo "[entrypoint] starting actions runner as user 'runner'..."
-exec su - runner -c "cd '${RUNNER_DIR}' && ${RUNNER_ENV} ./run.sh"
+su - runner -c "cd '${RUNNER_DIR}' && ${RUNNER_ENV} ./run.sh" &
+RUNNER_PID=$!
+wait "${RUNNER_PID}" || RUNNER_EXIT=$?
+exit "${RUNNER_EXIT}"

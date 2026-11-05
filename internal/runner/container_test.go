@@ -666,7 +666,8 @@ func TestAgenticRunnerDockerfileHasNoBakedChrome(t *testing.T) {
 }
 
 // TestAgenticRunnerDockerfileBakesHooksAndEntrypoint verifies the Dockerfile installs
-// the per-job reset hooks and the entrypoint, and wires ENTRYPOINT to it.
+// the per-job reset hooks and the entrypoint, and wires ENTRYPOINT to it under
+// tini (PID 1 orphan reaping — issue #605).
 func TestAgenticRunnerDockerfileBakesHooksAndEntrypoint(t *testing.T) {
 	t.Parallel()
 	for _, want := range []string{
@@ -674,10 +675,60 @@ func TestAgenticRunnerDockerfileBakesHooksAndEntrypoint(t *testing.T) {
 		"COPY hooks/job-completed.sh /opt/gh-sr/hooks/job-completed.sh",
 		"COPY hooks/awf-service-bridge.sh /opt/gh-sr/hooks/awf-service-bridge.sh",
 		"COPY entrypoint.sh /entrypoint.sh",
-		`ENTRYPOINT ["/entrypoint.sh"]`,
+		`ENTRYPOINT ["/usr/bin/tini", "--", "/entrypoint.sh"]`,
 	} {
 		if !strings.Contains(agenticRunnerDockerfile, want) {
 			t.Fatalf("Dockerfile should bake %q, got:\n%s", want, agenticRunnerDockerfile)
+		}
+	}
+}
+
+// TestAgenticRunnerEntrypointPID1ReapsOrphans pins the zombie-reaping contract
+// (issue #605): tini is PID 1 (core apt manifest + Dockerfile ENTRYPOINT), so
+// every process a job's steps orphan — browser renderers, Dart analysis
+// servers, inner-Docker shims — is reaped by the kernel's reparent-to-PID-1
+// rule instead of accumulating as permanent zombies (su, the previous PID 1,
+// only ever waited its own child). The run section must therefore NOT exec su:
+// the entrypoint supervises the runner in the background so the SIGTERM trap
+// stays armed, propagates the runner's exit status, and the shutdown handler
+// TERMs Runner.Listener itself (a TERM to `su` only kills the intermediate
+// bash -c / run.sh shells and orphans the listener).
+func TestAgenticRunnerEntrypointPID1ReapsOrphans(t *testing.T) {
+	t.Parallel()
+	if !strings.Contains(agenticRunnerAptPackagesCore, "\ntini\n") {
+		t.Fatalf("core apt manifest should install tini (PID 1 zombie reaper), got:\n%s", agenticRunnerAptPackagesCore)
+	}
+	if strings.Contains(agenticRunnerEntrypoint, "exec su - runner") {
+		t.Fatal("entrypoint must not exec su — su as PID 1 never reaps reparented orphans (issue #605)")
+	}
+	for _, want := range []string{
+		`su - runner -c "cd '${RUNNER_DIR}' && ${RUNNER_ENV} ./run.sh" &`,
+		`wait "${RUNNER_PID}" || RUNNER_EXIT=$?`,
+		"pkill -TERM -f '/Runner\\.Listener'",
+		`kill "${DOCKERD_PID}"`,
+	} {
+		if !strings.Contains(agenticRunnerEntrypoint, want) {
+			t.Fatalf("entrypoint should supervise the runner and shut it down on SIGTERM, missing %q, got:\n%s", want, agenticRunnerEntrypoint)
+		}
+	}
+}
+
+// TestAgenticRunnerJobCompletedHookSweepsLeftoverProcesses pins the per-job
+// process hygiene (issue #605 hardening): workflow steps run directly in the
+// outer container, and daemons they spawn (Chrome + its crashpad handler +
+// chromedriver from browser suites, the Dart analysis server) routinely
+// outlive the step that started them. job-completed must kill them by exact
+// comm name so PID 1 (tini) reaps them, without ever touching the runner
+// itself or the inner dockerd/containerd tree (whose lifecycle belongs to the
+// daemon — killing a shim would corrupt its container's state).
+func TestAgenticRunnerJobCompletedHookSweepsLeftoverProcesses(t *testing.T) {
+	t.Parallel()
+	for _, want := range []string{
+		"for proc in chrome chrome_crashpad chromedriver dart; do",
+		`pkill -x "$proc"`,
+	} {
+		if !strings.Contains(agenticRunnerJobCompletedHook, want) {
+			t.Fatalf("job-completed hook should sweep leftover job processes, missing %q, got:\n%s", want, agenticRunnerJobCompletedHook)
 		}
 	}
 }

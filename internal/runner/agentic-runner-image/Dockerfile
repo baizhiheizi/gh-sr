@@ -319,5 +319,11 @@ RUN chmod +x /entrypoint.sh
 
 # Container starts as root (see USER root above): the entrypoint boots the inner
 # dockerd before switching to the runner user for the actions runner loop.
+# tini is PID 1: the kernel reparents every orphan in the container's PID
+# namespace to PID 1, and tini wait()s them — without it, `su` (the previous
+# PID 1) accumulated each job's orphaned processes as permanent zombies
+# (browser renderers, Dart analysis servers, inner-Docker shims; ~48k zombies
+# observed on a busy host — issue #605). tini also forwards SIGTERM to the
+# entrypoint's shutdown handler. tini is installed via apt-packages-core.txt.
 USER root
-ENTRYPOINT ["/entrypoint.sh"]
+ENTRYPOINT ["/usr/bin/tini", "--", "/entrypoint.sh"]
