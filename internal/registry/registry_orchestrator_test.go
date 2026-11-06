@@ -502,8 +502,8 @@ func TestInspect_healthProbeCapturesCurlExit(t *testing.T) {
 	if _, err := Inspect(newRegistryHost(t, mock), Settings{Enabled: true}); err != nil {
 		t.Fatalf("Inspect: %v", err)
 	}
-	if !strings.Contains(batchCmd, `/v2/ >/dev/null 2>&1; then echo "@@health:1|ok"`) ||
-		!strings.Contains(batchCmd, `else echo "@@health:1|fail"`) {
+	if !strings.Contains(batchCmd, `/v2/ >/dev/null 2>&1; then printf '%s\n' "@@health:1|ok"`) ||
+		!strings.Contains(batchCmd, `else printf '%s\n' "@@health:1|fail"`) {
 		t.Errorf("health probe must branch on curl's exit status:\n%s", batchCmd)
 	}
 	if strings.Contains(batchCmd, "/v2/ 2>/dev/null || true") {

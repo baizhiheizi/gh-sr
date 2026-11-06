@@ -1,10 +1,8 @@
-// Package strfmt provides allocation-free formatting helpers and small
-// string-parsing helpers shared across the gh-sr modules. The helpers here
-// are deliberately thin wrappers around strconv that own their invariants
-// (the documented worst-case AppendFloat output is 24 bytes for the `'f'`
-// format with prec decimals on a float64; marker numbers are 1-based, so
-// -1 doubles as the invalid sentinel) so individual call sites stop
-// carrying their own rationale comment.
+// Package strfmt provides an allocation-free float formatter shared across
+// the gh-sr modules. The helper here is a deliberately thin wrapper around
+// strconv that owns its invariant (the documented worst-case AppendFloat
+// output is 24 bytes for the `'f'` format with prec decimals on a float64)
+// so individual call sites stop carrying their own rationale comment.
 //
 // Out of scope: scripts/benchstat is a standalone tool (//go:build ignore on
 // its main.go, stdlib only, no module deps) and cannot import internal/

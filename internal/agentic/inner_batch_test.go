@@ -16,21 +16,30 @@ func TestBuildAgenticInnerBatchScript(t *testing.T) {
 		"{ command -v zstd >/dev/null\n} >/dev/null 2>&1; echo \"#container-zstd:$?\"\ntrue",
 	)
 	for _, want := range []string{
-		"for i in 'aw-1' 'aw'\\''2; rm -rf /'; do",
-		`st=$(docker inspect --format '{{.State.Status}}' "gh-sr-$i" 2>/dev/null || echo missing)`,
-		`echo "@@state:$n|$st"`,
+		`printf '%s\n' "@@begin:1"`,
+		`printf '%s\n' "@@begin:2"`,
+		`st=$(docker inspect --format '{{.State.Status}}' 'gh-sr-aw-1' 2>/dev/null || echo missing)`,
+		// The hostile instance name is single-quoted, so no metacharacter
+		// can reshape the script.
+		`'gh-sr-aw'\''2; rm -rf /'`,
+		`printf '%s\n' "@@state:1|$st"`,
 		`[ "$st" = running ]`,
-		`docker exec "gh-sr-$i" docker ps -a --filter "name=awmg-mcpg"`,
-		`docker exec "gh-sr-$i" docker network ls --filter "name=awf-net"`,
-		`docker exec "gh-sr-$i" sh -lc '{ command -v zstd`,
-		`echo "@@end:$n"`,
+		`docker exec 'gh-sr-aw-1' docker ps -a --filter "name=awmg-mcpg"`,
+		`docker exec 'gh-sr-aw-1' docker network ls --filter "name=awf-net"`,
+		`docker exec 'gh-sr-aw-1' sh -lc '{ command -v zstd`,
+		`printf '%s\n' "@@hyg:1|0"`,
+		`printf '%s\n' "@@hygend:1|0"`,
+		`printf '%s\n' "@@end:1"`,
+		`printf '%s\n' "@@end:2"`,
 	} {
 		if !strings.Contains(script, want) {
 			t.Errorf("missing %q in script:\n%s", want, script)
 		}
 	}
-	if !strings.HasPrefix(script, "n=0\nfor i in ") || !strings.Contains(script, "'; do\n") {
-		t.Errorf("for-list malformed:\n%s", script)
+	// Blocks are unrolled with literal 1-based indices; the loop-less shape
+	// keeps each block self-contained.
+	if strings.Contains(script, "for i in") || strings.Contains(script, "$n") {
+		t.Errorf("script must not carry loop scaffolding:\n%s", script)
 	}
 }
 
@@ -193,7 +202,7 @@ func TestValidateAgenticInnerBatch(t *testing.T) {
 		"@@end:2",
 	}, "\n")
 	mock := &testutil.RoundTripCounter{RunFn: func(cmd string) (string, error) {
-		if !strings.Contains(cmd, "@@begin:$n") {
+		if !strings.Contains(cmd, "@@begin:1") {
 			t.Errorf("unexpected command: %s", cmd)
 		}
 		return batchOut, nil

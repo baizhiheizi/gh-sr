@@ -15,6 +15,7 @@ import (
 	"github.com/an-lee/gh-sr/internal/dockerutil"
 	"github.com/an-lee/gh-sr/internal/host"
 	"github.com/an-lee/gh-sr/internal/hostshell"
+	"github.com/an-lee/gh-sr/internal/probe"
 )
 
 const (
@@ -320,12 +321,14 @@ func (s Settings) autoBind() bool {
 }
 
 // inspectOneShotScript builds a POSIX script that gathers every Inspect probe
-// in one remote invocation. Sections are emitted as tag-prefixed lines
-// (S: state|image, H: home, G: docker0 line, K: health 1/0, D: du bytes);
-// parseInspectOneShot consumes them. The health curl and du run only when the
+// in one remote invocation. The cache server is the stream's only target, so
+// every probe.Section marker line carries index 1 (S:1| state|image, H:1|
+// home, G:1| docker0 line, K:1| health 1/0, D:1| du bytes); the probe
+// package's parser consumes them. The health curl and du run only when the
 // container exists, mirroring the pre-fold Go-side skip.
 func inspectOneShotScript(s Settings) string {
 	var b strings.Builder
+	w := probe.NewWriter(&b)
 	p := s.StoragePath
 	if p == "" {
 		p = DefaultStoragePath
@@ -339,15 +342,15 @@ func inspectOneShotScript(s Settings) string {
 		b.WriteString("storage=" + hostshell.PosixSingleQuote(p) + "\n")
 	}
 	fmt.Fprintf(&b, "st=$(docker inspect --format '{{.State.Status}}|{{.Config.Image}}' %s 2>/dev/null) || st=\n", ContainerName)
-	b.WriteString("printf 'S:%s\\n' \"$st\"\n")
-	b.WriteString("printf 'H:%s\\n' \"$HOME\"\n")
+	w.Value("S", 1, "$st")
+	w.Value("H", 1, "$HOME")
 	if s.autoBind() {
 		// First line of `ip -4 -o addr show docker0`; parseInspectOneShot runs
 		// it through dockerutil.ParseGatewayIPOutput, and the shell-side extraction below
 		// mirrors that parse so the health probe hits the same address the
 		// runner-facing URL reports.
 		b.WriteString("gw=$(ip -4 -o addr show docker0 2>/dev/null | head -n 1)\n")
-		b.WriteString("printf 'G:%s\\n' \"$gw\"\n")
+		w.Value("G", 1, "$gw")
 		b.WriteString(`case "$gw" in *"inet "*) g=${gw#*inet }; g=${g%% *}; g=${g%%/*};; *) g=;; esac` + "\n")
 		fmt.Fprintf(&b, "probe=\"http://${g:-127.0.0.1}:%d\"\n", s.port())
 	} else {
@@ -355,33 +358,46 @@ func inspectOneShotScript(s Settings) string {
 	}
 	b.WriteString("if [ -n \"$st\" ]; then\n")
 	b.WriteString("  body=$(curl -fsS -m 3 \"$probe/health\" 2>/dev/null) || true\n")
-	b.WriteString("  if [ \"$body\" = healthy ]; then printf 'K:1\\n'; else printf 'K:0\\n'; fi\n")
-	b.WriteString("  printf 'D:%s\\n' \"$(du -sb \"$storage\" 2>/dev/null | cut -f1)\"\n")
+	b.WriteString(`  if [ "$body" = healthy ]; then `)
+	w.Value("K", 1, "1")
+	b.WriteString("  else ")
+	w.Value("K", 1, "0")
+	b.WriteString("  fi\n")
+	w.Value("D", 1, `$(du -sb "$storage" 2>/dev/null | cut -f1)`)
 	b.WriteString("fi\n")
 	return b.String()
 }
 
-// parseInspectOneShot decodes the tag-prefixed sections inspectOneShotScript
-// emits. Missing K:/D: lines mean the container is absent (Healthy=false,
+// parseInspectOneShot decodes the sections inspectOneShotScript emits.
+// Missing K:/D: lines mean the container is absent (Healthy=false,
 // StorageBytes=0), matching the pre-fold skip.
 func parseInspectOneShot(out string, s Settings) (StatusInfo, error) {
 	info := StatusInfo{}
 	var st, home, gwRaw, du string
 	healthy := false
-	for line := range strings.SplitSeq(out, "\n") {
-		switch {
-		case strings.HasPrefix(line, "S:"):
-			st = strings.TrimSpace(line[2:])
-		case strings.HasPrefix(line, "H:"):
-			home = strings.TrimSpace(line[2:])
-		case strings.HasPrefix(line, "G:"):
-			gwRaw = strings.TrimSpace(line[2:])
-		case strings.HasPrefix(line, "K:"):
-			healthy = strings.TrimSpace(line[2:]) == "1"
-		case strings.HasPrefix(line, "D:"):
-			du = strings.TrimSpace(line[2:])
-		}
+	parser := probe.Parser{
+		Targets: 1,
+		Sections: probe.Sections{
+			"S": "", "H": "", "G": "", "K": "", "D": "",
+		},
+		Handlers: probe.Handlers{
+			Value: func(n int, marker, tail string) {
+				switch marker {
+				case "S":
+					st = tail
+				case "H":
+					home = strings.TrimSpace(tail)
+				case "G":
+					gwRaw = strings.TrimSpace(tail)
+				case "K":
+					healthy = strings.TrimSpace(tail) == "1"
+				case "D":
+					du = strings.TrimSpace(tail)
+				}
+			},
+		},
 	}
+	parser.Parse(out)
 
 	if parts := strings.SplitN(st, "|", 2); parts[0] != "" {
 		info.State = parts[0]

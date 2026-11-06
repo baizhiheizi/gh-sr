@@ -1621,7 +1621,7 @@ func (e *agenticInnerHygieneExecutor) Run(cmd string) (string, error) {
 	switch {
 	case strings.Contains(cmd, "ip -o route get 1.1.1.1"):
 		return e.mtuOut, nil
-	case strings.Contains(cmd, "@@begin:$n"):
+	case strings.Contains(cmd, "@@begin:1"):
 		return e.batchOut, e.batchErr
 	default:
 		e.unexpected = append(e.unexpected, cmd)

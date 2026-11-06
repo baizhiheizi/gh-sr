@@ -60,13 +60,13 @@ func existsStateMock() *testutil.MockExecutor {
 // inspectingStateMock reports the cache container with a state + image so
 // cache.Inspect populates both State and Image (used by CacheStatus). Inspect
 // gathers every probe in one round-trip script, so the mock answers with the
-// S: section its parser expects and "" for everything else (no health probe
-// answer, no du size).
+// S:1| section its parser expects (the cache server is the stream's only
+// target) and "" for everything else (no health probe answer, no du size).
 func inspectingStateMock(state, image string) *testutil.MockExecutor {
 	return &testutil.MockExecutor{
 		RunFn: func(cmd string) (string, error) {
 			if strings.Contains(cmd, "docker inspect --format '{{.State.Status}}|{{.Config.Image}}") {
-				return "S:" + state + "|" + image + "\n", nil
+				return "S:1|" + state + "|" + image + "\n", nil
 			}
 			return "", nil
 		},

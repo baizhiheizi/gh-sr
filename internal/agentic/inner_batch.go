@@ -6,8 +6,8 @@ import (
 
 	"github.com/an-lee/gh-sr/internal/host"
 	"github.com/an-lee/gh-sr/internal/hostshell"
+	"github.com/an-lee/gh-sr/internal/probe"
 	"github.com/an-lee/gh-sr/internal/runner"
-	"github.com/an-lee/gh-sr/internal/strfmt"
 )
 
 // AgenticInnerTarget identifies one agentic container-mode runner instance for
@@ -115,13 +115,16 @@ type agenticInnerSpecs struct {
 }
 
 // buildAgenticInnerBatchScript renders the single remote command for the whole
-// host. Loop indices (not names) key the markers, so instance names containing
-// colons, pipes, spaces, or marker-like text cannot corrupt the stream; names
-// reach the for-list single-quoted so no metacharacter can reshape the loop.
+// host: one self-contained block per probed instance, each emitting the probe
+// package's framed tagged sections keyed by its literal 1-based index.
+// Indices (not names) key the markers, so instance names containing colons,
+// pipes, spaces, or marker-like text cannot corrupt the stream; names are
+// single-quoted wherever they embed, so no metacharacter can reshape the
+// script.
 //
 // The hygiene probe commands are name-free (only their failure Message/
 // Remediation embed the container name), so awfInnerHygieneChecks("") supplies
-// them once for every instance.
+// them for every instance.
 //
 // Output contract per probed instance:
 //
@@ -137,89 +140,75 @@ type agenticInnerSpecs struct {
 func buildAgenticInnerBatchScript(safeNames []string, fanoutInner string) string {
 	hygiene := awfInnerHygieneChecks("")
 	var b strings.Builder
-	b.WriteString("n=0\nfor i in")
+	w := probe.NewWriter(&b)
+	n := 0
 	for _, name := range safeNames {
 		if name == "" {
 			continue
 		}
-		b.WriteString(" " + hostshell.PosixSingleQuote(name))
+		n++
+		cname := hostshell.PosixSingleQuote(runner.ContainerDockerName(name))
+		w.Frame("@@begin", n)
+		fmt.Fprintf(&b, "st=$(docker inspect --format '{{.State.Status}}' %s 2>/dev/null || echo missing)\n", cname)
+		w.Value("@@state", n, "$st")
+		b.WriteString("if [ \"$st\" = running ]; then\n")
+		for k, c := range hygiene {
+			w.CaptureOpen("@@hyg", n, k)
+			fmt.Fprintf(&b, "docker exec %s %s\n", cname, c.Cmd)
+			w.CaptureClose("@@hygend", n, k)
+		}
+		fmt.Fprintf(&b, "docker exec %s sh -lc %s\n", cname, hostshell.PosixSingleQuote(fanoutInner))
+		b.WriteString("fi\n")
+		w.FrameEnd("@@end", n)
 	}
-	b.WriteString("; do\n")
-	b.WriteString("n=$((n+1))\n")
-	b.WriteString(`echo "@@begin:$n"
-st=$(docker inspect --format '{{.State.Status}}' "gh-sr-$i" 2>/dev/null || echo missing)
-echo "@@state:$n|$st"
-if [ "$st" = running ]; then
-`)
-	for k, c := range hygiene {
-		fmt.Fprintf(&b, "echo \"@@hyg:$n|%d\"\n", k)
-		fmt.Fprintf(&b, "docker exec \"gh-sr-$i\" %s\n", c.Cmd)
-		fmt.Fprintf(&b, "echo \"@@hygend:$n|%d\"\n", k)
-	}
-	fmt.Fprintf(&b, "docker exec \"gh-sr-$i\" sh -lc %s\n", hostshell.PosixSingleQuote(fanoutInner))
-	b.WriteString(`fi
-echo "@@end:$n"
-done`)
 	return b.String()
 }
 
 // parseAgenticInnerBatchOutput walks the tagged stream and fills probes in
 // place. Sections that never opened or never closed leave their probe
-// Reported=false. A `#<name>:1` tag maps through the instance's fanout specs;
-// a hygiene section with non-empty trimmed output maps to that check's
-// pre-rendered `-inner` failure. Fanout tags other than `:1` are ignored —
-// the same rule parseContainerAgenticFanoutOutput applies to the
-// per-instance fanout.
+// Reported=false — a block with no @@end never dispatches the probe
+// package's FrameEnd, where Reported is set. A `#<name>:1` tag maps through
+// the instance's fanout specs; a hygiene section with non-empty trimmed
+// output maps to that check's pre-rendered `-inner` failure. Fanout tags
+// other than `:1` are ignored — the same rule
+// parseContainerAgenticFanoutOutput applies to the per-instance fanout.
 func parseAgenticInnerBatchOutput(out string, specs []agenticInnerSpecs, probes []AgenticInnerProbe) {
-	// Markers number instances from 1 (the remote loop's counter); probes and
-	// specs are 0-based, so every marker number is used as idx = n-1.
-	cur := -1
-	hyg := -1
-	var hygBuf strings.Builder
-	for _, line := range strings.Split(out, "\n") {
-		line = strings.TrimRight(line, "\r")
-		switch {
-		case strings.HasPrefix(line, "@@begin:"):
-			if n, ok := markerNum(line, "@@begin:"); ok {
-				if idx := n - 1; idx >= 0 && idx < len(probes) {
-					cur = idx
-					hyg = -1
-					hygBuf.Reset()
+	parser := probe.Parser{
+		Frame:    "@@begin",
+		FrameEnd: "@@end",
+		Targets:  len(probes),
+		Sections: probe.Sections{
+			"@@state": "",
+			"@@hyg":   "@@hygend",
+		},
+		Handlers: probe.Handlers{
+			FrameEnd: func(n int) {
+				probes[n-1].Reported = true
+			},
+			Value: func(n int, marker, tail string) {
+				if marker == "@@state" {
+					probes[n-1].State = tail
 				}
-			}
-		case strings.HasPrefix(line, "@@state:"):
-			if n, rest, ok := strfmt.SplitMarker(line, "@@state:"); ok && cur >= 0 && n-1 == cur {
-				probes[cur].State = rest
-			}
-		case strings.HasPrefix(line, "@@hyg:"):
-			if n, rest, ok := strfmt.SplitMarker(line, "@@hyg:"); ok && cur >= 0 && n-1 == cur {
-				hyg = strfmt.AtoiOrNeg(rest)
-				hygBuf.Reset()
-			}
-		case strings.HasPrefix(line, "@@hygend:"):
-			if n, rest, ok := strfmt.SplitMarker(line, "@@hygend:"); ok && cur >= 0 && n-1 == cur {
-				probes[cur].Failures = append(probes[cur].Failures, hygieneFailureFromOutput(specs[cur].hygiene, strfmt.AtoiOrNeg(rest), hygBuf.String())...)
-				hyg = -1
-			}
-		case strings.HasPrefix(line, "@@end:"):
-			if n, ok := markerNum(line, "@@end:"); ok && cur >= 0 && n-1 == cur {
-				probes[cur].Reported = true
-				cur = -1
-				hyg = -1
-			}
-		case cur >= 0 && hyg < 0 && strings.HasPrefix(line, "#"):
-			name, status, ok := strings.Cut(strings.TrimPrefix(line, "#"), ":")
-			if !ok || strings.TrimSpace(status) != "1" {
-				continue
-			}
-			if spec, ok := specs[cur].fanout[name]; ok {
-				probes[cur].Failures = append(probes[cur].Failures, spec)
-			}
-		case hyg >= 0:
-			hygBuf.WriteString(line)
-			hygBuf.WriteString("\n")
-		}
+			},
+			Captured: func(n int, marker string, k int, text string) {
+				probes[n-1].Failures = append(probes[n-1].Failures,
+					hygieneFailureFromOutput(specs[n-1].hygiene, k, text)...)
+			},
+			Line: func(n int, line string) {
+				if !strings.HasPrefix(line, "#") {
+					return
+				}
+				name, status, ok := strings.Cut(strings.TrimPrefix(line, "#"), ":")
+				if !ok || strings.TrimSpace(status) != "1" {
+					return
+				}
+				if spec, ok := specs[n-1].fanout[name]; ok {
+					probes[n-1].Failures = append(probes[n-1].Failures, spec)
+				}
+			},
+		},
 	}
+	parser.Parse(out)
 }
 
 // hygieneFailureFromOutput renders the `-inner` AWF hygiene failure for check
@@ -241,16 +230,4 @@ func hygieneFailureFromOutput(checks []awfHygieneCheck, k int, output string) []
 		Remediation: c.Remediation,
 		DocRef:      "agentic-workflows.md §12",
 	}}
-}
-
-// markerNum parses "<prefix><n>" into n. It stays strict about a trailing
-// "|<tail>" (unlike strfmt.SplitMarker, which accepts it) so a malformed
-// begin/end marker is ignored rather than partially honoured.
-func markerNum(line, prefix string) (int, bool) {
-	rest := strings.TrimPrefix(line, prefix)
-	if rest == line {
-		return -1, false
-	}
-	n := strfmt.AtoiOrNeg(rest)
-	return n, n >= 0
 }

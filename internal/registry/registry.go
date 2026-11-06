@@ -24,7 +24,7 @@ import (
 	"github.com/an-lee/gh-sr/internal/dockerutil"
 	"github.com/an-lee/gh-sr/internal/host"
 	"github.com/an-lee/gh-sr/internal/hostshell"
-	"github.com/an-lee/gh-sr/internal/strfmt"
+	"github.com/an-lee/gh-sr/internal/probe"
 )
 
 const (
@@ -417,12 +417,12 @@ func Inspect(h *host.Host, s Settings) ([]MirrorStatus, error) {
 }
 
 // buildInspectBatchScript renders the single remote command that probes every
-// configured mirror. Per mirror it emits:
+// configured mirror. Per mirror it emits the probe package's tagged sections:
 //
-//	@@m:<n>
-//	@@st:<n>|<state>|<image>            (inspect; empty state = absent)
-//	[@@health:<n>|ok|fail]              (curl /v2/, only when the container exists)
-//	[@@du:<n>|<bytes>]                  (storage size, only when the container exists)
+//	@@m:<n>                  (frame open)
+//	@@st:<n>|<state>|<image> (inspect; empty state = absent)
+//	[@@health:<n>|ok|fail]   (curl /v2/, only when the container exists)
+//	[@@du:<n>|<bytes>]       (storage size, only when the container exists)
 //
 // Mirror container names are config-validated ([a-z0-9-]) so they embed raw;
 // URLs and storage paths are single-quoted. The health probe captures curl's
@@ -431,15 +431,20 @@ func Inspect(h *host.Host, s Settings) ([]MirrorStatus, error) {
 // reported SSH-transport success instead of the mirror answering /v2/.
 func buildInspectBatchScript(s Settings, gw string, storages []string) string {
 	var b strings.Builder
+	w := probe.NewWriter(&b)
 	for i := range s.mirrorList() {
 		n := i + 1
-		fmt.Fprintf(&b, "echo \"@@m:%d\"\n", n)
+		w.Frame("@@m", n)
 		fmt.Fprintf(&b, "out=$(docker inspect --format='{{.State.Status}}|{{.Config.Image}}' %s 2>/dev/null || true)\n", s.containerName(i))
-		fmt.Fprintf(&b, "echo \"@@st:%d|$out\"\n", n)
+		w.Value("@@st", n, "$out")
 		fmt.Fprintf(&b, "if [ -n \"$out\" ]; then\n")
-		fmt.Fprintf(&b, "  if curl -fsS -m 3 %s/v2/ >/dev/null 2>&1; then echo \"@@health:%d|ok\"; else echo \"@@health:%d|fail\"; fi\n",
-			hostshell.PosixSingleQuote(s.localURL(i, gw)), n, n)
-		fmt.Fprintf(&b, "  echo \"@@du:%d|$(du -sb %s 2>/dev/null | cut -f1)\"\n", n, hostshell.PosixSingleQuote(storages[i]))
+		fmt.Fprintf(&b, "  if curl -fsS -m 3 %s/v2/ >/dev/null 2>&1; then ", hostshell.PosixSingleQuote(s.localURL(i, gw)))
+		w.Value("@@health", n, "ok")
+		fmt.Fprintf(&b, "  else ")
+		w.Value("@@health", n, "fail")
+		fmt.Fprintf(&b, "  fi\n")
+		fmt.Fprintf(&b, "  ")
+		w.Value("@@du", n, fmt.Sprintf("$(du -sb %s 2>/dev/null | cut -f1)", hostshell.PosixSingleQuote(storages[i])))
 		fmt.Fprintf(&b, "fi\n")
 	}
 	return b.String()
@@ -449,35 +454,36 @@ func buildInspectBatchScript(s Settings, gw string, storages []string) string {
 // Sections keyed by a marker for a mirror that was never probed, or lines
 // outside any section, are ignored.
 func parseInspectBatchOutput(out string, statuses []MirrorStatus) {
-	cur := -1
-	for _, line := range strings.Split(out, "\n") {
-		line = strings.TrimRight(line, "\r")
-		switch {
-		case strings.HasPrefix(line, "@@m:"):
-			if n := strfmt.AtoiOrNeg(line[len("@@m:"):]); n >= 1 && n <= len(statuses) {
-				cur = n - 1
-			}
-		case cur >= 0 && strings.HasPrefix(line, "@@st:"):
-			if n, rest, ok := strfmt.SplitMarker(line, "@@st:"); ok && n-1 == cur {
-				if parts := strings.SplitN(rest, "|", 2); parts[0] != "" {
-					statuses[cur].Info.State = parts[0]
-					if len(parts) == 2 {
-						statuses[cur].Info.Image = parts[1]
+	parser := probe.Parser{
+		Frame:   "@@m",
+		Targets: len(statuses),
+		Sections: probe.Sections{
+			"@@st":     "",
+			"@@health": "",
+			"@@du":     "",
+		},
+		Handlers: probe.Handlers{
+			Value: func(n int, marker, tail string) {
+				i := n - 1
+				switch marker {
+				case "@@st":
+					if parts := strings.SplitN(tail, "|", 2); parts[0] != "" {
+						statuses[i].Info.State = parts[0]
+						if len(parts) == 2 {
+							statuses[i].Info.Image = parts[1]
+						}
+					}
+				case "@@health":
+					statuses[i].Info.Healthy = tail == "ok"
+				case "@@du":
+					if v, err := strconv.ParseInt(strings.TrimSpace(tail), 10, 64); err == nil {
+						statuses[i].Info.StorageBytes = v
 					}
 				}
-			}
-		case cur >= 0 && strings.HasPrefix(line, "@@health:"):
-			if n, rest, ok := strfmt.SplitMarker(line, "@@health:"); ok && n-1 == cur {
-				statuses[cur].Info.Healthy = rest == "ok"
-			}
-		case cur >= 0 && strings.HasPrefix(line, "@@du:"):
-			if n, rest, ok := strfmt.SplitMarker(line, "@@du:"); ok && n-1 == cur {
-				if v, err := strconv.ParseInt(strings.TrimSpace(rest), 10, 64); err == nil {
-					statuses[cur].Info.StorageBytes = v
-				}
-			}
-		}
+			},
+		},
 	}
+	parser.Parse(out)
 }
 
 // MirrorStatus is the state of one mirror: its config name, Docker container

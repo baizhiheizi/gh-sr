@@ -517,12 +517,13 @@ func TestCheckCacheReachability(t *testing.T) {
 }
 
 // reachabilityMock returns a MockExecutor that answers cache.Inspect's single
-// one-shot round trip with the tag-prefixed sections its parser consumes,
+// one-shot round trip with the tagged sections its parser consumes (the cache
+// server is the stream's only target, so every marker carries index 1),
 // composed from per-probe replies:
-//   - dockerInspectReply → S:<state|image>
-//   - duReply            → D:<du> (only when the container is present)
-//   - curlReply          → K:1 when it trims to "healthy", else K:0
-//   - ipReply            → G:<ip -o line>
+//   - dockerInspectReply → S:1|<state|image>
+//   - duReply            → D:1|<du> (only when the container is present)
+//   - curlReply          → K:1|1 when it trims to "healthy", else K:1|0
+//   - ipReply            → G:1|<ip -o line>
 //
 // Pass "no docker0" for ipReply to simulate a gateway lookup failure: the G
 // section is dropped and the health probe fails, since in production the
@@ -541,18 +542,18 @@ func reachabilityMock(dockerInspectReply, duReply, curlReply, ipReply string) *t
 					gw, body = "", ""
 				}
 				var b strings.Builder
-				b.WriteString("S:" + dockerInspectReply + "\n")
-				b.WriteString("H:/root\n")
+				b.WriteString("S:1|" + dockerInspectReply + "\n")
+				b.WriteString("H:1|/root\n")
 				if gw != "" {
-					b.WriteString("G:" + gw + "\n")
+					b.WriteString("G:1|" + gw + "\n")
 				}
 				if dockerInspectReply != "" {
 					if strings.TrimSpace(body) == "healthy" {
-						b.WriteString("K:1\n")
+						b.WriteString("K:1|1\n")
 					} else {
-						b.WriteString("K:0\n")
+						b.WriteString("K:1|0\n")
 					}
-					b.WriteString("D:" + duReply + "\n")
+					b.WriteString("D:1|" + duReply + "\n")
 				}
 				return b.String(), nil
 			}

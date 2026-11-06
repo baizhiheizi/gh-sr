@@ -20,25 +20,26 @@ func newCacheHost(t *testing.T, mock *testutil.MockExecutor) *host.Host {
 	return h
 }
 
-// oneShotOutput composes the tag-prefixed sections inspectOneShotScript emits,
+// oneShotOutput composes the tagged sections inspectOneShotScript emits (the
+// cache server is the stream's only target, so every marker carries index 1),
 // so mocks can answer Inspect's single round trip. gwRaw is the raw `ip -o`
 // line ("" drops the G section); healthBody is the raw curl body, mapped to
-// K:1 only when it trims to "healthy"; the K/D sections appear only when st is
-// non-empty, mirroring the script's skip.
+// K:1|1 only when it trims to "healthy"; the K/D sections appear only when st
+// is non-empty, mirroring the script's skip.
 func oneShotOutput(st, home, gwRaw, healthBody, du string) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "S:%s\n", st)
-	fmt.Fprintf(&b, "H:%s\n", home)
+	fmt.Fprintf(&b, "S:1|%s\n", st)
+	fmt.Fprintf(&b, "H:1|%s\n", home)
 	if gwRaw != "" {
-		fmt.Fprintf(&b, "G:%s\n", gwRaw)
+		fmt.Fprintf(&b, "G:1|%s\n", gwRaw)
 	}
 	if st != "" {
 		k := "0"
 		if strings.TrimSpace(healthBody) == "healthy" {
 			k = "1"
 		}
-		fmt.Fprintf(&b, "K:%s\n", k)
-		fmt.Fprintf(&b, "D:%s\n", du)
+		fmt.Fprintf(&b, "K:1|%s\n", k)
+		fmt.Fprintf(&b, "D:1|%s\n", du)
 	}
 	return b.String()
 }
