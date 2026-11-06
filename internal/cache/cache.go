@@ -15,6 +15,7 @@ import (
 	"github.com/an-lee/gh-sr/internal/dockerutil"
 	"github.com/an-lee/gh-sr/internal/host"
 	"github.com/an-lee/gh-sr/internal/hostshell"
+	"github.com/an-lee/gh-sr/internal/probe"
 )
 
 const (
@@ -339,15 +340,15 @@ func inspectOneShotScript(s Settings) string {
 		b.WriteString("storage=" + hostshell.PosixSingleQuote(p) + "\n")
 	}
 	fmt.Fprintf(&b, "st=$(docker inspect --format '{{.State.Status}}|{{.Config.Image}}' %s 2>/dev/null) || st=\n", ContainerName)
-	b.WriteString("printf 'S:%s\\n' \"$st\"\n")
-	b.WriteString("printf 'H:%s\\n' \"$HOME\"\n")
+	fmt.Fprintf(&b, "printf '%s\\n' \"$st\"\n", probe.Line("S:", "", "%s"))
+	fmt.Fprintf(&b, "printf '%s\\n' \"$HOME\"\n", probe.Line("H:", "", "%s"))
 	if s.autoBind() {
 		// First line of `ip -4 -o addr show docker0`; parseInspectOneShot runs
 		// it through dockerutil.ParseGatewayIPOutput, and the shell-side extraction below
 		// mirrors that parse so the health probe hits the same address the
 		// runner-facing URL reports.
 		b.WriteString("gw=$(ip -4 -o addr show docker0 2>/dev/null | head -n 1)\n")
-		b.WriteString("printf 'G:%s\\n' \"$gw\"\n")
+		fmt.Fprintf(&b, "printf '%s\\n' \"$gw\"\n", probe.Line("G:", "", "%s"))
 		b.WriteString(`case "$gw" in *"inet "*) g=${gw#*inet }; g=${g%% *}; g=${g%%/*};; *) g=;; esac` + "\n")
 		fmt.Fprintf(&b, "probe=\"http://${g:-127.0.0.1}:%d\"\n", s.port())
 	} else {
@@ -355,8 +356,10 @@ func inspectOneShotScript(s Settings) string {
 	}
 	b.WriteString("if [ -n \"$st\" ]; then\n")
 	b.WriteString("  body=$(curl -fsS -m 3 \"$probe/health\" 2>/dev/null) || true\n")
-	b.WriteString("  if [ \"$body\" = healthy ]; then printf 'K:1\\n'; else printf 'K:0\\n'; fi\n")
-	b.WriteString("  printf 'D:%s\\n' \"$(du -sb \"$storage\" 2>/dev/null | cut -f1)\"\n")
+	fmt.Fprintf(&b, "  if [ \"$body\" = healthy ]; then printf '%s\\n'; else printf '%s\\n'; fi\n",
+		probe.Line("K:", "", "1"), probe.Line("K:", "", "0"))
+	fmt.Fprintf(&b, "  printf '%s\\n' \"$(du -sb \"$storage\" 2>/dev/null | cut -f1)\"\n",
+		probe.Line("D:", "", "%s"))
 	b.WriteString("fi\n")
 	return b.String()
 }
@@ -368,20 +371,20 @@ func parseInspectOneShot(out string, s Settings) (StatusInfo, error) {
 	info := StatusInfo{}
 	var st, home, gwRaw, du string
 	healthy := false
-	for line := range strings.SplitSeq(out, "\n") {
-		switch {
-		case strings.HasPrefix(line, "S:"):
-			st = strings.TrimSpace(line[2:])
-		case strings.HasPrefix(line, "H:"):
-			home = strings.TrimSpace(line[2:])
-		case strings.HasPrefix(line, "G:"):
-			gwRaw = strings.TrimSpace(line[2:])
-		case strings.HasPrefix(line, "K:"):
-			healthy = strings.TrimSpace(line[2:]) == "1"
-		case strings.HasPrefix(line, "D:"):
-			du = strings.TrimSpace(line[2:])
+	probe.EachLine(out, func(d probe.Decoded) {
+		switch d.Tag {
+		case "S:":
+			st = strings.TrimSpace(d.Body)
+		case "H:":
+			home = strings.TrimSpace(d.Body)
+		case "G:":
+			gwRaw = strings.TrimSpace(d.Body)
+		case "K:":
+			healthy = strings.TrimSpace(d.Body) == "1"
+		case "D:":
+			du = strings.TrimSpace(d.Body)
 		}
-	}
+	})
 
 	if parts := strings.SplitN(st, "|", 2); parts[0] != "" {
 		info.State = parts[0]

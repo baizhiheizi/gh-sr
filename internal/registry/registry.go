@@ -24,7 +24,7 @@ import (
 	"github.com/an-lee/gh-sr/internal/dockerutil"
 	"github.com/an-lee/gh-sr/internal/host"
 	"github.com/an-lee/gh-sr/internal/hostshell"
-	"github.com/an-lee/gh-sr/internal/strfmt"
+	"github.com/an-lee/gh-sr/internal/probe"
 )
 
 const (
@@ -432,14 +432,17 @@ func Inspect(h *host.Host, s Settings) ([]MirrorStatus, error) {
 func buildInspectBatchScript(s Settings, gw string, storages []string) string {
 	var b strings.Builder
 	for i := range s.mirrorList() {
-		n := i + 1
-		fmt.Fprintf(&b, "echo \"@@m:%d\"\n", n)
+		n := strconv.Itoa(i + 1)
+		fmt.Fprintf(&b, "echo \"%s\"\n", probe.Line("@@m:", n, ""))
 		fmt.Fprintf(&b, "out=$(docker inspect --format='{{.State.Status}}|{{.Config.Image}}' %s 2>/dev/null || true)\n", s.containerName(i))
-		fmt.Fprintf(&b, "echo \"@@st:%d|$out\"\n", n)
+		fmt.Fprintf(&b, "echo \"%s\"\n", probe.Line("@@st:", n, "$out"))
 		fmt.Fprintf(&b, "if [ -n \"$out\" ]; then\n")
-		fmt.Fprintf(&b, "  if curl -fsS -m 3 %s/v2/ >/dev/null 2>&1; then echo \"@@health:%d|ok\"; else echo \"@@health:%d|fail\"; fi\n",
-			hostshell.PosixSingleQuote(s.localURL(i, gw)), n, n)
-		fmt.Fprintf(&b, "  echo \"@@du:%d|$(du -sb %s 2>/dev/null | cut -f1)\"\n", n, hostshell.PosixSingleQuote(storages[i]))
+		fmt.Fprintf(&b, "  if curl -fsS -m 3 %s/v2/ >/dev/null 2>&1; then echo \"%s\"; else echo \"%s\"; fi\n",
+			hostshell.PosixSingleQuote(s.localURL(i, gw)),
+			probe.Line("@@health:", n, "ok"),
+			probe.Line("@@health:", n, "fail"))
+		fmt.Fprintf(&b, "  echo \"%s\"\n",
+			probe.Line("@@du:", n, "$(du -sb "+hostshell.PosixSingleQuote(storages[i])+" 2>/dev/null | cut -f1)"))
 		fmt.Fprintf(&b, "fi\n")
 	}
 	return b.String()
@@ -450,34 +453,30 @@ func buildInspectBatchScript(s Settings, gw string, storages []string) string {
 // outside any section, are ignored.
 func parseInspectBatchOutput(out string, statuses []MirrorStatus) {
 	cur := -1
-	for _, line := range strings.Split(out, "\n") {
-		line = strings.TrimRight(line, "\r")
+	probe.EachLine(out, func(d probe.Decoded) {
+		if !d.OK {
+			return
+		}
 		switch {
-		case strings.HasPrefix(line, "@@m:"):
-			if n := strfmt.AtoiOrNeg(line[len("@@m:"):]); n >= 1 && n <= len(statuses) {
-				cur = n - 1
+		case d.Tag == "@@m:" && !d.HasTail:
+			if d.Index >= 1 && d.Index <= len(statuses) {
+				cur = d.Index - 1
 			}
-		case cur >= 0 && strings.HasPrefix(line, "@@st:"):
-			if n, rest, ok := strfmt.SplitMarker(line, "@@st:"); ok && n-1 == cur {
-				if parts := strings.SplitN(rest, "|", 2); parts[0] != "" {
-					statuses[cur].Info.State = parts[0]
-					if len(parts) == 2 {
-						statuses[cur].Info.Image = parts[1]
-					}
+		case cur >= 0 && d.Tag == "@@st:" && d.Index-1 == cur:
+			if parts := strings.SplitN(d.Tail, "|", 2); parts[0] != "" {
+				statuses[cur].Info.State = parts[0]
+				if len(parts) == 2 {
+					statuses[cur].Info.Image = parts[1]
 				}
 			}
-		case cur >= 0 && strings.HasPrefix(line, "@@health:"):
-			if n, rest, ok := strfmt.SplitMarker(line, "@@health:"); ok && n-1 == cur {
-				statuses[cur].Info.Healthy = rest == "ok"
-			}
-		case cur >= 0 && strings.HasPrefix(line, "@@du:"):
-			if n, rest, ok := strfmt.SplitMarker(line, "@@du:"); ok && n-1 == cur {
-				if v, err := strconv.ParseInt(strings.TrimSpace(rest), 10, 64); err == nil {
-					statuses[cur].Info.StorageBytes = v
-				}
+		case cur >= 0 && d.Tag == "@@health:" && d.Index-1 == cur:
+			statuses[cur].Info.Healthy = d.Tail == "ok"
+		case cur >= 0 && d.Tag == "@@du:" && d.Index-1 == cur:
+			if v, err := strconv.ParseInt(strings.TrimSpace(d.Tail), 10, 64); err == nil {
+				statuses[cur].Info.StorageBytes = v
 			}
 		}
-	}
+	})
 }
 
 // MirrorStatus is the state of one mirror: its config name, Docker container
