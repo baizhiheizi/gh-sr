@@ -199,7 +199,7 @@ func TestContainerState(t *testing.T) {
 				}
 				return "", nil
 			}}
-			got, err := ContainerState(newUtilHost(t, mock), "gh-sr-cache")
+			got, err := containerState(newUtilHost(t, mock), "gh-sr-cache")
 			if err != nil || got != tc.want {
 				t.Errorf("state = %q err %v; want %q", got, err, tc.want)
 			}
@@ -210,7 +210,7 @@ func TestContainerState(t *testing.T) {
 		t.Parallel()
 		sentinel := errors.New("ssh gone")
 		mock := &testutil.MockExecutor{RunFn: func(string) (string, error) { return "", sentinel }}
-		_, err := ContainerState(newUtilHost(t, mock), "gh-sr-cache")
+		_, err := containerState(newUtilHost(t, mock), "gh-sr-cache")
 		if !errors.Is(err, sentinel) {
 			t.Errorf("want wrapped sentinel, got %v", err)
 		}
@@ -246,7 +246,7 @@ func TestLayoutCurrent(t *testing.T) {
 				}
 				return "", nil
 			}}
-			got, err := LayoutCurrent(newUtilHost(t, mock), "gh-sr-cache", "gh-sr.cache-layout", "v3")
+			got, err := layoutCurrent(newUtilHost(t, mock), "gh-sr-cache", "gh-sr.cache-layout", "v3")
 			if err != nil || got != tc.want {
 				t.Errorf("current = %v err %v; want %v", got, err, tc.want)
 			}

@@ -31,12 +31,12 @@ type ConvergeOpts struct {
 // tested home of that state machine; Ensure paths hand in their config and a
 // Deploy callback instead of re-implementing the switch.
 func Converge(w io.Writer, h *host.Host, opts ConvergeOpts) error {
-	state, err := ContainerState(h, opts.Container)
+	state, err := containerState(h, opts.Container)
 	if err != nil {
 		return err
 	}
 	if state != "" {
-		current, err := LayoutCurrent(h, opts.Container, opts.LayoutLabel, opts.LayoutRev)
+		current, err := layoutCurrent(h, opts.Container, opts.LayoutLabel, opts.LayoutRev)
 		if err != nil {
 			return err
 		}
