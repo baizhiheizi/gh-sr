@@ -2,12 +2,13 @@ package agentic
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/an-lee/gh-sr/internal/host"
 	"github.com/an-lee/gh-sr/internal/hostshell"
+	"github.com/an-lee/gh-sr/internal/probe"
 	"github.com/an-lee/gh-sr/internal/runner"
-	"github.com/an-lee/gh-sr/internal/strfmt"
 )
 
 // AgenticInnerTarget identifies one agentic container-mode runner instance for
@@ -146,20 +147,23 @@ func buildAgenticInnerBatchScript(safeNames []string, fanoutInner string) string
 	}
 	b.WriteString("; do\n")
 	b.WriteString("n=$((n+1))\n")
-	b.WriteString(`echo "@@begin:$n"
-st=$(docker inspect --format '{{.State.Status}}' "gh-sr-$i" 2>/dev/null || echo missing)
-echo "@@state:$n|$st"
-if [ "$st" = running ]; then
+	w := probe.NewWriter(&b)
+	w.Echo("@@begin:", "$n", "")
+	b.WriteString(`st=$(docker inspect --format '{{.State.Status}}' "gh-sr-$i" 2>/dev/null || echo missing)
+`)
+	w.Echo("@@state:", "$n", "$st")
+	b.WriteString(`if [ "$st" = running ]; then
 `)
 	for k, c := range hygiene {
-		fmt.Fprintf(&b, "echo \"@@hyg:$n|%d\"\n", k)
+		w.Echo("@@hyg:", "$n", strconv.Itoa(k))
 		fmt.Fprintf(&b, "docker exec \"gh-sr-$i\" %s\n", c.Cmd)
-		fmt.Fprintf(&b, "echo \"@@hygend:$n|%d\"\n", k)
+		w.Echo("@@hygend:", "$n", strconv.Itoa(k))
 	}
 	fmt.Fprintf(&b, "docker exec \"gh-sr-$i\" sh -lc %s\n", hostshell.PosixSingleQuote(fanoutInner))
 	b.WriteString(`fi
-echo "@@end:$n"
-done`)
+`)
+	w.Echo("@@end:", "$n", "")
+	b.WriteString("done")
 	return b.String()
 }
 
@@ -172,43 +176,42 @@ done`)
 // per-instance fanout.
 func parseAgenticInnerBatchOutput(out string, specs []agenticInnerSpecs, probes []AgenticInnerProbe) {
 	// Markers number instances from 1 (the remote loop's counter); probes and
-	// specs are 0-based, so every marker number is used as idx = n-1.
+	// specs are 0-based, so every marker index is used as idx = n-1.
 	cur := -1
 	hyg := -1
 	var hygBuf strings.Builder
-	for _, line := range strings.Split(out, "\n") {
-		line = strings.TrimRight(line, "\r")
+	for d := range probe.Lines(out) {
 		switch {
-		case strings.HasPrefix(line, "@@begin:"):
-			if n, ok := markerNum(line, "@@begin:"); ok {
-				if idx := n - 1; idx >= 0 && idx < len(probes) {
+		case d.Tag == "@@begin:":
+			if !d.HasTail && d.Index >= 1 {
+				if idx := d.Index - 1; idx < len(probes) {
 					cur = idx
 					hyg = -1
 					hygBuf.Reset()
 				}
 			}
-		case strings.HasPrefix(line, "@@state:"):
-			if n, rest, ok := strfmt.SplitMarker(line, "@@state:"); ok && cur >= 0 && n-1 == cur {
-				probes[cur].State = rest
+		case d.Tag == "@@state:":
+			if cur >= 0 && d.Index-1 == cur {
+				probes[cur].State = d.Tail
 			}
-		case strings.HasPrefix(line, "@@hyg:"):
-			if n, rest, ok := strfmt.SplitMarker(line, "@@hyg:"); ok && cur >= 0 && n-1 == cur {
-				hyg = strfmt.AtoiOrNeg(rest)
+		case d.Tag == "@@hyg:":
+			if cur >= 0 && d.Index-1 == cur {
+				hyg = probe.AtoiOrNeg(d.Tail)
 				hygBuf.Reset()
 			}
-		case strings.HasPrefix(line, "@@hygend:"):
-			if n, rest, ok := strfmt.SplitMarker(line, "@@hygend:"); ok && cur >= 0 && n-1 == cur {
-				probes[cur].Failures = append(probes[cur].Failures, hygieneFailureFromOutput(specs[cur].hygiene, strfmt.AtoiOrNeg(rest), hygBuf.String())...)
+		case d.Tag == "@@hygend:":
+			if cur >= 0 && d.Index-1 == cur {
+				probes[cur].Failures = append(probes[cur].Failures, hygieneFailureFromOutput(specs[cur].hygiene, probe.AtoiOrNeg(d.Tail), hygBuf.String())...)
 				hyg = -1
 			}
-		case strings.HasPrefix(line, "@@end:"):
-			if n, ok := markerNum(line, "@@end:"); ok && cur >= 0 && n-1 == cur {
+		case d.Tag == "@@end:":
+			if !d.HasTail && cur >= 0 && d.Index-1 == cur {
 				probes[cur].Reported = true
 				cur = -1
 				hyg = -1
 			}
-		case cur >= 0 && hyg < 0 && strings.HasPrefix(line, "#"):
-			name, status, ok := strings.Cut(strings.TrimPrefix(line, "#"), ":")
+		case cur >= 0 && hyg < 0 && strings.HasPrefix(d.Raw, "#"):
+			name, status, ok := strings.Cut(strings.TrimPrefix(d.Raw, "#"), ":")
 			if !ok || strings.TrimSpace(status) != "1" {
 				continue
 			}
@@ -216,7 +219,7 @@ func parseAgenticInnerBatchOutput(out string, specs []agenticInnerSpecs, probes 
 				probes[cur].Failures = append(probes[cur].Failures, spec)
 			}
 		case hyg >= 0:
-			hygBuf.WriteString(line)
+			hygBuf.WriteString(d.Raw)
 			hygBuf.WriteString("\n")
 		}
 	}
@@ -241,16 +244,4 @@ func hygieneFailureFromOutput(checks []awfHygieneCheck, k int, output string) []
 		Remediation: c.Remediation,
 		DocRef:      "agentic-workflows.md §12",
 	}}
-}
-
-// markerNum parses "<prefix><n>" into n. It stays strict about a trailing
-// "|<tail>" (unlike strfmt.SplitMarker, which accepts it) so a malformed
-// begin/end marker is ignored rather than partially honoured.
-func markerNum(line, prefix string) (int, bool) {
-	rest := strings.TrimPrefix(line, prefix)
-	if rest == line {
-		return -1, false
-	}
-	n := strfmt.AtoiOrNeg(rest)
-	return n, n >= 0
 }
