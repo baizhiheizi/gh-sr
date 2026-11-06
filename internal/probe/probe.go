@@ -1,5 +1,5 @@
-// Package probe owns the tagged-stream wire protocol shared by the one-SSH-
-// round-trip status probes (the cache server, the registry mirror, and the
+// Package probe owns the tagged-stream wire protocol shared by the
+// one-SSH-round-trip probes (the cache server, the registry mirror, and the
 // agentic inner-hygiene sweep).
 //
 // A remote shell script emits a single stream of tagged lines; this module
@@ -8,32 +8,99 @@
 // CR handling, and the section contract cannot drift between adapters.
 // Adapters declare their tag names and handle decoded lines; everything about
 // the wire format is concentrated here.
+//
+// Two wire shapes exist, and both are rendered here:
+//
+//	echo "<tag>:<index>[|<tail>]"     — the indexed probes (registry, agentic)
+//	printf '<tag><format>\n' "<arg>"  — the flat cache probe
+//
+// In both shapes the index and the payload are written verbatim, so an
+// adapter can embed a shell expression ("$n", "$out", "$(du -sb ...)") that the
+// remote shell expands.
 package probe
 
 import (
+	"iter"
 	"strconv"
 	"strings"
 )
 
-// Line renders one tagged-stream line.
+// Writer emits the protocol's lines into a remote script under construction.
 //
-//   - tag includes its trailing colon, e.g. "@@state:" or "S:".
-//   - index is the 1-based section index as written into the remote script;
-//     pass a Go literal ("1"), a shell expression ("$n"), or "" for a flat
-//     (global) tag with no index.
-//   - tail is the optional payload. When index is non-empty the payload is
-//     appended after "<index>|"; for a flat tag it is appended directly.
+// The writer owns the wire format: every line it appends is exactly the text
+// the remote shell runs. Writing the marker straight into the script — rather
+// than building a marker string and formatting it in — keeps the emit path
+// allocation-free, so a probe's script costs no more to build than the
+// literal shell text it wraps.
+type Writer struct {
+	b *strings.Builder
+}
+
+// NewWriter returns a Writer that appends to b.
+func NewWriter(b *strings.Builder) *Writer { return &Writer{b: b} }
+
+// Echo appends: echo "<tag><index>[|<tail>]" followed by a newline.
 //
-// Both index and tail are strings so emitters can embed shell expressions
-// verbatim instead of formatting values into the script in Go.
-func Line(tag, index, tail string) string {
+// index is the 1-based target index as written into the script. It is written
+// verbatim, so it may be a shell expression such as "$n" that the remote
+// shell expands. tail is the payload after the "|" separator and is omitted
+// when empty.
+//
+// The tail is written verbatim too, so it may be a shell expression ("$out",
+// "$(du -sb ...)") that the remote shell expands inside the double-quoted
+// argument.
+func (w *Writer) Echo(tag, index, tail string) {
+	w.EchoInline(tag, index, tail)
+	w.b.WriteByte('\n')
+}
+
+// EchoInline appends: echo "<tag><index>[|<tail>]" with no trailing newline,
+// for a marker that shares a shell line with other commands.
+func (w *Writer) EchoInline(tag, index, tail string) {
+	w.b.WriteString("echo \"")
+	w.marker(tag, index, tail)
+	w.b.WriteByte('"')
+}
+
+// Printf appends: printf '<tag><format>\n' "<arg>" followed by a newline.
+//
+// format is the shell printf format for the value (normally "%s", substituted
+// by the remote shell from arg); arg is the shell word holding the value. An
+// empty arg omits the argument entirely, for a marker whose value is a
+// literal.
+func (w *Writer) Printf(tag, format, arg string) {
+	w.PrintfInline(tag, format, arg)
+	w.b.WriteByte('\n')
+}
+
+// PrintfInline appends: printf '<tag><format>\n' "<arg>" with no trailing
+// newline, for a marker that shares a shell line with other commands.
+func (w *Writer) PrintfInline(tag, format, arg string) {
+	w.b.WriteString("printf '")
+	w.b.WriteString(tag)
+	w.b.WriteString(format)
+	w.b.WriteString("\\n'")
+	if arg != "" {
+		w.b.WriteString(" \"")
+		w.b.WriteString(arg)
+		w.b.WriteByte('"')
+	}
+}
+
+// marker writes one marker: the tag, then the 1-based index when the protocol
+// is indexed, then the payload separated by "|". A flat marker (no index)
+// carries its payload directly, with no separator.
+func (w *Writer) marker(tag, index, tail string) {
+	w.b.WriteString(tag)
 	if index == "" {
-		return tag + tail
+		w.b.WriteString(tail)
+		return
 	}
-	if tail == "" {
-		return tag + index
+	w.b.WriteString(index)
+	if tail != "" {
+		w.b.WriteByte('|')
+		w.b.WriteString(tail)
 	}
-	return tag + index + "|" + tail
 }
 
 // Decoded is one line of a tagged stream after decoding. Tag keeps the
@@ -88,13 +155,21 @@ func Decode(raw string) (Decoded, bool) {
 	return d, true
 }
 
-// EachLine iterates the CR-trimmed lines of a tagged stream, handing each
-// decoded line to fn. Line splitting and CR handling live here so the three
-// parsers cannot diverge on them.
-func EachLine(out string, fn func(Decoded)) {
-	for raw := range strings.SplitSeq(out, "\n") {
-		d, _ := Decode(raw)
-		fn(d)
+// Lines returns an iterator over the decoded lines of a tagged stream. Line
+// splitting and CR handling live here so the three parsers cannot diverge on
+// them.
+//
+// The iterator is a range-over-func sequence: an adapter that only reads the
+// decoded values keeps its parse state on the stack, so parsing stays
+// allocation-free.
+func Lines(out string) iter.Seq[Decoded] {
+	return func(yield func(Decoded) bool) {
+		for raw := range strings.SplitSeq(out, "\n") {
+			d, _ := Decode(raw)
+			if !yield(d) {
+				return
+			}
+		}
 	}
 }
 
@@ -102,10 +177,39 @@ func EachLine(out string, fn func(Decoded)) {
 // the invalid sentinel because every index it parses is 1-based. Adapters use
 // it for sub-indices carried inside a marker tail (e.g. the hygiene check
 // number in "@@hyg:<n>|<k>").
+//
+// The literal is validated before strconv sees it: strconv.Atoi allocates a
+// *strconv.NumError for every non-numeric input, and a flat tag's payload is
+// usually not a number, so validating first keeps the parse path
+// allocation-free.
 func AtoiOrNeg(s string) int {
-	n, err := strconv.Atoi(strings.TrimSpace(s))
+	s = strings.TrimSpace(s)
+	if !isIntegerLiteral(s) {
+		return -1
+	}
+	n, err := strconv.Atoi(s)
 	if err != nil {
 		return -1
 	}
 	return n
+}
+
+// isIntegerLiteral reports whether s is an optionally signed run of decimal
+// digits — the shape strconv.Atoi accepts without allocating.
+func isIntegerLiteral(s string) bool {
+	if s == "" {
+		return false
+	}
+	if s[0] == '-' || s[0] == '+' {
+		s = s[1:]
+	}
+	if s == "" {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		if s[i] < '0' || s[i] > '9' {
+			return false
+		}
+	}
+	return true
 }

@@ -2,6 +2,7 @@ package agentic
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/an-lee/gh-sr/internal/host"
@@ -146,21 +147,22 @@ func buildAgenticInnerBatchScript(safeNames []string, fanoutInner string) string
 	}
 	b.WriteString("; do\n")
 	b.WriteString("n=$((n+1))\n")
-	fmt.Fprintf(&b, "echo \"%s\"\n", probe.Line("@@begin:", "$n", ""))
+	w := probe.NewWriter(&b)
+	w.Echo("@@begin:", "$n", "")
 	b.WriteString(`st=$(docker inspect --format '{{.State.Status}}' "gh-sr-$i" 2>/dev/null || echo missing)
 `)
-	fmt.Fprintf(&b, "echo \"%s\"\n", probe.Line("@@state:", "$n", "$st"))
+	w.Echo("@@state:", "$n", "$st")
 	b.WriteString(`if [ "$st" = running ]; then
 `)
 	for k, c := range hygiene {
-		fmt.Fprintf(&b, "echo \"%s\"\n", probe.Line("@@hyg:", "$n", fmt.Sprint(k)))
+		w.Echo("@@hyg:", "$n", strconv.Itoa(k))
 		fmt.Fprintf(&b, "docker exec \"gh-sr-$i\" %s\n", c.Cmd)
-		fmt.Fprintf(&b, "echo \"%s\"\n", probe.Line("@@hygend:", "$n", fmt.Sprint(k)))
+		w.Echo("@@hygend:", "$n", strconv.Itoa(k))
 	}
 	fmt.Fprintf(&b, "docker exec \"gh-sr-$i\" sh -lc %s\n", hostshell.PosixSingleQuote(fanoutInner))
 	b.WriteString(`fi
 `)
-	fmt.Fprintf(&b, "echo \"%s\"\n", probe.Line("@@end:", "$n", ""))
+	w.Echo("@@end:", "$n", "")
 	b.WriteString("done")
 	return b.String()
 }
@@ -178,7 +180,7 @@ func parseAgenticInnerBatchOutput(out string, specs []agenticInnerSpecs, probes 
 	cur := -1
 	hyg := -1
 	var hygBuf strings.Builder
-	probe.EachLine(out, func(d probe.Decoded) {
+	for d := range probe.Lines(out) {
 		switch {
 		case d.Tag == "@@begin:":
 			if !d.HasTail && d.Index >= 1 {
@@ -211,7 +213,7 @@ func parseAgenticInnerBatchOutput(out string, specs []agenticInnerSpecs, probes 
 		case cur >= 0 && hyg < 0 && strings.HasPrefix(d.Raw, "#"):
 			name, status, ok := strings.Cut(strings.TrimPrefix(d.Raw, "#"), ":")
 			if !ok || strings.TrimSpace(status) != "1" {
-				return
+				continue
 			}
 			if spec, ok := specs[cur].fanout[name]; ok {
 				probes[cur].Failures = append(probes[cur].Failures, spec)
@@ -220,7 +222,7 @@ func parseAgenticInnerBatchOutput(out string, specs []agenticInnerSpecs, probes 
 			hygBuf.WriteString(d.Raw)
 			hygBuf.WriteString("\n")
 		}
-	})
+	}
 }
 
 // hygieneFailureFromOutput renders the `-inner` AWF hygiene failure for check

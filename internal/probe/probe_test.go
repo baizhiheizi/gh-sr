@@ -2,27 +2,64 @@ package probe
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 )
 
-func TestLine(t *testing.T) {
+func TestWriterEcho(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
-		tag, index, tail, want string
+		tag, index, tail string
+		want             string
 	}{
-		{"@@m:", "1", "", "@@m:1"},
-		{"@@st:", "1", "$out", "@@st:1|$out"},
-		{"@@begin:", "$n", "", "@@begin:$n"},
-		{"@@state:", "$n", "$st", "@@state:$n|$st"},
-		{"@@hyg:", "$n", "0", "@@hyg:$n|0"},
-		{"S:", "", "$st", "S:$st"},
-		{"K:", "", "1", "K:1"},
-		{"G:", "", "$gw", "G:$gw"},
+		{"@@m:", "1", "", "echo \"@@m:1\"\n"},
+		{"@@st:", "1", "$out", "echo \"@@st:1|$out\"\n"},
+		{"@@begin:", "$n", "", "echo \"@@begin:$n\"\n"},
+		{"@@hyg:", "$n", "0", "echo \"@@hyg:$n|0\"\n"},
 	}
 	for _, tc := range cases {
-		if got := Line(tc.tag, tc.index, tc.tail); got != tc.want {
-			t.Errorf("Line(%q,%q,%q) = %q, want %q", tc.tag, tc.index, tc.tail, got, tc.want)
+		var b strings.Builder
+		NewWriter(&b).Echo(tc.tag, tc.index, tc.tail)
+		if got := b.String(); got != tc.want {
+			t.Errorf("Echo(%q,%q,%q) = %q, want %q", tc.tag, tc.index, tc.tail, got, tc.want)
 		}
+	}
+}
+
+func TestWriterEchoInline(t *testing.T) {
+	t.Parallel()
+	var b strings.Builder
+	NewWriter(&b).EchoInline("@@health:", "2", "ok")
+	if got, want := b.String(), "echo \"@@health:2|ok\""; got != want {
+		t.Errorf("EchoInline = %q, want %q", got, want)
+	}
+}
+
+func TestWriterPrintf(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		tag, format, arg string
+		want             string
+	}{
+		{"S:", "%s", "$st", "printf 'S:%s\\n' \"$st\"\n"},
+		{"H:", "%s", "$HOME", "printf 'H:%s\\n' \"$HOME\"\n"},
+		{"K:", "1", "", "printf 'K:1\\n'\n"},
+	}
+	for _, tc := range cases {
+		var b strings.Builder
+		NewWriter(&b).Printf(tc.tag, tc.format, tc.arg)
+		if got := b.String(); got != tc.want {
+			t.Errorf("Printf(%q,%q,%q) = %q, want %q", tc.tag, tc.format, tc.arg, got, tc.want)
+		}
+	}
+}
+
+func TestWriterPrintfInline(t *testing.T) {
+	t.Parallel()
+	var b strings.Builder
+	NewWriter(&b).PrintfInline("D:", "%s", "$(du -sb /x)")
+	if got, want := b.String(), "printf 'D:%s\\n' \"$(du -sb /x)\""; got != want {
+		t.Errorf("PrintfInline = %q, want %q", got, want)
 	}
 }
 
@@ -84,14 +121,16 @@ func TestDecodeFlatAndPayload(t *testing.T) {
 	}
 }
 
-func TestEachLine(t *testing.T) {
+func TestLines(t *testing.T) {
 	t.Parallel()
 	out := "@@begin:1\r\n@@state:1|running\r\npayload line\r\n@@end:1\r\n"
 	var got []string
-	EachLine(out, func(d Decoded) { got = append(got, d.Raw+"/"+d.Tag) })
+	for d := range Lines(out) {
+		got = append(got, d.Raw+"/"+d.Tag)
+	}
 	want := []string{"@@begin:1/@@begin:", "@@state:1|running/@@state:", "payload line/", "@@end:1/@@end:", "/"}
 	if fmt.Sprint(got) != fmt.Sprint(want) {
-		t.Fatalf("EachLine = %v, want %v", got, want)
+		t.Fatalf("Lines = %v, want %v", got, want)
 	}
 }
 

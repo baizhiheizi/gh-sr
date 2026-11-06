@@ -431,18 +431,20 @@ func Inspect(h *host.Host, s Settings) ([]MirrorStatus, error) {
 // reported SSH-transport success instead of the mirror answering /v2/.
 func buildInspectBatchScript(s Settings, gw string, storages []string) string {
 	var b strings.Builder
+	w := probe.NewWriter(&b)
 	for i := range s.mirrorList() {
 		n := strconv.Itoa(i + 1)
-		fmt.Fprintf(&b, "echo \"%s\"\n", probe.Line("@@m:", n, ""))
+		w.Echo("@@m:", n, "")
 		fmt.Fprintf(&b, "out=$(docker inspect --format='{{.State.Status}}|{{.Config.Image}}' %s 2>/dev/null || true)\n", s.containerName(i))
-		fmt.Fprintf(&b, "echo \"%s\"\n", probe.Line("@@st:", n, "$out"))
+		w.Echo("@@st:", n, "$out")
 		fmt.Fprintf(&b, "if [ -n \"$out\" ]; then\n")
-		fmt.Fprintf(&b, "  if curl -fsS -m 3 %s/v2/ >/dev/null 2>&1; then echo \"%s\"; else echo \"%s\"; fi\n",
-			hostshell.PosixSingleQuote(s.localURL(i, gw)),
-			probe.Line("@@health:", n, "ok"),
-			probe.Line("@@health:", n, "fail"))
-		fmt.Fprintf(&b, "  echo \"%s\"\n",
-			probe.Line("@@du:", n, "$(du -sb "+hostshell.PosixSingleQuote(storages[i])+" 2>/dev/null | cut -f1)"))
+		fmt.Fprintf(&b, "  if curl -fsS -m 3 %s/v2/ >/dev/null 2>&1; then ", hostshell.PosixSingleQuote(s.localURL(i, gw)))
+		w.EchoInline("@@health:", n, "ok")
+		b.WriteString("; else ")
+		w.EchoInline("@@health:", n, "fail")
+		b.WriteString("; fi\n")
+		b.WriteString("  ")
+		w.Echo("@@du:", n, "$(du -sb "+hostshell.PosixSingleQuote(storages[i])+" 2>/dev/null | cut -f1)")
 		fmt.Fprintf(&b, "fi\n")
 	}
 	return b.String()
@@ -453,9 +455,9 @@ func buildInspectBatchScript(s Settings, gw string, storages []string) string {
 // outside any section, are ignored.
 func parseInspectBatchOutput(out string, statuses []MirrorStatus) {
 	cur := -1
-	probe.EachLine(out, func(d probe.Decoded) {
+	for d := range probe.Lines(out) {
 		if !d.OK {
-			return
+			continue
 		}
 		switch {
 		case d.Tag == "@@m:" && !d.HasTail:
@@ -476,7 +478,7 @@ func parseInspectBatchOutput(out string, statuses []MirrorStatus) {
 				statuses[cur].Info.StorageBytes = v
 			}
 		}
-	})
+	}
 }
 
 // MirrorStatus is the state of one mirror: its config name, Docker container
