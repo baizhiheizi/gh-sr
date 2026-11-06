@@ -99,18 +99,25 @@ type fanoutResult[T any] struct {
 	Err        error
 }
 
-// fanOutHosts connects to every group's host concurrently (one goroutine per
-// group), runs fn against the connected host, and returns results in group
-// order. A connect failure emits the package-standard warning line to w and
-// records the error in the result's ConnectErr without invoking fn; callers
-// decide how to surface that (skip, synthesise rows, aggregate an error).
-// Writes to w are serialised; pass nil to discard output. The connect factory
-// is captured before spawning so tests that swap connectHostFn see a
+// fanOutHostsCore is the single per-host concurrent fan-out. It owns the
+// connection lifecycle, the goroutine fan-out, serialised writes, host Close,
+// deterministic result ordering, and the connect-error policy. Both
+// fanOutHosts (result-collecting callers) and runPerHostParallel (error-only
+// callers) are thin adapters over it, so the concurrency logic lives in one
+// module instead of being implemented twice.
+//
+// One goroutine per host group opens a single SSH connection, runs fn against
+// that host, and records the outcome in results (in group order). A connect
+// failure records the error in ConnectErr without invoking fn; when
+// warnOnConnectErr is set it also emits the package-standard warning line to
+// w. Writes to w are serialised; pass nil to discard output. The connect
+// factory is captured before spawning so tests that swap connectHostFn see a
 // consistent view for the whole call.
-func fanOutHosts[T any](
+func fanOutHostsCore[T any](
 	w io.Writer,
 	cfg *config.Config,
 	groups []hostGroup,
+	warnOnConnectErr bool,
 	fn func(w io.Writer, h *host.Host, g hostGroup) (T, error),
 ) []fanoutResult[T] {
 	var out io.Writer = io.Discard
@@ -130,7 +137,9 @@ func fanOutHosts[T any](
 			h, err := connect(g.name, cfg.Hosts[g.name])
 			if err != nil {
 				results[i].ConnectErr = err
-				fmt.Fprintf(out, "Warning: cannot connect to %s: %v\n", g.name, err)
+				if warnOnConnectErr {
+					fmt.Fprintf(out, "Warning: cannot connect to %s: %v\n", g.name, err)
+				}
 				return
 			}
 			defer h.Close()
@@ -143,11 +152,29 @@ func fanOutHosts[T any](
 	return results
 }
 
-// runPerHostParallel groups runners by host and executes fn for each runner concurrently
-// across hosts. Within each host group runners are processed sequentially using a single
-// SSH connection, reducing connection overhead from O(N_runners) to O(N_hosts).
-// All host groups run in parallel, so total latency is O(SSH_latency) regardless of
-// the number of hosts. Writes to w are serialised; pass nil to discard output.
+// fanOutHosts connects to every group's host concurrently (one goroutine per
+// group), runs fn against the connected host, and returns results in group
+// order. Connect failures emit the standard warning line and are recorded in
+// ConnectErr; callers decide how to surface them (skip, synthesise rows,
+// aggregate an error). It is the result-collecting adapter over
+// fanOutHostsCore.
+func fanOutHosts[T any](
+	w io.Writer,
+	cfg *config.Config,
+	groups []hostGroup,
+	fn func(w io.Writer, h *host.Host, g hostGroup) (T, error),
+) []fanoutResult[T] {
+	return fanOutHostsCore(w, cfg, groups, true, fn)
+}
+
+// runPerHostParallel groups runners by host and executes fn for each runner
+// concurrently across hosts. Within each host group runners are processed
+// sequentially on a single SSH connection (O(N_hosts) connections, not
+// O(N_runners)); all groups run in parallel, so total latency is
+// O(SSH_latency). It surfaces the first connect or fn error in group order,
+// staying silent on connect failures. It is the error-only adapter over
+// fanOutHostsCore: the per-runner fn is folded into a single per-group
+// function, and the collected results are reduced to one error.
 func runPerHostParallel(
 	w io.Writer,
 	cfg *config.Config,
@@ -155,45 +182,21 @@ func runPerHostParallel(
 	fn func(w io.Writer, h *host.Host, rc config.RunnerConfig) error,
 ) error {
 	groups := groupRunnersByHost(runners)
-
-	var out io.Writer = io.Discard
-	if w != nil {
-		out = &lockedWriter{w: w}
-	}
-
-	// Capture the host-connection factory in a local so the goroutines below
-	// see the factory that was active when this function was called, not
-	// whatever the package-level var points to later. Tests override
-	// connectHostFn and rely on this capture for per-call isolation when they
-	// run with t.Parallel().
-	connect := connectHostFn
-
-	errs := make([]error, len(groups))
-	var wg sync.WaitGroup
-	for i, g := range groups {
-		wg.Add(1)
-		go func(i int, g hostGroup) {
-			defer wg.Done()
-			hcfg := cfg.Hosts[g.name]
-			h, err := connect(g.name, hcfg)
-			if err != nil {
-				errs[i] = err
-				return
-			}
-			defer h.Close()
+	results := fanOutHostsCore(w, cfg, groups, false,
+		func(w io.Writer, h *host.Host, g hostGroup) (struct{}, error) {
 			for _, rc := range g.runners {
-				if err := fn(out, h, rc); err != nil {
-					errs[i] = err
-					return
+				if err := fn(w, h, rc); err != nil {
+					return struct{}{}, err
 				}
 			}
-		}(i, g)
-	}
-	wg.Wait()
-
-	for _, err := range errs {
-		if err != nil {
-			return err
+			return struct{}{}, nil
+		})
+	for _, r := range results {
+		if r.ConnectErr != nil {
+			return r.ConnectErr
+		}
+		if r.Err != nil {
+			return r.Err
 		}
 	}
 	return nil
