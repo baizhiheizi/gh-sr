@@ -13,10 +13,9 @@ import (
 
 // TestSetup_EmptyRunners covers the no-match filter case: FilterRunners
 // returns no runners, so Setup returns nil without ever invoking
-// connectHostFn or applyContainerImageExtras. The host mock is
-// intentionally not registered — if the orchestrator tried to connect,
-// the test would fail with the "no mock registered" error. The
-// "Setup complete." footer is still printed.
+// connectHostFn. The host mock is intentionally not registered — if the
+// orchestrator tried to connect, the test would fail with the "no mock
+// registered" error. The "Setup complete." footer is still printed.
 func TestSetup_EmptyRunners(t *testing.T) {
 	t.Parallel()
 

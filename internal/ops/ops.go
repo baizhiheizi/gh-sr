@@ -202,46 +202,10 @@ func runPerHostParallel(
 	return nil
 }
 
-func applyContainerImageExtras(mgr *runner.Manager, cfg *config.Config) {
-	if mgr == nil {
-		return
-	}
-	if cfg == nil {
-		mgr.ContainerImageBaseImage = ""
-		mgr.ContainerImageExtraApt = nil
-		mgr.ContainerImageToolcache = nil
-		mgr.ContainerMTU = 0
-		mgr.ContainerDockerdStartTimeout = 0
-		mgr.ContainerBootstrapMaxRetries = 0
-		mgr.ContainerStartStaggerSeconds = 0
-		mgr.Cache = nil
-		mgr.RegistryMirror = nil
-		mgr.NPMRegistry = ""
-		mgr.SharedNPMCache = false
-		mgr.SharedRunnerCache = false
-		mgr.SharedGradleCache = false
-		mgr.SharedPubCache = false
-		mgr.SharedMiseData = false
-		mgr.SharedAndroidSDK = false
-		return
-	}
-	mgr.ContainerImageBaseImage = cfg.ContainerRunnerImageBaseImage()
-	mgr.ContainerImageExtraApt = cfg.ContainerRunnerImageExtraAptPackages()
-	mgr.ContainerImageToolcache = cfg.ContainerRunnerImageToolcache()
-	mgr.ContainerMTU = cfg.ContainerRunnerImageMTU()
-	mgr.ContainerDockerdStartTimeout = cfg.ContainerRunnerImageDockerdStartTimeout()
-	mgr.ContainerBootstrapMaxRetries = cfg.ContainerRunnerImageBootstrapMaxRetries()
-	mgr.ContainerStartStaggerSeconds = cfg.ContainerRunnerImageStartStaggerSeconds()
-	mgr.Cache = cacheSettings(cfg)
-	mgr.RegistryMirror = registrySettings(cfg)
-	mgr.NPMRegistry = cfg.NPMRegistry
-	mgr.SharedNPMCache = cfg.SharedNPMCacheEnabled()
-	mgr.SharedRunnerCache = cfg.SharedHomeCacheEnabled()
-	mgr.SharedGradleCache = cfg.SharedGradleCacheEnabled()
-	mgr.SharedPubCache = cfg.SharedPubCacheEnabled()
-	mgr.SharedMiseData = cfg.SharedMiseDataEnabled()
-	mgr.SharedAndroidSDK = cfg.SharedAndroidSDKEnabled()
-}
+// The config-to-Manager wiring lives in runner.NewManagerFromConfig now.
+// Every manager passed to an orchestrator is built from config at construction
+// (cmd/gh-sr/main.go, the TUI dashboard, ServiceCleanup), so no orchestrator
+// re-applies the mapping and no call site can forget it.
 
 // Setup installs and configures runners, mirroring the gh sr setup command.
 func Setup(w io.Writer, cfg *config.Config, mgr *runner.Manager, filterHost, filterRepo string, nameArgs []string) error {
@@ -249,7 +213,6 @@ func Setup(w io.Writer, cfg *config.Config, mgr *runner.Manager, filterHost, fil
 	if err != nil {
 		return err
 	}
-	applyContainerImageExtras(mgr, cfg)
 	hostsDone := map[string]bool{}
 	for _, rc := range runners {
 		if hostsDone[rc.Host] {
@@ -296,7 +259,6 @@ func Up(w io.Writer, cfg *config.Config, mgr *runner.Manager, filterHost, filter
 	if err != nil {
 		return err
 	}
-	applyContainerImageExtras(mgr, cfg)
 	cacheSet := cacheSettings(cfg)
 	registrySet := registrySettings(cfg)
 	err = runPerHostParallel(w, cfg, runners, func(w io.Writer, h *host.Host, rc config.RunnerConfig) error {
@@ -377,7 +339,6 @@ func RebuildImage(w io.Writer, cfg *config.Config, mgr *runner.Manager, filterHo
 	if err != nil {
 		return err
 	}
-	applyContainerImageExtras(mgr, cfg)
 	containerRunners, skipped := partitionRebuildTargets(runners)
 	for _, rc := range skipped {
 		fmt.Fprintf(w, "Skipping %s (runner_mode: native); gh sr rebuild applies only to runner_mode: container\n", rc.Name)
@@ -417,7 +378,6 @@ func Update(w io.Writer, cfg *config.Config, mgr *runner.Manager, filterHost, fi
 	if err != nil {
 		return err
 	}
-	applyContainerImageExtras(mgr, cfg)
 	cacheSet := cacheSettings(cfg)
 	registrySet := registrySettings(cfg)
 	if err := runPerHostParallel(w, cfg, runners, func(w io.Writer, h *host.Host, rc config.RunnerConfig) error {
@@ -504,7 +464,6 @@ func CollectStatus(w io.Writer, cfg *config.Config, mgr *runner.Manager, filterH
 	// stamped on the running image. Without this call ContainerImageExtraApt
 	// is nil and every container with `container_runner_image.extra_apt_packages`
 	// reports "stale" indefinitely even when the layout actually matches.
-	applyContainerImageExtras(mgr, cfg)
 	runners, err := resolveAndFilter(w, cfg, filterHost, filterRepo, nameArgs)
 	if err != nil {
 		return nil, err
