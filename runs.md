@@ -81,14 +81,26 @@ Backlog item #4 (EnrichFromScopeRunners alloc hotspot) reopened — the run-6 co
 - ✅ Task 6 (Measurement infra): none needed. Existing `BenchmarkEnrichFromScopeRunners*` covers the function; `pprof -alloc_objects -list '<fn>'` against a `-memprofile` is the right primitive for future hotspots. Documented in [[perf-improver-opportunities]] cross-cutting notes.
 - ✅ Task 7 (Monthly summary): updating issue #517 this run. Will include the new draft PR and the run-6 entries plus the pprof-driven methodology change.
 
+## 2026-11-06 (run_id 42136612099) — Eighth perf-improver run
+
+Three weeks since run 7. Discovered run 7's "PR opened" was a phantom — no PR existed and main still had the old code. Re-landed the enrich fix as a real draft PR this run.
+
+- ✅ Task 1 (Discover commands): re-validated `go build`, `go vet`, `gofmt -l .`, `go test ./... -race -count=1` (19 packages, grown from 18). Go 1.26.10 now installed — `GOTOOLCHAIN=auto` no longer needed. Workspace clone is shallow (depth-1, blob:none).
+- ✅ Task 2 (Identify opportunities): baseline `BenchmarkEnrichFromScopeRunners` on main matched run-7 numbers exactly (117,528 B/op / 420 allocs/op big). Full bench smoke pass clean EXCEPT `BenchmarkViewMain/one_status` regressed to 323 allocs/op / 10,139 B/op (was 315 / 9,451) from the responsive-layout feature (#564). **NEW finding**: SplitSeq sweep found 9 new line-iteration `strings.Split` sites in 5 packages (agentic/inner_batch, doctor, host/hostkeyalgos, ops/disk_volumes, registry, runner/toolcachesrc) — top pick for run 9. Sibling agents landed SSH round-trip measurement (#575) and benchstat sub-benchmark parsing fix (#580); SSH-batching perf work is their territory now (#570/#593/#594/#601 merged).
+- ✅ Task 3 (Implement improvements): re-applied the run-7 enrich fix (main unchanged since run 7, so identical change applies) on `perf-assist/enrich-rc-by-base-name` (commit `1636822`), measured **-31% ns/op / -12.8% B/op / -49% allocs** big fixture, **-28% ns/op / -46% allocs** small (count=6, non-overlapping ranges), created the draft PR with a verified `create_pull_request` success response. See [[perf-improver-work]].
+- ✅ Task 4 (Maintain PRs): no open perf-improver PRs existed (run 7's phantom PR confirmed absent). #536/#537 merged 2026-10-10.
+- ✅ Task 5 (Comment on perf issues): no open performance-labelled issues. Open issues are #609 (architecture, human) + #595/#602 (sibling monthly summaries, partially unreadable due to integrity policy — left alone).
+- ✅ Task 6 (Measurement infra): none needed — bench-compare CI + parse benches for the new packages already exist; #575 added SSH round-trip energy proxy benches.
+- ✅ Task 7 (Monthly summary): #517 (October) was closed by maintainer 2026-11-01 (no comments). Creating `[perf-improver] Monthly Activity 2026-11` this run.
+
 ## Backlog cursor for next run
 
 Pick up at the top of [[perf-improver-opportunities]]:
 
-1. **View() alloc reduction — remaining lipgloss cost** — was HIGH/HIGH; now MEDIUM/MEDIUM after PR #502 (merged 2026-09-27) closed the caller-side alloc opportunities. The remaining ~95% is inside `lipgloss.Style.Render` (line-wrapping `strings.Split`, ANSI byte-buffer growth). HIGH risk, only attempt if a future run wants to push further.
-2. **renderRow / renderHighlightedRow cell padding** — MEDIUM impact, LOW risk. Still speculative. Worth profiling after the *Into variants are merged (run 6 closed this) to see whether padding-skip still gives measurable savings on top.
-3. **Manager.Status further per-instance optimization** — LOW priority. Marginal gains expected.
-4. **Periodic `strings.Split` grep** — DONE for current code; worth re-running if new code lands.
-5. **`internal/autostart/autostart.go:183` slice-index `strings.Split`** — new low-priority finding (run 7) on the system-unit Install path. One SSH round-trip; converting to `strings.Cut` is a trivial follow-up.
+1. **SplitSeq sweep of the 9 new offenders (run-8 finding) — TOP PICK** — one focused sweep PR across agentic/inner_batch.go, doctor.go, hostkeyalgos.go, disk_volumes.go, registry.go, toolcachesrc.go, using existing container/disk parse benches for measurement where available.
+2. **ViewMain +8 allocs from responsive layout (#564)** — MEDIUM/LOW; new feature code, churn risk, small absolute win.
+3. **renderRow cell padding skip** — still SPECULATIVE (numbers unchanged: 248/284 allocs/op).
+4. **Manager.Status micro-optimization** — LOW.
+5. **scopeRunners inner scan** — DEFERRED (map variant rejected run 6).
 
-_(Item #4 GitHub-runner O(N×M) scan was closed by run 6's rejected map-lookup variant, then partially reopened by run 7 which instead addressed the key-build alloc hotspot. The remaining inner scan is now item #4 in opportunities.md and is LOW priority.)_
+Lesson added: verify safe-output transactions (PR list, issue body) against GitHub state before recording success in memory — run 7's memory said "PR opened" but nothing was published.

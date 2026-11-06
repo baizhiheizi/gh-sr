@@ -9,34 +9,31 @@ metadata:
 
 ## In progress
 
-### 2026-10-15 (run 7) — drop per-instance key build in enrichFromScopeRunners (DRAFT PR on `perf-assist/enrich-rc-by-base-name`, commit `e63fb3c`)
+### 2026-11-06 (run 8) — drop per-instance key build in enrichFromScopeRunners (DRAFT PR on `perf-assist/enrich-rc-by-base-name`, commit `1636822`)
 
-**PR opened**: `[perf-improver] perf(runner): drop per-instance key build in enrichFromScopeRunners` (DRAFT).
+**CORRECTION of the run-7 record**: run 7 (2026-10-15) recorded "PR opened" but **no PR was ever created** — verified this run: the PR list has no `[perf-improver]` entry after #537, main still had the old `rcByInstance` shape, and October issue #517's body is missing the run-6/run-7 Run History entries. Run 7's safe-output transactions evidently failed silently while its memory writes succeeded. Lesson: always verify PR creation against the GitHub PR list before recording it; a successful-looking run summary is not proof of a published PR.
 
-**Status**: Draft — pushed to branch, awaiting maintainer review.
+**PR created this run** via `create_pull_request` (title `[perf-improver] perf(runner): drop per-instance key build in enrichFromScopeRunners`, draft, branch `perf-assist/enrich-rc-by-base-name`). Tool returned success with patch (3,310 B) + bundle (1,442 B) artifacts — the same success signature that run 7 apparently never produced. Still unverified against the live PR list (safeoutputs applies transactions post-run; do not probe with gh).
 
-**Change**: `internal/runner/runner.go` —
-- `rcByInstance[name+"-"+strconv.Itoa(j)]` map build replaced with `rcByName[rc.Name]` (one entry per runner, instead of `sum(Count_i)`).
-- Per-status lookup: `dashIdx := strings.LastIndex(instName, "-")` then `rc := rcByName[instName[:dashIdx]]`. `instName[:dashIdx]` is a no-alloc slice on the underlying string.
-- `strconv` import no longer needed (import removed).
-- Function comment updated to document the lookup-by-truncation trick rather than the inline-vs-`InstanceNames()` rationale the old comment explained.
+**Change** (re-applied; main was untouched since run 7 — `runner.go` still had the pre-fix shape): `internal/runner/runner.go` —
+- `rcByInstance[name+"-"+strconv.Itoa(j)]` map build replaced with `rcByName[cfg.Runners[i].Name]` (one entry per runner).
+- Per-status lookup: `dashIdx := strings.LastIndex(instName, "-")`, guard `dashIdx <= 0 → continue`, then `rc := rcByName[instName[:dashIdx]]` (no-alloc slice).
+- `strconv` import removed; function comment rewritten.
 
-**Benchmark (go1.26.0, AMD Ryzen AI 9 HX 370, -benchtime=3s -benchmem)**:
+**Benchmark (go1.26.10, AMD Ryzen AI 9 HX 370, -benchtime=1s -benchmem -count=6, non-overlapping ranges)**:
 
-| Bench | Before | After | Δ |
+| Bench | main (6837c2f) | branch (1636822) | Δ |
 | --- | --- | --- | --- |
-| `BenchmarkEnrichFromScopeRunners` big (20 rc × 10 count) allocs | 420 /op | 212 /op | **-208 (-49.5%)** |
-| `BenchmarkEnrichFromScopeRunners` big bytes | 117,529 B/op | 102,008 B/op | **-15,521 (-13.2%)** |
-| `BenchmarkEnrichFromScopeRunners_Small` (5 rc × 2 count) allocs | 28 /op | 15 /op | **-13 (-46.4%)** |
-| `BenchmarkEnrichFromScopeRunners_Small` bytes | 6,488 B/op | 5,872 B/op | **-616 (-9.5%)** |
+| big (20 rc × 10) ns/op | 42,236–45,911 | 28,864–31,149 | **≈ -31%** |
+| big B/op | 117,528 | 102,456 | **-12.8%** |
+| big allocs/op | 420 | 214 | **-49.0%** |
+| small (5 rc × 2) ns/op | 2,043–2,169 | 1,488–1,659 | **≈ -28%** |
+| small B/op | 6,488 | 5,872 | **-9.5%** |
+| small allocs/op | 28 | 15 | **-46.4%** |
 
-Time is within high-variance noise on this microbench (61k–106k ns/op pre-change); call it a wash on time. Alloc count is the headline win.
+Unlike run 7's noise-wash read, time improved cleanly this run (ranges don't overlap).
 
-**Verification**: `go build ./...` OK, `go vet ./...` OK, `gofmt -l .` clean, `go test ./... -race -count=1 -short` OK across all 18 packages; race-clean specifically on `internal/runner`. Existing enrich tests `TestManager_EnrichWithGitHubStatus` (lines 16-49 of runner_test.go) and `TestManager_EnrichWithGitHubStatus_OS_mismatch_skips` (lines 51-83) still pass — both exercise the same `Count=1` single-instance lookup path.
-
-**Profile-driven insight**: before changing the code, ran `go test -bench='BenchmarkEnrichFromScopeRunners$' -benchmem -benchtime=2s -count=1 -memprofile=/tmp/enrich.mem ./internal/runner/` and `go tool pprof -alloc_objects -list 'enrichFromScopeRunners' /tmp/enrich.mem`. That showed line 451 (`rcByInstance[name+"-"+strconv.Itoa(j)] = rc`) attributed 6.58M of the 12.78M total alloc events (51.49%). Total bench iterations × allocs/op: `BenchmarkEnrichFromScopeRunners` allocates 420/op and the bench loop iterates ~21k, so 8.86M alloc events expected from the bench itself; the remaining ~3.92M come from the makeEnrichStatuses test fixture (`rc.Name + "-" + strconv.Itoa(j)` at line 92 of bench_test.go). Confirms both production + test sites use the same shape — fixing production naturally eliminates the test-fixture alloc too once the harness reuses the new path.
-
-**Rejected alternative**: tried the per-scope `map[string]GitHubRunner` lookup in run 6 (2026-10-08) for the O(N×M) `gr.Name != statuses[i].Instance` inner scan — clear loss on every metric (big fixture: +26% time, +33% bytes, +83 allocs; small: +72% time, +73% bytes, +10 allocs). The map-build overhead dominated. Closed: the inner O(N×M) scan is the right shape; further wins require caching across refreshes (out of scope, bigger refactor).
+**Verification**: `go build ./...` OK, `go vet ./...` OK, `gofmt -l .` clean, `go test ./... -race -count=1` OK across all 19 packages (grown from 18 — new: registry, hostshell, hostshell/ps, strfmt, diskschedule, dockerutil, table, cache packages since run 7).
 
 ## Completed
 

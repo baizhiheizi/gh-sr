@@ -7,11 +7,11 @@ metadata:
 
 # Optimization backlog (prioritized)
 
-Status as of 2026-10-15. Module path is `github.com/an-lee/gh-sr` (renamed from `baizhiheizi/gh-sr`); repo is small (~14k LOC) and already heavily optimized — most hot paths have dedicated benchmarks.
+Status as of 2026-11-06 (run 8). Module path is `github.com/an-lee/gh-sr` (GitHub repo remains `baizhiheizi/gh-sr`); repo grew since run 7 (new packages: registry, hostshell, strfmt, diskschedule, dockerutil, table, cache) and is still heavily optimized — most hot paths have dedicated benchmarks.
 
-## Recently completed (run 7, 2026-10-15)
+## Recently completed (run 8, 2026-11-06)
 
-- **[perf-improver] perf(runner): drop per-instance key build in enrichFromScopeRunners** — DRAFT PR on branch `perf-assist/enrich-rc-by-base-name` (commit `e63fb3c`). Profile-driven change: `pprof -alloc_objects` showed line 451 (`name+"-"+strconv.Itoa(j)`) was 51% of total allocs in `BenchmarkEnrichFromScopeRunners`. New shape: map keyed on `rc.Name` (one entry per runner) instead of `name-N` (one entry per instance); per-status lookup extracts baseName via `strings.LastIndex(instName, "-")` + slice. `BenchmarkEnrichFromScopeRunners` big fixture: 420 → 212 allocs/op (-49.5%), 117,529 → 102,008 B/op (-13.2%). Small fixture: 28 → 15 allocs/op (-46.4%). Time is within high-variance noise. Behaviour-equivalent (same "last rc with that Name wins" pick for the multi-host same-name edge case). Drops `strconv` import.
+- **[perf-improver] perf(runner): drop per-instance key build in enrichFromScopeRunners** — DRAFT PR on branch `perf-assist/enrich-rc-by-base-name` (commit `1636822`), created via create_pull_request THIS run (the run-7 attempt never produced a PR — see [[perf-improver-work]] correction). Map keyed on `rc.Name` (one entry per runner) instead of `name-N` (one entry per instance); per-status lookup extracts baseName via `strings.LastIndex(instName, "-")` + slice; `strconv` import dropped. Run-8 measurements (go1.26.10, -benchtime=1s -count=6, non-overlapping ranges): big fixture **43.1k → 29.8k ns/op (-31%)**, 117,528 → 102,456 B/op (-12.8%), 420 → 214 allocs/op (-49.0%); small fixture 2.1k → 1.5k ns/op (-28%), 6,488 → 5,872 B/op, 28 → 15 allocs/op. Stronger than run-7's noise-wash read — this time time improved cleanly too.
 
 ## Previously completed
 
@@ -24,13 +24,13 @@ Status as of 2026-10-15. Module path is `github.com/an-lee/gh-sr` (renamed from 
 
 ## Backlog cursor
 
-After the run-7 enrich fix, the next runs should look at:
+After the run-8 enrich PR, the next run should pick up:
 
-1. **View() alloc reduction — remaining lipgloss cost** — MEDIUM impact, MEDIUM risk. ~95% still inside `lipgloss.Style.Render`. Attacking the library side touches every consumer of `cellStyle` / `headerStyle`.
-2. **renderRow / renderHighlightedRow cell padding** — MEDIUM impact, LOW risk. ~32% of allocs from `strings.Split` inside lipgloss line-wrapping (per-cell). Could skip cells already at column width. Still speculative — re-profile after the run-7 enrich fix lands to see whether padding-skip still gives measurable savings on top.
-3. **Manager.Status further per-instance optimization** — LOW priority. Marginal gains expected.
-4. **Periodic `strings.Split` grep** — verified clean as of 2026-10-15: remaining production offenders are slice-index uses (`cmd/gh-sr/main.go:300,308`, `internal/doctor/lockfiles.go:98,99`). NEW finding (low priority): `internal/autostart/autostart.go:183` has `strings.Split(strings.TrimRight(whoOut, "\n"), "\n")` in the `Install` system-unit path — slice-index use, single SSH round-trip, not hot path. Worth a follow-up if someone touches that file.
-5. **GitHub-runner scan inside scopeRunners[key]** — After the run-7 fix dropped the rcByInstance alloc hotspot, the inner O(N×M) `gr.Name != statuses[i].Instance` scan remains. The map-lookup variant was rejected (run 6, 2026-10-08) as a clear loss on every metric. Worth a second look only if a future run finds a different shape (e.g. cache results across refresh ticks).
+1. **SplitSeq sweep of NEW offenders (run-8 finding, TOP PICK for run 9)** — the recent feature PRs reintroduced 9 line-iteration `strings.Split` sites across 5 packages, all one-shot SSH-command-output parsers: `internal/agentic/inner_batch.go:179` (fanout parse, #593), `internal/doctor/doctor.go:963` (orphans list), `internal/host/hostkeyalgos.go:68` (line iter over data) + `:109` (comma field iter), `internal/ops/disk_volumes.go:34` + `:53` (volume ls + du parse, #563), `internal/registry/registry.go:453` (parseInspectBatchOutput, #594) + `:535` (du parse), `internal/runner/toolcachesrc.go:113` (#562). Legit slice-index uses to LEAVE: `hostkeyalgos.go:130` (len-checked parts), `internal/tui/columns.go:352` (rstripLines mutates in place), `cmd/gh-sr/main.go:302,310`, `internal/doctor/lockfiles.go:98,99`, `internal/autostart/autostart.go:183`. Repo convention accepts sweep PRs (see merged #458/#461/#463/#498); `internal/runner/container_parse_bench_test.go` + `internal/ops/disk_parse_bench_test.go` already exist for measurement.
+2. **View() alloc reduction — remaining lipgloss cost** — MEDIUM impact, MEDIUM risk. ~95% still inside `lipgloss.Style.Render`. Note: `BenchmarkViewMain/one_status` regressed slightly to 323 allocs/op / 10,139 B/op (from 315 / 9,451) with the responsive-layout feature (#564, merged 2026-10-18) — new width-responsive code adds ~8 allocs/op. Chasing that regression means touching fresh feature code; only if a run wants it.
+3. **renderRow / renderHighlightedRow cell padding** — MEDIUM impact, LOW risk. Still SPECULATIVE; run-8 re-check: `BenchmarkRenderRow` 248 allocs/op and `BenchmarkRenderHighlightedRow` 284 allocs/op unchanged from the backlog reference.
+4. **Manager.Status further per-instance optimization** — LOW priority. Marginal gains expected.
+5. **GitHub-runner scan inside scopeRunners[key]** — inner O(N×M) scan remains; map-lookup variant rejected (run 6). Only revisit with a different shape (caching across refresh ticks).
 
 ## Identified opportunities (priority order)
 
@@ -72,6 +72,7 @@ After the run-7 enrich fix, the next runs should look at:
 - Benchmark infrastructure is comprehensive: `make bench` / `make bench-save` + bench-compare.yml CI workflow. New benchmarks fit the same shape (`b.ReportAllocs()` + `b.ResetTimer()` + `for i := 0; i < b.N; i++`).
 - Lipgloss's `Style.Render` does its own internal `termenv.Style` allocation per call regardless of how the caller pre-builds the `Style`. Hoisting `Background(...)` out of an inner cell loop has no measurable impact.
 - Byte savings from eliminating intermediate `strings.Builder.String()` copies often exceed the alloc-count savings in GC pressure terms — worth tracking both metrics, not just alloc count.
-- `GOTOOLCHAIN=auto` is required (go.mod requires go1.26.0; go1.25.9 is what's pre-installed locally).
+- `GOTOOLCHAIN=auto` no longer needed as of run 8 (2026-11-06): local Go 1.26.10 >= go.mod's 1.26.7.
+- The workspace clone is shallow (depth-1, blob:none) — local git history is just the tip; use GitHub MCP for older history.
 - Profile-driven investigation: when the bench shows a hotspot, run `go test -bench=<name> -benchtime=<large> -count=1 -memprofile=/tmp/x.mem ./pkg/` then `go tool pprof -alloc_objects -list '<fn>' /tmp/x.mem` to find the allocating lines directly. Found runner.go:451 dominated by line-attributed alloc events in run 7.
 - Module path is `github.com/an-lee/gh-sr` (was `github.com/baizhiheizi/gh-sr`); update Go test/import paths in any follow-up commits.
