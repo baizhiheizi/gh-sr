@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/an-lee/gh-sr/internal/host"
-	"github.com/an-lee/gh-sr/internal/strfmt"
 )
 
 // hostMetricsHeaders is the canonical column ordering for the host-metrics
@@ -266,12 +265,12 @@ func writePad(b *strings.Builder, n int) {
 const tableSpaces80 = "                                                                                " // 80 spaces
 
 // appendFormatPercent appends "12.3%" (v with prec decimals + '%') to dst
-// and returns the extended slice. strfmt.FmtFloat does not allocate, and the
+// and returns the extended slice. strconv.AppendFloat does not allocate, and the
 // trailing '%' is a single byte, so the function stays allocation-free for
 // any dst the caller passes. The scratch buffer in FormatHostMetricsTo is
 // stack-allocated and never escapes.
 func appendFormatPercent(dst []byte, v float64, prec int) []byte {
-	dst = strfmt.FmtFloat(dst, v, prec)
+	dst = strconv.AppendFloat(dst, v, 'f', prec, 64)
 	return append(dst, '%')
 }
 
@@ -280,13 +279,13 @@ func appendFormatPercent(dst []byte, v float64, prec int) []byte {
 // 24 chars ("999999/9999999 GiB (100%)"); the stack [48]byte scratch in the
 // TUI caller covers this with room to spare.
 func appendFormatUsedTotal(dst []byte, used, total, pct float64, unit string) []byte {
-	dst = strfmt.FmtFloat(dst, used, 0)
+	dst = strconv.AppendFloat(dst, used, 'f', 0, 64)
 	dst = append(dst, '/')
-	dst = strfmt.FmtFloat(dst, total, 0)
+	dst = strconv.AppendFloat(dst, total, 'f', 0, 64)
 	dst = append(dst, ' ')
 	dst = append(dst, unit...)
 	dst = append(dst, ' ', '(')
-	dst = strfmt.FmtFloat(dst, pct, 0)
+	dst = strconv.AppendFloat(dst, pct, 'f', 0, 64)
 	return append(dst, '%', ')')
 }
 

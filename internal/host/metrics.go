@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
-
-	"github.com/an-lee/gh-sr/internal/strfmt"
 )
 
 // HostMetrics holds resource usage information for a single host.
@@ -66,11 +64,11 @@ func (m HostMetrics) LoadStr() string {
 		return "-"
 	}
 	var buf [40]byte
-	b := strfmt.FmtFloat(buf[:0], m.Load1, 2)
+	b := strconv.AppendFloat(buf[:0], m.Load1, 'f', 2, 64)
 	b = append(b, ' ')
-	b = strfmt.FmtFloat(b, m.Load5, 2)
+	b = strconv.AppendFloat(b, m.Load5, 'f', 2, 64)
 	b = append(b, ' ')
-	b = strfmt.FmtFloat(b, m.Load15, 2)
+	b = strconv.AppendFloat(b, m.Load15, 'f', 2, 64)
 	return string(b)
 }
 
@@ -89,11 +87,11 @@ func (m HostMetrics) AppendLoadStr(dst []byte) []byte {
 	if m.Load1 == 0 && m.Load5 == 0 && m.Load15 == 0 {
 		return append(dst, '-')
 	}
-	dst = strfmt.FmtFloat(dst, m.Load1, 2)
+	dst = strconv.AppendFloat(dst, m.Load1, 'f', 2, 64)
 	dst = append(dst, ' ')
-	dst = strfmt.FmtFloat(dst, m.Load5, 2)
+	dst = strconv.AppendFloat(dst, m.Load5, 'f', 2, 64)
 	dst = append(dst, ' ')
-	return strfmt.FmtFloat(dst, m.Load15, 2)
+	return strconv.AppendFloat(dst, m.Load15, 'f', 2, 64)
 }
 
 // CollectMetrics gathers resource usage from the host.
