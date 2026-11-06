@@ -106,7 +106,7 @@ func ServiceCleanup(w io.Writer, cfg *config.Config, filterHost string, dryRun b
 		return fmt.Errorf("no hosts configured")
 	}
 
-	mgr := runner.NewManager("")
+	mgr := runner.NewManagerFromConfig("", cfg)
 	mgr.Out = w
 
 	var orphanCount, autostartCount, dirCount int

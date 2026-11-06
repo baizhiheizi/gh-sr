@@ -142,7 +142,7 @@ func newManager(cfg *config.Config, w io.Writer) (*runner.Manager, error) {
 	if err != nil {
 		return nil, err
 	}
-	m := runner.NewManager(tok)
+	m := runner.NewManagerFromConfig(tok, cfg)
 	m.Out = w
 	m.GhSrVersion = version
 	return m, nil

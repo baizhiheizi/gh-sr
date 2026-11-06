@@ -154,7 +154,7 @@ func RunDashboard(cfg *config.Config, opts DashboardOpts) error {
 	if err != nil {
 		return err
 	}
-	mgr := runner.NewManager(tok)
+	mgr := runner.NewManagerFromConfig(tok, cfg)
 	mgr.Out = io.Discard
 	mgr.GhSrVersion = opts.GhSrVersion
 	m := &dashboardModel{
@@ -460,7 +460,7 @@ func (m *dashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.lastErr = tokErr.Error()
 			return m, nil
 		}
-		mgr := runner.NewManager(tok)
+		mgr := runner.NewManagerFromConfig(tok, cfg)
 		mgr.Out = io.Discard
 		mgr.GhSrVersion = m.opts.GhSrVersion
 		m.mgr = mgr

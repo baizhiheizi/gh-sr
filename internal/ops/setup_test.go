@@ -353,25 +353,24 @@ func TestSetup_FilterByNameArgs(t *testing.T) {
 	}
 }
 
-// TestSetup_ApplyContainerImageExtrasWiresMgr pins the applyContainerImageExtras
-// call that runs immediately after resolveAndFilter. The orchestrator must
-// populate the Manager's image-extra fields from cfg before any setupHost
-// call. This is a regression guard for a refactor that drops the wiring.
-func TestSetup_ApplyContainerImageExtrasWiresMgr(t *testing.T) {
+// TestSetup_ConsumesConfigBuiltManager pins the C5 contract: the Manager is
+// fully wired from cfg at construction (runner.NewManagerFromConfig), and
+// Setup consumes it without re-applying or clobbering the mapping. This guards
+// the "forgotten wiring call" regression: if a future orchestrator re-zeroes
+// these fields, the container image would report stale indefinitely.
+func TestSetup_ConsumesConfigBuiltManager(t *testing.T) {
 	t.Parallel()
 
 	installMockConnectHost(t, map[string]host.Executor{
 		"h1": newSetupContainerMockExecutor(),
 	})
 
-	ts := newSetupGitHubHTTPServer(t, "v2.330.0", "REG_TOKEN")
-	mgr := &runner.Manager{GitHub: runner.NewGitHubClientWithHTTP("pat", ts.Client(), ts.URL)}
-
 	cfg := cfgWithLocalHost("h1")
 	cfg.Runners = []config.RunnerConfig{
 		{Name: "ci", Repo: "o/r", Host: "h1", RunnerMode: config.RunnerModeContainer},
 	}
-	// Configure the image-extras knobs so we can assert they propagate.
+	// Configure the image-extras knobs so we can assert they are present on
+	// the constructed Manager and survive Setup.
 	cfg.ContainerRunnerImage = config.ContainerRunnerImageConfig{
 		ExtraAptPackages:    []string{"jq", "git"},
 		MTU:                 1400,
@@ -379,6 +378,10 @@ func TestSetup_ApplyContainerImageExtrasWiresMgr(t *testing.T) {
 		BootstrapMaxRetries: 5,
 		StartStaggerSeconds: 3,
 	}
+
+	ts := newSetupGitHubHTTPServer(t, "v2.330.0", "REG_TOKEN")
+	mgr := runner.NewManagerFromConfig("pat", cfg)
+	mgr.GitHub = runner.NewGitHubClientWithHTTP("pat", ts.Client(), ts.URL)
 
 	var buf bytes.Buffer
 	if err := Setup(&buf, cfg, mgr, "", "", nil); err != nil {

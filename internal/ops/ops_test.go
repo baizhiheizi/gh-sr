@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"github.com/an-lee/gh-sr/internal/config"
-	"github.com/an-lee/gh-sr/internal/runner"
 )
 
 func TestWriteHostBanner(t *testing.T) {
@@ -132,90 +131,9 @@ func TestGroupRunnersByHost(t *testing.T) {
 	})
 }
 
-func TestApplyContainerImageExtras(t *testing.T) {
-	t.Parallel()
-
-	// boolPtr mirrors the config package's test helper: shared_caches fields
-	// are *bool, and the opt-out/opt-in cases need explicit pointers.
-	boolPtr := func(b bool) *bool { return &b }
-
-	t.Run("nil manager is no-op", func(t *testing.T) {
-		t.Parallel()
-		// Must not panic.
-		applyContainerImageExtras(nil, &config.Config{})
-	})
-
-	t.Run("nil config clears extras", func(t *testing.T) {
-		t.Parallel()
-		mgr := &runner.Manager{ContainerImageExtraApt: []string{"curl", "git"}}
-		applyContainerImageExtras(mgr, nil)
-		if mgr.ContainerImageExtraApt != nil {
-			t.Errorf("expected nil, got %v", mgr.ContainerImageExtraApt)
-		}
-	})
-
-	t.Run("config with no extras clears manager", func(t *testing.T) {
-		t.Parallel()
-		mgr := &runner.Manager{ContainerImageExtraApt: []string{"curl"}}
-		cfg := &config.Config{}
-		applyContainerImageExtras(mgr, cfg)
-		if len(mgr.ContainerImageExtraApt) != 0 {
-			t.Errorf("expected empty, got %v", mgr.ContainerImageExtraApt)
-		}
-	})
-
-	t.Run("config with extras populates manager", func(t *testing.T) {
-		t.Parallel()
-		mgr := &runner.Manager{}
-		cfg := &config.Config{
-			ContainerRunnerImage: config.ContainerRunnerImageConfig{
-				ExtraAptPackages: []string{"sqlite3", "ffmpeg"},
-			},
-		}
-		applyContainerImageExtras(mgr, cfg)
-		if len(mgr.ContainerImageExtraApt) != 2 {
-			t.Fatalf("got %d items, want 2", len(mgr.ContainerImageExtraApt))
-		}
-		if mgr.ContainerImageExtraApt[0] != "sqlite3" || mgr.ContainerImageExtraApt[1] != "ffmpeg" {
-			t.Errorf("got %v", mgr.ContainerImageExtraApt)
-		}
-		// Zero-value Config: shared caches default on (unlike cache/registry,
-		// which need an explicit applyDefaults-set Enabled) and android_sdk
-		// stays opt-in off.
-		if !mgr.SharedNPMCache || !mgr.SharedRunnerCache {
-			t.Errorf("npm/home caches should default on, got npm=%v home=%v", mgr.SharedNPMCache, mgr.SharedRunnerCache)
-		}
-		if !mgr.SharedGradleCache || !mgr.SharedPubCache || !mgr.SharedMiseData {
-			t.Errorf("gradle/pub/mise caches should default on, got gradle=%v pub=%v mise=%v", mgr.SharedGradleCache, mgr.SharedPubCache, mgr.SharedMiseData)
-		}
-		if mgr.SharedAndroidSDK {
-			t.Error("android sdk must default off")
-		}
-	})
-
-	t.Run("shared caches opt-outs and android opt-in propagate", func(t *testing.T) {
-		t.Parallel()
-		mgr := &runner.Manager{}
-		cfg := &config.Config{
-			SharedCaches: config.SharedCachesConfig{
-				Enabled:    boolPtr(true),
-				NPM:        boolPtr(false),
-				HomeCache:  boolPtr(false),
-				Gradle:     boolPtr(false),
-				Pub:        boolPtr(false),
-				Mise:       boolPtr(false),
-				AndroidSDK: boolPtr(true),
-			},
-		}
-		applyContainerImageExtras(mgr, cfg)
-		if mgr.SharedNPMCache || mgr.SharedRunnerCache || mgr.SharedGradleCache || mgr.SharedPubCache || mgr.SharedMiseData {
-			t.Errorf("opted-out caches must stay off, got %+v", mgr)
-		}
-		if !mgr.SharedAndroidSDK {
-			t.Error("android_sdk: true must reach the Manager")
-		}
-	})
-}
+// The config-to-Manager mapping is now owned by runner.NewManagerFromConfig
+// and tested in the runner package. Orchestrators consume a pre-built Manager;
+// there is no late-wiring call left in this package to test.
 
 func TestLockedWriter_Sequential(t *testing.T) {
 	t.Parallel()
