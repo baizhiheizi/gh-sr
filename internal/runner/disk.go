@@ -9,7 +9,6 @@ import (
 	"github.com/an-lee/gh-sr/internal/config"
 	"github.com/an-lee/gh-sr/internal/host"
 	"github.com/an-lee/gh-sr/internal/hostshell"
-	"github.com/an-lee/gh-sr/internal/strfmt"
 )
 
 // DiskWarnThresholdGiB is the doctor warning threshold for runner state directories.
@@ -972,13 +971,13 @@ func appendFormatBytesHuman(dst []byte, b int64) []byte {
 	const mib = 1024 * 1024
 	switch {
 	case b >= gib:
-		dst = strfmt.FmtFloat(dst, float64(b)/float64(gib), 1)
+		dst = strconv.AppendFloat(dst, float64(b)/float64(gib), 'f', 1, 64)
 		dst = append(dst, ' ', 'G', 'i', 'B')
 	case b >= mib:
-		dst = strfmt.FmtFloat(dst, float64(b)/float64(mib), 1)
+		dst = strconv.AppendFloat(dst, float64(b)/float64(mib), 'f', 1, 64)
 		dst = append(dst, ' ', 'M', 'i', 'B')
 	case b >= 1024:
-		dst = strfmt.FmtFloat(dst, float64(b)/1024, 1)
+		dst = strconv.AppendFloat(dst, float64(b)/1024, 'f', 1, 64)
 		dst = append(dst, ' ', 'K', 'i', 'B')
 	default:
 		dst = strconv.AppendInt(dst, b, 10)
