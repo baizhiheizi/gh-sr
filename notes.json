@@ -6,64 +6,49 @@
   },
   "issues": [
     {
-      "number": 597,
+      "number": 609,
       "state": "deferred",
-      "updated_at": "2026-11-05",
-      "note": "Ops orchestration twins (cache vs registry, ~120 lines); generics consolidation proposed. Overlaps #601 edit to internal/ops/cache_orchestrators_test.go; act after #601 resolves."
-    },
-    {
-      "number": 599,
-      "state": "deferred",
-      "updated_at": "2026-11-05",
-      "note": "Cache vs registry container lifecycle twins (~100 lines). Directly overlaps #601 internal/cache rewrite; act after #601 merges."
+      "updated_at": "2026-11-06",
+      "note": "Deferred pending review of C1 (probe module draft, branch repo-assist/deep-probe-module-609). Follow-ons if approved: C2 ops drawer, C3 strfmt float, C5 Manager-from-config."
     }
   ],
-  "fixes": [
-    {
-      "issue": 600,
-      "pr": null,
-      "branch": "repo-assist/improve-marker-parser-strfmt",
-      "status": "open",
-      "updated_at": "2026-11-05",
-      "note": "strfmt.SplitMarker/AtoiOrNeg + direct table tests; markerNum stays local (strict no-tail). Draft PR created; PR number pending."
-    }
-  ],
+  "fixes": [],
   "checks": [
     {
       "area": "repo_assist_prs",
-      "checked_at": "2026-11-05",
+      "checked_at": "2026-11-06",
       "result": "acted",
-      "follow_up": "#593/#594 merged. Two new drafts 2026-11-05: repo-assist/improve-marker-parser-strfmt (Closes #600) and repo-assist/test-ssh-auth-coverage (host SSH auth tests)."
+      "follow_up": "2026-11-05 drafts merged (#603, #604) plus #607/#608. New 2026-11-06 draft: repo-assist/deep-probe-module-609 (C1 of #609)."
     },
     {
       "area": "code",
-      "checked_at": "2026-11-05",
+      "checked_at": "2026-11-06",
       "result": "acted",
-      "follow_up": "#600 marker-parser duplication fixed via strfmt draft PR. #597/#599 deferred (see issues): overlap the open efficiency-improver cache-Inspect PR #601."
+      "follow_up": "Probe grammar folded into new internal/probe; cache/registry/agentic are adapters; strfmt marker helpers deleted. Cache wire gained :1| index; agentic script unrolled."
     },
     {
       "area": "tests",
-      "checked_at": "2026-11-05",
+      "checked_at": "2026-11-06",
       "result": "acted",
-      "follow_up": "internal/host/connection.go auth stack tested (72.7%->82.9%) incl. live in-process ssh-agent. Untested: Run/Upload/Close/dial need live SSH. tui 56.5% next-lowest but interactive."
+      "follow_up": "Grammar tested once in internal/probe; suite green plain + -race; round-trip benches pin 1 round-trip/op. tui interactive coverage still lowest."
     },
     {
       "area": "ci",
       "checked_at": "2026-11-05",
       "result": "no_actionable",
-      "follow_up": "CI mature (workspace repair, bench stability, release-matrix gates all invested). go 1.26.7 current."
+      "follow_up": "CI mature (workspace repair, bench stability, release-matrix gates all invested). go 1.26.10 toolchain current."
     },
     {
       "area": "dependencies",
       "checked_at": "2026-11-05",
       "result": "no_actionable",
-      "follow_up": "Only direct-dep update: bubbletea/v2 v2.1.0->v2.1.1 patch; weekly Dependabot gomod schedule covers it. go-gh v2.17.0 current."
+      "follow_up": "bubbletea v2.1.1 bump merged (#608). go-gh v2.17.0 current. Weekly Dependabot gomod schedule covers the rest."
     },
     {
       "area": "performance",
       "checked_at": "2026-11-03",
       "result": "acted",
-      "follow_up": "Both batchings delivered (#593/#594). No further batching candidates; remaining probes are once-per-host."
+      "follow_up": "Batchings delivered (#593/#594); one-round-trip invariants re-pinned through the 2026-11-06 probe refactor. Remaining probes are once-per-host."
     },
     {
       "area": "hygiene",
