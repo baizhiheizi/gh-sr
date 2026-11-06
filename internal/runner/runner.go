@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -456,29 +455,53 @@ func (m *Manager) EnrichWithGitHubStatus(statuses []RunnerStatus, cfg *config.Co
 	m.enrichFromScopeRunners(statuses, cfg, scopeRunners)
 }
 
+// enrichSlot pairs a RunnerConfig with the number of instance names it
+// generates. count mirrors InstanceNames' clamping (a count below 1 still
+// yields the single instance `name-1`).
+type enrichSlot struct {
+	rc    *config.RunnerConfig
+	count int
+}
+
 // enrichFromScopeRunners matches statuses against GitHub runner data already
 // fetched in scopeRunners, mutating statuses[i].Remote/Busy in place. Extracted
 // from EnrichWithGitHubStatus so the inner work can be benchmarked and unit-
 // tested without going through the GitHub API.
 //
-// The rcByInstance build inlines the deterministic `name-N` construction
-// instead of calling rc.InstanceNames(): the helper would allocate a
-// []string slice header per RunnerConfig in addition to the N name strings,
-// and the slice is consumed only as map keys. The Go compiler folds the short
-// `+` chain into a single allocation per result, so the inline form costs
-// the unavoidable per-name string allocation only.
+// The lookup is keyed on the runner's base name instead of the expanded
+// `name-N` instance names, and the per-status lookup splits the deterministic
+// `-N` suffix off the existing instance string — a no-alloc view of it.
+// Materialising `name-N` keys would cost one string allocation per instance
+// (sum of Counts) on every enrich tick.
+//
+// The resolution rule is unchanged from the rcByInstance map this replaced:
+// the owner of instance `B-N` is the *last* RunnerConfig named `B` whose count
+// reaches N. Sharing a base name across hosts is legal (config validation
+// only enforces instance-name uniqueness per host), so a runner with count 1
+// configured after a runner with count 3 must not steal `B-2`/`B-3` from it.
+// lastByName holds the last config per base name; sharedByName is allocated
+// lazily and only for base names configured more than once, where an earlier
+// config may still own the higher instance indexes.
 func (m *Manager) enrichFromScopeRunners(statuses []RunnerStatus, cfg *config.Config, scopeRunners map[scopeKey][]GitHubRunner) {
-	rcByInstance := make(map[string]*config.RunnerConfig)
+	lastByName := make(map[string]enrichSlot, len(cfg.Runners))
+	var sharedByName map[string][]enrichSlot
 	for i := range cfg.Runners {
 		rc := &cfg.Runners[i]
 		count := rc.Count
 		if count < 1 {
 			count = 1
 		}
-		name := rc.Name
-		for j := 1; j <= count; j++ {
-			rcByInstance[name+"-"+strconv.Itoa(j)] = rc
+		slot := enrichSlot{rc: rc, count: count}
+		if prev, ok := lastByName[rc.Name]; ok {
+			if sharedByName == nil {
+				sharedByName = make(map[string][]enrichSlot)
+			}
+			if _, tracked := sharedByName[rc.Name]; !tracked {
+				sharedByName[rc.Name] = []enrichSlot{prev}
+			}
+			sharedByName[rc.Name] = append(sharedByName[rc.Name], slot)
 		}
+		lastByName[rc.Name] = slot
 	}
 
 	for i := range statuses {
@@ -486,10 +509,31 @@ func (m *Manager) enrichFromScopeRunners(statuses []RunnerStatus, cfg *config.Co
 		if !ok {
 			continue
 		}
-		rc := rcByInstance[statuses[i].Instance]
-		if rc == nil {
+		base, index, ok := splitInstanceIndex(statuses[i].Instance)
+		if !ok {
 			continue
 		}
+		slot, ok := lastByName[base]
+		if !ok {
+			continue
+		}
+		if slot.count < index {
+			// The last config with this base name does not reach this
+			// instance index; an earlier one may still own it.
+			shared := sharedByName[base]
+			resolved := false
+			for j := len(shared) - 1; j >= 0; j-- {
+				if shared[j].count >= index {
+					slot = shared[j]
+					resolved = true
+					break
+				}
+			}
+			if !resolved {
+				continue
+			}
+		}
+		rc := slot.rc
 		exp := expectedGitHubRunnerOS(hcfg.OS)
 		key := scopeKey{rc.Scope(), rc.ScopeTarget()}
 		for _, gr := range scopeRunners[key] {
@@ -504,6 +548,40 @@ func (m *Manager) enrichFromScopeRunners(statuses []RunnerStatus, cfg *config.Co
 			break
 		}
 	}
+}
+
+// splitInstanceIndex splits a runner instance name of the form `<base>-<n>`
+// into its base name and instance index. The suffix must be a canonical
+// positive decimal — no sign, no leading zeros — because the instance names
+// this replaces were generated as `name + "-" + strconv.Itoa(j)`, so `ci-02`
+// and `ci-x` were never instance names of a configured runner. Both views
+// (base name and index) alias the input string; no copy is made.
+func splitInstanceIndex(instance string) (base string, index int, ok bool) {
+	dash := strings.LastIndex(instance, "-")
+	if dash <= 0 || dash == len(instance)-1 {
+		return "", 0, false
+	}
+	digits := instance[dash+1:]
+	// More than 9 digits cannot be a real instance index (counts are small),
+	// and the bound keeps the parse free of overflow.
+	if len(digits) > 9 {
+		return "", 0, false
+	}
+	n := 0
+	for i := 0; i < len(digits); i++ {
+		c := digits[i]
+		if c < '0' || c > '9' {
+			return "", 0, false
+		}
+		if i == 0 && c == '0' {
+			return "", 0, false
+		}
+		n = n*10 + int(c-'0')
+	}
+	if n < 1 {
+		return "", 0, false
+	}
+	return instance[:dash], n, true
 }
 
 func (m *Manager) CleanupOffline(cfg *config.Config) (int, error) {
