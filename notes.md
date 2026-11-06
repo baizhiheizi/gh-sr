@@ -5,97 +5,100 @@ metadata:
   type: project
 ---
 
-## Build / test commands (validated 2026-10-16)
-
-Toolchain: the system `go` is 1.25.9 but go.mod requires 1.26.0 — use
-`GOTOOLCHAIN=auto` so Go downloads the matching toolchain on first invocation.
-After the first successful run, subsequent calls are fast (cache hit).
+## Build / test commands (validated 2026-11-06)
 
 ```bash
 GOTOOLCHAIN=auto go build ./...                    # full-repo build
 GOTOOLCHAIN=auto go vet ./...                      # CI static analysis
 GOTOOLCHAIN=auto gofmt -l .                        # CI format check
-GOTOOLCHAIN=auto go test ./... -race -count=1 -short   # CI parity (race + fresh cache)
+GOTOOLCHAIN=auto go test ./... -race -count=1      # CI parity (green on main @ 73508a2)
 GOTOOLCHAIN=auto go test ./internal/ops -cover -count=1   # per-package coverage
 GOTOOLCHAIN=auto go test ./internal/ops -coverprofile=cov.out && go tool cover -func=cov.out
 make ci                                            # vet + fmt + test
 make coverage                                      # coverage summary sorted asc + total
 ```
 
-## Coverage snapshot (2026-10-23)
+Note: perf-improver reports local Go is now 1.26.10 so GOTOOLCHAIN=auto may
+be droppable in newer sandboxes; keep it until first invocation proves so.
+
+## Coverage snapshot (2026-11-06, main @ 73508a2, post C1–C5 refactors)
 
 ```
 cmd/gh-sr           0.0%   (Cobra wiring only)
-internal/agentic   96.2%
-internal/autostart 95.7%
-internal/cache     89.8%
+internal/tui       56.5%   (lowest package; ~16 dashboard fns at 0%)
+internal/ops       79.0%   (→90.5% with test-assist/ops-registry-images-orchestrators)
+internal/host      82.9%   (regressed from 95.1% — #604 covered only auth/known_hosts)
+internal/doctor    84.1%
+internal/runner    86.1%
 internal/config    87.0%
 internal/diskschedule 88.4%
-internal/doctor    83.2%
-internal/editor    92.3%
-internal/host      95.1%  (was 72.7%; connection.go 0% → 90-100%)
-internal/hostshell 93.0%
-internal/hostshell/ps 100.0%
-internal/ops       78.2%  (ConnectHost + registry.go orchestrators still 0%)
-internal/registry  90.8%
-internal/runner    85.2%
-internal/strfmt    100.0%
+internal/registry  90.2%   (regressed from 96.5% after #594/#607/C2)
 internal/table     91.0%
-internal/testutil  88.2%
-internal/tui       55.3%  (lowest package)
-scripts/benchstat  92.0%
+scripts/benchstat  91.2%
+internal/cache     91.3%
+internal/testutil  91.7%
+internal/editor    92.3%
+internal/hostshell 93.0%
+internal/probe     93.0%   (NEW — C1 tagged-stream probe module)
+internal/autostart 95.7%
+internal/agentic   96.3%
+internal/dockerutil 100.0% (NEW — C4)
+internal/hostshell/ps 100.0%
 ```
 
-Repo total: 77.4% of statements.
+Repo total: 78.0%. internal/strfmt DISSOLVED (C3, #614).
 
-## Top low-covered functions (0%, 2026-10-23)
+## Top low-covered functions (2026-11-06)
 
-- internal/ops/registry.go: registryTargets, forEachRegistryHost, RegistryDeploy, RegistryStatus, printRegistryStatus, RegistryRemove — mirrors internal/ops/cache.go, which is fully covered
-- internal/ops/ops.go: ConnectHost
-- internal/doctor/doctor.go: checkRegistryMirror, probeMirrorURLFromRunner
-- internal/runner/github.go: ListLockWorkflows; internal/runner/container.go: stopContainer, ContainerBootstrapFailed
-- internal/config: CacheStoragePath, ContainerRunnerImageToolcache, InstanceCount, hasLabel, EnvFilePath, BootstrapEnv
-- internal/hostshell: PowerShellExec, PowerShellCombinedOutput, PowerShellCommand
-- internal/cache: EffectivePort
-- internal/agentic: containerNodeNPMCheckCommand
+- internal/host/connection.go: Run 0%, Upload 0%, Close 0%, NewConnection 23.8% — my old
+  ssh-connection draft covered these but was superseded (not merged); #604 (repo-assist)
+  covered only collectAuthMethods/sshAgentAuth/keyFileAuth/knownHosts wiring. In-process
+  x/crypto/ssh server pattern (below) applies. → best next target.
+- internal/tui/dashboard.go + dashboard_view.go: ~16 fns at 0% (responsive layout #564).
+- internal/ops/ops.go: ConnectHost 0% (real SSH), RebuildImage 42.9%, Up 66.7%.
+- internal/registry/registry.go: 122/151 0% (post-refactor residuals).
+- internal/runner/container.go: stopContainer, ContainerBootstrapFailed (still).
 
 ## Reusable test patterns
 
 - `httptest.NewServer` + `runner.NewGitHubClientWithHTTP(token, srv.Client(), srv.URL)` for GitHub API mocks.
 - `internal/testutil.MockExecutor` + `host.SetConn(mock)` for SSH/host mocks.
-- `installMockConnectHost` + `connectHostMu` for race-clean `host.Executor` factory swaps.
-- `installFailingConnectHost(t, sentinel)` from `internal/ops/run_per_host_parallel_test.go` for orchestrator "connect failed" branches.
-- Real `*runner.Manager{GitHub: runner.NewGitHubClientWithHTTP(...)}` over mocks when testing orchestrator/Manager interaction.
-- Pure helper table tests with `t.Parallel()` heavily with sub-tests.
-- OS command seams must reset with `t.Cleanup`; do not parallelize tests that mutate package globals.
+- `installMockConnectHost` + `connectHostMu` (run_per_host_parallel_test.go) for race-clean connectHostFn swaps; `installFailingConnectHost(t, sentinel)` for connect-failure branches.
+- `cfgWithLocalHost(hosts...)` (down_test.go) builds local-resolved host cfg; `addHost(cfg, name, os)` adds extra hosts.
+- Orchestrator tests should focus on dispatch + printing; the service packages' own sub-paths have dedicated tests (cache_orchestrators_test.go is the canonical example, registry_orchestrators_test.go the 2026-11-06 follow-up).
+- dockerutil.Converge mock discriminators: layout = `Config.Labels` (reply must equal registryLayoutRev/cache rev: registry "v2", cache "v3"), state = `.State.Status` ("running"/"exists"/"").
+- registry.Inspect one-shot batch discriminator: `{{.State.Status}}|{{.Config.Image}}`; reply stream `@@m:1\n@@st:1|<state>|<image>\n@@health:1|ok\n@@du:1|<bytes>\n` (absent container → `@@st:1|` empty tail, NO health/du lines).
+- registry.Remove: `docker rm -f` always; purgeData adds `rm -rf '<storage>'`. Set explicit absolute StoragePath in test cfgs to skip the `echo $HOME` round-trip.
+- registry SyncPrefetch mocks: presence probe = `&& echo yes || echo no` (reply yes/no per container), image ID inspect = `{{.Id}}`; mirror-pulled refs also run `docker tag` (host-side retag). Disabled mirror (Settings nil) = direct pull, no tag.
+- GOTCHA (cost me 2 fix cycles): `syncPrefetchAfterStart`/`ImagesSync` silently skip hosts whose `cfg.Runners` have no container-mode instances — the containers-empty check precedes the OS check, so the non-linux branch needs a container runner on a windows host. And `registrySettings(cfg)` is nil unless `RegistryMirror.Enabled` is a *bool true — without it Ensure is skipped entirely in ImagesSync/syncPrefetchAfterStart.
+- `Enabled: &[]bool{true}[0]` inline works for one-off cfg fields.
 - For Windows `RunShell` branch tests, use a non-local address (`Addr: runner@vps`) so `host.Host.wrapCommand` activates the `powershell -EncodedCommand` base64 wrapper.
-- For `cache.Inspect`-style orchestrators (multiple SSH command shapes on a single host), the `MockExecutor.RunFn` switch pattern with `strings.Contains(cmd, "...")` cleanly handles distinct invocations. Each orchestrator function in `internal/ops/cache.go` follows this shape.
-- For `cache.Inspect`-driven callers (e.g. `checkCacheReachability`): the `reachabilityMock` helper in `internal/doctor/cache_reachability_orchestrator_test.go` switches on docker inspect / du -sb / curl /health / ip addr / docker exec. Pass `"no docker0"` as the gateway reply to drive gateway-failure branches (the helper returns an error from the docker0 probe, so `cache.ResolveGatewayIP` returns `("", err)`).
-- For `checkCacheReachability` tests targeting the `0.0.0.0` LAN warning, set `BindAddr="0.0.0.0"` (not empty) so `effectiveBind` returns "0.0.0.0" verbatim while `localURL` still falls through to the docker0 gateway so the /health probe can succeed. With empty `BindAddr` the gateway-failure path lands in the "unhealthy" bucket first and the LAN warning never fires.
-- For `cache.Prune` tests, the no-management-key hint branch needs `echo $HOME` to return a non-empty path AND the persistence probe (`test -f <path>/management_key`) to error. The DELETE path is gated by `X-Api-Key ... DELETE` substring.
-- For `cache.Ensure` orchestrator tests: `containerState` uses `docker inspect --format='{{.State.Status}}'` (no `|`), `cacheLayoutCurrent` uses `docker inspect --format '...|<label>'` (has `|`). To hit `case "exists": docker start`, mock must return "exists" for the first and `<any-state>|v3` for the second (cacheLayoutCurrent checks `strings.Contains(out, "|v3")`).
-- For `cache.Remove(purgeData=false)` tests, the orchestrator only does `docker rm -f` — no `$HOME` resolution. `purgeData=true` requires mocking `echo $HOME` to return a non-empty path. Simpler to test the disabled-cache path with `purgeData=false`.
-- For registry mock tests, use `.State.Status}}` (with closing braces) as the discriminator for `docker inspect --format='{{.State.Status}}'` AND `docker inspect --format='{{.State.Status}}|{{.Config.Image}}'` — both contain that substring, but `.State.Status|` does NOT (the `|` is separated by `}}` and `{` in the multi-field format).
-- For `du -sb ... | cut -f1` mock output, return ONLY the number (`"12345\n"`), not the path — the orchestrator parses with `strconv.ParseInt` which fails on whitespace-padded paths.
-- For `Remove(purgeData=true, StoragePath="$HOME/...")` to exercise the storage resolve path, the resolve error needs `echo $HOME` to fail — `purgeData=false` with `$HOME/...` skips resolve entirely.
+- OS command seams must reset with `t.Cleanup`; do not parallelize tests that mutate package globals.
 
 ## SSH / in-process server patterns (internal/host)
 
-- `golang.org/x/crypto/ssh` (already a dependency) provides both halves of the protocol, so the whole `internal/host/connection.go` surface can be tested without a real host:
-  - Server: `net.Listen("tcp","127.0.0.1:0")` + `ssh.NewServerConn`; accept `session` channels, reply to `exec` requests with the `struct{Command string}` payload, then run a per-test handler. Send an exit status with `ch.SendRequest("exit-status", false, ssh.Marshal(struct{Status uint32}{code}))`.
-  - Host keys: `ssh.NewSignerFromKey(ed25519Priv)`; `ssh.MarshalPrivateKey(priv, "test")` + `pem.EncodeToMemory` writes a parseable client key.
-  - `known_hosts`: a line is `<host-pattern> <keytype> <base64 pubkey>`. For a non-22 port the pattern must be `[host]:port` (OpenSSH spelling) — that is also what `hostKeyAlgosForDial` matches against.
-  - The client picks the negotiated host key by iterating **its own** `HostKeyAlgorithms` list first (x/crypto `findCommon`), so putting the pinned algo first really does change which key the server presents. That is what makes the b2b6d40 regression test possible.
-  - `x/crypto/ssh/agent`: `agent.NewKeyring()` + `keyring.Add(agent.AddedKey{PrivateKey: rawPrivKey})` + `agent.ServeAgent(keyring, conn)` over a unix socket gives a live `SSH_AUTH_SOCK`. The keyring only accepts raw `*rsa/*ecdsa/ed25519.PrivateKey` values — an `ssh.Signer` is rejected with "unsupported key type".
-- `t.Setenv` forbids `t.Parallel`; set `HOME` (→ `os.UserHomeDir`) and `SSH_AUTH_SOCK` per test. `HOME=""` makes `os.UserHomeDir` fail, which covers the "no home" branches.
-- The scp upload protocol: the client sends `C0644 <size> <name>\n`, then the bytes, then a NUL. `fields[1]` is the size, `fields[2]` is the name. The server must read exactly that much before replying `0x00` and exiting, otherwise the client can race the session close.
+- `golang.org/x/crypto/ssh` (already a dependency) provides both halves: server `net.Listen` + `ssh.NewServerConn`, accept session channels, reply to `exec` with `struct{Command string}`, send exit-status via `ch.SendRequest("exit-status", false, ssh.Marshal(...))`.
+- Host keys: `ssh.NewSignerFromKey(ed25519Priv)`; `ssh.MarshalPrivateKey` + pem for client keys.
+- known_hosts: `<host-pattern> <keytype> <base64 pubkey>`; non-22 port pattern is `[host]:port`.
+- scp upload protocol: client sends `C0644 <size> <name>\n`, bytes, NUL; server must read exactly that much before replying `0x00`.
+- `t.Setenv` forbids `t.Parallel`; set HOME/SSH_AUTH_SOCK per test.
+
+## Maintainer priorities
+
+- #609 (closed completed 2026-11-06): maintainer values deep modules; "interface is the test surface" — protocol/converge/fan-out seams should be tested once at the module boundary. Tests pinning the probe grammar or converge contract align; shallow-wrapper tests do not.
+- Maintainer reads and closes monthly summary issues (perf's #517 closed 2026-11-01).
+- Three sibling agents share this repo (repo-assist, perf-improver, efficiency-improver); their monthly issues are 2026-11 #595/#611/#602. repo-assist has been covering TUI + SSH auth tests in parallel — check its open PRs before picking a target to avoid duplicate work.
 
 ## Completed work
 
-- 2026-10-23: Cover all of `internal/host/connection.go` (was 0% on 11 functions) with an in-process SSH server: dial, exec capture, scp upload, auth-method selection, known_hosts lookup, host-key hints. Includes a regression test for the known_hosts host-key ordering fix (b2b6d40), verified by mutation. internal/host 72.7% → 95.1% (+22.4 pp). Draft PR on branch `test-assist/ssh-connection` (commit 557bce7). 21 tests in `internal/host/connection_test.go`.
-- 2026-10-16: Cover Inspect + MeasureStorage + SettingsFromConfig + localURL + Ensure/Remove error branches + deploy gateway/bind branches. internal/registry 55.9% → 96.5% (+40.6 pp). Draft PR on branch `test-assist/registry-orchestrator` (commit ab35238). 22 sub-tests in `internal/registry/registry_orchestrator_test.go`.
-- 2026-10-09: Cover PlanOrphanCleanup + CleanupOrphanInstance + instanceDirectoryExists (orphans.go). PR #538 merged 2026-10-10. internal/runner 82.6% → 84.7%.
-- 2026-10-02: Cover `checkCacheReachability` + `probeCacheFromRunner` + `effectiveBind` (all 0% → 100%); internal/doctor 81.4% → 91.7% (+10.3 pp). PR draft on branch `test-assist/cache-reachability-orchestrator` (commit 6edc2a9). 17 sub-tests in `internal/doctor/cache_reachability_orchestrator_test.go`. Merged 2026-10-04 (PR #518).
-- 2026-09-25: Cover all 6 cache.go orchestrator functions (0% → 87.5–100%). internal/ops 80.3% → 91.9% (+11.6 pp). PR draft on branch `test-assist/cache-orchestrators` (commit dabd9f6). 26 sub-tests in `internal/ops/cache_orchestrators_test.go`. Merged 2026-10-01 (PR #503).
-- 2026-09-11: Cover `cache.Inspect` orchestrator (0% → 100%); internal/cache 77.0% → 88.0% (+11.0 pp). PR draft on branch `test-assist/cache-inspect` (commit 3f7fffc). 10 sub-tests in `internal/cache/inspect_test.go`. Merged 2026-09-13 (PR #486).
-- 2026-09-04: Cover `checkLockWorkflows` orchestrator (0% → 100%); internal/doctor 75.9% → 81.4% (+5.5 pp). PR draft on branch `test-assist/lockfiles-orchestrator` (commit 1197043). 7 sub-tests in `internal/doctor/lockfiles_orchestrator_test.go`. Merged 2026-09-06 (PR #472).
+- 2026-11-06: Cover post-C2 ops registry/image band (registryTargets, RegistryDeploy, RegistryStatus, printRegistryStatus, RegistryRemove 0%→85.7–100%; ImagesSync 10.3%→96.6%; syncPrefetchAfterStart 9.4%→93.8%). internal/ops 79.0%→90.5% (+11.5 pp). Draft PR on branch `test-assist/ops-registry-images-orchestrators` (commit b858ea8). 27 sub-tests in `internal/ops/registry_orchestrators_test.go`.
+- 2026-10-23: internal/host/connection.go coverage draft (in-process SSH server) — superseded by repo-assist #604 (merged 2026-11-05, narrower scope: auth + known_hosts only); Run/Upload/Close/NewConnection remain uncovered.
+- 2026-10-16: internal/registry orchestrator tests merged as #558 (2026-10-17; 55.9%→96.5% pre-refactor; now 90.2% after #594/#607/C2).
+- 2026-10-09: orphan cleanup tests merged as #538 (2026-10-10).
+- 2026-10-02: cache-reachability merged as #518 (2026-10-04).
+- 2026-09-25: ops cache orchestrators merged as #503 (2026-10-01).
+- 2026-09-11: cache.Inspect merged as #486 (2026-09-13).
+- 2026-09-04: lockfiles orchestrator merged as #472 (2026-09-06).
+
+Monthly Activity issue for 2026-11 created this run (2026-11-06). No open
+test-improver monthly issue existed before (October edition presumably closed).
