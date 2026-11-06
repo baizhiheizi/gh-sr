@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -461,24 +460,17 @@ func (m *Manager) EnrichWithGitHubStatus(statuses []RunnerStatus, cfg *config.Co
 // from EnrichWithGitHubStatus so the inner work can be benchmarked and unit-
 // tested without going through the GitHub API.
 //
-// The rcByInstance build inlines the deterministic `name-N` construction
-// instead of calling rc.InstanceNames(): the helper would allocate a
-// []string slice header per RunnerConfig in addition to the N name strings,
-// and the slice is consumed only as map keys. The Go compiler folds the short
-// `+` chain into a single allocation per result, so the inline form costs
-// the unavoidable per-name string allocation only.
+// The rcByName map is keyed on the runner's base name (one entry per
+// RunnerConfig) instead of the expanded `name-N` instance names, and the
+// per-status lookup strips the deterministic `-N` suffix via LastIndex + slice —
+// a no-alloc view of the existing instance string. Building `name-N` keys would
+// cost one string allocation per instance (sum of Counts) on every enrich tick.
+// Collisions between runners sharing a base name still resolve to the last
+// config entry, as before.
 func (m *Manager) enrichFromScopeRunners(statuses []RunnerStatus, cfg *config.Config, scopeRunners map[scopeKey][]GitHubRunner) {
-	rcByInstance := make(map[string]*config.RunnerConfig)
+	rcByName := make(map[string]*config.RunnerConfig)
 	for i := range cfg.Runners {
-		rc := &cfg.Runners[i]
-		count := rc.Count
-		if count < 1 {
-			count = 1
-		}
-		name := rc.Name
-		for j := 1; j <= count; j++ {
-			rcByInstance[name+"-"+strconv.Itoa(j)] = rc
-		}
+		rcByName[cfg.Runners[i].Name] = &cfg.Runners[i]
 	}
 
 	for i := range statuses {
@@ -486,7 +478,12 @@ func (m *Manager) enrichFromScopeRunners(statuses []RunnerStatus, cfg *config.Co
 		if !ok {
 			continue
 		}
-		rc := rcByInstance[statuses[i].Instance]
+		instName := statuses[i].Instance
+		dashIdx := strings.LastIndex(instName, "-")
+		if dashIdx <= 0 {
+			continue
+		}
+		rc := rcByName[instName[:dashIdx]]
 		if rc == nil {
 			continue
 		}
