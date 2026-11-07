@@ -1,0 +1,32 @@
+# gh-sr · 仓库 manifest（agent 通用描述，vigil F1）
+# 2026-11-07 基于实测生成
+repo: baizhiheizi/gh-sr
+stack: "go（cmd/ + internal/，Makefile 构建）；注意 module path 为 github.com/an-lee/gh-sr（与 remote org 不一致）"
+
+commands:
+  install: "go mod download"
+  test: "go test ./..."
+  lint: "go vet ./..."
+  build: "go build ./..."
+
+review:
+  run_tests: false
+  test_timeout: 300
+
+review_rubric:
+  - id: err-not-ignored
+    text: "error 必须显式处理，禁止 _ = 丢弃；包装错误用 %w 保留链"
+  - id: context-propagation
+    text: "IO 调用必须透传 context.Context（取消/超时可传导）"
+  - id: untrusted-api-data
+    text: "GitHub API 响应按不可信输入处理：缺失字段容错，不直接解引用指针"
+  - id: stdlib-first
+    text: "新增第三方依赖需说明理由，优先标准库"
+
+gates:
+  auto_merge_max_diff_lines: 80
+  max_auto_fix_rounds: 3
+
+branch:
+  prefix: "feat/"
+  labels: ["repo:gh-sr"]
