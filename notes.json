@@ -4,33 +4,32 @@
     "labelling_after": null,
     "investigation_after": null
   },
-  "issues": [
-    {
-      "number": 609,
-      "state": "deferred",
-      "updated_at": "2026-11-06",
-      "note": "Deferred pending review of C1 (probe module draft, branch repo-assist/deep-probe-module-609). Follow-ons if approved: C2 ops drawer, C3 strfmt float, C5 Manager-from-config."
-    }
-  ],
+  "issues": [],
   "fixes": [],
   "checks": [
     {
       "area": "repo_assist_prs",
       "checked_at": "2026-11-06",
       "result": "acted",
-      "follow_up": "2026-11-05 drafts merged (#603, #604) plus #607/#608. New 2026-11-06 draft: repo-assist/deep-probe-module-609 (C1 of #609)."
+      "follow_up": "New 2026-11-06 draft: repo-assist/test-dashboard-state-machine (test(tui) dashboard Update/View, 56.5%->90.7%). Older drafts all merged (#603 #604 #607 #608 #613)."
     },
     {
       "area": "code",
       "checked_at": "2026-11-06",
       "result": "acted",
-      "follow_up": "Probe grammar folded into new internal/probe; cache/registry/agentic are adapters; strfmt marker helpers deleted. Cache wire gained :1| index; agentic script unrolled."
+      "follow_up": "#609 saga complete: C1 merged as #613, C2-C5 via #614-#617, issue closed completed. Probe grammar in internal/probe; ops fan-out unified; Manager built from config once."
     },
     {
       "area": "tests",
       "checked_at": "2026-11-06",
       "result": "acted",
-      "follow_up": "Grammar tested once in internal/probe; suite green plain + -race; round-trip benches pin 1 round-trip/op. tui interactive coverage still lowest."
+      "follow_up": "Dashboard Update/View state machine now covered (new dashboard_update_test.go); tui 56.5%->90.7%. Ops at 79% owned by test-improver PR #618; revisit only if it stalls."
+    },
+    {
+      "area": "performance",
+      "checked_at": "2026-11-06",
+      "result": "no_actionable",
+      "follow_up": "Swept post-#617: dashboard render sub-ms vs 5s tick (footer memoized), CollectHostMetrics fans out one combined script per host in parallel, probes pinned one-round-trip. No measurable opportunity left."
     },
     {
       "area": "ci",
@@ -43,12 +42,6 @@
       "checked_at": "2026-11-05",
       "result": "no_actionable",
       "follow_up": "bubbletea v2.1.1 bump merged (#608). go-gh v2.17.0 current. Weekly Dependabot gomod schedule covers the rest."
-    },
-    {
-      "area": "performance",
-      "checked_at": "2026-11-03",
-      "result": "acted",
-      "follow_up": "Batchings delivered (#593/#594); one-round-trip invariants re-pinned through the 2026-11-06 probe refactor. Remaining probes are once-per-host."
     },
     {
       "area": "hygiene",
