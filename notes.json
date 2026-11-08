@@ -9,21 +9,21 @@
   "checks": [
     {
       "area": "repo_assist_prs",
-      "checked_at": "2026-11-06",
+      "checked_at": "2026-11-08",
       "result": "acted",
-      "follow_up": "New 2026-11-06 draft: repo-assist/test-dashboard-state-machine (test(tui) dashboard Update/View, 56.5%->90.7%). Older drafts all merged (#603 #604 #607 #608 #613)."
-    },
-    {
-      "area": "code",
-      "checked_at": "2026-11-06",
-      "result": "acted",
-      "follow_up": "#609 saga complete: C1 merged as #613, C2-C5 via #614-#617, issue closed completed. Probe grammar in internal/probe; ops fan-out unified; Manager built from config once."
+      "follow_up": "Two new drafts: test-listlockworkflows (ListLockWorkflows 0->96.8%, runner 86.1->87.8%) and remove-dead-npm-check-wrapper. All prior drafts merged (#603 #604 #607 #608 #613 #618 #620)."
     },
     {
       "area": "tests",
-      "checked_at": "2026-11-06",
+      "checked_at": "2026-11-08",
       "result": "acted",
-      "follow_up": "Dashboard Update/View state machine now covered (new dashboard_update_test.go); tui 56.5%->90.7%. Ops at 79% owned by test-improver PR #618; revisit only if it stalls."
+      "follow_up": "ListLockWorkflows covered (doctor lockfiles dep, was 0%). Thin spots left are integration-heavy; next cheap: config/registry resolver helpers. All 4 open issues are automation trackers; no fixable backlog (2026-11-08)."
+    },
+    {
+      "area": "code",
+      "checked_at": "2026-11-08",
+      "result": "acted",
+      "follow_up": "Dead containerNodeNPMCheckCommand wrapper removed (zero callers; node-npm probe def stays, prod uses containerCheckDefByName). #609 saga complete via #613-#617."
     },
     {
       "area": "performance",
