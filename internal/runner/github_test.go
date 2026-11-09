@@ -1,6 +1,7 @@
 package runner
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -512,4 +513,158 @@ func TestGitHubClient_fetchToken_orgScope(t *testing.T) {
 	if tok != "org-via-helper" {
 		t.Errorf("token %q", tok)
 	}
+}
+
+func TestGitHubClient_ListLockWorkflows(t *testing.T) {
+	listing := []contentsEntry{
+		{Name: "build.yml", Type: "file"},
+		{Name: "sub", Type: "dir"},
+		{Name: "b.lock.yml", Type: "file"},
+		{Name: "a.lock.yml", Type: "file"},
+	}
+	rawFiles := map[string]string{
+		"a.lock.yml": "jobs: a",
+		"b.lock.yml": "jobs: b\nwith: multiline",
+	}
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/repos/o/r/contents/.github/workflows" {
+			_ = json.NewEncoder(w).Encode(listing)
+			return
+		}
+		name := strings.TrimPrefix(r.URL.Path, "/repos/o/r/contents/.github/workflows/")
+		body, ok := rawFiles[name]
+		if !ok {
+			http.NotFound(w, r)
+			return
+		}
+		// GitHub wraps base64 payloads at 60 chars; decoding must strip the newlines.
+		enc := base64.StdEncoding.EncodeToString([]byte(body))
+		var wrapped strings.Builder
+		for i := 0; i < len(enc); i += 60 {
+			end := min(i+60, len(enc))
+			wrapped.WriteString(enc[i:end])
+			wrapped.WriteString("\n")
+		}
+		_ = json.NewEncoder(w).Encode(contentsFile{Name: name, Content: wrapped.String(), Encoding: "base64"})
+	}))
+	defer ts.Close()
+
+	g := NewGitHubClientWithHTTP("pat", ts.Client(), ts.URL)
+
+	files, err := g.ListLockWorkflows("o/r", 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(files) != 2 || files[0].Name != "a.lock.yml" || files[1].Name != "b.lock.yml" {
+		t.Fatalf("expected sorted .lock.yml files only, got %+v", files)
+	}
+	if files[0].Content != rawFiles["a.lock.yml"] || files[1].Content != rawFiles["b.lock.yml"] {
+		t.Fatalf("expected decoded contents, got %+v", files)
+	}
+
+	trunc, err := g.ListLockWorkflows("o/r", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(trunc) != 1 || trunc[0].Name != "a.lock.yml" {
+		t.Fatalf("expected truncation to first sorted file, got %+v", trunc)
+	}
+}
+
+func TestGitHubClient_ListLockWorkflows_edgeCases(t *testing.T) {
+	t.Run("plain encoding passthrough", func(t *testing.T) {
+		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if strings.HasSuffix(r.URL.Path, "/b.lock.yml") {
+				_ = json.NewEncoder(w).Encode(contentsFile{Name: "b.lock.yml", Content: "raw: text"})
+				return
+			}
+			_ = json.NewEncoder(w).Encode([]contentsEntry{{Name: "b.lock.yml", Type: "file"}})
+		}))
+		defer ts.Close()
+
+		g := NewGitHubClientWithHTTP("pat", ts.Client(), ts.URL)
+		files, err := g.ListLockWorkflows("o/r", 5)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(files) != 1 || files[0].Content != "raw: text" {
+			t.Fatalf("expected verbatim content, got %+v", files)
+		}
+	})
+
+	t.Run("no lock files", func(t *testing.T) {
+		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			_ = json.NewEncoder(w).Encode([]contentsEntry{{Name: "ci.yml", Type: "file"}})
+		}))
+		defer ts.Close()
+
+		g := NewGitHubClientWithHTTP("pat", ts.Client(), ts.URL)
+		files, err := g.ListLockWorkflows("o/r", 5)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(files) != 0 {
+			t.Fatalf("expected no files, got %+v", files)
+		}
+	})
+
+	t.Run("listing fetch error", func(t *testing.T) {
+		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			http.Error(w, "boom", http.StatusInternalServerError)
+		}))
+		defer ts.Close()
+
+		g := NewGitHubClientWithHTTP("pat", ts.Client(), ts.URL)
+		_, err := g.ListLockWorkflows("o/r", 5)
+		if err == nil || !strings.Contains(err.Error(), "listing .github/workflows for o/r") {
+			t.Fatalf("expected listing error, got: %v", err)
+		}
+	})
+
+	t.Run("listing parse error", func(t *testing.T) {
+		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			_, _ = w.Write([]byte("{}"))
+		}))
+		defer ts.Close()
+
+		g := NewGitHubClientWithHTTP("pat", ts.Client(), ts.URL)
+		_, err := g.ListLockWorkflows("o/r", 5)
+		if err == nil || !strings.Contains(err.Error(), "parsing workflows listing for o/r") {
+			t.Fatalf("expected listing parse error, got: %v", err)
+		}
+	})
+
+	t.Run("file fetch error", func(t *testing.T) {
+		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if strings.HasSuffix(r.URL.Path, "/a.lock.yml") {
+				http.Error(w, "boom", http.StatusInternalServerError)
+				return
+			}
+			_ = json.NewEncoder(w).Encode([]contentsEntry{{Name: "a.lock.yml", Type: "file"}})
+		}))
+		defer ts.Close()
+
+		g := NewGitHubClientWithHTTP("pat", ts.Client(), ts.URL)
+		_, err := g.ListLockWorkflows("o/r", 5)
+		if err == nil || !strings.Contains(err.Error(), "fetching a.lock.yml in o/r") {
+			t.Fatalf("expected file fetch error, got: %v", err)
+		}
+	})
+
+	t.Run("bad base64", func(t *testing.T) {
+		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if strings.HasSuffix(r.URL.Path, "/a.lock.yml") {
+				_ = json.NewEncoder(w).Encode(contentsFile{Name: "a.lock.yml", Content: "!!!not-base64!!!", Encoding: "base64"})
+				return
+			}
+			_ = json.NewEncoder(w).Encode([]contentsEntry{{Name: "a.lock.yml", Type: "file"}})
+		}))
+		defer ts.Close()
+
+		g := NewGitHubClientWithHTTP("pat", ts.Client(), ts.URL)
+		_, err := g.ListLockWorkflows("o/r", 5)
+		if err == nil || !strings.Contains(err.Error(), "decoding a.lock.yml in o/r") {
+			t.Fatalf("expected decode error, got: %v", err)
+		}
+	})
 }
