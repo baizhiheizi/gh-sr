@@ -704,11 +704,6 @@ func containerInnerNetworkCheckCommand(outerContainer string) string {
 	return d.checkCommand(outerContainer)
 }
 
-func containerNodeNPMCheckCommand(outerContainer string) string {
-	d, _ := containerCheckDefByName("container-node-npm", outerContainer, "", 0, false)
-	return d.checkCommand(outerContainer)
-}
-
 func containerDockerSocketUserCheckCommand(outerContainer string) string {
 	d, _ := containerCheckDefByName("container-docker-socket-user", outerContainer, "", 0, false)
 	return d.checkCommand(outerContainer)
