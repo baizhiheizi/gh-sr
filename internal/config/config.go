@@ -1345,58 +1345,6 @@ func (c *Config) RunnersForHost(hostName string) []RunnerConfig {
 	return result
 }
 
-func (c *Config) RunnersForRepo(repo string) []RunnerConfig {
-	var result []RunnerConfig
-	for _, r := range c.Runners {
-		if r.Repo == repo {
-			result = append(result, r)
-		}
-	}
-	return result
-}
-
-func (c *Config) UniqueRepos() []string {
-	seen := map[string]bool{}
-	var repos []string
-	for _, r := range c.Runners {
-		if r.Repo == "" {
-			continue
-		}
-		if !seen[r.Repo] {
-			seen[r.Repo] = true
-			repos = append(repos, r.Repo)
-		}
-	}
-	return repos
-}
-
-func (c *Config) UniqueOrgs() []string {
-	seen := map[string]bool{}
-	var orgs []string
-	for _, r := range c.Runners {
-		if r.Org == "" {
-			continue
-		}
-		if !seen[r.Org] {
-			seen[r.Org] = true
-			orgs = append(orgs, r.Org)
-		}
-	}
-	return orgs
-}
-
-func (c *Config) FindRunner(name string) (*RunnerConfig, bool) {
-	for i := range c.Runners {
-		if c.Runners[i].Name == name {
-			return &c.Runners[i], true
-		}
-		if matchesRunnerInstanceName(&c.Runners[i], name) {
-			return &c.Runners[i], true
-		}
-	}
-	return nil, false
-}
-
 // ResolveRunnerInstance maps a CLI argument (base name or instance) to the instance directory name (e.g. myapp-1).
 func (rc *RunnerConfig) ResolveRunnerInstance(nameArg string) (string, error) {
 	if j, ok := instanceIndex(rc, nameArg); ok {
