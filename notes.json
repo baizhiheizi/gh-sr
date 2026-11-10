@@ -9,21 +9,27 @@
   "checks": [
     {
       "area": "repo_assist_prs",
-      "checked_at": "2026-11-08",
+      "checked_at": "2026-11-10",
       "result": "acted",
-      "follow_up": "Two new drafts: test-listlockworkflows (ListLockWorkflows 0->96.8%, runner 86.1->87.8%) and remove-dead-npm-check-wrapper. All prior drafts merged (#603 #604 #607 #608 #613 #618 #620)."
+      "follow_up": "Two new drafts: improve-remove-dead-config-host-queries (dead query helpers+PathSep) and basics-docs-accuracy-fixes (5 doc fixes). #621/#622 merged."
+    },
+    {
+      "area": "docs",
+      "checked_at": "2026-11-10",
+      "result": "acted",
+      "follow_up": "Full docs/CLI cross-check: 21 commands+flags verified; fixed stale fork image default (2.338.2 no v), missing init --quick / doctor --check-lockfiles / disk prune --force, CHANGELOG gh sr hosts slip. Drafted."
+    },
+    {
+      "area": "code",
+      "checked_at": "2026-11-10",
+      "result": "acted",
+      "follow_up": "Dead Config.RunnersForRepo/UniqueRepos/UniqueOrgs/FindRunner + Host.PathSep removed (135 lines; prod uses FindRunnerForLogs). Sweep: no other dead exports (dashboardModel.Init is tea.Model plumbing)."
     },
     {
       "area": "tests",
       "checked_at": "2026-11-08",
       "result": "acted",
-      "follow_up": "ListLockWorkflows covered (doctor lockfiles dep, was 0%). Thin spots left are integration-heavy; next cheap: config/registry resolver helpers. All 4 open issues are automation trackers; no fixable backlog (2026-11-08)."
-    },
-    {
-      "area": "code",
-      "checked_at": "2026-11-08",
-      "result": "acted",
-      "follow_up": "Dead containerNodeNPMCheckCommand wrapper removed (zero callers; node-npm probe def stays, prod uses containerCheckDefByName). #609 saga complete via #613-#617."
+      "follow_up": "ListLockWorkflows covered (doctor lockfiles dep, was 0%). Thin spots left are integration-heavy; next cheap: config/registry resolver helpers. All 4 open issues are automation trackers; no fixable backlog (2026-11-08, reconfirmed 2026-11-10)."
     },
     {
       "area": "performance",
