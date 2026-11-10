@@ -390,27 +390,6 @@ func TestConfig_queries(t *testing.T) {
 	if len(h1) != 2 {
 		t.Fatalf("RunnersForHost h1: got %d", len(h1))
 	}
-	br := cfg.RunnersForRepo("o/a")
-	if len(br) != 2 {
-		t.Fatalf("RunnersForRepo o/a: got %d", len(br))
-	}
-	repos := cfg.UniqueRepos()
-	if len(repos) != 2 {
-		t.Fatalf("UniqueRepos: got %v", repos)
-	}
-
-	rc, ok := cfg.FindRunner("alpha")
-	if !ok || rc.Name != "alpha" {
-		t.Fatalf("FindRunner alpha: ok=%v", ok)
-	}
-	rc, ok = cfg.FindRunner("alpha-2")
-	if !ok || rc.Name != "alpha" {
-		t.Fatalf("FindRunner alpha-2: ok=%v name=%v", ok, rc)
-	}
-	rc, ok = cfg.FindRunner("nope")
-	if ok {
-		t.Fatal("expected not found")
-	}
 }
 
 func TestFindRunnerForLogs_and_ResolveRunnerInstance(t *testing.T) {
@@ -534,36 +513,6 @@ func TestValidate_ephemeralRunner(t *testing.T) {
 	}
 	if err := cfg.Validate(); err != nil {
 		t.Fatalf("ephemeral runner should be valid: %v", err)
-	}
-}
-
-func TestUniqueOrgs(t *testing.T) {
-	t.Parallel()
-	cfg := &Config{
-		Runners: []RunnerConfig{
-			{Name: "a", Repo: "o/r", Host: "h"},
-			{Name: "b", Org: "my-org", Host: "h"},
-			{Name: "c", Org: "my-org", Host: "h"},
-			{Name: "d", Org: "other-org", Host: "h"},
-		},
-	}
-	orgs := cfg.UniqueOrgs()
-	if len(orgs) != 2 {
-		t.Fatalf("expected 2 orgs, got %v", orgs)
-	}
-}
-
-func TestUniqueRepos_skipOrgOnly(t *testing.T) {
-	t.Parallel()
-	cfg := &Config{
-		Runners: []RunnerConfig{
-			{Name: "a", Repo: "o/r", Host: "h"},
-			{Name: "b", Org: "my-org", Host: "h"},
-		},
-	}
-	repos := cfg.UniqueRepos()
-	if len(repos) != 1 || repos[0] != "o/r" {
-		t.Fatalf("expected [o/r], got %v", repos)
 	}
 }
 

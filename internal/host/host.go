@@ -192,13 +192,6 @@ func (h *Host) TempDirPS() string {
 	return h.TempDir()
 }
 
-func (h *Host) PathSep() string {
-	if h.OS == "windows" {
-		return `\`
-	}
-	return "/"
-}
-
 // SSHUser returns the SSH login from Addr when it uses user@host form; otherwise "" (e.g. local, bare hostname).
 func (h *Host) SSHUser() string {
 	if IsLocal(h.Addr) {

@@ -230,9 +230,6 @@ func TestHost_paths(t *testing.T) {
 	if win.TempDirPS() != "$env:TEMP" {
 		t.Errorf("windows temp ps: %q", win.TempDirPS())
 	}
-	if win.PathSep() != `\` {
-		t.Errorf("windows sep: %q", win.PathSep())
-	}
 
 	ln := NewHost("l", config.HostConfig{Addr: "u@h", OS: "linux", Arch: "arm64"})
 	if ln.RunnerBaseDir() != "$HOME/.gh-sr/runners" {
@@ -252,9 +249,6 @@ func TestHost_paths(t *testing.T) {
 	}
 	if ln.TempDirPS() != "/tmp" {
 		t.Errorf("linux temp ps: %q", ln.TempDirPS())
-	}
-	if ln.PathSep() != "/" {
-		t.Errorf("linux sep: %q", ln.PathSep())
 	}
 }
 
