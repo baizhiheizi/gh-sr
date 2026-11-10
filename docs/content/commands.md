@@ -9,8 +9,8 @@ Running **`gh sr` with no subcommand** opens the interactive dashboard on a **TT
 
 ```bash
 gh sr                      # Open dashboard (TTY only; see above)
-gh sr init [--force]       # Create ~/.gh-sr with template runners.yml and env file
-gh sr doctor [--strict] [--fix]    # Check config, GitHub API, and host prerequisites
+gh sr init [--force] [--quick]    # Create ~/.gh-sr with template runners.yml and env file (--quick: interactive setup)
+gh sr doctor [--strict] [--fix] [--check-lockfiles]    # Check config, GitHub API, and host prerequisites
 gh sr setup [names...]     # Install runner binary and configure on hosts
 gh sr up [names...]        # Start runners
 gh sr down [names...]      # Stop runners
@@ -71,7 +71,7 @@ gh sr down enjoy-win-1
 - **Native** (`runner_mode: native`): curl/tar (or PowerShell on Windows), runner install dirs, Linux passwordless sudo when needed for setup.
 - **Container** (`runner_mode: container` or `profile: agentic` on Linux): host Docker and `--privileged` support, each `gh-sr-<instance>` container, inner `dockerd`, registration, and (for agentic) inner AWF/DNS/hygiene. On non-Linux hosts, doctor reports a FAIL if container-mode runners are in scope.
 
-By default only **FAIL** lines produce a non-zero exit. Use **`--strict`** to fail on **WARN** as well (useful in CI). Use **`--fix`** to re-run `gh sr setup` when doctor reports failures, then always re-run doctor; the final exit code reflects the post-fix result.
+By default only **FAIL** lines produce a non-zero exit. Use **`--strict`** to fail on **WARN** as well (useful in CI). Use **`--fix`** to re-run `gh sr setup` when doctor reports failures, then always re-run doctor; the final exit code reflects the post-fix result. Use **`--check-lockfiles`** to also scan each scoped repo's compiled gh-aw workflows (`*.lock.yml`) for retired sudo/iptables-era artifacts — a FAIL means the workflow must be recompiled with gh-aw >= v0.88 (requires network).
 
 ## Quick start sequence
 
@@ -186,6 +186,7 @@ gh sr disk prune --dry-run          # preview reclaim (default without --yes)
 gh sr disk prune --yes              # clear _work/_temp on idle runners (keeps docker-data cache)
 gh sr disk prune --yes --prune-cache # also reclaim inner Docker cache (slower next job)
 gh sr disk prune --yes --include-orphans   # also remove dirs not in runners.yml
+gh sr disk prune --yes --force             # also prune runners whose GitHub status is unknown
 gh sr disk schedule install         # daily prune at 03:00 on this machine
 gh sr disk schedule status
 gh sr disk schedule uninstall
@@ -193,7 +194,7 @@ gh sr disk schedule uninstall
 
 **Notes:**
 
-- Busy runners (active job on GitHub) are always skipped.
+- Busy runners (active job on GitHub) are always skipped. Runners whose GitHub status cannot be determined are also skipped unless `--force` is passed.
 - Default prune keeps inner Docker cache (`docker-data`) so the next agentic job does not re-pull gh-aw images. Use `--prune-cache` when you need maximum disk recovery.
 - `gh sr cleanup` removes **offline GitHub registrations** only — it does not free disk. Use `gh sr disk prune` for workspace cleanup.
 - `gh sr doctor` warns when any instance directory exceeds 50 GiB (including orphan dirs).
