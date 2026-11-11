@@ -9,27 +9,27 @@
   "checks": [
     {
       "area": "repo_assist_prs",
-      "checked_at": "2026-11-10",
+      "checked_at": "2026-11-11",
       "result": "acted",
-      "follow_up": "Two new drafts: improve-remove-dead-config-host-queries (dead query helpers+PathSep) and basics-docs-accuracy-fixes (5 doc fixes). #621/#622 merged."
-    },
-    {
-      "area": "docs",
-      "checked_at": "2026-11-10",
-      "result": "acted",
-      "follow_up": "Full docs/CLI cross-check: 21 commands+flags verified; fixed stale fork image default (2.338.2 no v), missing init --quick / doctor --check-lockfiles / disk prune --force, CHANGELOG gh sr hosts slip. Drafted."
+      "follow_up": "Two new drafts: improve-drop-dead-count-cache-upstream (dead CacheStoragePath/InstanceCount/Settings.upstream) and test-paths-bootstrap-env (paths.go 100%). #623/#624 merged."
     },
     {
       "area": "code",
-      "checked_at": "2026-11-10",
+      "checked_at": "2026-11-11",
       "result": "acted",
-      "follow_up": "Dead Config.RunnersForRepo/UniqueRepos/UniqueOrgs/FindRunner + Host.PathSep removed (135 lines; prod uses FindRunnerForLogs). Sweep: no other dead exports (dashboardModel.Init is tea.Model plumbing)."
+      "follow_up": "Dead trio removed via draft PR (25 lines): Config.CacheStoragePath, RunnerConfig.InstanceCount (per-instance-scheme leftover), Settings.upstream. Precedent #623. All other 0%-funcs have callers."
     },
     {
       "area": "tests",
-      "checked_at": "2026-11-08",
+      "checked_at": "2026-11-11",
       "result": "acted",
-      "follow_up": "ListLockWorkflows covered (doctor lockfiles dep, was 0%). Thin spots left are integration-heavy; next cheap: config/registry resolver helpers. All 4 open issues are automation trackers; no fixable backlog (2026-11-08, reconfirmed 2026-11-10)."
+      "follow_up": "paths.go 100% via paths_test.go (BootstrapEnv/EnvFilePath + ApplyEnvFile export-prefix); config 86.5%->87.9%. Resolver helpers 81-89% already table-tested; thin spots left integration-heavy. Untested-but-used: hasLabel, Settings.ContainerNames."
+    },
+    {
+      "area": "docs",
+      "checked_at": "2026-11-11",
+      "result": "acted",
+      "follow_up": "Changelog verified: rolling [Unreleased] is the convention (v0.9.1 commit adds entries, never rotates; releases use auto GH notes). No release warranted: 26 commits since v0.9.1 all internal. Docs cross-check merged as #624."
     },
     {
       "area": "performance",
