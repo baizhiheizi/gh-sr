@@ -365,6 +365,29 @@ func hasContainerModeRunners(runners []config.RunnerConfig) bool {
 	return false
 }
 
+// firstContainerInstance returns the name of the first instance belonging to a
+// container-mode runner in the supplied slice, or "" if none are configured.
+func firstContainerInstance(runners []config.RunnerConfig) string {
+	for i := range runners {
+		if runners[i].IsContainerMode() && len(runners[i].InstanceNames()) > 0 {
+			return runners[i].InstanceNames()[0]
+		}
+	}
+	return ""
+}
+
+// runnerContainerHasEnv checks whether the specified runner container carries
+// an environment variable starting with the given key (e.g. "GH_SR_NPM_REGISTRY").
+func runnerContainerHasEnv(h *host.Host, cname, key string) (bool, error) {
+	out, err := h.Run(fmt.Sprintf(
+		"docker inspect --format='{{range .Config.Env}}{{println .}}{{end}}' %s 2>/dev/null | grep -c '^%s=' || true",
+		runner.QuoteContainerName(cname), key))
+	if err != nil {
+		return false, err
+	}
+	return strings.TrimSpace(out) != "0", nil
+}
+
 // runHostChecks runs native and/or container doctor checks for hostName using the
 // already-filtered runners slice (respects --host / --repo filters). cacheSet is
 // the effective per-host cache configuration (nil = disabled); cacheEnabled is
@@ -423,13 +446,7 @@ func checkContainerExtras(w io.Writer, hostName string, h *host.Host, hostRunner
 		!extras.SharedPubCache && !extras.SharedMiseData && !extras.SharedAndroidSDK && extras.NPMRegistry == "" {
 		return
 	}
-	inst := ""
-	for i := range hostRunners {
-		if hostRunners[i].IsContainerMode() && len(hostRunners[i].InstanceNames()) > 0 {
-			inst = hostRunners[i].InstanceNames()[0]
-			break
-		}
-	}
+	inst := firstContainerInstance(hostRunners)
 	if inst == "" {
 		return
 	}
@@ -437,10 +454,7 @@ func checkContainerExtras(w io.Writer, hostName string, h *host.Host, hostRunner
 
 	var problems []string
 	if extras.NPMRegistry != "" {
-		envOut, err := h.Run(fmt.Sprintf(
-			"docker inspect --format='{{range .Config.Env}}{{println .}}{{end}}' %s 2>/dev/null | grep -c '^GH_SR_NPM_REGISTRY=' || true",
-			runner.QuoteContainerName(cname)))
-		if err == nil && strings.TrimSpace(envOut) == "0" {
+		if hasEnv, err := runnerContainerHasEnv(h, cname, "GH_SR_NPM_REGISTRY"); err == nil && !hasEnv {
 			problems = append(problems, fmt.Sprintf("no GH_SR_NPM_REGISTRY env (npm_registry set); npm keeps using registry.npmjs.org"))
 		}
 	}
@@ -837,6 +851,49 @@ func checkCacheReachability(w io.Writer, hostName string, h *host.Host, hostRunn
 	}
 }
 
+func probeFailed(out string) bool {
+	return strings.Contains(out, "PROBE_FAIL")
+}
+
+func http200ProbeFailed(out string) bool {
+	return strings.Contains(out, "PROBE_FAIL") || out != "200"
+}
+
+// probeFromRunnerContainer executes a shell probe inside a runner container via
+// docker exec, checks for execution errors and probe failure conditions, and records
+// the diagnostic outcome into the Result collector.
+func probeFromRunnerContainer(
+	w io.Writer,
+	hostName string,
+	h *host.Host,
+	cname string,
+	label string,
+	script string,
+	isFailed func(out string) bool,
+	failSev string,
+	failMsg func() string,
+	okMsg string,
+	r *Result,
+) {
+	out, err := h.Run(fmt.Sprintf(
+		"docker exec %s sh -c %s 2>/dev/null",
+		runner.QuoteContainerName(cname), hostshell.PosixSingleQuote(script)))
+	switch {
+	case err != nil:
+		printLine(w, sevWarn, hostName, fmt.Sprintf("%s: could not probe from runner container %s: %v", label, cname, err))
+		r.Warn++
+	case isFailed(strings.TrimSpace(out)):
+		printLine(w, failSev, hostName, failMsg())
+		if failSev == sevFail {
+			r.Fail++
+		} else {
+			r.Warn++
+		}
+	default:
+		printLine(w, sevOK, hostName, okMsg)
+	}
+}
+
 // probeCacheFromRunner curls the cache health endpoint from inside the first
 // container-mode runner instance on the host. The host reaches the published
 // port through the loopback path even when the runner path is blocked — a
@@ -848,13 +905,7 @@ func checkCacheReachability(w io.Writer, hostName string, h *host.Host, hostRunn
 // running" (the latter is already reported by the runner checks and only
 // warns here).
 func probeCacheFromRunner(w io.Writer, hostName string, h *host.Host, hostRunners []config.RunnerConfig, s *cache.Settings, r *Result) {
-	inst := ""
-	for i := range hostRunners {
-		if hostRunners[i].IsContainerMode() && len(hostRunners[i].InstanceNames()) > 0 {
-			inst = hostRunners[i].InstanceNames()[0]
-			break
-		}
-	}
+	inst := firstContainerInstance(hostRunners)
 	if inst == "" {
 		return
 	}
@@ -871,22 +922,12 @@ func probeCacheFromRunner(w io.Writer, hostName string, h *host.Host, hostRunner
 	// whole: quoting the URL separately nests single quotes inside the
 	// already-quoted `sh -c` payload and silently rewrites the request.
 	script := fmt.Sprintf("curl -fsS -m 5 %s/health || echo PROBE_FAIL", strings.TrimSuffix(url, "/"))
-	out, err := h.Run(fmt.Sprintf(
-		"docker exec %s sh -c %s 2>/dev/null",
-		runner.QuoteContainerName(cname), hostshell.PosixSingleQuote(script)))
-	switch {
-	case err != nil:
-		printLine(w, sevWarn, hostName, fmt.Sprintf("cache: could not probe from runner container %s: %v", cname, err))
-		r.Warn++
-	case strings.Contains(strings.TrimSpace(out), "PROBE_FAIL"):
+	probeFromRunnerContainer(w, hostName, h, cname, "cache", script, probeFailed, sevFail, func() string {
 		bind := dockerutil.EffectiveBind(h, s.BindAddr)
-		printLine(w, sevFail, hostName, fmt.Sprintf(
+		return fmt.Sprintf(
 			"cache: not reachable from runner container %s at %s (host-side health is fine — the host INPUT firewall is blocking container traffic); allow it with: sudo ufw allow in on docker0 to %s port %d proto tcp comment 'allow-docker-cache' (or the equivalent nftables/iptables rule), then run: gh sr cache deploy && gh sr rebuild %s",
-			cname, url, bind, s.EffectivePort(), inst))
-		r.Fail++
-	default:
-		printLine(w, sevOK, hostName, fmt.Sprintf("cache: reachable from runner container %s at %s", cname, url))
-	}
+			cname, url, bind, s.EffectivePort(), inst)
+	}, fmt.Sprintf("cache: reachable from runner container %s at %s", cname, url), r)
 }
 
 // checkRegistryMirror verifies every per-host Docker registry pull-through
@@ -985,13 +1026,7 @@ func checkOrphanMirrors(w io.Writer, hostName string, h *host.Host, s *registry.
 // so containers created before the mirror was enabled keep pulling from
 // Docker Hub until recreated.
 func probeRegistryFromRunner(w io.Writer, hostName string, h *host.Host, hostRunners []config.RunnerConfig, s *registry.Settings, r *Result) {
-	inst := ""
-	for i := range hostRunners {
-		if hostRunners[i].IsContainerMode() && len(hostRunners[i].InstanceNames()) > 0 {
-			inst = hostRunners[i].InstanceNames()[0]
-			break
-		}
-	}
+	inst := firstContainerInstance(hostRunners)
 	if inst == "" {
 		return
 	}
@@ -1000,10 +1035,7 @@ func probeRegistryFromRunner(w io.Writer, hostName string, h *host.Host, hostRun
 		return
 	}
 	cname := runner.ContainerDockerName(inst)
-	envOut, err := h.Run(fmt.Sprintf(
-		"docker inspect --format='{{range .Config.Env}}{{println .}}{{end}}' %s 2>/dev/null | grep -c '^GH_SR_REGISTRY_MIRROR=' || true",
-		runner.QuoteContainerName(cname)))
-	if err == nil && strings.TrimSpace(envOut) == "0" {
+	if hasEnv, err := runnerContainerHasEnv(h, cname, "GH_SR_REGISTRY_MIRROR"); err == nil && !hasEnv {
 		printLine(w, sevWarn, hostName, fmt.Sprintf(
 			"registry: runner container %s predates the mirror (no GH_SR_REGISTRY_MIRROR env); recreate with: gh sr rebuild %s",
 			cname, inst))
@@ -1011,22 +1043,12 @@ func probeRegistryFromRunner(w io.Writer, hostName string, h *host.Host, hostRun
 		return
 	}
 	script := fmt.Sprintf("curl -fsS -m 5 -o /dev/null -w %%{http_code} %s/v2/ || echo PROBE_FAIL", strings.TrimSuffix(url, "/"))
-	out, err := h.Run(fmt.Sprintf(
-		"docker exec %s sh -c %s 2>/dev/null",
-		runner.QuoteContainerName(cname), hostshell.PosixSingleQuote(script)))
-	switch {
-	case err != nil:
-		printLine(w, sevWarn, hostName, fmt.Sprintf("registry: could not probe from runner container %s: %v", cname, err))
-		r.Warn++
-	case strings.Contains(strings.TrimSpace(out), "PROBE_FAIL") || strings.TrimSpace(out) != "200":
+	probeFromRunnerContainer(w, hostName, h, cname, "registry", script, http200ProbeFailed, sevFail, func() string {
 		bind := dockerutil.EffectiveBind(h, s.BindAddr)
-		printLine(w, sevFail, hostName, fmt.Sprintf(
+		return fmt.Sprintf(
 			"registry: not reachable from runner container %s at %s (host-side health is fine — the host INPUT firewall is blocking container traffic); allow it with: sudo ufw allow in on docker0 to %s port %d proto tcp comment 'allow-docker-registry-mirror' (or the equivalent nftables/iptables rule)",
-			cname, url, bind, s.EffectivePort()))
-		r.Fail++
-	default:
-		printLine(w, sevOK, hostName, fmt.Sprintf("registry: reachable from runner container %s at %s", cname, url))
-	}
+			cname, url, bind, s.EffectivePort())
+	}, fmt.Sprintf("registry: reachable from runner container %s at %s", cname, url), r)
 }
 
 // probeMirrorURLFromRunner curls one mirror's /v2/ endpoint from inside the
@@ -1038,31 +1060,15 @@ func probeMirrorURLFromRunner(w io.Writer, hostName string, h *host.Host, hostRu
 	if url == "" {
 		return
 	}
-	inst := ""
-	for i := range hostRunners {
-		if hostRunners[i].IsContainerMode() && len(hostRunners[i].InstanceNames()) > 0 {
-			inst = hostRunners[i].InstanceNames()[0]
-			break
-		}
-	}
+	inst := firstContainerInstance(hostRunners)
 	if inst == "" {
 		return
 	}
 	cname := runner.ContainerDockerName(inst)
 	script := fmt.Sprintf("curl -fsS -m 5 -o /dev/null -w %%{http_code} %s/v2/ || echo PROBE_FAIL", strings.TrimSuffix(url, "/"))
-	out, err := h.Run(fmt.Sprintf(
-		"docker exec %s sh -c %s 2>/dev/null",
-		runner.QuoteContainerName(cname), hostshell.PosixSingleQuote(script)))
-	switch {
-	case err != nil:
-		printLine(w, sevWarn, hostName, fmt.Sprintf("%s: could not probe from runner container %s: %v", label, cname, err))
-		r.Warn++
-	case strings.Contains(strings.TrimSpace(out), "PROBE_FAIL") || strings.TrimSpace(out) != "200":
-		printLine(w, sevWarn, hostName, fmt.Sprintf("%s: not reachable from runner container %s at %s (host INPUT firewall); not fatal — prefetch pulls run on the host", label, cname, url))
-		r.Warn++
-	default:
-		printLine(w, sevOK, hostName, fmt.Sprintf("%s: reachable from runner container %s at %s", label, cname, url))
-	}
+	probeFromRunnerContainer(w, hostName, h, cname, label, script, http200ProbeFailed, sevWarn, func() string {
+		return fmt.Sprintf("%s: not reachable from runner container %s at %s (host INPUT firewall); not fatal — prefetch pulls run on the host", label, cname, url)
+	}, fmt.Sprintf("%s: reachable from runner container %s at %s", label, cname, url), r)
 }
 
 func checkOrphanRunners(w io.Writer, hostName string, h *host.Host, runners []config.RunnerConfig, r *Result) {
