@@ -1875,3 +1875,85 @@ func TestCheckContainerAgenticInnerHygiene(t *testing.T) {
 		})
 	}
 }
+
+func TestFirstContainerInstance(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		runners []config.RunnerConfig
+		want    string
+	}{
+		{
+			name:    "empty slice",
+			runners: nil,
+			want:    "",
+		},
+		{
+			name: "only native runners",
+			runners: []config.RunnerConfig{
+				{Name: "native-1", RunnerMode: "native", Count: 1},
+				{Name: "native-2", RunnerMode: "native", Count: 2},
+			},
+			want: "",
+		},
+		{
+			name: "container runner with instances",
+			runners: []config.RunnerConfig{
+				{Name: "native-1", RunnerMode: "native", Count: 1},
+				{Name: "ci", RunnerMode: "container", Count: 2},
+			},
+			want: "ci-1",
+		},
+		{
+			name: "first container runner chosen among multiple",
+			runners: []config.RunnerConfig{
+				{Name: "ci-first", RunnerMode: "container", Count: 1},
+				{Name: "ci-second", RunnerMode: "container", Count: 1},
+			},
+			want: "ci-first-1",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := firstContainerInstance(tt.runners)
+			if got != tt.want {
+				t.Errorf("firstContainerInstance() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestRunnerContainerHasEnv(t *testing.T) {
+	t.Parallel()
+
+	h := host.NewHost("linux", config.HostConfig{OS: "linux", Addr: "local"})
+	h.SetConn(&testutil.MockExecutor{
+		RunFn: func(cmd string) (string, error) {
+			if strings.Contains(cmd, "GH_SR_PRESENT") {
+				return "1\n", nil
+			}
+			if strings.Contains(cmd, "GH_SR_ABSENT") {
+				return "0\n", nil
+			}
+			return "", errors.New("exec error")
+		},
+	})
+
+	has, err := runnerContainerHasEnv(h, "c1", "GH_SR_PRESENT")
+	if err != nil || !has {
+		t.Errorf("runnerContainerHasEnv(GH_SR_PRESENT) = (%v, %v), want (true, nil)", has, err)
+	}
+
+	has, err = runnerContainerHasEnv(h, "c1", "GH_SR_ABSENT")
+	if err != nil || has {
+		t.Errorf("runnerContainerHasEnv(GH_SR_ABSENT) = (%v, %v), want (false, nil)", has, err)
+	}
+
+	_, err = runnerContainerHasEnv(h, "c1", "GH_SR_ERR")
+	if err == nil {
+		t.Error("runnerContainerHasEnv(GH_SR_ERR) expected error, got nil")
+	}
+}
+
