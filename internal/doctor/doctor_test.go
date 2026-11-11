@@ -1956,4 +1956,3 @@ func TestRunnerContainerHasEnv(t *testing.T) {
 		t.Error("runnerContainerHasEnv(GH_SR_ERR) expected error, got nil")
 	}
 }
-
