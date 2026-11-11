@@ -119,13 +119,6 @@ func (s Settings) port() int {
 	return s.first().Port
 }
 
-func (s Settings) upstream() string {
-	if s.first().Upstream == "" {
-		return DefaultUpstream
-	}
-	return s.first().Upstream
-}
-
 // EffectivePort is the exported form of the resolved host-side published port
 // of the first mirror (Port, or DefaultPort when unset) for packages
 // reporting remediation hints.
