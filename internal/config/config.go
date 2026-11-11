@@ -571,15 +571,6 @@ func (c *Config) CacheEnabled() bool {
 	return *c.Cache.Enabled
 }
 
-// CacheStoragePath returns the host storage dir for cache data ("$HOME/..."
-// allowed; "" = the cache package default).
-func (c *Config) CacheStoragePath() string {
-	if c == nil {
-		return ""
-	}
-	return c.Cache.StoragePath
-}
-
 // validateCache checks the cache: section of runners.yml.
 func validateCache(cfg *CacheConfig) error {
 	if cfg == nil {
@@ -832,15 +823,6 @@ func DefaultLabels(hostOS, arch string) []string {
 	}
 
 	return labels
-}
-
-// InstanceCount returns the number of runner instances (at least 1).
-func (rc *RunnerConfig) InstanceCount() int {
-	c := rc.Count
-	if c < 1 {
-		return 1
-	}
-	return c
 }
 
 func (rc *RunnerConfig) effectiveLabelsCore(hostOS, arch string) []string {
