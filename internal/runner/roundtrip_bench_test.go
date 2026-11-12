@@ -1,6 +1,7 @@
 package runner
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -23,16 +24,20 @@ import (
 // Each mode is a separate top-level benchmark so it gets its own row in the
 // benchstat report.
 
-// nativeStatusMock returns the canned output for a healthy native Linux
-// runner: svc.sh present, a user-level systemd unit installed, and a
-// .runner-version file. The status path answers it with two probes per
-// instance — the combined marker probe and the systemctl state probe — which
-// is the shape of a real svc.sh-managed runner.
+// statusScenarioVersion is the canned .runner-version of the healthy native
+// runner both probe shapes answer.
+const statusScenarioVersion = "2.320.0"
+
+// nativeStatusMock answers the per-instance probe shape for a healthy native
+// Linux runner: svc.sh present, a user-level systemd unit installed, and a
+// .runner-version file. The per-instance path costs two probes per instance —
+// the combined marker probe and the systemctl state probe — which is the
+// shape of a real svc.sh-managed runner.
 func nativeStatusMock(cmd string) (string, error) {
 	if strings.Contains(cmd, "systemctl is-active") {
 		return "active\n", nil
 	}
-	return "S\nU\nV2.320.0\n", nil
+	return "S\nU\nV" + statusScenarioVersion + "\n", nil
 }
 
 // containerStatusMock returns the canned output of the folded container
@@ -41,40 +46,98 @@ func containerStatusMock(cmd string) (string, error) {
 	return "running|gh-sr/agentic-runner:v1|sha256:0123456789abcdef|cafebabe\n", nil
 }
 
+// composeNativeStatusBatchOutput renders the batch script's answer for the
+// same healthy-runner scenario nativeStatusMock covers, one marker line per
+// instance: svc.sh-managed + systemctl active → running, version read.
+func composeNativeStatusBatchOutput(count int) string {
+	var sb strings.Builder
+	for i := 1; i <= count; i++ {
+		fmt.Fprintf(&sb, "%s%d|running|%s\n", nativeStatusBatchTag, i, statusScenarioVersion)
+	}
+	return sb.String()
+}
+
+// composeContainerStatusBatchOutput renders the batch script's answer for the
+// same running-container scenario containerStatusMock covers.
+func composeContainerStatusBatchOutput(count int) string {
+	var sb strings.Builder
+	for i := 1; i <= count; i++ {
+		fmt.Fprintf(&sb, "%s%d|running|gh-sr/agentic-runner:v1|sha256:0123456789abcdef|cafebabe\n", containerStatusBatchTag, i)
+	}
+	return sb.String()
+}
+
+// statusBatchRunFn routes a mock executor by probe shape: the batch script
+// gets its composed per-instance answer, everything else falls to fallbackFn
+// (the per-instance probes). batchErr != nil simulates a failing batch
+// transport so the benchmark can measure the fallback path.
+func statusBatchRunFn(batchErr error, batchOut func(cmd string) (string, error), fallbackFn func(cmd string) (string, error)) func(string) (string, error) {
+	return func(cmd string) (string, error) {
+		if strings.Contains(cmd, statusBatchScriptHeader) {
+			if batchErr != nil {
+				return "", batchErr
+			}
+			return batchOut(cmd)
+		}
+		return fallbackFn(cmd)
+	}
+}
+
 // BenchmarkManagerStatusRoundTrips* measure how many SSH round trips one
 // Manager.Status call costs, per instance count and runner mode.
 //
 // Status is the per-tick hot path: the TUI dashboard refreshes it on a
 // timer, so its round-trip count is multiplied by the refresh rate and by
-// the number of runners on the host. The counts are the baseline a batching
-// change (N instances in one round trip instead of N) has to beat.
+// the number of runners on the host.
 //
-// A native instance costs two round trips (the combined marker probe and
-// the systemctl state probe); a container instance costs one (the folded
-// docker inspect). The native path therefore scales at 2N round trips for
-// N instances on a host.
+// The batch scripts (internal/runner/status_batch.go) answer every instance
+// of the host in ONE round trip — 1.000 regardless of instance count. The
+// Fallback benchmark forces the per-instance path (batch transport error) to
+// document the degraded shape it must stay at least as good as: two probes
+// per native instance (marker probe + systemctl state probe), one per
+// container instance.
 func BenchmarkManagerStatusRoundTripsNative1(b *testing.B) {
-	benchmarkManagerStatusRoundTrips(b, config.RunnerModeNative, 1)
+	benchmarkManagerStatusRoundTrips(b, config.RunnerModeNative, 1, false)
 }
 
 func BenchmarkManagerStatusRoundTripsNative4(b *testing.B) {
-	benchmarkManagerStatusRoundTrips(b, config.RunnerModeNative, 4)
+	benchmarkManagerStatusRoundTrips(b, config.RunnerModeNative, 4, false)
 }
 
 func BenchmarkManagerStatusRoundTripsNative16(b *testing.B) {
-	benchmarkManagerStatusRoundTrips(b, config.RunnerModeNative, 16)
+	benchmarkManagerStatusRoundTrips(b, config.RunnerModeNative, 16, false)
 }
 
 func BenchmarkManagerStatusRoundTripsContainer4(b *testing.B) {
-	benchmarkManagerStatusRoundTrips(b, config.RunnerModeContainer, 4)
+	benchmarkManagerStatusRoundTrips(b, config.RunnerModeContainer, 4, false)
 }
 
-func benchmarkManagerStatusRoundTrips(b *testing.B, mode string, count int) {
+func BenchmarkManagerStatusRoundTripsNative4Fallback(b *testing.B) {
+	benchmarkManagerStatusRoundTrips(b, config.RunnerModeNative, 4, true)
+}
+
+func benchmarkManagerStatusRoundTrips(b *testing.B, mode string, count int, forceFallback bool) {
 	b.Helper()
-	mock := &testutil.RoundTripCounter{RunFn: nativeStatusMock}
+	runFn := statusBatchRunFn(
+		fallbackErr(forceFallback),
+		func(cmd string) (string, error) {
+			if mode == config.RunnerModeContainer {
+				return composeContainerStatusBatchOutput(count), nil
+			}
+			return composeNativeStatusBatchOutput(count), nil
+		},
+		nativeStatusMock,
+	)
 	if mode == config.RunnerModeContainer {
-		mock.RunFn = containerStatusMock
+		runFn = statusBatchRunFn(
+			fallbackErr(forceFallback),
+			func(cmd string) (string, error) {
+				return composeContainerStatusBatchOutput(count), nil
+			},
+			containerStatusMock,
+		)
 	}
+	mock := &testutil.RoundTripCounter{RunFn: runFn}
 	h := host.NewHost("h", config.HostConfig{OS: "linux", Arch: "amd64", Addr: "local"})
 	h.SetConn(mock)
 
@@ -98,10 +161,24 @@ func benchmarkManagerStatusRoundTrips(b *testing.B, mode string, count int) {
 		if len(statuses) != count {
 			b.Fatalf("got %d statuses, want %d", len(statuses), count)
 		}
+		if statuses[0].Local != "running" {
+			b.Fatalf("statuses[0].Local = %q, want running (mock drift)", statuses[0].Local)
+		}
 	}
 	b.StopTimer()
 	b.ReportMetric(float64(mock.RoundTrips), "round-trips/op")
 }
+
+func fallbackErr(force bool) error {
+	if force {
+		return errStatusBatchFallback
+	}
+	return nil
+}
+
+// errStatusBatchFallback simulates a batch transport failure for the fallback
+// benchmark. Declared once so the error identity is comparable in tests.
+var errStatusBatchFallback = fmt.Errorf("simulated batch transport failure")
 
 // BenchmarkMeasureDiskUsageBatchRoundTrips* measure the round trips of the
 // batched disk-usage probe. The batch API is the reference shape for this

@@ -376,6 +376,51 @@ func (m *Manager) Status(h *host.Host, rc config.RunnerConfig) ([]RunnerStatus, 
 	names := rc.InstanceNames()
 	statuses := make([]RunnerStatus, 0, len(names))
 
+	// Batch path: one SSH round trip answers every instance on the host
+	// (native Linux and container modes). On batch failure — SSH error,
+	// truncated output, unsanitizable name — fall through to the per-instance
+	// probes below, which preserve the pre-batch behaviour on transient
+	// failures. Non-Linux hosts keep the per-instance path (the batch scripts
+	// are POSIX/systemd-shape only).
+	var batch []statusBatchResult
+	batchOK := false
+	if len(names) > 0 {
+		if isContainer {
+			batch, batchOK = containerStatusBatch(h, names)
+		} else if h.OS == "linux" {
+			batch, batchOK = statusNativeBatch(h, names)
+		}
+	}
+
+	if batchOK {
+		for i, name := range names {
+			s := RunnerStatus{
+				Instance: name,
+				Host:     host,
+				Repo:     repo,
+				Labels:   labels,
+				Mode:     mode,
+			}
+			if isContainer {
+				s.Local = batch[i].local
+				s.ContainerImage = batch[i].image
+				s.ContainerImageRevision = batch[i].imageRev
+				s.ContainerImageBuild = formatContainerImageBuild(s.Local, expectedLayoutRev, s.ContainerImageRevision)
+			} else {
+				s.Local = batch[i].local
+				// Version "-" mirrors statusNativeAndVersion's missing
+				// .runner-version contract so the BUILD cell renders the
+				// same dash.
+				if batch[i].version == "" {
+					batch[i].version = "-"
+				}
+				s.ContainerImageBuild = batch[i].version
+			}
+			statuses = append(statuses, s)
+		}
+		return statuses, nil
+	}
+
 	for _, name := range names {
 		s := RunnerStatus{
 			Instance: name,
