@@ -1098,31 +1098,55 @@ func parseContainerStatusInspectOutput(out string) (local, image, imageRev strin
 // resolveAbsoluteRunnerDir previously did on Linux. The only new status value
 // beyond "not installed" / parsed docker state is "failed" (produced when the
 // bootstrap-failed marker exists).
-func (m *Manager) containerLocalStatusOneShot(h *host.Host, instanceName string) (string, string, string) {
+// containerStatusProbeBody is the single source of truth for the POSIX shell
+// state machine that computes the container status payload `st`:
+//
+//	"not installed|||", "failed|||", or "status|configImage|digest|imageRev"
+//
+// Both containerLocalStatusOneShotScript (one instance, one round trip) and
+// the Status batch script (many instances, one round trip) embed this exact
+// fragment and only differ in how they bind `sd` / `cid` and how they emit
+// `st`. Keeping the state machine in one function is what stops the two
+// shapes from drifting: a change to the bootstrap-failed decision or to the
+// payload layout is picked up by both paths automatically (and pinned by
+// TestContainerStatusProbeBody_IsSingleSourceOfTruth).
+//
+// The fragment reads `sd` (instance dir) and `cid` (container name) from the
+// surrounding shell and leaves its answer in `st`.
+func containerStatusProbeBody() string {
+	return `if [ -f "$sd/bootstrap-failed" ]; then override=failed; else override=; fi
+line=$(docker inspect --format '{{.State.Status}}|{{.Config.Image}}|{{.Image}}' "$cid" 2>/dev/null) || line=""
+if [ -z "$line" ]; then
+  if [ -n "$override" ]; then st='failed|||'; else st='not installed|||'; fi
+else
+  digest=${line##*|}
+  rev=''
+  if [ -n "$digest" ]; then
+    rev=$(docker image inspect "$digest" --format '{{index .Config.Labels "gh-sr.image-revision"}}' 2>/dev/null || true)
+  fi
+  if [ -n "$override" ]; then st="$override|${line#*|}|$rev"
+  else st="$line|$rev"
+  fi
+fi
+`
+}
+
+// containerLocalStatusOneShotScript renders the one-shot probe script. It is
+// separate from the h.Run call so tests can compare the emitted shell against
+// the batch script's copy of containerStatusProbeBody.
+func containerLocalStatusOneShotScript(instanceName string) string {
 	cid := hostshell.PosixSingleQuote(containerName(instanceName))
 	// Assign sd with double quotes so $HOME expands on the remote shell.
 	// PosixSingleQuote("$HOME/...") would freeze a literal "$HOME/..." path.
-	script := fmt.Sprintf(
-		"sd=\"$HOME/.gh-sr/runners/%s\"\n"+
-			"cid=%s\n"+
-			"if [ -f \"$sd/bootstrap-failed\" ]; then override=failed; else override=; fi\n"+
-			"line=$(docker inspect --format '{{.State.Status}}|{{.Config.Image}}|{{.Image}}' \"$cid\" 2>/dev/null) || line=\"\"\n"+
-			"if [ -z \"$line\" ]; then\n"+
-			"  if [ -n \"$override\" ]; then echo \"failed|||\"; else echo \"not installed|||\"; fi\n"+
-			"else\n"+
-			"  digest=${line##*|}\n"+
-			"  rev=\"\"\n"+
-			"  if [ -n \"$digest\" ]; then\n"+
-			"    rev=$(docker image inspect \"$digest\" --format '{{index .Config.Labels \"gh-sr.image-revision\"}}' 2>/dev/null || true)\n"+
-			"  fi\n"+
-			"  if [ -n \"$override\" ]; then printf '%%s|%%s|%%s\\n' \"$override\" \"${line#*|}\" \"$rev\"\n"+
-			"  else printf '%%s|%%s\\n' \"$line\" \"$rev\"\n"+
-			"  fi\n"+
-			"fi\n",
+	return fmt.Sprintf(
+		"sd=\"$HOME/.gh-sr/runners/%s\"\ncid=%s\n",
 		instanceName,
 		cid,
-	)
-	out, err := h.Run(script)
+	) + containerStatusProbeBody() + "printf '%s\\n' \"$st\"\n"
+}
+
+func (m *Manager) containerLocalStatusOneShot(h *host.Host, instanceName string) (string, string, string) {
+	out, err := h.Run(containerLocalStatusOneShotScript(instanceName))
 	if err != nil {
 		return "not installed", "", ""
 	}
