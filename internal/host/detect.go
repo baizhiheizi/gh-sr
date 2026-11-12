@@ -86,25 +86,6 @@ func DetectArch(h *Host) (string, error) {
 	return "", fmt.Errorf("detecting arch: %w", err)
 }
 
-// DetectDockerAvailable checks if Docker is installed and the daemon is reachable on the host.
-func DetectDockerAvailable(h *Host) bool {
-	var cmd string
-	switch h.OS {
-	case "windows":
-		cmd = `docker info --format "{{.ServerVersion}}" 2>$null`
-		out, err := h.RunShell(cmd)
-		return err == nil && strings.TrimSpace(out) != ""
-	default:
-		prefix := ""
-		if h.OS == "darwin" {
-			prefix = `export PATH="/usr/local/bin:/opt/homebrew/bin:$PATH"; `
-		}
-		cmd = prefix + `docker info --format '{{.ServerVersion}}' 2>/dev/null`
-		out, err := h.Run(cmd)
-		return err == nil && strings.TrimSpace(out) != ""
-	}
-}
-
 func normalizeArch(raw string) (string, error) {
 	switch strings.ToLower(raw) {
 	case "x86_64", "amd64":

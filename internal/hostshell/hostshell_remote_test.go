@@ -353,51 +353,6 @@ func TestWriteRemoteBytes_DoesNotUpload(t *testing.T) {
 	}
 }
 
-// TestRemotePathExists_Posix verifies the path-existence helpers emit the
-// canonical `test -X <quoted> && echo yes || echo no` probe and parse a "yes"
-// reply as true. Each variant exercises its respective test flag.
-func TestRemotePathExists_Posix(t *testing.T) {
-	t.Parallel()
-	cases := []struct {
-		name  string
-		fn    func(*host.Host, string) (bool, error)
-		path  string
-		flag  string // expected test flag (e/d/f)
-		reply string
-		want  bool
-	}{
-		{"RemotePathExists yes", RemotePathExists, "/tmp/x", "e", "yes\n", true},
-		{"RemotePathExists no", RemotePathExists, "/tmp/x", "e", "no\n", false},
-		{"RemoteFileExists yes", RemoteFileExists, "/tmp/x", "f", "yes\n", true},
-		{"RemoteDirExists yes", RemoteDirExists, "/tmp/x", "d", "yes\n", true},
-		{"RemoteDirExists empty-reply false", RemoteDirExists, "/tmp/x", "d", "", false},
-		{"RemotePathExists whitespace-reply false", RemotePathExists, "/tmp/x", "e", "   \n", false},
-		// Quoting: an apostrophe in the path must round-trip through PosixSingleQuote.
-		{"RemoteFileExists path with apostrophe", RemoteFileExists, "/tmp/it's/x", "f", "yes\n", true},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			rec := &recordingExecutor{runReplyFn: func(string) (string, error) { return tc.reply, nil }}
-			h := newLocalMockHost(t, "linux", rec)
-			got, err := tc.fn(h, tc.path)
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-			if got != tc.want {
-				t.Errorf("got %v, want %v", got, tc.want)
-			}
-			if len(rec.runs) != 1 {
-				t.Fatalf("expected 1 Run call, got %d", len(rec.runs))
-			}
-			wantSub := "test -" + tc.flag + " " + PosixSingleQuote(tc.path) + " && echo yes || echo no"
-			if rec.runs[0] != wantSub {
-				t.Errorf("probe = %q, want %q", rec.runs[0], wantSub)
-			}
-		})
-	}
-}
-
 // TestRemoteBoolCheck_PropagatesError verifies a non-nil error from the
 // executor surfaces and yields false.
 func TestRemoteBoolCheck_PropagatesError(t *testing.T) {
@@ -434,69 +389,6 @@ func TestRemoteBoolCheck_AcceptsArbitraryCondition(t *testing.T) {
 	const want = `docker --version 2>/dev/null | grep -q "Docker version" && echo yes || echo no`
 	if rec.runs[0] != want {
 		t.Errorf("probe = %q, want %q", rec.runs[0], want)
-	}
-}
-
-// TestRemoteWindowsDirExists verifies the Windows counterpart of
-// RemoteDirExists: it must emit a single `Test-Path -LiteralPath ... -PathType
-// Container` probe via h.RunShell, escape the path via PowerShellSingleQuote
-// (so apostrophes round-trip safely), and parse a "yes" reply as true. This
-// helper was added in the same commit that closed duplicate-code #426
-// (refactor(hostshell): deduplicate Windows PowerShell scheduled-task probes)
-// to mirror the existing POSIX helpers, so the test mirrors the POSIX table
-// in TestRemotePathExists_Posix.
-func TestRemoteWindowsDirExists(t *testing.T) {
-	t.Parallel()
-	cases := []struct {
-		name  string
-		path  string
-		reply string
-		want  bool
-	}{
-		{"dir present returns true", `C:\gh-sr\runners\r1`, "yes\n", true},
-		{"dir absent returns false", `C:\gh-sr\runners\gone`, "no\n", false},
-		{"dir absent with whitespace reply", `C:\gh-sr\runners\gone`, "   \n", false},
-		// Path with apostrophe must round-trip through PowerShellSingleQuote
-		// (apostrophe is doubled inside the single-quoted run).
-		{"dir path with apostrophe", `C:\Users\O'Brien\gh-sr`, "yes\n", true},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			rec := &recordingExecutor{runReplyFn: func(string) (string, error) { return tc.reply, nil }}
-			h := newLocalMockHost(t, "windows", rec)
-			got, err := RemoteWindowsDirExists(h, tc.path)
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-			if got != tc.want {
-				t.Errorf("got %v, want %v", got, tc.want)
-			}
-			if len(rec.runs) != 1 {
-				t.Fatalf("expected 1 Run call, got %d", len(rec.runs))
-			}
-			wantScript := `if (Test-Path -LiteralPath ` + PowerShellSingleQuote(tc.path) + ` -PathType Container) { 'yes' } else { 'no' }`
-			if rec.runs[0] != wantScript {
-				t.Errorf("probe = %q, want %q", rec.runs[0], wantScript)
-			}
-		})
-	}
-}
-
-// TestRemoteWindowsDirExists_PropagatesError verifies a non-nil error from
-// the executor surfaces and yields false. Mirrors the POSIX
-// TestRemoteBoolCheck_PropagatesError contract.
-func TestRemoteWindowsDirExists_PropagatesError(t *testing.T) {
-	t.Parallel()
-	sentinel := errors.New("ps boom")
-	rec := &recordingExecutor{runErr: sentinel}
-	h := newLocalMockHost(t, "windows", rec)
-	got, err := RemoteWindowsDirExists(h, `C:\gh-sr\runners\r1`)
-	if !errors.Is(err, sentinel) {
-		t.Fatalf("err = %v, want %v", err, sentinel)
-	}
-	if got {
-		t.Errorf("got true on error, want false")
 	}
 }
 

@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/an-lee/gh-sr/internal/host"
-	"github.com/an-lee/gh-sr/internal/hostshell"
 )
 
 const serviceBasenamePrefix = "ghsr-runner-"
@@ -135,66 +134,4 @@ func dedupeInstances(instances []string) []string {
 	}
 	sort.Strings(out)
 	return out
-}
-
-// IsStale reports whether autostart for instance should be removed because the runner directory or launcher is missing.
-func IsStale(h *host.Host, instance string) (bool, error) {
-	dir := h.RunnerDir(instance)
-
-	if h.OS == "windows" {
-		ps := fmt.Sprintf(
-			`$d=%s; if ((Test-Path -LiteralPath $d -PathType Container) -and (Test-Path -LiteralPath (Join-Path $d 'run.cmd'))) { 'no' } else { 'yes' }`,
-			hostshell.PowerShellSingleQuote(dir),
-		)
-		out, err := h.RunShell(ps)
-		if err != nil {
-			return false, err
-		}
-		return strings.TrimSpace(out) == "yes", nil
-	}
-
-	// Stale = the runner directory or its run.sh launcher is missing. We probe
-	// for the present (non-stale) condition with the canonical yes/no helper
-	// and invert in Go, avoiding the fragile inverted-polarity shell
-	// (`echo no || echo yes`) the previous inline copy used — a copy-paste edit
-	// that flipped the wrong branch would silently invert the answer.
-	//
-	// dir carries a literal $HOME that the remote sh must expand, so it is
-	// passed raw (PosixSingleQuote would freeze "$HOME" as a literal). The
-	// instance-name segment is sanitized by SanitizeInstance, so it is safe
-	// unquoted — matching the long-standing convention (see runner.containerStateDir).
-	present, err := hostshell.RemoteBoolCheck(h,
-		"test -d "+dir+" && test -f "+dir+"/run.sh")
-	if err != nil {
-		return false, err
-	}
-	return !present, nil
-}
-
-// CleanupStale removes autostart for installed instances whose runner directory is missing.
-// When dryRun is true, stale instances are reported without uninstalling.
-func CleanupStale(h *host.Host, dryRun bool) (removed []string, found int, err error) {
-	installed, err := ListInstalled(h)
-	if err != nil {
-		return nil, 0, err
-	}
-	for _, inst := range installed {
-		stale, serr := IsStale(h, inst)
-		if serr != nil {
-			return removed, found, fmt.Errorf("%s: checking stale autostart: %w", inst, serr)
-		}
-		if !stale {
-			continue
-		}
-		found++
-		if dryRun {
-			removed = append(removed, inst)
-			continue
-		}
-		if uerr := Uninstall(h, inst); uerr != nil {
-			return removed, found, fmt.Errorf("%s: removing stale autostart: %w", inst, uerr)
-		}
-		removed = append(removed, inst)
-	}
-	return removed, found, nil
 }

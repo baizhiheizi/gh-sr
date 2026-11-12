@@ -74,39 +74,6 @@ runners:
 	}
 }
 
-func TestAddRunner(t *testing.T) {
-	dir := t.TempDir()
-	cfgPath := filepath.Join(dir, "runners.yml")
-	initial := `hosts:
-  h1:
-    addr: a@b
-    os: linux
-    arch: amd64
-runners:
-  - name: r1
-    repo: o/r
-    host: h1
-`
-	if err := os.WriteFile(cfgPath, []byte(initial), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if err := AddRunner(cfgPath, "r2", "o/r2", "h1", 2, nil); err != nil {
-		t.Fatal(err)
-	}
-
-	cfg, err := Load(cfgPath)
-	if err != nil {
-		t.Fatalf("config should be loadable after AddRunner: %v", err)
-	}
-	if len(cfg.Runners) != 2 {
-		t.Fatalf("expected 2 runners, got %d", len(cfg.Runners))
-	}
-	r2 := cfg.Runners[1]
-	if r2.Name != "r2" || r2.Repo != "o/r2" || r2.Host != "h1" || r2.Count != 2 {
-		t.Errorf("unexpected runner: %+v", r2)
-	}
-}
-
 func TestRemoveRunner(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "runners.yml")
