@@ -9,45 +9,45 @@
   "checks": [
     {
       "area": "repo_assist_prs",
-      "checked_at": "2026-11-11",
+      "checked_at": "2026-11-12",
       "result": "acted",
-      "follow_up": "Two new drafts: improve-drop-dead-count-cache-upstream (dead CacheStoragePath/InstanceCount/Settings.upstream) and test-paths-bootstrap-env (paths.go 100%). #623/#624 merged."
+      "follow_up": "Three new drafts: refactor-drop-superseded-probes (runner/tui, net -1167), refactor-drop-unused-helpers (-657, stacked on first), refactor-drop-agentic-percheck (agentic per-check API, -2146, independent). Merge order: first, then stacked, third any time. deadcode clean except testutil+benchstat."
     },
     {
       "area": "code",
-      "checked_at": "2026-11-11",
+      "checked_at": "2026-11-12",
       "result": "acted",
-      "follow_up": "Dead trio removed via draft PR (25 lines): Config.CacheStoragePath, RunnerConfig.InstanceCount (per-instance-scheme leftover), Settings.upstream. Precedent #623. All other 0%-funcs have callers."
+      "follow_up": "Full dead-code sweep: per-instance disk sizing cluster (MeasureDiskUsageBatch is live), Manager.statusNative (folded), containerStateDir, FormatHostMetricsTo/renderMenuItems writer variants, hostshell Remote*Exists + PowerShellCommand + ps.CommandLine, autostart CleanupStale/I..."
     },
     {
       "area": "tests",
-      "checked_at": "2026-11-11",
+      "checked_at": "2026-11-12",
       "result": "acted",
-      "follow_up": "paths.go 100% via paths_test.go (BootstrapEnv/EnvFilePath + ApplyEnvFile export-prefix); config 86.5%->87.9%. Resolver helpers 81-89% already table-tested; thin spots left integration-heavy. Untested-but-used: hasLabel, Settings.ContainerNames."
+      "follow_up": "Removed tests/benches that pinned removed dead code; adapted live-equivalent coverage (dispatcher OS-fallback, set -e pins, native status via statusNativeAndVersion, menu render via renderMenuItemsInto). Coverage % may dip; dead surface eliminated. Remaining known thin spots:..."
     },
     {
       "area": "docs",
       "checked_at": "2026-11-11",
       "result": "acted",
-      "follow_up": "Changelog verified: rolling [Unreleased] is the convention (v0.9.1 commit adds entries, never rotates; releases use auto GH notes). No release warranted: 26 commits since v0.9.1 all internal. Docs cross-check merged as #624."
+      "follow_up": "Changelog verified: rolling [Unreleased] is the convention. No release warranted: commits since v0.9.1 are internal (tests/refactors/docs) plus the dead-code sweeps. Docs cross-check merged as #624."
     },
     {
       "area": "performance",
       "checked_at": "2026-11-06",
       "result": "no_actionable",
-      "follow_up": "Swept post-#617: dashboard render sub-ms vs 5s tick (footer memoized), CollectHostMetrics fans out one combined script per host in parallel, probes pinned one-round-trip. No measurable opportunity left."
+      "follow_up": "Dashboard render sub-ms vs 5s tick, CollectHostMetrics one combined script per host in parallel, probes pinned one-round-trip. No measurable opportunity left."
     },
     {
       "area": "ci",
-      "checked_at": "2026-11-05",
+      "checked_at": "2026-11-12",
       "result": "no_actionable",
-      "follow_up": "CI mature (workspace repair, bench stability, release-matrix gates all invested). go 1.26.10 toolchain current."
+      "follow_up": "CI green on main (last run 2026-11-11). go 1.26.10 toolchain on go 1.26.7 directive. Only non-success runs are PR #633 (efficiency-improver, awaiting approval, not repo-assist's)."
     },
     {
       "area": "dependencies",
-      "checked_at": "2026-11-05",
+      "checked_at": "2026-11-12",
       "result": "no_actionable",
-      "follow_up": "bubbletea v2.1.1 bump merged (#608). go-gh v2.17.0 current. Weekly Dependabot gomod schedule covers the rest."
+      "follow_up": "No open Dependabot alerts, no open Dependabot PRs to bundle. Available minor bumps (x/crypto 0.59, x/term 0.48, go-isatty 0.24) are covered by the weekly Dependabot gomod schedule - hand-rolling would duplicate it."
     },
     {
       "area": "hygiene",
