@@ -31,7 +31,7 @@ func NativeRunnerConfigPresent(h *host.Host, instanceName string) (bool, error) 
 	// shell variable the remote sh expands. Do NOT PosixSingleQuote it (that
 	// would freeze "$HOME" as a literal and break the probe); the instance-name
 	// segment is already sanitized by SanitizeInstance, so passing it raw
-	// matches the long-standing convention (see containerStateDir).
+	// matches the long-standing convention.
 	return hostshell.RemoteBoolCheck(h, "test -d "+dir+" && test -f "+dir+"/run.sh && test -f "+dir+"/.runner")
 }
 
@@ -563,11 +563,6 @@ func (m *Manager) removeNativeDirectory(h *host.Host, instanceName string) error
 	dir := h.RunnerDir(instanceName)
 	_, err := h.Run(fmt.Sprintf("rm -rf %s", hostshell.PosixSingleQuote(dir)))
 	return err
-}
-
-func (m *Manager) statusNative(h *host.Host, instanceName string) string {
-	local, _ := statusNativeAndVersion(h, instanceName)
-	return local
 }
 
 // statusNativeAndVersion returns the local runner state and the

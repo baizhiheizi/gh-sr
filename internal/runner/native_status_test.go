@@ -27,8 +27,7 @@ func TestStatusNativeServiceError(t *testing.T) {
 	}
 	h := host.NewHost("linux", config.HostConfig{OS: "linux"})
 	h.SetConn(mock)
-	m := NewManager("")
-	got := m.statusNative(h, "ci-1")
+	got, _ := statusNativeAndVersion(h, "ci-1")
 	if got != "service error" {
 		t.Fatalf("got %q, want service error", got)
 	}
@@ -56,8 +55,7 @@ func TestStatusNativeAutostartActive(t *testing.T) {
 	}
 	h := host.NewHost("linux", config.HostConfig{OS: "linux"})
 	h.SetConn(mock)
-	m := NewManager("")
-	got := m.statusNative(h, "ci-1")
+	got, _ := statusNativeAndVersion(h, "ci-1")
 	if got != "running" {
 		t.Fatalf("got %q, want running", got)
 	}
@@ -90,8 +88,7 @@ func TestStatusNative_LinuxSshRoundTripPins(t *testing.T) {
 	}
 	h := host.NewHost("linux", config.HostConfig{OS: "linux"})
 	h.SetConn(mock)
-	m := NewManager("")
-	if got := m.statusNative(h, "ci-1"); got != "running" {
+	if got, _ := statusNativeAndVersion(h, "ci-1"); got != "running" {
 		t.Fatalf("got %q want running", got)
 	}
 	// Pre-fold would have been 3 (svcShPresent + Detect + is-active).
@@ -123,8 +120,7 @@ func TestStatusNative_NoSvcNoAutostart(t *testing.T) {
 	}
 	h := host.NewHost("linux", config.HostConfig{OS: "linux"})
 	h.SetConn(mock)
-	m := NewManager("")
-	got := m.statusNative(h, "ci-1")
+	got, _ := statusNativeAndVersion(h, "ci-1")
 	if got != "not installed" {
 		t.Fatalf("got %q want not installed", got)
 	}
@@ -238,8 +234,7 @@ func TestStatusNative_DarwinSingleProbe(t *testing.T) {
 	}
 	h := host.NewHost("darwin", config.HostConfig{OS: "darwin"})
 	h.SetConn(mock)
-	m := NewManager("")
-	if got := m.statusNative(h, "ci-1"); got != "running" {
+	if got, _ := statusNativeAndVersion(h, "ci-1"); got != "running" {
 		t.Fatalf("got %q want running", got)
 	}
 	if calls < 2 {

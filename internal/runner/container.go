@@ -372,21 +372,6 @@ test -f /home/runner/.runner && echo ok || echo no'`))
 	return rep, nil
 }
 
-// containerStateDir returns the host-side bind-mount path for runner instance state
-// (mounted at /runner-state inside the container).
-//
-// Cache vs. per-job scratch separation:
-//   - PERSISTENT cache: /runner-state/docker-data holds the inner Docker image-layer
-//     cache. It survives container restarts and per-job resets so jobs never re-pull
-//     gh-aw's (large) images. The per-job reset hooks never prune images/volumes.
-//   - PER-JOB scratch: the gh-aw runtime tree (/tmp/gh-aw, inside the container rootfs),
-//     leftover inner containers/networks are wiped before and after every job by
-//     /opt/gh-sr/hooks/job-{started,completed}.sh, so each job starts from a pristine
-//     inner environment.
-func containerStateDir(h *host.Host, instanceName string) string {
-	return h.RunnerDir(instanceName)
-}
-
 // resolveAbsoluteRunnerDir returns the absolute (non-variable) path for the runner
 // state directory on the host by expanding $HOME to its real value.
 // h.RunnerDir returns a shell-variable string ("$HOME/...") which must not appear

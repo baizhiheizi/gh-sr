@@ -106,8 +106,7 @@ func benchmarkManagerStatusRoundTrips(b *testing.B, mode string, count int) {
 // BenchmarkMeasureDiskUsageBatchRoundTrips* measure the round trips of the
 // batched disk-usage probe. The batch API is the reference shape for this
 // codebase: one SSH round trip for every instance on the host, regardless of
-// how many instances there are. The per-instance API (MeasureDiskUsage)
-// costs one round trip each.
+// how many instances there are.
 func BenchmarkMeasureDiskUsageBatchRoundTrips1(b *testing.B) {
 	benchmarkMeasureDiskUsageBatchRoundTrips(b, 1)
 }
