@@ -34,9 +34,8 @@ type AgenticInnerProbe struct {
 	// Failures carries every failed probe for the instance — AWF inner
 	// hygiene first (orphan containers, then orphan networks), then the
 	// agentic fanout failures in tag order — with Message/Remediation/
-	// DocRef pre-rendered against this instance, matching what the
-	// per-instance chain (ValidateAWFHygieneInner +
-	// ValidateContainerAgenticFanout) would have produced.
+	// DocRef pre-rendered against this instance, matching the per-instance
+	// probe chain this batch replaced.
 	Failures []PrereqFailure
 }
 
@@ -46,9 +45,9 @@ type AgenticInnerProbe struct {
 // It replaces the per-instance chain that `gh sr doctor` used to run for every
 // agentic runner:
 //
-//	ContainerStateStatus           -> 1 round-trip (docker inspect)
-//	ValidateAWFHygieneInner        -> 2 round-trips (2 hygiene probes)
-//	ValidateContainerAgenticFanout -> 1 round-trip (tagged fanout)
+//	container state inspect   -> 1 round-trip (docker inspect)
+//	inner AWF hygiene         -> 2 round-trips (2 hygiene probes)
+//	tagged agentic fanout     -> 1 round-trip
 //
 // That is four round-trips per instance, so an 8-agentic-container host spent
 // ~32 of them on this single check — each one a full SSH session setup against
@@ -172,8 +171,7 @@ func buildAgenticInnerBatchScript(safeNames []string, fanoutInner string) string
 // Reported=false. A `#<name>:1` tag maps through the instance's fanout specs;
 // a hygiene section with non-empty trimmed output maps to that check's
 // pre-rendered `-inner` failure. Fanout tags other than `:1` are ignored —
-// the same rule parseContainerAgenticFanoutOutput applies to the
-// per-instance fanout.
+// `:0` means the probe passed, and anything else is not a fanout tag.
 func parseAgenticInnerBatchOutput(out string, specs []agenticInnerSpecs, probes []AgenticInnerProbe) {
 	// Markers number instances from 1 (the remote loop's counter); probes and
 	// specs are 0-based, so every marker index is used as idx = n-1.
@@ -226,9 +224,9 @@ func parseAgenticInnerBatchOutput(out string, specs []agenticInnerSpecs, probes 
 }
 
 // hygieneFailureFromOutput renders the `-inner` AWF hygiene failure for check
-// k when its captured output is non-empty after trimming — the same
-// "output means orphans" contract runAWFHygieneChecks applies per probe. An
-// out-of-range k (a malformed or future-incompatible marker) yields nothing.
+// k when its captured output is non-empty after trimming — non-empty output
+// from an orphan probe means orphans are present. An out-of-range k (a
+// malformed or future-incompatible marker) yields nothing.
 func hygieneFailureFromOutput(checks []awfHygieneCheck, k int, output string) []PrereqFailure {
 	if k < 0 || k >= len(checks) {
 		return nil
