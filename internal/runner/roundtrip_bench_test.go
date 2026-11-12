@@ -67,6 +67,28 @@ func composeContainerStatusBatchOutput(count int) string {
 	return sb.String()
 }
 
+// batchScriptRowCount counts the heredoc rows one batch script carries. A
+// chunk only emits markers for its own rows (1..count), so mocks must answer
+// that many lines; the round-trip benchmarks stay correct even when a large
+// instance-name list is split across several bounded execs.
+func batchScriptRowCount(cmd string) int {
+	open := "<<'" + statusBatchRowsDelim + "'"
+	start := strings.Index(cmd, open)
+	if start < 0 {
+		return 0
+	}
+	rest := cmd[start+len(open):]
+	end := strings.Index(rest, "\n"+statusBatchRowsDelim+"\n")
+	if end < 0 {
+		return 0
+	}
+	block := strings.TrimPrefix(rest[:end], "\n")
+	if block == "" {
+		return 0
+	}
+	return strings.Count(block, "\n") + 1
+}
+
 // statusBatchRunFn routes a mock executor by probe shape: the batch script
 // gets its composed per-instance answer, everything else falls to fallbackFn
 // (the per-instance probes). batchErr != nil simulates a failing batch
@@ -121,10 +143,11 @@ func benchmarkManagerStatusRoundTrips(b *testing.B, mode string, count int, forc
 	runFn := statusBatchRunFn(
 		fallbackErr(forceFallback),
 		func(cmd string) (string, error) {
+			n := batchScriptRowCount(cmd)
 			if mode == config.RunnerModeContainer {
-				return composeContainerStatusBatchOutput(count), nil
+				return composeContainerStatusBatchOutput(n), nil
 			}
-			return composeNativeStatusBatchOutput(count), nil
+			return composeNativeStatusBatchOutput(n), nil
 		},
 		nativeStatusMock,
 	)
@@ -132,7 +155,7 @@ func benchmarkManagerStatusRoundTrips(b *testing.B, mode string, count int, forc
 		runFn = statusBatchRunFn(
 			fallbackErr(forceFallback),
 			func(cmd string) (string, error) {
-				return composeContainerStatusBatchOutput(count), nil
+				return composeContainerStatusBatchOutput(batchScriptRowCount(cmd)), nil
 			},
 			containerStatusMock,
 		)
