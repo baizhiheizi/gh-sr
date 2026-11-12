@@ -16,31 +16,6 @@ func TestCommandArgs(t *testing.T) {
 	}
 }
 
-func TestCommandLine(t *testing.T) {
-	t.Parallel()
-	cases := []struct {
-		script string
-		want   string
-	}{
-		{
-			script: "[Environment]::OSVersion.Platform",
-			want:   `powershell.exe -NoProfile -NonInteractive -Command "[Environment]::OSVersion.Platform"`,
-		},
-		{
-			script: "$env:PROCESSOR_ARCHITECTURE",
-			want:   `powershell.exe -NoProfile -NonInteractive -Command "$env:PROCESSOR_ARCHITECTURE"`,
-		},
-	}
-	for _, tc := range cases {
-		t.Run(tc.script, func(t *testing.T) {
-			t.Parallel()
-			if got := CommandLine(tc.script); got != tc.want {
-				t.Fatalf("CommandLine(%q) = %q, want %q", tc.script, got, tc.want)
-			}
-		})
-	}
-}
-
 // fakeCmd replaces runCmd for the duration of a single test. It records the
 // argv the production code passed and returns a real *exec.Cmd pointing at
 // a shell command that exits 0 and prints canned stdout/stderr. This lets

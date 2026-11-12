@@ -9,7 +9,7 @@ import (
 
 // loadYAMLRoot reads the YAML config at cfgPath, unmarshals it into a yaml.Node,
 // and returns the top-level mapping node. It centralises the read/unmarshal/
-// document+mapping validation that all mutator functions (AddHost, AddRunner,
+// document+mapping validation that all mutator functions (AddHost, AddRunnerFull,
 // RemoveRunner) need before modifying the tree.
 func loadYAMLRoot(cfgPath string) (*yaml.Node, error) {
 	data, err := os.ReadFile(cfgPath)
@@ -90,17 +90,6 @@ type AddRunnerOpts struct {
 	Labels    []string
 	Ephemeral bool
 	Profile   string // "agentic" for GitHub Agentic Workflows
-}
-
-// AddRunner adds a runner entry to the config file at cfgPath.
-func AddRunner(cfgPath, name, repo, hostName string, count int, labels []string) error {
-	return AddRunnerFull(cfgPath, AddRunnerOpts{
-		Name:   name,
-		Repo:   repo,
-		Host:   hostName,
-		Count:  count,
-		Labels: labels,
-	})
 }
 
 // AddRunnerFull adds a runner entry with all options.

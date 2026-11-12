@@ -10,9 +10,9 @@ import (
 
 // menuItemsSamples mirrors the per-panel label counts. Every menu panel
 // (action / global / filter) has 4-7 items, and viewFilterList can carry
-// dozens of host/repo choices when filters are configured. RenderMenuItems
+// dozens of host/repo choices when filters are configured. renderMenuItemsInto
 // fires once per menu render, not per tick, so this bench captures the
-// per-call cost so a builder-into-builder optimisation can be measured.
+// per-call cost.
 var menuItemsSamples = [][]string{
 	{"setup", "up", "down", "restart", "update", "logs"},                                                             // action menu
 	{"doctor", "host metrics", "cleanup", "show config", "edit yaml", "edit env"},                                    // global menu
@@ -20,21 +20,8 @@ var menuItemsSamples = [][]string{
 	{"h1.example", "h2.example", "h3.example", "h4.example", "h5.example", "h6.example", "h7.example", "h8.example"}, // filter list (8 hosts)
 }
 
-// BenchmarkRenderMenuItems measures the current string-returning helper so a
-// builder-into-builder variant can be compared on the same fixture.
-func BenchmarkRenderMenuItems(b *testing.B) {
-	b.ReportAllocs()
-	for i := 0; i < b.N; i++ {
-		for _, items := range menuItemsSamples {
-			_ = renderMenuItems(items, 1)
-		}
-	}
-}
-
-// BenchmarkRenderMenuItemsInto measures the same fixture through the
-// builder-into-builder variant once it lands. The pair of benches lets us
-// quantify the +alloc / -byte saving from dropping the inner-string b.String()
-// copy the caller used to pay for.
+// BenchmarkRenderMenuItemsInto measures the menu render helper on the same
+// fixture so per-line allocation changes show up.
 func BenchmarkRenderMenuItemsInto(b *testing.B) {
 	var sb strings.Builder
 	b.ReportAllocs()
@@ -47,12 +34,8 @@ func BenchmarkRenderMenuItemsInto(b *testing.B) {
 }
 
 // BenchmarkViewActionMenu exercises the full action-menu view compositing
-// (title + instance line + renderMenuItems + help line) so the
-// renderMenuItemsInto swap at the call site shows up. The helper-only bench
-// (BenchmarkRenderMenuItems vs BenchmarkRenderMenuItemsInto) is identical
-// because strings.Builder.String() is a no-copy refcount bump; the actual
-// saving is the elimination of the intermediate b.String() copy the caller
-// previously paid when writing the result back into its own strings.Builder.
+// (title + instance line + menu items + help line) so per-line changes in
+// the menu helper show up in the composed view cost.
 func BenchmarkViewActionMenu(b *testing.B) {
 	m := newBenchDashboardModel()
 	_, _ = m.selectedInstance() // populate confirm/instance state

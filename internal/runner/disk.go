@@ -71,7 +71,7 @@ func SafeRunnerInstanceName(name string) error {
 // double-quoted shell string. The replacement set is the same one that the
 // earlier per-call strings.NewReplacer used; promoting it to a package-level
 // value lets posixRunnerDirVar (called by posixScriptHeader, which is invoked
-// from buildDirSizesPOSIXScript, clearWorkTempPOSIX, removeDirTreePOSIX) skip
+// from clearWorkTempPOSIX and removeDirTreePOSIX) skip
 // the per-call Replacer allocation. Replacer.Replace is safe for concurrent
 // use, so a single shared instance is fine.
 var posixInstanceEscaper = strings.NewReplacer(`\`, `\\`, `"`, `\"`, "$", `\$`, "`", "\\`")
@@ -178,121 +178,20 @@ func splitNonEmptyLines(s string) []string {
 	return out
 }
 
-// MeasureDiskUsage measures disk usage for one runner instance directory.
-func MeasureDiskUsage(h *host.Host, hostName, instance string, rc *config.RunnerConfig) DiskUsageEntry {
-	entry := DiskUsageEntry{
-		Instance: instance,
-		Host:     hostName,
-		Path:     h.RunnerDir(instance),
-	}
-
-	if err := SafeRunnerInstanceName(instance); err != nil {
-		entry.Err = err
-		return entry
-	}
-
-	if rc != nil {
-		entry.Mode = rc.EffectiveRunnerMode()
-	} else {
-		entry.Orphan = true
-		entry.Mode = "unknown"
-	}
-
-	total, work, temp, dockerData, err := dirSizes(h, instance)
-	if err != nil {
-		entry.Err = err
-		return entry
-	}
-	entry.TotalBytes = total
-	entry.WorkBytes = work
-	entry.TempBytes = temp
-	entry.DockerDataBytes = dockerData
-	other := total - work - temp - dockerData
-	if other < 0 {
-		other = 0
-	}
-	entry.OtherBytes = other
-	return entry
-}
-
-// dirSizesResult bundles the four size buckets dirSizes collects on the remote
-// host so it can flow through runOnHostOS's generic dispatch (the helper
-// returns a single value, and dirSizes needs to ship four int64s back).
+// dirSizesResult bundles the four size buckets the remote sizing scripts
+// collect on the host so they can flow through runOnHostOS's generic dispatch
+// (the helper returns a single value, and the sizing helpers need to ship
+// four int64s back).
 type dirSizesResult struct {
 	total, work, temp, dockerData int64
 }
 
-func dirSizes(h *host.Host, instance string) (total, work, temp, dockerData int64, err error) {
-	res, err := runOnHostOS(h,
-		func() (dirSizesResult, error) {
-			t, w, te, dk, ierr := dirSizesWindows(h, instance)
-			return dirSizesResult{t, w, te, dk}, ierr
-		},
-		func() (dirSizesResult, error) {
-			t, w, te, dk, ierr := dirSizesPOSIX(h, instance)
-			return dirSizesResult{t, w, te, dk}, ierr
-		},
-	)
-	if err != nil {
-		return 0, 0, 0, 0, err
-	}
-	return res.total, res.work, res.temp, res.dockerData, nil
-}
-
-// buildDirSizesPOSIXScript returns the shell script that `dirSizesPOSIX`
-// runs on the remote host. Exposed (1) so the structural test in
-// `disk_test.go` can assert the single-walk invariant against the real
-// production string instead of a frozen copy, and (2) so a future
-// refactor that re-introduces multiple `du` walks fires the test.
-func buildDirSizesPOSIXScript(instance string) string {
-	// Single `du` walk with depth 1 reports the total and the size of each
-	// first-level subdirectory in one pass. Replaces four separate `du` calls
-	// (one for $dir, one each for _work/_temp/docker-data) which re-walked
-	// overlapping subtrees. On remote hosts the savings compound because each
-	// `h.Run` is a separate SSH round trip.
-	//
-	// `du` flag differs by platform: GNU coreutils uses --max-depth=N, BSD/macOS
-	// uses -d N. Probe with --max-depth=0 and fall back to -d 0.
-	return fmt.Sprintf(`
-%sif [ ! -d "$dir" ]; then echo "0 0 0 0"; exit 0; fi
-if du --max-depth=0 "$dir" >/dev/null 2>&1; then
-  out=$(du --max-depth=1 -k "$dir" 2>/dev/null || true)
-else
-  out=$(du -d 1 -k "$dir" 2>/dev/null || true)
-fi
-if [ -z "$out" ]; then echo "0 0 0 0"; exit 0; fi
-total=0; work=0; temp=0; docker=0
-total_name=$(basename "$dir")
-# Default IFS splits the "size<TAB>path" lines. GNU du emits tab-separated;
-# BSD du emits space-separated. Both work with the default.
-while read -r size path; do
-  [ -z "$path" ] && continue
-  case "$(basename "$path")" in
-    "$total_name") total=$((size * 1024)) ;;
-    _work)         work=$((size * 1024)) ;;
-    _temp)         temp=$((size * 1024)) ;;
-    docker-data)   docker=$((size * 1024)) ;;
-  esac
-done <<< "$out"
-echo "$total $work $temp $docker"
-`, posixScriptHeader(instance))
-}
-
-func dirSizesPOSIX(h *host.Host, instance string) (total, work, temp, dockerData int64, err error) {
-	out, err := h.Run(buildDirSizesPOSIXScript(instance))
-	if err != nil {
-		return 0, 0, 0, 0, err
-	}
-	return parseFourInt64s(out)
-}
-
 // buildDirSizesBatchPOSIXScript returns the shell script that
-// `dirSizesBatchPOSIX` runs on the remote host. It walks the per-instance
-// `du` tree once per instance (matching the existing single-instance script)
-// but emits one tab-separated "instance total work temp docker" line per
-// instance over a single SSH round-trip. The same `du --max-depth`/`du -d`
-// probe is preserved so the GNU/BSD portability contract is identical to
-// `buildDirSizesPOSIXScript`.
+// `dirSizesBatchPOSIX` runs on the remote host. It walks each instance's
+// `du` tree with a single depth-1 pass and emits one tab-separated
+// "instance total work temp docker" line per instance over a single SSH
+// round-trip. The `du --max-depth`/`du -d` probe preserves the GNU/BSD
+// portability contract.
 //
 // Instance names are emitted via `printf %q` so embedded spaces, tabs, and
 // quote-metacharacters still in the safe-set (e.g. `'`, `*`) are passed
@@ -498,9 +397,9 @@ func dirSizesBatchWindows(h *host.Host, instances []string) (map[string]dirSizes
 
 // dirSizesBatch runs one SSH round-trip per host that returns the four
 // size buckets for every requested instance. Caller passes the full set
-// of instances to measure; rcByInstance is the same map the single-call
-// `MeasureDiskUsage` takes, used by MeasureDiskUsageBatch to populate the
-// `Mode`/`Orphan` fields on the returned entries.
+// of instances to measure; the `Mode`/`Orphan` fields on the entries
+// MeasureDiskUsageBatch returns are populated by that caller from its
+// rcByInstance map.
 func dirSizesBatch(h *host.Host, instances []string) (map[string]dirSizesResult, error) {
 	return runOnHostOS(h,
 		func() (map[string]dirSizesResult, error) {
@@ -513,13 +412,10 @@ func dirSizesBatch(h *host.Host, instances []string) (map[string]dirSizesResult,
 }
 
 // MeasureDiskUsageBatch measures disk usage for every supplied instance in
-// a single SSH round-trip per host. The behaviour matches the per-instance
-// `MeasureDiskUsage` for every populated entry (Mode, Orphan, TotalBytes,
-// WorkBytes, TempBytes, DockerDataBytes, OtherBytes, Err) — the result map
-// is keyed by instance name and contains exactly `len(instances)` entries
-// on the happy path. Entries with an unsafe instance name are returned with
-// `Err` set and zero-valued size buckets, matching the per-instance API's
-// error-shape contract.
+// a single SSH round-trip per host. The result map is keyed by instance
+// name and contains exactly `len(instances)` entries on the happy path.
+// Entries with an unsafe instance name are returned with `Err` set and
+// zero-valued size buckets.
 func MeasureDiskUsageBatch(h *host.Host, hostName string, instances []string, rcByInstance map[string]*config.RunnerConfig) map[string]DiskUsageEntry {
 	out := make(map[string]DiskUsageEntry, len(instances))
 	if len(instances) == 0 {
@@ -587,113 +483,6 @@ func MeasureDiskUsageBatch(h *host.Host, hostName string, instances []string, rc
 		out[inst] = e
 	}
 	return out
-}
-
-func dirSizesWindows(h *host.Host, instance string) (total, work, temp, dockerData int64, err error) {
-	dirExpr := h.RunnerDirPS(instance)
-	ps := fmt.Sprintf(`
-function Ghsr-DirSize([string]$p) {
-  if (-not (Test-Path -LiteralPath $p)) { return 0 }
-  $sum = (Get-ChildItem -LiteralPath $p -Recurse -Force -ErrorAction SilentlyContinue | Measure-Object -Property Length -Sum).Sum
-  if ($null -eq $sum) { return 0 }
-  return [int64]$sum
-}
-function Ghsr-OtherDirSize([string]$root) {
-  if (-not (Test-Path -LiteralPath $root)) { return 0 }
-  $skip = @('_work','_temp','docker-data')
-  $sum = [int64]0
-  Get-ChildItem -LiteralPath $root -Force -ErrorAction SilentlyContinue | ForEach-Object {
-    if ($skip -contains $_.Name) { return }
-    if ($_.PSIsContainer) { $sum += Ghsr-DirSize $_.FullName } else { $sum += [int64]$_.Length }
-  }
-  return $sum
-}
-$d = %s
-$w = Ghsr-DirSize (Join-Path $d '_work')
-$te = Ghsr-DirSize (Join-Path $d '_temp')
-$dk = Ghsr-DirSize (Join-Path $d 'docker-data')
-$other = Ghsr-OtherDirSize $d
-$t = $w + $te + $dk + $other
-Write-Output "$t $w $te $dk"
-`, dirExpr)
-	out, err := h.RunShell(ps)
-	if err != nil {
-		return 0, 0, 0, 0, err
-	}
-	return parseFourInt64s(out)
-}
-
-// parseFourInt64s extracts up to four int64 values from the trailing
-// whitespace-separated line of `out`. The line shape is the emit produced by
-// the `du`-based POSIX script (`echo "$total $work $temp $docker"`) and the
-// `Write-Output "$t $w $te $dk"` PowerShell path. The inner scanner is a
-// manual ASCII scan over the line — strings.Fields would allocate a
-// []string header for every call, and parseFourInt64s runs once per host per
-// `gh sr disk` listing refresh, so the saved allocation compounds across
-// listings with many hosts.
-func parseFourInt64s(out string) (a, b, c, d int64, err error) {
-	// Trim leading whitespace and a single trailing newline without
-	// strings.TrimSpace's full Unicode pass.
-	idx := 0
-	for idx < len(out) && (out[idx] == ' ' || out[idx] == '\t' || out[idx] == '\n' || out[idx] == '\r') {
-		idx++
-	}
-	if idx >= len(out) {
-		return 0, 0, 0, 0, nil
-	}
-	end := len(out)
-	for end > idx && (out[end-1] == ' ' || out[end-1] == '\t' || out[end-1] == '\n' || out[end-1] == '\r') {
-		end--
-	}
-	line := out[idx:end]
-	// If the script emitted multiple lines (a stale diagnostic trailing the
-	// sizes), keep the last non-empty line — matches the prior LastIndex('\n')
-	// + TrimSpace behavior.
-	if nl := strings.LastIndexByte(line, '\n'); nl >= 0 {
-		seg := line[nl+1:]
-		t := seg
-		j := 0
-		for j < len(t) && (t[j] == ' ' || t[j] == '\t' || t[j] == '\r') {
-			j++
-		}
-		k := len(t)
-		for k > j && (t[k-1] == ' ' || t[k-1] == '\t' || t[k-1] == '\r') {
-			k--
-		}
-		line = t[j:k]
-		if line == "" {
-			return 0, 0, 0, 0, nil
-		}
-	}
-	// Manual scan: split on whitespace into at most 4 substrings of `line`,
-	// then strconv.ParseInt each one. The field slice is a [4]string stack
-	// array so no heap allocation is needed for typical 4-number lines.
-	var fields [4]string
-	nf := 0
-	for i := 0; i < len(line); {
-		for i < len(line) && (line[i] == ' ' || line[i] == '\t') {
-			i++
-		}
-		if i >= len(line) {
-			break
-		}
-		start := i
-		for i < len(line) && line[i] != ' ' && line[i] != '\t' {
-			i++
-		}
-		if nf < 4 {
-			fields[nf] = line[start:i]
-			nf++
-		}
-	}
-	var vals [4]int64
-	for i := 0; i < nf; i++ {
-		vals[i], err = strconv.ParseInt(fields[i], 10, 64)
-		if err != nil {
-			return 0, 0, 0, 0, fmt.Errorf("parsing size line %q: %w", line, err)
-		}
-	}
-	return vals[0], vals[1], vals[2], vals[3], nil
 }
 
 // PruneInstance reclaims disk for one runner instance when idle.

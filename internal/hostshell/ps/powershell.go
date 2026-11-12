@@ -3,9 +3,7 @@
 package ps
 
 import (
-	"fmt"
 	"os/exec"
-	"strconv"
 )
 
 const exe = "powershell.exe"
@@ -35,9 +33,4 @@ func Exec(script string) ([]byte, error) {
 func CombinedOutput(script string) ([]byte, error) {
 	args := CommandArgs(script)
 	return runCmd(args[0], args[1:]...).CombinedOutput()
-}
-
-// CommandLine builds a full command string suitable for host.Host.Run on Windows.
-func CommandLine(script string) string {
-	return fmt.Sprintf("%s -NoProfile -NonInteractive -Command %s", exe, strconv.Quote(script))
 }

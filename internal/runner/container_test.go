@@ -32,19 +32,6 @@ func TestContainerName(t *testing.T) {
 	}
 }
 
-func TestContainerStateDir(t *testing.T) {
-	t.Parallel()
-	h := host.NewHost("h", config.HostConfig{Addr: "local", OS: "linux", Arch: "amd64"})
-	dir := containerStateDir(h, "my-runner-1")
-	// Should match the runner dir for the instance.
-	if !strings.Contains(dir, "my-runner-1") {
-		t.Errorf("containerStateDir should include instance name, got %q", dir)
-	}
-	if !strings.Contains(dir, ".gh-sr/runners") {
-		t.Errorf("containerStateDir should be under .gh-sr/runners, got %q", dir)
-	}
-}
-
 // TestDockerRunArgShape verifies the docker create command includes the expected
 // --privileged flag, --shm-size for Chromium/Selenium, the bind-mount, and env vars.
 func TestDockerRunArgShape(t *testing.T) {
@@ -60,7 +47,7 @@ func TestDockerRunArgShape(t *testing.T) {
 	}
 	instanceName := rc.InstanceNames()[0] // "agentic-1"
 	cName := containerName(instanceName)
-	stateDir := containerStateDir(h, instanceName)
+	stateDir := h.RunnerDir(instanceName)
 	imageTag := AgenticRunnerImageTag + ":2.999.0"
 
 	// Build the expected docker create command manually (mirrors setupContainer logic).

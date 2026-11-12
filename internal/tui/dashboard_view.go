@@ -47,28 +47,12 @@ func newAltView(s string) tea.View {
 	return v
 }
 
-// renderMenuItems builds the per-item list shared by every cursor-driven menu
-// panel (action / global / filter / dynamic filter list). The selected item is
-// prefixed with the "  > " marker through selectedStyle; the remaining items
-// use the plain "    " indent so the column of arrow markers stays aligned.
-// The trailing newline is part of the returned string so callers can append
-// it directly to a strings.Builder.
-//
-// The string-returning shape is preserved for test use; menu renderers that
-// already have a strings.Builder to write into should call renderMenuItemsInto
-// to skip the final b.String() copy and the per-item "+ "\n"" concat allocs.
-func renderMenuItems(items []string, cursor int) string {
-	var b strings.Builder
-	renderMenuItemsInto(&b, items, cursor)
-	return b.String()
-}
-
-// renderMenuItemsInto appends the per-item lines to b. Same per-line
-// semantics as renderMenuItems but writes to a caller-supplied builder so the
-// lines can be embedded in a larger panel output without paying for an
-// intermediate strings.Builder grow + b.String() copy just to be concatenated
-// by the caller. Mirrors the renderRowInto / renderRow split used by the
-// table render path.
+// renderMenuItemsInto appends the per-item lines to b for every cursor-driven
+// menu panel (action / global / filter / dynamic filter list). The selected
+// item is prefixed with the "  > " marker through selectedStyle; the remaining
+// items use the plain "    " indent so the column of arrow markers stays
+// aligned. The trailing newline is part of each line so the output can be
+// embedded in a larger panel without an extra join pass.
 func renderMenuItemsInto(b *strings.Builder, items []string, cursor int) {
 	for i, label := range items {
 		if i == cursor {

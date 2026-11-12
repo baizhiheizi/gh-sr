@@ -49,53 +49,6 @@ func diskMockHost(os string, mock *testutil.MockExecutor) *host.Host {
 	return h
 }
 
-func TestParseFourInt64s(t *testing.T) {
-	t.Parallel()
-	a, b, c, d, err := parseFourInt64s("100 20 10 70\n")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if a != 100 || b != 20 || c != 10 || d != 70 {
-		t.Fatalf("got %d %d %d %d", a, b, c, d)
-	}
-}
-
-func TestMeasureDiskUsage_linux(t *testing.T) {
-	t.Parallel()
-	h := diskMockHost("linux", &testutil.MockExecutor{
-		Responses: []string{"1000000 500000 100000 300000\n"},
-	})
-	rc := config.RunnerConfig{Name: "ci", Count: 1}
-	entry := MeasureDiskUsage(h, "host1", "ci-1", &rc)
-	if entry.Err != nil {
-		t.Fatal(entry.Err)
-	}
-	if entry.TotalBytes != 1000000 {
-		t.Fatalf("total=%d", entry.TotalBytes)
-	}
-	if entry.WorkBytes != 500000 || entry.TempBytes != 100000 || entry.DockerDataBytes != 300000 {
-		t.Fatalf("breakdown work=%d temp=%d docker=%d", entry.WorkBytes, entry.TempBytes, entry.DockerDataBytes)
-	}
-	if entry.Mode != "native" {
-		t.Fatalf("mode=%q", entry.Mode)
-	}
-}
-
-func TestMeasureDiskUsage_agenticMode(t *testing.T) {
-	t.Parallel()
-	h := diskMockHost("linux", &testutil.MockExecutor{
-		Responses: []string{"100 0 0 0\n"},
-	})
-	rc := config.RunnerConfig{Name: "ag", Count: 1, Profile: "agentic"}
-	entry := MeasureDiskUsage(h, "host1", "ag-1", &rc)
-	if entry.Err != nil {
-		t.Fatal(entry.Err)
-	}
-	if entry.Mode != "container" {
-		t.Fatalf("mode=%q, want container", entry.Mode)
-	}
-}
-
 // TestParseDirSizesBatch_happyPath pins the parser contract used by
 // dirSizesBatchPOSIX: tab-separated `<inst>\t<total>\t<work>\t<temp>\t<docker>`
 // lines, one per requested instance. Missing instances → error.
@@ -445,19 +398,16 @@ func TestPruneInstance_orphanIncludeOrphans_noAutostart(t *testing.T) {
 }
 
 // TestDiskDispatchers_unsupportedHostOS locks in the runOnHostOS fallback for
-// the three dispatchers in disk.go (#229): when h.OS is neither "windows" nor
-// "linux"/"darwin", dirSizes / clearWorkTemp / removeDirTree must all return
+// the dispatchers in disk.go (#229): when h.OS is neither "windows" nor
+// "linux"/"darwin", clearWorkTemp / removeDirTree must both return
 // the "unsupported host OS" error and never invoke the remote host. The
-// refactor that moved the three hand-rolled switches onto runOnHostOS would be
+// refactor that moved the hand-rolled switches onto runOnHostOS would be
 // a regression if it dropped the error.
 func TestDiskDispatchers_unsupportedHostOS(t *testing.T) {
 	t.Parallel()
 	mock := &testutil.MockExecutor{}
 	h := diskMockHost("freebsd", mock)
 
-	if _, _, _, _, err := dirSizes(h, "ci-1"); err == nil {
-		t.Fatal("dirSizes: expected unsupported-host-OS error, got nil")
-	}
 	if err := clearWorkTemp(h, "ci-1", false, false); err == nil {
 		t.Fatal("clearWorkTemp: expected unsupported-host-OS error, got nil")
 	}
@@ -468,7 +418,6 @@ func TestDiskDispatchers_unsupportedHostOS(t *testing.T) {
 		t.Fatalf("unsupported OS must not invoke the host, got %d call(s)", len(mock.Calls))
 	}
 	for _, err := range []error{
-		func() error { _, _, _, _, e := dirSizes(h, "ci-1"); return e }(),
 		clearWorkTemp(h, "ci-1", false, false),
 		removeDirTree(h, "ci-1"),
 	} {
@@ -481,7 +430,6 @@ func TestDiskDispatchers_unsupportedHostOS(t *testing.T) {
 func TestPOSIXScripts_includeSetE(t *testing.T) {
 	t.Parallel()
 	for name, script := range map[string]string{
-		"dirSizes":      buildDirSizesPOSIXScript("ci-1"),
 		"clearWorkTemp": clearWorkTempPOSIX("ci-1", false, false),
 		"removeDir":     removeDirTreePOSIX("ci-1"),
 	} {
@@ -1003,126 +951,6 @@ func TestSafeRunnerInstanceName(t *testing.T) {
 	}
 }
 
-func TestMeasureDiskUsage_rejectsUnsafeInstance(t *testing.T) {
-	t.Parallel()
-	h := diskMockHost("linux", &testutil.MockExecutor{})
-	entry := MeasureDiskUsage(h, "host1", `bad"name`, nil)
-	if entry.Err == nil {
-		t.Fatal("expected error")
-	}
-}
-
-// TestDirSizesPOSIXScript_structure guards the single-walk optimization: the
-// generated script must make exactly one `du` invocation with depth 1, not
-// four separate `du -sk` calls. This is the energy-efficiency invariant the
-// PR claims — if a future refactor re-introduces multiple `du` walks, this
-// test will catch it. The test runs the real production script (via
-// buildDirSizesPOSIXScript) on a real temp dir, not a frozen copy.
-func TestDirSizesPOSIXScript_structure(t *testing.T) {
-	t.Parallel()
-	if _, err := exec.LookPath("du"); err != nil {
-		t.Skip("du not available")
-	}
-	if _, err := exec.LookPath("bash"); err != nil {
-		t.Skip("bash not available")
-	}
-
-	// Build the same instance-dir layout the production script targets.
-	inst := "ci-bench"
-	fakeHome := t.TempDir()
-	runnerDir := filepath.Join(fakeHome, ".gh-sr", "runners", inst)
-	for _, sub := range []string{"_work", "_temp", "docker-data"} {
-		if err := os.MkdirAll(filepath.Join(runnerDir, sub), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		for i := 0; i < 5; i++ {
-			f, err := os.CreateTemp(filepath.Join(runnerDir, sub), "f*.bin")
-			if err != nil {
-				t.Fatal(err)
-			}
-			if _, err := f.Write(make([]byte, 4096)); err != nil {
-				t.Fatal(err)
-			}
-			f.Close()
-		}
-	}
-
-	cmd := exec.Command("bash", "-c", buildDirSizesPOSIXScript(inst))
-	cmd.Env = append(os.Environ(), "HOME="+fakeHome)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("script failed: %v\n%s", err, out)
-	}
-	parts := strings.Fields(strings.TrimSpace(string(out)))
-	if len(parts) != 4 {
-		t.Fatalf("expected 4 numbers, got %d: %q", len(parts), out)
-	}
-	// All three subdirs were populated with 5 × 4 KiB files = 20 KiB each.
-	// `du` reports in 1-KiB blocks; allow >= 16 KiB each (rounding).
-	for i, label := range []string{"total", "work", "temp", "docker"} {
-		var n int64
-		for _, c := range parts[i] {
-			if c < '0' || c > '9' {
-				t.Fatalf("non-numeric in %s: %q", label, parts[i])
-			}
-			n = n*10 + int64(c-'0')
-		}
-		if n < 16*1024 {
-			t.Fatalf("%s=%d bytes, want >= 16384", label, n)
-		}
-	}
-}
-
-// TestDirSizesPOSIXScript_singleDuInvocation is the structural invariant
-// guard. The OLD script had 4 separate `du -sk "$dir[/sub]"` calls. The
-// NEW script has exactly one effective `du` invocation per execution
-// (an `if/else` branch probes GNU vs BSD, but only one branch runs).
-// We assert two properties:
-//
-//  1. The old `du -sk "$dir"`-per-subdir pattern is gone (0 occurrences).
-//  2. There is exactly one `du` line that performs a data fetch
-//     (the depth-0 probe is not a fetch — it only tests flag support).
-func TestDirSizesPOSIXScript_singleDuInvocation(t *testing.T) {
-	t.Parallel()
-	script := buildDirSizesPOSIXScript("foo")
-
-	// (1) The old 4-call pattern must be absent.
-	if c := strings.Count(script, `du -sk "$dir"`); c != 0 {
-		t.Fatalf("old 4-du pattern present: %d occurrences of `du -sk \"$dir\"` in script", c)
-	}
-
-	// (2) Exactly one data-fetching `du` line. Both the GNU and BSD
-	// branches assign to `out=$(du ...)`; structurally that's 2 lines,
-	// but only one runs per execution. We allow 2 (one per platform
-	// branch) and disallow anything more.
-	lines := strings.Split(script, "\n")
-	fetches := 0
-	for _, l := range lines {
-		trimmed := strings.TrimSpace(l)
-		if strings.HasPrefix(trimmed, "out=$(du ") {
-			fetches++
-		}
-	}
-	if fetches != 1 && fetches != 2 {
-		t.Fatalf("expected 1 or 2 du fetch lines (GNU/BSD branch), got %d\nscript:\n%s", fetches, script)
-	}
-}
-
-// BenchmarkMeasureDiskUsage_linux benchmarks the Go side of MeasureDiskUsage
-// with a mock host. The real I/O win is on the remote host (4 SSH round
-// trips → 1), which is not exercised here. This benchmark exists primarily
-// to catch accidental per-call allocation regressions in the Go wrapper.
-func BenchmarkMeasureDiskUsage_linux(b *testing.B) {
-	h := diskMockHost("linux", &testutil.MockExecutor{
-		Responses: []string{"1000000 500000 100000 300000\n"},
-	})
-	rc := config.RunnerConfig{Name: "ci", Count: 1}
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		_ = MeasureDiskUsage(h, "host1", "ci-1", &rc)
-	}
-}
-
 // TestPosixRunnerDirVar locks the POSIX double-quoted shell escape contract
 // that posixRunnerDirVar feeds into posixScriptHeader (and through it into the
 // disk-prune scripts that `gh sr disk` and `gh sr prune` send to the host).
@@ -1203,218 +1031,5 @@ func TestPosixRunnerDirVar_concurrent(t *testing.T) {
 		if err := <-done; err != nil {
 			t.Fatal(err)
 		}
-	}
-}
-
-// TestDirSizesWindows_wrappedScript pins that dirSizesWindows goes through
-// host.Host.RunShell — which on a non-local Windows host base64-wraps the
-// PowerShell payload via host.Host.wrapCommand — and that the encoded script
-// contains the size-collection helpers and the dirExpr for the requested
-// instance. Without a non-local Addr the wrapper is a silent no-op and the
-// test would observe the raw PowerShell source as if it were a shell command.
-func TestDirSizesWindows_wrappedScript(t *testing.T) {
-	t.Parallel()
-	var calls []string
-	mock := &testutil.MockExecutor{
-		RunFn: func(cmd string) (string, error) {
-			calls = append(calls, cmd)
-			return "0 0 0 0", nil
-		},
-	}
-	h := host.NewHost("win", config.HostConfig{Addr: "runner@vps", OS: "windows", Arch: "amd64"})
-	h.SetConn(mock)
-
-	if _, _, _, _, err := dirSizesWindows(h, "ci-1"); err != nil {
-		t.Fatalf("dirSizesWindows: %v", err)
-	}
-	if len(calls) != 1 {
-		t.Fatalf("dirSizesWindows calls = %d, want 1; calls=%v", len(calls), calls)
-	}
-	if !strings.Contains(calls[0], "powershell.exe") || !strings.Contains(calls[0], "-EncodedCommand") {
-		t.Fatalf("Windows script must be base64-wrapped via powershell -EncodedCommand: %q", calls[0])
-	}
-	script, ok := decodeEncodedPowerShellCommand(calls[0])
-	if !ok {
-		t.Fatalf("could not decode EncodedCommand payload: %q", calls[0])
-	}
-	// The PowerShell helper functions and the size-bucket join logic must all
-	// survive the wrap so the remote host can actually execute the script.
-	for _, want := range []string{
-		"function Ghsr-DirSize",
-		"function Ghsr-OtherDirSize",
-		"Get-ChildItem",
-		"Measure-Object",
-		"_work",
-		"_temp",
-		"docker-data",
-		"ci-1",
-	} {
-		if !strings.Contains(script, want) {
-			t.Errorf("encoded script missing %q; script=%q", want, script)
-		}
-	}
-}
-
-// TestDirSizesWindows_parsesFourBuckets verifies that the four-bucket emit
-// from the Windows script ("total work temp docker") is parsed back into the
-// expected total/work/temp/dockerData values, including the case where the
-// runner's diagnostic preamble (a stray PowerShell warning) trails the
-// numeric line — parseFourInt64s must keep the last non-empty line.
-func TestDirSizesWindows_parsesFourBuckets(t *testing.T) {
-	t.Parallel()
-	cases := []struct {
-		name           string
-		out            string
-		wantT, wantW   int64
-		wantTe, wantDk int64
-	}{
-		{
-			name:  "simple",
-			out:   "1000 200 100 500",
-			wantT: 1000, wantW: 200, wantTe: 100, wantDk: 500,
-		},
-		{
-			name:  "trailing_newline",
-			out:   "1234 234 134 600\n",
-			wantT: 1234, wantW: 234, wantTe: 134, wantDk: 600,
-		},
-		{
-			name: "diagnostic_preamble",
-			// A stray PowerShell warning before the size line must be
-			// discarded: parseFourInt64s keeps the trailing non-empty line.
-			out:   "WARNING: using fallback cache\n8000 100 200 300\n",
-			wantT: 8000, wantW: 100, wantTe: 200, wantDk: 300,
-		},
-		{
-			name:  "zero_sizes",
-			out:   "0 0 0 0",
-			wantT: 0, wantW: 0, wantTe: 0, wantDk: 0,
-		},
-	}
-	for _, tc := range cases {
-		tc := tc
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			mock := &testutil.MockExecutor{Output: tc.out}
-			h := host.NewHost("win", config.HostConfig{Addr: "runner@vps", OS: "windows", Arch: "amd64"})
-			h.SetConn(mock)
-			total, work, temp, docker, err := dirSizesWindows(h, "ci-1")
-			if err != nil {
-				t.Fatalf("dirSizesWindows: %v", err)
-			}
-			if total != tc.wantT || work != tc.wantW || temp != tc.wantTe || docker != tc.wantDk {
-				t.Fatalf("dirSizesWindows(%q): got (%d,%d,%d,%d), want (%d,%d,%d,%d)",
-					tc.out, total, work, temp, docker, tc.wantT, tc.wantW, tc.wantTe, tc.wantDk)
-			}
-		})
-	}
-}
-
-// TestDirSizesWindows_runErrorPropagates pins that a host-side failure on
-// the wrapped PowerShell call bubbles up verbatim so the caller (MeasureDiskUsage)
-// can surface the failure in DiskUsageEntry.Err. Without this, a transient
-// SSH error would silently leave the entry with zeroed bytes.
-func TestDirSizesWindows_runErrorPropagates(t *testing.T) {
-	t.Parallel()
-	sentinel := fmt.Errorf("ssh connection reset")
-	mock := &testutil.MockExecutor{RunFn: func(string) (string, error) {
-		return "", sentinel
-	}}
-	h := host.NewHost("win", config.HostConfig{Addr: "runner@vps", OS: "windows", Arch: "amd64"})
-	h.SetConn(mock)
-	_, _, _, _, err := dirSizesWindows(h, "ci-1")
-	if err == nil {
-		t.Fatal("dirSizesWindows: expected propagated error, got nil")
-	}
-	if !strings.Contains(err.Error(), "ssh connection reset") {
-		t.Fatalf("error should wrap sentinel, got %v", err)
-	}
-}
-
-// TestDirSizesWindows_parseErrorPropagates pins that when the wrapped
-// PowerShell script emits non-numeric output (e.g. the host returned a
-// localized error message instead of the four-bucket line), parseFourInt64s
-// surfaces a "parsing size line" error so the listing marks the host failed
-// rather than silently reporting zero bytes.
-func TestDirSizesWindows_parseErrorPropagates(t *testing.T) {
-	t.Parallel()
-	mock := &testutil.MockExecutor{Output: "Access is denied"}
-	h := host.NewHost("win", config.HostConfig{Addr: "runner@vps", OS: "windows", Arch: "amd64"})
-	h.SetConn(mock)
-	_, _, _, _, err := dirSizesWindows(h, "ci-1")
-	if err == nil {
-		t.Fatal("dirSizesWindows: expected parse error, got nil")
-	}
-	if !strings.Contains(err.Error(), "parsing size line") {
-		t.Fatalf("error should mention parse failure, got %v", err)
-	}
-}
-
-// TestDirSizesWindows_localAddrPassesRawScript locks in the silent no-op
-// behaviour: when the host addr is local, host.Host.wrapCommand returns the
-// script unchanged so the test sees the raw PowerShell text. This guards
-// against a regression that wrapped local commands too — wrapping a
-// `powershell.exe -EncodedCommand ...` call locally works, but the script
-// would also leak the wrapper into a local-addr user's normal shell, where
-// it could collide with their environment.
-func TestDirSizesWindows_localAddrPassesRawScript(t *testing.T) {
-	t.Parallel()
-	var calls []string
-	mock := &testutil.MockExecutor{
-		RunFn: func(cmd string) (string, error) {
-			calls = append(calls, cmd)
-			return "100 20 10 70", nil
-		},
-	}
-	h := diskMockHost("windows", mock)
-	if _, _, _, _, err := dirSizesWindows(h, "ci-1"); err != nil {
-		t.Fatalf("dirSizesWindows local: %v", err)
-	}
-	if len(calls) != 1 {
-		t.Fatalf("dirSizesWindows local calls = %d, want 1; calls=%v", len(calls), calls)
-	}
-	if strings.Contains(calls[0], "-EncodedCommand") {
-		t.Fatalf("local Windows host should not base64-wrap, got %q", calls[0])
-	}
-	if !strings.Contains(calls[0], "function Ghsr-DirSize") {
-		t.Fatalf("raw PowerShell script body should reach the host unmodified: %q", calls[0])
-	}
-}
-
-// TestDirSizes_dispatchesToWindowsOnWindowsHost pins runOnHostOS's branch for
-// dirSizes: a Windows host must call h.RunShell (the encoded PowerShell
-// wrapper) exactly once, and the call must carry the four-bucket emit
-// ("$t $w $te $dk") that the disk-listing parser depends on. The POSIX
-// counterpart is covered separately by TestMeasureDiskUsage_linux.
-func TestDirSizes_dispatchesToWindowsOnWindowsHost(t *testing.T) {
-	t.Parallel()
-	var calls []string
-	mock := &testutil.MockExecutor{
-		RunFn: func(cmd string) (string, error) {
-			calls = append(calls, cmd)
-			return "9999 100 200 300", nil
-		},
-	}
-	h := host.NewHost("win", config.HostConfig{Addr: "runner@vps", OS: "windows", Arch: "amd64"})
-	h.SetConn(mock)
-	total, work, temp, docker, err := dirSizes(h, "ci-1")
-	if err != nil {
-		t.Fatalf("dirSizes Windows: %v", err)
-	}
-	if total != 9999 || work != 100 || temp != 200 || docker != 300 {
-		t.Fatalf("dirSizes Windows: got (%d,%d,%d,%d), want (9999,100,200,300)", total, work, temp, docker)
-	}
-	if len(calls) != 1 {
-		t.Fatalf("dirSizes Windows calls = %d, want 1; calls=%v", len(calls), calls)
-	}
-	if !strings.Contains(calls[0], "powershell.exe") {
-		t.Fatalf("dirSizes on a Windows host must invoke PowerShell, got %q", calls[0])
-	}
-	script, ok := decodeEncodedPowerShellCommand(calls[0])
-	if !ok {
-		t.Fatalf("dirSizes Windows must use -EncodedCommand wrapper, got %q", calls[0])
-	}
-	if !strings.Contains(script, `Write-Output "$t $w $te $dk"`) {
-		t.Fatalf("dirSizes Windows script must emit the four-bucket line, got %q", script)
 	}
 }

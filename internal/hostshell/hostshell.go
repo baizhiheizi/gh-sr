@@ -34,11 +34,6 @@ func PowerShellCombinedOutput(script string) ([]byte, error) {
 	return ps.CombinedOutput(script)
 }
 
-// PowerShellCommand builds a full powershell.exe command string for host.Host.Run.
-func PowerShellCommand(script string) string {
-	return ps.CommandLine(script)
-}
-
 // PlistEscape escapes s for embedding in XML/plist string values.
 func PlistEscape(s string) string {
 	s = strings.ReplaceAll(s, `&`, `&amp;`)
@@ -48,41 +43,13 @@ func PlistEscape(s string) string {
 	return s
 }
 
-// RemotePathExists reports whether path exists on the remote host (file or
-// directory). It is the canonical helper for the
-// `test -e <path> && echo yes || echo no` POSIX probe, replacing the hand-built
-// copies that had drifted across the runner and autostart packages (issue #274).
-// path is shell-quoted via PosixSingleQuote, so callers pass the raw path.
-//
-// This is a POSIX-only helper; Windows callers build their own PowerShell
-// `Test-Path` probes (the dir/run.cmd/.runner triple) because there is no
-// single PowerShell idiom that composes the same way as `test -e`. Callers
-// gate on h.OS themselves before reaching for it.
-func RemotePathExists(h *host.Host, path string) (bool, error) {
-	return RemoteBoolCheck(h, "test -e "+PosixSingleQuote(path))
-}
-
-// RemoteFileExists is RemotePathExists specialized to a regular file
-// (`test -f`). Use it instead of RemotePathExists when a directory at the same
-// path must read as "absent" (e.g. a .runner file vs. a directory).
-func RemoteFileExists(h *host.Host, path string) (bool, error) {
-	return RemoteBoolCheck(h, "test -f "+PosixSingleQuote(path))
-}
-
-// RemoteDirExists is RemotePathExists specialized to a directory
-// (`test -d`).
-func RemoteDirExists(h *host.Host, path string) (bool, error) {
-	return RemoteBoolCheck(h, "test -d "+PosixSingleQuote(path))
-}
-
 // RemoteBoolCheck runs a POSIX shell condition (condCmd) — any command whose
 // exit status encodes the boolean — wrapped as `condCmd && echo yes || echo no`
 // and returns whether it printed "yes". It is the generic yes/no probe shared
-// by RemotePathExists / RemoteFileExists / RemoteDirExists and by call sites
-// whose condition is not a bare test (e.g.
+// by call sites whose condition may be a bare `test -e/-f/-d` (callers
+// PosixSingleQuote the path themselves) or a compound one (e.g.
 // `docker --version 2>/dev/null | grep -q "Docker version"`). Callers are
-// responsible for shell-quoting any embedded values; the path helpers above
-// already quote via PosixSingleQuote.
+// responsible for shell-quoting any embedded values.
 //
 // A non-nil error from h.Run is returned alongside false. Many existing call
 // sites treat the error as non-fatal and treat any failure as "does not
@@ -136,21 +103,6 @@ func ScheduledTaskState(run PowerShellRunner, name string) (string, error) {
 		return "", err
 	}
 	return strings.TrimSpace(out), nil
-}
-
-// RemoteWindowsDirExists reports whether a directory exists at path on a
-// Windows host. It is the Windows counterpart of RemoteDirExists, using
-// `Test-Path -LiteralPath ... -PathType Container`. The path is escaped via
-// PowerShellSingleQuote.
-func RemoteWindowsDirExists(h *host.Host, path string) (bool, error) {
-	out, err := h.RunShell(fmt.Sprintf(
-		`if (Test-Path -LiteralPath %s -PathType Container) { 'yes' } else { 'no' }`,
-		PowerShellSingleQuote(path),
-	))
-	if err != nil {
-		return false, err
-	}
-	return strings.TrimSpace(out) == "yes", nil
 }
 
 // WriteRemoteBytes writes data to a remote path using base64 (POSIX) or PowerShell (Windows).

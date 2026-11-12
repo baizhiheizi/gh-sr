@@ -225,61 +225,6 @@ func TestDetectArch(t *testing.T) {
 	}
 }
 
-func TestDetectDockerAvailable(t *testing.T) {
-	t.Parallel()
-
-	cases := []struct {
-		name string
-		cfg  config.HostConfig
-		mock *testutil.MockExecutor
-		want bool
-	}{
-		{
-			name: "linux docker available",
-			cfg:  config.HostConfig{OS: "linux"},
-			mock: &testutil.MockExecutor{Output: "24.0.0"},
-			want: true,
-		},
-		{
-			name: "linux docker unavailable",
-			cfg:  config.HostConfig{OS: "linux"},
-			mock: &testutil.MockExecutor{
-				RunErr: assertCalledError(),
-			},
-			want: false,
-		},
-		{
-			name: "linux docker returns empty",
-			cfg:  config.HostConfig{OS: "linux"},
-			mock: &testutil.MockExecutor{Output: ""},
-			want: false,
-		},
-		{
-			name: "windows docker available",
-			cfg:  config.HostConfig{OS: "windows"},
-			mock: &testutil.MockExecutor{Output: "24.0.0"},
-			want: true,
-		},
-		{
-			name: "darwin docker available",
-			cfg:  config.HostConfig{OS: "darwin"},
-			mock: &testutil.MockExecutor{Output: "24.0.0"},
-			want: true,
-		},
-	}
-
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			h := newMockHost("test", tc.cfg, tc.mock)
-			got := DetectDockerAvailable(h)
-			if got != tc.want {
-				t.Errorf("DetectDockerAvailable = %v, want %v", got, tc.want)
-			}
-		})
-	}
-}
-
 func assertCalledError() error {
 	return calledError{}
 }

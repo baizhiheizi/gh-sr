@@ -78,7 +78,9 @@ func TestRenderRow_highlightedVariantStillShowsEveryCell(t *testing.T) {
 func TestRenderMenuItems_marksSelectedItem(t *testing.T) {
 	t.Parallel()
 	items := []string{"alpha", "beta", "gamma"}
-	got := renderMenuItems(items, 1)
+	var b strings.Builder
+	renderMenuItemsInto(&b, items, 1)
+	got := b.String()
 	if !strings.Contains(got, "alpha") || !strings.Contains(got, "beta") || !strings.Contains(got, "gamma") {
 		t.Fatalf("all labels should appear, got: %q", got)
 	}
@@ -99,11 +101,15 @@ func TestRenderMenuItems_marksSelectedItem(t *testing.T) {
 func TestRenderMenuItems_firstAndLastCursor(t *testing.T) {
 	t.Parallel()
 	items := []string{"one", "two", "three", "four"}
-	first := renderMenuItems(items, 0)
+	var fb strings.Builder
+	renderMenuItemsInto(&fb, items, 0)
+	first := fb.String()
 	if !strings.Contains(first, "> one") {
 		t.Errorf("cursor=0 should mark first item, got: %q", first)
 	}
-	last := renderMenuItems(items, 3)
+	var lb strings.Builder
+	renderMenuItemsInto(&lb, items, 3)
+	last := lb.String()
 	if !strings.Contains(last, "> four") {
 		t.Errorf("cursor=3 should mark last item, got: %q", last)
 	}
