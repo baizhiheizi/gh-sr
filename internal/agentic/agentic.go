@@ -4,11 +4,8 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
-	"sync"
 
 	"github.com/an-lee/gh-sr/internal/host"
-	"github.com/an-lee/gh-sr/internal/hostshell"
-	"github.com/an-lee/gh-sr/internal/runner"
 )
 
 // PrereqFailure represents a single prerequisite check that failed.
@@ -62,17 +59,15 @@ func ValidateContainerPrereqs(h *host.Host) []PrereqFailure {
 	return failures
 }
 
-// awfHygieneCheck describes one AWF/gh-aw hygiene probe shared between
-// ValidateAWFHygiene (host-level) and ValidateAWFHygieneInner (inner Docker
-// inside a DinD runner). The two callers pass a prefix (empty for the host,
-// `docker exec "X" ` for inner) and a Name suffix (empty for the host,
-// `-inner` for inner) so the helper renders the correct failure shape.
+// awfHygieneCheck describes one AWF/gh-aw hygiene probe run inside the inner
+// Docker of a DinD runner container. The batched inner probe executes each
+// check's Cmd via `docker exec "gh-sr-$i"` and reports any probe that prints
+// output as a `-inner`-suffixed failure.
 type awfHygieneCheck struct {
-	// Name is the base failure name; the helper appends `nameSuffix` (typically
-	// empty or "-inner").
+	// Name is the base failure name; the batch parser appends `-inner`.
 	Name string
-	// Cmd is the probe shell command WITHOUT any prefix. The helper prepends
-	// `pfx` so the same definition works for host-level and inner-Docker.
+	// Cmd is the probe shell command WITHOUT the docker-exec wrapper, so the
+	// same definition works for any instance the batch loops over.
 	Cmd string
 	// Message is the fully-rendered PrereqFailure.Message for this variant.
 	// The caller pre-formats any per-variant wording (e.g. outer container name).
@@ -80,32 +75,6 @@ type awfHygieneCheck struct {
 	// Remediation is the fully-rendered PrereqFailure.Remediation for this
 	// variant. Same pre-format rule as Message.
 	Remediation string
-}
-
-// runAWFHygieneChecks fans the supplied checks out across goroutines using the
-// shared failureCollector. Each probe runs h.Run(pfx + check.Cmd) and, on
-// non-empty TrimSpace output, appends a PrereqFailure with the suffix-applied
-// name and the pre-rendered Message/Remediation/DocRef.
-func runAWFHygieneChecks(h *host.Host, pfx, nameSuffix string, checks []awfHygieneCheck) []PrereqFailure {
-	var collector failureCollector
-	appendFailure := collector.append
-	for _, c := range checks {
-		c := c
-		collector.spawn(func() {
-			out, _ := h.Run(pfx + c.Cmd)
-			if strings.TrimSpace(out) == "" {
-				return
-			}
-			appendFailure(PrereqFailure{
-				Name:        c.Name + nameSuffix,
-				Severity:    SeverityWarning,
-				Message:     c.Message,
-				Remediation: c.Remediation,
-				DocRef:      "agentic-workflows.md §12",
-			})
-		})
-	}
-	return collector.wait()
 }
 
 // awfInnerHygieneChecks returns the inner-Docker (DinD runner) agentic hygiene
@@ -136,100 +105,24 @@ func awfInnerHygieneChecks(outerContainer string) []awfHygieneCheck {
 	}
 }
 
-// ValidateAWFHygieneInner runs orphan/stale AWF/gh-aw artefact checks against the
-func ValidateAWFHygieneInner(h *host.Host, outerContainer string) []PrereqFailure {
-	if h.OS != "linux" {
-		return nil
-	}
-	pfx := runner.DockerExecCommand(outerContainer, "")
-	return runAWFHygieneChecks(h, pfx, "-inner", awfInnerHygieneChecks(outerContainer))
-}
-
-// ValidateContainerInnerNetwork checks the network paths gh-aw depends on inside
-// a container-mode runner: the inner dockerd must map
-// --add-host=host.docker.internal:host-gateway to a usable non-loopback address,
-// which is how gh-aw v0.88+ job containers (agent sandbox and awmg-mcpg gateway,
-// both started with that flag) reach gateway/services endpoints.
-func ValidateContainerInnerNetwork(h *host.Host, outerContainer, runnerName string) []PrereqFailure {
-	d, _ := containerCheckDefByName("container-inner-host-docker-internal", outerContainer, runnerName, 0, false)
-	return runContainerCheck(h, containerCheckSpec{
-		name:        d.Name,
-		checkCmd:    d.checkCommand(outerContainer),
-		message:     d.Message,
-		remediation: d.Remediation,
-		docRef:      d.DocRef,
-	})
-}
-
-// ValidateContainerMTU warns when the runner container's egress interface (eth0) or the
-// inner dockerd bridge (docker0) carries an MTU larger than the host's egress MTU. A
-// container MTU above the host path MTU silently drops large packets when PMTUD is
-// black-holed, breaking TLS handshakes — workflow downloads such as actions/setup-go
-// then fail with "Client network socket disconnected before secure TLS connection was
-// established" even though the host downloads fine. hostEgressMTU is the host's primary
-// egress interface MTU (from runner.DetectHostEgressMTU); 0 or >= 1500 means there is
-// nothing to pin, so the check is skipped (standard 1500 networks never see this).
-func ValidateContainerMTU(h *host.Host, outerContainer, runnerName string, hostEgressMTU int) []PrereqFailure {
-	if !mtuProbeInWindow(hostEgressMTU) {
-		return nil
-	}
-	d, _ := containerCheckDefByName("container-mtu", outerContainer, runnerName, hostEgressMTU, false)
-	return runContainerCheck(h, containerCheckSpec{
-		name:        d.Name,
-		checkCmd:    d.checkCommand(outerContainer),
-		message:     d.Message,
-		remediation: d.Remediation,
-		docRef:      d.DocRef,
-	})
-}
-
-// ValidateContainerNodeNPM checks that node and npm are on PATH inside the runner
-// container. gh-aw activation setup installs @actions/artifact via npm when daily AI
-// credits guardrails are enabled (safe-output-artifact-client), before actions/setup-node runs.
-func ValidateContainerNodeNPM(h *host.Host, outerContainer, runnerName string) []PrereqFailure {
-	d, _ := containerCheckDefByName("container-node-npm", outerContainer, runnerName, 0, false)
-	return runContainerCheck(h, containerCheckSpec{
-		name:        d.Name,
-		checkCmd:    d.checkCommand(outerContainer),
-		message:     d.Message,
-		remediation: d.Remediation,
-		docRef:      d.DocRef,
-	})
-}
-
 // containerCheckDef is the single source of truth for each agentic container
-// probe. The per-check wrappers (ValidateContainerInnerNetwork, etc.) and the
-// fanout path (ValidateContainerAgenticFanout) both derive their shell command,
-// failure metadata, and tagged output from the same definition, so a wording
-// or logic change only needs to be made in one place.
+// probe. The batched inner probe (ValidateAgenticInnerBatch) derives its shell
+// command, failure metadata, and tagged output from the same definition, so a
+// wording or logic change only needs to be made in one place.
 type containerCheckDef struct {
 	Name        string
-	LoginShell  bool   // sh -lc (true) vs sh -c (false) for the per-check command
+	LoginShell  bool   // sh -lc (true) vs sh -c (false) for the probe body
 	InnerBody   string // raw shell statements (no docker-exec wrapper)
 	Message     string
 	Remediation string
 	DocRef      string
 }
 
-// checkCommand builds the standalone `docker exec … sh -Xc '…'` command used
-// by the per-check wrappers. The fanout path does not call this — it wraps
-// InnerBody in `{ … } >/dev/null 2>&1; echo "#Name:$?"` blocks instead.
-func (d containerCheckDef) checkCommand(outerContainer string) string {
-	flag := "-c"
-	if d.LoginShell {
-		flag = "-lc"
-	}
-	return runner.DockerExecCommand(outerContainer, "sh "+flag+" "+hostshell.PosixSingleQuote(d.InnerBody))
-}
-
 // Per-def constructors. Each helper builds exactly one containerCheckDef with
 // Message/Remediation pre-rendered against the supplied outerContainer /
-// runnerName (and hostEgressMTU where applicable). They are the single source
-// of truth for the probe metadata: both containerCheckDefs (the fanout slice)
-// and containerCheckDefByName (the per-check wrapper lookup) compose from the
-// same set so a wording change only needs to happen in one place. Splitting
-// them out of the slice builder also lets byName build only the requested
-// def instead of paying for every sibling's fmt.Sprintf allocations.
+// runnerName (and hostEgressMTU where applicable). containerCheckDefs composes
+// them into the batch's fanout slice, so they are the single source of truth
+// for probe metadata.
 //
 // gh-aw v0.88+ rootless notes: no resolv.conf/dnsmasq probe (no baked DNS), no
 // iptables service-routing probe (network isolation is the inner bridge
@@ -352,11 +245,8 @@ If the host's real path MTU is below its NIC MTU (a tunnel the NIC is unaware of
 // undetectable) or >= 1500 (standard Ethernet, jumbo frames) has nothing to pin,
 // so the probe is skipped entirely.
 //
-// This predicate is the single source of truth for that window. The three
-// call sites that must agree — ValidateContainerMTU's early return,
-// containerCheckDefs' slice membership, and containerCheckDefByName's gate —
-// all route through it, so widening or narrowing the window cannot make the
-// fanout and per-check paths disagree about whether container-mtu is in scope.
+// This predicate is the single source of truth for that window: widening or
+// narrowing it changes containerCheckDefs' slice membership in one place.
 func mtuProbeInWindow(hostEgressMTU int) bool {
 	return hostEgressMTU > 0 && hostEgressMTU < 1500
 }
@@ -364,15 +254,12 @@ func mtuProbeInWindow(hostEgressMTU int) bool {
 // containerCheckDefs returns the definitions for all in-scope agentic
 // container probes, with Message/Remediation pre-rendered against the supplied
 // outerContainer / runnerName / hostEgressMTU. The MTU probe is included only
-// when hostEgressMTU falls in the pinning window (0 < MTU < 1500), matching
-// ValidateContainerMTU's gate; the cache-env probe only when cacheEnabled
-// (runners without a local cache keep GitHub's cache service and must not
-// carry CUSTOM_ACTIONS_RESULTS_URL).
+// when hostEgressMTU falls in the pinning window (0 < MTU < 1500); the
+// cache-env probe only when cacheEnabled (runners without a local cache keep
+// GitHub's cache service and must not carry CUSTOM_ACTIONS_RESULTS_URL).
 //
-// The slice is composed from the per-def helpers above so the wording and
-// gating stay byte-identical to containerCheckDefByName — fanout + per-check
-// wrappers must agree on probe metadata to avoid divergent error messages
-// for the same probe.
+// The slice is composed from the per-def helpers above, which are the single
+// source of truth for probe wording and gating.
 func containerCheckDefs(outerContainer, runnerName string, hostEgressMTU int, cacheEnabled bool) []containerCheckDef {
 	defs := []containerCheckDef{
 		innerHostDockerInternalDef(outerContainer, runnerName),
@@ -387,110 +274,6 @@ func containerCheckDefs(outerContainer, runnerName string, hostEgressMTU int, ca
 		defs = append(defs, mtuDef(outerContainer, runnerName, hostEgressMTU))
 	}
 	return defs
-}
-
-// containerCheckDefByName looks up a single probe definition by its Name tag.
-// Used by the per-check wrappers so they share the same metadata + shell body
-// as the fanout path. Switches on name to build only the requested def —
-// avoids the redundant fmt.Sprintf churn of constructing every sibling def
-// just to return one. Pass the same hostEgressMTU/cacheEnabled inputs as the
-// fanout call so gated defs resolve consistently; an unknown name or a gated
-// def whose gate is off returns (zero, false) to mirror the previous behaviour.
-func containerCheckDefByName(name, outerContainer, runnerName string, hostEgressMTU int, cacheEnabled bool) (containerCheckDef, bool) {
-	switch name {
-	case "container-inner-host-docker-internal":
-		return innerHostDockerInternalDef(outerContainer, runnerName), true
-	case "container-node-npm":
-		return nodeNPMDef(outerContainer, runnerName), true
-	case "container-docker-socket-user":
-		return dockerSocketUserDef(outerContainer, runnerName), true
-	case "container-zstd":
-		return zstdDef(outerContainer, runnerName), true
-	case "container-cache-env":
-		if !cacheEnabled {
-			return containerCheckDef{}, false
-		}
-		return cacheEnvDef(outerContainer, runnerName), true
-	case "container-mtu":
-		if !mtuProbeInWindow(hostEgressMTU) {
-			return containerCheckDef{}, false
-		}
-		return mtuDef(outerContainer, runnerName, hostEgressMTU), true
-	}
-	return containerCheckDef{}, false
-}
-
-// ValidateContainerAgenticFanout runs all in-scope agentic container prereq
-// probes (InnerNetwork, NodeNPM, DockerSocketUser, Zstd, and the gated
-// CacheEnv/MTU) against the outerContainer in a single `docker exec`
-// invocation, replacing the separate h.Run round-trips the per-check wrappers
-// used to issue with one.
-//
-// Each probe runs in its own `{ ...; } >/dev/null 2>&1` block whose exit code
-// is captured by a trailing `echo "#<Name>:$?"`. The combined shell exits 0
-// unconditionally (trailing `true`) so h.Run always returns success and the
-// full tagged output reaches the Go side, where it's parsed line-by-line: a
-// `:1` tag emits the per-check PrereqFailure; `:0` (or no line, for the gated
-// checks when their gate is off) emits nothing.
-//
-// hostEgressMTU gates the MTU check (same rule as ValidateContainerMTU):
-// 0 (unknown) or >= 1500 (standard) means there is nothing to pin, so the MTU
-// block is omitted. cacheEnabled=false omits the cache-env block (a runner
-// without a local cache must not carry CUSTOM_ACTIONS_RESULTS_URL).
-//
-// On a nil host, non-Linux host, or empty outerContainer the function returns
-// nil without making any SSH round-trip — same short-circuit as the
-// per-check wrappers.
-func ValidateContainerAgenticFanout(h *host.Host, outerContainer, runnerName string, hostEgressMTU int, cacheEnabled bool) []PrereqFailure {
-	if h == nil || h.OS != "linux" || outerContainer == "" {
-		return nil
-	}
-	// Build the defs slice once and feed both the combined-shell builder and
-	// the parser-specs map from the same source — the previous shape called
-	// containerCheckDefs twice per fanout (once inside each helper), paying
-	// for every per-def fmt.Sprintf twice. This single build halves the
-	// pre-Run cost on the `gh sr doctor` hot path for container-mode runners.
-	defs := containerCheckDefs(outerContainer, runnerName, hostEgressMTU, cacheEnabled)
-	cmd := containerAgenticFanoutCheckCommandFromDefs(outerContainer, defs)
-	specs := containerAgenticFanoutSpecsFromDefs(defs)
-	out, err := h.Run(cmd)
-	if err != nil {
-		// Transport-level failure (SSH drop, etc.) — surface one synthetic
-		// failure for the fanout itself rather than silently dropping the
-		// per-check warnings. Callers see this as the fanout having run
-		// but produced no per-check detail.
-		return []PrereqFailure{{
-			Name:        "container-agentic-fanout",
-			Severity:    SeverityWarning,
-			Message:     fmt.Sprintf("could not run agentic container fanout against %s: %v", outerContainer, err),
-			Remediation: fmt.Sprintf("Verify the runner container %s is reachable and Docker is responsive:\n\n  docker ps --filter name=%s\n  docker exec %s echo ok", outerContainer, outerContainer, outerContainer),
-			DocRef:      "agentic-workflows.md §11",
-		}}
-	}
-	return parseContainerAgenticFanoutOutput(out, specs)
-}
-
-// containerAgenticFanoutCheckCommand builds the single `docker exec` command
-// that runs all in-scope agentic container probes against outerContainer. The
-// MTU block is appended only when hostEgressMTU falls in the pinning window
-// (0 < MTU < 1500), and the cache-env block only when cacheEnabled — matching
-// the gating in containerCheckDefs so a fanout call has identical observable
-// behaviour to calling the per-check wrappers.
-//
-// Thin wrapper that builds the defs slice and delegates to
-// containerAgenticFanoutCheckCommandFromDefs; callers that already have the
-// slice (e.g. ValidateContainerAgenticFanout) should call the FromDefs form
-// to avoid paying for the slice twice.
-func containerAgenticFanoutCheckCommand(outerContainer, runnerName string, hostEgressMTU int, cacheEnabled bool) string {
-	return containerAgenticFanoutCheckCommandFromDefs(outerContainer, containerCheckDefs(outerContainer, runnerName, hostEgressMTU, cacheEnabled))
-}
-
-// containerAgenticFanoutCheckCommandFromDefs renders the single `docker exec`
-// command from a pre-built defs slice. The fanout wrapper passes the same
-// defs to containerAgenticFanoutSpecsFromDefs so the command body and the
-// parser specs come from one source.
-func containerAgenticFanoutCheckCommandFromDefs(outerContainer string, defs []containerCheckDef) string {
-	return runner.DockerExecCommand(outerContainer, "sh -lc "+hostshell.PosixSingleQuote(containerAgenticFanoutInnerScript(defs)))
 }
 
 // containerAgenticFanoutInnerScript renders the tagged probe blocks (and the
@@ -510,21 +293,6 @@ func containerAgenticFanoutInnerScript(defs []containerCheckDef) string {
 	return inner.String()
 }
 
-// containerAgenticFanoutSpecs returns the per-check metadata used by the
-// fanout parser to convert a `#<Name>:1` tag into the corresponding
-// PrereqFailure. The set mirrors ValidateContainerAgenticFanout's
-// containerAgenticFanoutCheckCommand body — when a gated block (MTU,
-// cache-env) is omitted, the parser simply never sees its `#<Name>:...` line
-// and the spec is silently ignored. Message and Remediation are pre-rendered
-// against the supplied outerContainer / runnerName so the output is
-// byte-identical to the per-check wrappers.
-//
-// Thin wrapper that builds the defs slice and delegates to
-// containerAgenticFanoutSpecsFromDefs.
-func containerAgenticFanoutSpecs(outerContainer, runnerName string, hostEgressMTU int, cacheEnabled bool) map[string]PrereqFailure {
-	return containerAgenticFanoutSpecsFromDefs(containerCheckDefs(outerContainer, runnerName, hostEgressMTU, cacheEnabled))
-}
-
 // containerAgenticFanoutSpecsFromDefs renders the per-check metadata map
 // from a pre-built defs slice.
 func containerAgenticFanoutSpecsFromDefs(defs []containerCheckDef) map[string]PrereqFailure {
@@ -539,45 +307,6 @@ func containerAgenticFanoutSpecsFromDefs(defs []containerCheckDef) map[string]Pr
 		}
 	}
 	return specs
-}
-
-// parseContainerAgenticFanoutOutput walks the tagged stdout emitted by the
-// combined `docker exec` fanout and emits a PrereqFailure for every
-// `#<specName>:1` line it finds. Lines that don't match the `#name:N` shape
-// (e.g. incidental stderr that snuck through, or shell noise from one of the
-// scoped blocks) are ignored. A `:0` tag means the probe passed and is
-// silently dropped. The order of returned failures matches the order of the
-// tags on stdout, which in turn matches the order of the probe blocks in
-// containerAgenticFanoutCheckCommand — i.e. the same submission order the
-// per-check wrappers would have produced.
-func parseContainerAgenticFanoutOutput(out string, specs map[string]PrereqFailure) []PrereqFailure {
-	var failures []PrereqFailure
-	// SplitSeq avoids the upfront []string allocation that strings.Split makes
-	// for the full tagged stdout (incidental stderr noise + probe blocks +
-	// trailing cleanup lines). The parser only keeps entries that match
-	// `#<name>:1`, so the dropped strings.Split slice lands directly in
-	// per-call GC pressure for the `gh sr doctor` ValidateContainerAgenticFanout
-	// probe that runs once per orchestrator invocation.
-	for line := range strings.SplitSeq(out, "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" || !strings.HasPrefix(line, "#") {
-			continue
-		}
-		rest := strings.TrimPrefix(line, "#")
-		name, status, ok := strings.Cut(rest, ":")
-		if !ok {
-			continue
-		}
-		if strings.TrimSpace(status) != "1" {
-			continue
-		}
-		spec, ok := specs[name]
-		if !ok {
-			continue
-		}
-		failures = append(failures, spec)
-	}
-	return failures
 }
 
 // dockerChainCheckCommand builds the single shell command that runs the
@@ -697,159 +426,4 @@ func parseDockerChainOutput(out string, specs map[string]PrereqFailure) []Prereq
 		failures = append(failures, spec)
 	}
 	return failures
-}
-
-func containerInnerNetworkCheckCommand(outerContainer string) string {
-	d, _ := containerCheckDefByName("container-inner-host-docker-internal", outerContainer, "", 0, false)
-	return d.checkCommand(outerContainer)
-}
-
-func containerDockerSocketUserCheckCommand(outerContainer string) string {
-	d, _ := containerCheckDefByName("container-docker-socket-user", outerContainer, "", 0, false)
-	return d.checkCommand(outerContainer)
-}
-
-func containerZstdCheckCommand(outerContainer string) string {
-	d, _ := containerCheckDefByName("container-zstd", outerContainer, "", 0, false)
-	return d.checkCommand(outerContainer)
-}
-
-func containerCacheEnvCheckCommand(outerContainer string) string {
-	d, _ := containerCheckDefByName("container-cache-env", outerContainer, "", 0, true)
-	return d.checkCommand(outerContainer)
-}
-
-func containerMTUCheckCommand(outerContainer string, hostEgressMTU int) string {
-	d, _ := containerCheckDefByName("container-mtu", outerContainer, "", hostEgressMTU, false)
-	return d.checkCommand(outerContainer)
-}
-
-// containerCheckSpec captures the per-check inputs to runContainerCheck: the
-// already-built docker-exec probe command, plus the failure Name, the pre-
-// rendered human Message and Remediation, and the DocRef. The spec fields
-// are populated from containerCheckDef (the single source of truth) so the
-// per-check wrappers and the fanout path always produce identical metadata.
-type containerCheckSpec struct {
-	name        string
-	checkCmd    string
-	message     string
-	remediation string
-	docRef      string
-}
-
-// runContainerCheck executes one ValidateContainer* probe: short-circuits on
-// nil host or non-Linux OS, runs spec.checkCmd via h.Run, and emits a single
-// SeverityWarning PrereqFailure when the command errors. Used by all six
-// ValidateContainer* wrappers in this file; ValidateContainerMTU keeps its
-// extra hostEgressMTU guard at the wrapper level because that gate is the
-// only check that depends on a numeric input.
-func runContainerCheck(h *host.Host, spec containerCheckSpec) []PrereqFailure {
-	if h == nil || h.OS != "linux" {
-		return nil
-	}
-	if _, err := h.Run(spec.checkCmd); err != nil {
-		return []PrereqFailure{{
-			Name:        spec.name,
-			Severity:    SeverityWarning,
-			Message:     spec.message,
-			Remediation: spec.remediation,
-			DocRef:      spec.docRef,
-		}}
-	}
-	return nil
-}
-
-// failureCollector accumulates PrereqFailure entries from concurrent goroutines
-// and waits for them to finish. Use it inside any Validate* function that fans
-// its checks out across independent goroutines: declare `var c failureCollector`,
-// spawn each check via `c.spawn(func(){ ... })`, then return `c.wait()`.
-//
-// The Validate* funcs in this file (runAWFHygieneChecks for
-// ValidateAWFHygieneInner) need exactly this pattern — a mutex-guarded
-// failures slice plus a WaitGroup — so the boilerplate lives here instead of
-// being copied. The helper is private because no caller outside this package
-// should reach for the failure-append primitives directly; failures are a
-// return-value contract, not an exposed accumulator.
-type failureCollector struct {
-	mu       sync.Mutex
-	wg       sync.WaitGroup
-	failures []PrereqFailure
-}
-
-// append records f in submission order under a mutex so concurrent goroutines
-// can safely share one collector. Safe for use from inside a c.spawn closure.
-func (c *failureCollector) append(f PrereqFailure) {
-	c.mu.Lock()
-	c.failures = append(c.failures, f)
-	c.mu.Unlock()
-}
-
-// go spawns fn in a tracked goroutine. Pair with c.wait() to join.
-func (c *failureCollector) spawn(fn func()) {
-	c.wg.Add(1)
-	go func() {
-		defer c.wg.Done()
-		fn()
-	}()
-}
-
-// wait blocks until every goroutine spawned via c.spawn has returned and returns
-// the accumulated failures in submission order.
-func (c *failureCollector) wait() []PrereqFailure {
-	c.wg.Wait()
-	return c.failures
-}
-
-// HasBlockingFailures returns true if any failure has severity "error".
-func HasBlockingFailures(failures []PrereqFailure) bool {
-	for _, f := range failures {
-		if f.Severity == SeverityError {
-			return true
-		}
-	}
-	return false
-}
-
-// FormatRemediation returns a formatted remediation string for a single failure.
-func FormatRemediation(failure PrereqFailure) string {
-	var sb strings.Builder
-	sb.WriteString("\n  ")
-	if failure.DocRef != "" {
-		fmt.Fprintf(&sb, "[%s] ", failure.DocRef)
-	}
-	sb.WriteString(failure.Message)
-	sb.WriteString("\n\n")
-	i := 0
-	for line := range strings.SplitSeq(failure.Remediation, "\n") {
-		if i == 0 {
-			sb.WriteString("  To fix:\n")
-		}
-		sb.WriteString("    ")
-		sb.WriteString(line)
-		sb.WriteString("\n")
-		i++
-	}
-	return sb.String()
-}
-
-// FormatAllRemediations returns a formatted string with all failures and their remediations.
-func FormatAllRemediations(failures []PrereqFailure) string {
-	if len(failures) == 0 {
-		return ""
-	}
-	var sb strings.Builder
-	fmt.Fprintln(&sb, "╔════════════════════════════════════════════════════════════════════════════╗")
-	fmt.Fprintln(&sb, "║  Agentic Prerequisite Failures                                            ║")
-	fmt.Fprintln(&sb, "╠════════════════════════════════════════════════════════════════════════════╣")
-	fmt.Fprintf(&sb, "║  %d failure(s) need to be resolved before agentic workflows can run.      ║\n", len(failures))
-	fmt.Fprintln(&sb, "╚════════════════════════════════════════════════════════════════════════════╝")
-	for i, f := range failures {
-		sev := "FAIL"
-		if f.Severity == SeverityWarning {
-			sev = "WARN"
-		}
-		fmt.Fprintf(&sb, "\n[%d] %s: %s", i+1, sev, f.Name)
-		sb.WriteString(FormatRemediation(f))
-	}
-	return sb.String()
 }
