@@ -9,21 +9,33 @@
   "checks": [
     {
       "area": "repo_assist_prs",
-      "checked_at": "2026-11-12",
+      "checked_at": "2026-11-13",
       "result": "acted",
-      "follow_up": "Three new drafts: refactor-drop-superseded-probes (runner/tui, net -1167), refactor-drop-unused-helpers (-657, stacked on first), refactor-drop-agentic-percheck (agentic per-check API, -2146, independent). Merge order: first, then stacked, third any time. deadcode clean except testutil+benchstat."
-    },
-    {
-      "area": "code",
-      "checked_at": "2026-11-12",
-      "result": "acted",
-      "follow_up": "Full dead-code sweep: per-instance disk sizing cluster (MeasureDiskUsageBatch is live), Manager.statusNative (folded), containerStateDir, FormatHostMetricsTo/renderMenuItems writer variants, hostshell Remote*Exists + PowerShellCommand + ps.CommandLine, autostart CleanupStale/I..."
+      "follow_up": "2026-11-12 trio fully merged: #635 standalone; #634's merge collapsed the stacked pair (both commit messages in 5551a66), so the superseded-probes branch never became its own PR. New draft test-agent-sock-short-path opened 2026-11-13."
     },
     {
       "area": "tests",
-      "checked_at": "2026-11-12",
+      "checked_at": "2026-11-13",
       "result": "acted",
-      "follow_up": "Removed tests/benches that pinned removed dead code; adapted live-equivalent coverage (dispatcher OS-fallback, set -e pins, native status via statusNativeAndVersion, menu render via renderMenuItemsInto). Coverage % may dip; dead surface eliminated. Remaining known thin spots:..."
+      "follow_up": "Fixed env-dependent AF_UNIX path-length failure in startTestAgent (branch repo-assist/test-agent-sock-short-path, draft PR 2026-11-13; race suite green). Thin spots left: integration-heavy paths; small untested helpers hasLabel (config) and Settings.ContainerNames (registry)."
+    },
+    {
+      "area": "ci",
+      "checked_at": "2026-11-13",
+      "result": "no_actionable",
+      "follow_up": "Green on main through runs 897/898 (post aw-upgrade 8329f58 + fix 1b8395b)."
+    },
+    {
+      "area": "dependencies",
+      "checked_at": "2026-11-13",
+      "result": "no_actionable",
+      "follow_up": "No open Dependabot alerts or PRs; #636 (x/term 0.48) and #637/#638 (gh-aw-actions 1.2.1) merged 2026-11-12. Weekly gomod schedule covers the rest."
+    },
+    {
+      "area": "hygiene",
+      "checked_at": "2026-11-13",
+      "result": "no_actionable",
+      "follow_up": "Workspace saga fully resolved: #591 root-cause fix covers every workflow incl. generated ones; maintainer's aw upgrade (8329f58, 2026-11-12) regenerated all lock files. broken-git guard stays in ci.yml/bench-compare.yml only, by design."
     },
     {
       "area": "docs",
@@ -36,24 +48,6 @@
       "checked_at": "2026-11-06",
       "result": "no_actionable",
       "follow_up": "Dashboard render sub-ms vs 5s tick, CollectHostMetrics one combined script per host in parallel, probes pinned one-round-trip. No measurable opportunity left."
-    },
-    {
-      "area": "ci",
-      "checked_at": "2026-11-12",
-      "result": "no_actionable",
-      "follow_up": "CI green on main (last run 2026-11-11). go 1.26.10 toolchain on go 1.26.7 directive. Only non-success runs are PR #633 (efficiency-improver, awaiting approval, not repo-assist's)."
-    },
-    {
-      "area": "dependencies",
-      "checked_at": "2026-11-12",
-      "result": "no_actionable",
-      "follow_up": "No open Dependabot alerts, no open Dependabot PRs to bundle. Available minor bumps (x/crypto 0.59, x/term 0.48, go-isatty 0.24) are covered by the weekly Dependabot gomod schedule - hand-rolling would duplicate it."
-    },
-    {
-      "area": "hygiene",
-      "checked_at": "2026-11-03",
-      "result": "no_actionable",
-      "follow_up": "Workspace saga resolved by #590/#591 (#589 closed). gh-aw generated workflows still need regeneration for the same guard; blocked on workflow write access."
     }
   ],
   "completed_actions": [],
