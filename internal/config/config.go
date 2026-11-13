@@ -307,10 +307,34 @@ func validateDockerImageRef(field, ref string) error {
 // host.
 var runnerCPUsPattern = regexp.MustCompile(`^[0-9]+(\.[0-9]+)?$`)
 
-// runners[].memory: a positive integer with an optional case-insensitive
-// b/k/m/g byte suffix — the shape `docker create --memory` accepts ("12g",
-// "512m", "1073741824").
-var runnerMemoryPattern = regexp.MustCompile(`^([0-9]+)([bBkKmMgG]?)$`)
+// runners[].memory: docker's go-units RAMInBytes grammar — a decimal mantissa
+// with an optional k/m/g/t/p suffix, case-insensitive, with optional i/b
+// after it ("12g", "1.5g", "512Mi", "12 GiB", "1073741824" all parse). The
+// grammar must match docker in BOTH directions: this value is interpolated
+// into the SSH-run `docker create`, so anything docker's parser would reject
+// has to be rejected here (failing in `gh sr setup` beats debugging a
+// rejected create remotely), and anything docker accepts must not be
+// rejected here either.
+var runnerMemoryPattern = regexp.MustCompile(`^(?i)([0-9]+(\.[0-9]+)?) ?([kmgtp]?)(i?)(b?)$`)
+
+// runnerMemoryMinBytes is docker's daemon-side floor: container create
+// rejects any positive --memory below 6 MiB ("Minimum memory limit allowed
+// is 6MB"). Applying it at config load keeps gh-sr's promise that a value
+// passing Validate is one the remote daemon will accept.
+const runnerMemoryMinBytes = 6 * 1024 * 1024
+
+// runnerMemoryFactor maps a memory suffix letter (already lowercased) to its
+// multiplier, following RAMInBytes semantics: a bare number is bytes and the
+// suffix letter is 1024-based regardless of an optional trailing i/b (docker
+// parses "1g", "1gi" and "1gib" identically).
+var runnerMemoryFactor = map[byte]float64{
+	'b': 1,
+	'k': 1 << 10,
+	'm': 1 << 20,
+	'g': 1 << 30,
+	't': 1 << 40,
+	'p': 1 << 50,
+}
 
 // validateRunnerResourceLimits checks runners[].cpus / runners[].memory (issue
 // #640). Both empty = Docker's unlimited default and skips the check entirely.
@@ -326,15 +350,23 @@ func validateRunnerResourceLimits(name, cpus, memory string) error {
 	if memory != "" {
 		m := runnerMemoryPattern.FindStringSubmatch(memory)
 		if m == nil {
-			return fmt.Errorf("runner %q: memory must be a positive size with optional b/k/m/g suffix, e.g. \"12g\" or \"512m\" (got %q)", name, memory)
+			return fmt.Errorf("runner %q: memory must be a docker --memory size, e.g. \"12g\", \"1.5g\" or \"1073741824\" (got %q)", name, memory)
 		}
 		// Compare numerically, not lexically: docker parses "00" / "00g" as
 		// 0 bytes, and --memory 0 means UNLIMITED — accepting those would
 		// silently drop the cap the operator believes is active (the exact
-		// misconfiguration #640 root cause A exists to prevent).
-		qty, err := strconv.ParseInt(m[1], 10, 64)
-		if err != nil || qty <= 0 {
+		// misconfiguration #640 root cause A exists to prevent). The 6MiB
+		// floor below also subsumes the >0 check.
+		qty, err := strconv.ParseFloat(m[1], 64)
+		if err != nil {
 			return fmt.Errorf("runner %q: memory must be > 0 (got %q)", name, memory)
+		}
+		factor := 1.0
+		if m[3] != "" {
+			factor = runnerMemoryFactor[m[3][0]|0x20]
+		}
+		if bytes := qty * factor; bytes < runnerMemoryMinBytes {
+			return fmt.Errorf("runner %q: memory %q is below docker's 6MiB per-container minimum — the daemon would reject the container at create (got %q)", name, memory, memory)
 		}
 	}
 	return nil

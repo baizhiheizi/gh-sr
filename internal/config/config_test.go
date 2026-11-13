@@ -822,7 +822,10 @@ func TestValidate_resourceLimits(t *testing.T) {
 			t.Errorf("cpus %q should validate: %v", cpus, err)
 		}
 	}
-	for _, memory := range []string{"12g", "512m", "1073741824", "1G", "4M"} {
+	// The accept set mirrors docker's RAMInBytes grammar exactly (decimal
+	// mantissa, k/m/g/t/p suffix case-insensitive, optional i/b, optional
+	// space) at or above docker's 6MiB per-container floor.
+	for _, memory := range []string{"12g", "512m", "1073741824", "1G", "1.5g", "1t", "12 g", "512Mi", "6m"} {
 		if err := valid(base(container(func(rc *RunnerConfig) { rc.Memory = memory }))); err != nil {
 			t.Errorf("memory %q should validate: %v", memory, err)
 		}
@@ -848,7 +851,11 @@ func TestValidate_resourceLimits(t *testing.T) {
 	}
 	// Zero must be rejected in every spelling — docker parses "00"/"00g" as
 	// 0 bytes and --memory 0 means unlimited, i.e. the cap silently vanishes.
-	for _, memory := range []string{"0", "00", "000", "0g", "00g", "12x", "1.5g", "rm -rf /", "12 g", "-4g"} {
+	// Anything below 6MiB is likewise rejected: docker's daemon refuses such
+	// containers at create ("Minimum memory limit allowed is 6MB"), so
+	// accepting "4m"/"1b" here would just move the failure to `gh sr setup`
+	// on the remote host. Non-sizes (docker would reject) round out the set.
+	for _, memory := range []string{"0", "00", "000", "0g", "00g", "4m", "1b", "500k", "12x", "1.5x", "rm -rf /", "-4g"} {
 		err := valid(base(container(func(rc *RunnerConfig) { rc.Memory = memory })))
 		if err == nil || !strings.Contains(err.Error(), "memory") {
 			t.Errorf("memory %q should be rejected with a memory message, got %v", memory, err)
