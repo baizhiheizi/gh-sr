@@ -54,7 +54,16 @@ func startTestAgent(t *testing.T) string {
 	if err := ring.Add(agent.AddedKey{PrivateKey: priv}); err != nil {
 		t.Fatal(err)
 	}
-	sock := filepath.Join(t.TempDir(), "agent.sock")
+	// AF_UNIX paths cap at 108 bytes. t.TempDir() nests the full test name
+	// under TMPDIR, which overflows the limit on long temp roots and makes
+	// net.Listen fail with "bind: invalid argument", so bind from a short
+	// directory at the temp root instead.
+	dir, err := os.MkdirTemp("", "gh-sr-agent-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(dir) })
+	sock := filepath.Join(dir, "agent.sock")
 	l, err := net.Listen("unix", sock)
 	if err != nil {
 		t.Fatal(err)
