@@ -563,6 +563,20 @@ func bootstrapMaxRetriesDockerCreateArg(maxRetries int) string {
 	return dockerCreateEnvLineIf("GH_SR_BOOTSTRAP_MAX_RETRIES", maxRetries, maxRetries > 0)
 }
 
+// resourceLimitDockerCreateArg returns the `  --<flag> <value> \` continuation
+// line for the `docker create` command when the runners.yml resource limit
+// (cpus / memory) is set, or "" when unset (Docker's unlimited default — no
+// behaviour change for existing pools). Both values come from
+// config.RunnerConfig.CPUs / .Memory, which Validate pins to a strict numeric
+// shape (issue #640); the PosixSingleQuote here is defence in depth, matching
+// every other interpolated value in the create command.
+func resourceLimitDockerCreateArg(flag, value string) string {
+	if value == "" {
+		return ""
+	}
+	return "  --" + flag + " " + hostshell.PosixSingleQuote(value) + " \\\n"
+}
+
 // awfServiceBridgeDockerCreateArg returns the `-e GH_SR_AWF_SERVICE_BRIDGE=1`
 // line for the `docker create` command when the runner opts into the AWF
 // service bridge (runners.yml `awf_service_bridge: true`, agentic profile
@@ -829,6 +843,11 @@ func (m *Manager) createContainerInstance(h *host.Host, rc config.RunnerConfig, 
 	androidSDKEnv := androidSDKDockerCreateArg(m.SharedAndroidSDK)
 	sharedCacheArgs := m.sharedCacheDockerCreateArgs()
 	restartPolicy := containerRestartPolicy()
+	// Optional host-resource caps (runners.yml cpus / memory, issue #640). ""
+	// when unset → the continuation lines vanish and the command is byte-for-byte
+	// the historical unlimited default.
+	cpusArg := resourceLimitDockerCreateArg("cpus", rc.CPUs)
+	memoryArg := resourceLimitDockerCreateArg("memory", rc.Memory)
 
 	// Build the `docker create` command. We use `--restart unless-stopped` so any
 	// non-explicit exit (crash, OOM, inner process shutdown, Docker daemon
@@ -838,7 +857,9 @@ func (m *Manager) createContainerInstance(h *host.Host, rc config.RunnerConfig, 
 	// marker + `exec sleep infinity`, so persistent host-side problems park
 	// the container instead of looping forever. `--privileged` is required
 	// for DinD (inner dockerd needs full capabilities). Large `/dev/shm`
-	// avoids Chromium/Selenium flakiness.
+	// avoids Chromium/Selenium flakiness. `--cpus` / `--memory` (when
+	// configured) cap the instance's share of the host so a single I/O-heavy
+	// job cannot starve interactive sessions (issue #640).
 	cmd := fmt.Sprintf(`
 mkdir -p %s
 docker create \
@@ -846,7 +867,7 @@ docker create \
   --privileged \
   --shm-size=2g \
   --restart %s \
-  -v %s:/runner-state \
+%s%s  -v %s:/runner-state \
   -e GH_SR_RUNNER_NAME=%s \
   -e GH_SR_RUNNER_TOKEN=%s \
   -e GH_SR_RUNNER_URL=%s \
@@ -857,6 +878,8 @@ docker create \
 		hostshell.PosixSingleQuote(stateDir),
 		hostshell.PosixSingleQuote(containerName(instanceName)),
 		hostshell.PosixSingleQuote(restartPolicy),
+		cpusArg,
+		memoryArg,
 		hostshell.PosixSingleQuote(stateDir),
 		hostshell.PosixSingleQuote(instanceName),
 		hostshell.PosixSingleQuote(regToken),

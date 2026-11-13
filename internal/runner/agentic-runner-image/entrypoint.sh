@@ -23,9 +23,11 @@
 # Per-job environment hygiene (clean /tmp/gh-aw, remove leftover containers,
 # prune networks, repair _work ownership left by root-privileged jobs) is
 # handled by /opt/gh-sr/hooks/job-started.sh and /opt/gh-sr/hooks/job-completed.sh,
-# so every job runs from a known-clean state on this long-lived runner. The inner
-# Docker image-layer cache under /runner-state/docker-data is preserved across
-# jobs (never pruned).
+# so every job runs from a known-clean state on this long-lived runner. A
+# background loop (§6b) re-sweeps orphaned job processes every 5 minutes to
+# catch jobs that crashed past their completed hook. The inner Docker
+# image-layer cache under /runner-state/docker-data is preserved across jobs
+# (never pruned).
 #
 # Environment variables injected by `docker run`:
 #   GH_SR_RUNNER_NAME   — unique runner name (e.g. "myrepo-agentic-1")
@@ -363,6 +365,43 @@ su - runner -c "
     docker pull ghcr.io/github/gh-aw-mcpg:latest &>/dev/null &
     docker pull ghcr.io/github/gh-aw-node:latest &>/dev/null &
 " 2>/dev/null || true
+
+# ── 6b. Periodic orphan sweep (background) ──────────────────────────────────────
+# The job-completed hook (§5's ACTIONS_RUNNER_HOOK_JOB_COMPLETED) sweeps leftover
+# job processes after every job — but only if it RUNS. A job that crashes the
+# runner mid-step (OOM-killed Worker, hung Listener) skips the hook entirely and
+# its leftover processes then hold memory for the rest of the container's life
+# (issue #640 measured 19 orphaned `ruby` workers alive for ~24.5h on x1).
+#
+# This background loop re-runs the hook's process sweep every 5 minutes as a
+# safety net, with one crucial narrowing: it only kills processes whose PARENT
+# is PID 1 (tini). Orphans — by definition reparented to PID 1 — are exactly
+# the leaked family; a job's live process tree (Runner.Worker → bash → ruby)
+# still has its parents and is never touched, so a legitimately long-running
+# in-job test suite cannot be swept mid-run. The family list is the same
+# explicit allow-list as the hook (chrome / crashpad / chromedriver / ruby
+# toolchain / dart) — see the hook's §4 comment for why the list is an
+# allow-list rather than a reverse-select of everything at PID 1: legitimate
+# long-lived processes (this entrypoint shell itself, among others) are also
+# tini's direct children, so a reverse-select sweep would kill them.
+(
+    while sleep 300; do
+        _swept=0
+        for proc in chrome chrome_crashpad chromedriver ruby rspec rake bundle; do
+            if pgrep -P 1 -x "$proc" >/dev/null 2>&1; then
+                pkill -P 1 -x "$proc" >/dev/null 2>&1 || true
+                _swept=1
+            fi
+        done
+        if pgrep -P 1 '^dart' >/dev/null 2>&1; then
+            pkill -P 1 '^dart' >/dev/null 2>&1 || true
+            _swept=1
+        fi
+        if [ "${_swept}" -eq 1 ]; then
+            echo "[entrypoint] swept orphaned job processes (reparented to PID 1) — a job likely crashed past its completed hook"
+        fi
+    done
+) &
 
 # ── 7. Graceful shutdown handler ────────────────────────────────────────────────
 # On SIGTERM (sent by `docker stop`, the Docker daemon, or systemd — tini, as

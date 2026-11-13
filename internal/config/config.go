@@ -300,6 +300,50 @@ func validateDockerImageRef(field, ref string) error {
 	return nil
 }
 
+// runners[].cpus: a plain (optionally fractional) decimal — exactly the shape
+// `docker create --cpus` accepts ("4", "1.5", "0.5"). The strict shape is
+// load-bearing: the value is interpolated into a root shell command over SSH,
+// so anything docker would reject must be rejected at config load, not on the
+// host.
+var runnerCPUsPattern = regexp.MustCompile(`^[0-9]+(\.[0-9]+)?$`)
+
+// runners[].memory: a positive integer with an optional case-insensitive
+// b/k/m/g byte suffix — the shape `docker create --memory` accepts ("12g",
+// "512m", "1073741824").
+var runnerMemoryPattern = regexp.MustCompile(`^([0-9]+)([bBkKmMgG]?)$`)
+
+// runnerMemorySuffixFactor maps a docker --memory suffix to its byte
+// multiplier (docker's units.RAMInBytes semantics: bare numbers are bytes).
+var runnerMemorySuffixFactor = map[byte]int{'b': 1, 'k': 1 << 10, 'm': 1 << 20, 'g': 1 << 30}
+
+// validateRunnerResourceLimits checks runners[].cpus / runners[].memory (issue
+// #640). Both empty = Docker's unlimited default and skips the check entirely.
+func validateRunnerResourceLimits(name, cpus, memory string) error {
+	if cpus != "" {
+		if !runnerCPUsPattern.MatchString(cpus) {
+			return fmt.Errorf("runner %q: cpus must be a positive number of cores, e.g. \"4\" or \"1.5\" (got %q)", name, cpus)
+		}
+		if f, err := strconv.ParseFloat(cpus, 64); err != nil || f <= 0 {
+			return fmt.Errorf("runner %q: cpus must be > 0 (got %q)", name, cpus)
+		}
+	}
+	if memory != "" {
+		m := runnerMemoryPattern.FindStringSubmatch(memory)
+		if m == nil {
+			return fmt.Errorf("runner %q: memory must be a positive size with optional b/k/m/g suffix, e.g. \"12g\" or \"512m\" (got %q)", name, memory)
+		}
+		if m[1] == "0" {
+			return fmt.Errorf("runner %q: memory must be > 0 (got %q)", name, memory)
+		}
+		// The pattern guarantees m[2] is "" or a single ASCII letter, so the
+		// lowercase map lookup cannot miss when non-empty.
+		if m[2] != "" && runnerMemorySuffixFactor[m[2][0]|0x20] == 0 {
+			return fmt.Errorf("runner %q: unknown memory suffix %q", name, m[2])
+		}
+	}
+	return nil
+}
+
 func validateRunnerName(name string) error {
 	if name == "" || !isASCIIAlphaNumeric(name[0]) {
 		return fmt.Errorf("runner name %q is invalid; use letters, numbers, dots, underscores, or hyphens, starting with a letter or number", name)
@@ -716,6 +760,22 @@ type RunnerConfig struct {
 	// the runner are otherwise unreachable from the sandbox). Requires
 	// profile: agentic.
 	AWFServiceBridge bool `yaml:"awf_service_bridge"`
+	// CPUs / Memory optionally cap a container-mode runner instance's share of
+	// the host (docker create `--cpus` / `--memory`), so one I/O- or CPU-heavy
+	// job cannot starve interactive sessions on a machine that also serves as
+	// the developer's desktop (issue #640: two concurrent Flutter jobs each ran
+	// an unconstrained frontend_server + flutter_tester fleet and drove the
+	// host's PSI IO full to ~26% with 19.5 GiB of swap in use). Both are
+	// optional and empty by default = Docker's unlimited default (no behaviour
+	// change for existing pools); they are interpolated into the SSH-run
+	// `docker create` command, so Validate enforces a strict numeric shape
+	// (docker's own parser also rejects anything else, but failing in `gh sr
+	// setup` beats debugging a rejected create remotely). Container mode only —
+	// native runners would need a systemd slice/cgroup override, which is a
+	// different mechanism. Values take effect at container-create time, so
+	// changing them on an existing pool needs `gh sr rebuild <name>`.
+	CPUs   string `yaml:"cpus,omitempty"`
+	Memory string `yaml:"memory,omitempty"`
 	// Deprecated: the per-instance MCP port-label scheme was removed. agentic runners
 	// now use runner_mode: container, which isolates the MCP gateway port per runner.
 	// These fields are retained only so old configs still parse; Validate rejects them
@@ -844,10 +904,34 @@ func (rc *RunnerConfig) EffectiveLabels(hostOS, arch string) []string {
 }
 
 // EffectiveLabelsForInstance returns the runner's labels for instance instanceIndex (0-based).
-// All instances currently share the same labels; the index is retained for API stability
-// (the removed per-instance gh-sr-mcp-<port> scheme used it).
-func (rc *RunnerConfig) EffectiveLabelsForInstance(hostOS, arch string, _ int) []string {
-	return rc.effectiveLabelsCore(hostOS, arch)
+//
+// Every instance registers the core labels — the configured ones, or
+// DefaultLabels when unset, plus `agentic` for agentic runners — so existing
+// `runs-on:` selectors keep matching unchanged. When Count > 1 it ALSO
+// registers a per-instance alias `<label>-<N>` for every core label (N =
+// instanceIndex+1, matching the 1-based InstanceNames numbering): a pool
+// labelled `ci` yields `ci-1` on instance 1 and `ci-2` on instance 2, so a
+// workflow can pin itself with `runs-on: [self-hosted, ci-2]` and heavy jobs
+// can be sharded across instances instead of every instance racing for the
+// same queue (issue #640: two identical-label instances each pulled a full
+// Flutter test run at the same time and jointly starved the host).
+//
+// Aliases are only added when Count > 1 — with a single instance the `-1`
+// alias carries no information and would just clutter the runner's label set.
+// The suffixed form never collides across instances (the suffix differs), and
+// appending to the core slice is safe because effectiveLabelsCore always
+// returns a freshly-built slice.
+func (rc *RunnerConfig) EffectiveLabelsForInstance(hostOS, arch string, instanceIndex int) []string {
+	labels := rc.effectiveLabelsCore(hostOS, arch)
+	if rc.Count <= 1 {
+		return labels
+	}
+	suffix := strconv.Itoa(instanceIndex + 1)
+	aliases := make([]string, 0, len(labels))
+	for _, l := range labels {
+		aliases = append(aliases, l+"-"+suffix)
+	}
+	return append(labels, aliases...)
 }
 
 func hasLabel(labels []string, target string) bool {
@@ -1103,6 +1187,9 @@ func (c *Config) Validate() error {
 		// awf-net topology network; it only exists in agentic jobs.
 		if r.AWFServiceBridge && !r.IsAgentic() {
 			return fmt.Errorf("runner %q: awf_service_bridge requires profile: agentic (the bridge joins services: containers to the AWF awf-net topology network, which only agentic jobs create)", r.Name)
+		}
+		if err := validateRunnerResourceLimits(r.Name, r.CPUs, r.Memory); err != nil {
+			return err
 		}
 		// Inline the `name-N` construction instead of calling r.InstanceNames(): the
 		// per-call slice+fmt.Sprintf allocs are the dominant cost on large configs.

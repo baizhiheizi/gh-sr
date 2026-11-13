@@ -67,7 +67,15 @@ pkill -f /opt/gh-sr/hooks/awf-service-bridge.sh >/dev/null 2>&1
 #    truncated to 15 chars — issue #605 measured `dart:dartdev_ao` and
 #    `dart:build_runn`), so an exact `dart` never matches them. Match the whole
 #    family by comm prefix instead.
-for proc in chrome chrome_crashpad chromedriver; do
+#    Ruby (issue #640) is the other measured case: gh-sr's own Ruby test suite
+#    leaves orphaned `ruby` workers behind (19 processes alive for ~24.5h on
+#    x1, six of them parenting host-side zombies), and rake/rspec/bundle are
+#    the other comm names the Ruby toolchain produces. The list stays an
+#    explicit allow-list on purpose — killing everything whose parent is not
+#    the runner's own tree would be broader, but PID-1 children also include
+#    legitimate long-lived processes (the entrypoint shell itself), so a
+#    reverse-select sweep is not safe here.
+for proc in chrome chrome_crashpad chromedriver ruby rspec rake bundle; do
     pkill -x "$proc" >/dev/null 2>&1
 done
 pkill '^dart' >/dev/null 2>&1

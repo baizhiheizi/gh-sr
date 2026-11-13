@@ -351,20 +351,22 @@ func (m *Manager) Remove(h *host.Host, rc config.RunnerConfig) error {
 }
 
 func (m *Manager) Status(h *host.Host, rc config.RunnerConfig) ([]RunnerStatus, error) {
-	// Hoist loop-invariant values: EffectiveRunnerMode, DisplayTarget, the
-	// labels join, and the container-image layout revision all return the same
-	// result for every instance of a given RunnerConfig (effectiveLabelsCore
-	// ignores the instance index; ContainerImageLayoutRevision only depends on
-	// m.GhSrVersion + m.containerImageBaseImage() + m.containerImageExtraApt(),
-	// which are static during one Status() call). Computing them once outside the loop saves N-1
-	// effectiveLabelsCore slice builds, N-1 strings.Join calls, and N-1
-	// ContainerImageLayoutRevision invocations per Status() invocation; for a
-	// Count=10 RunnerConfig that is 9 wasted slice headers + 9 wasted join
-	// strings + 9 wasted sha256-hashes-of-the-embedded-container-image (~30µs
-	// and 150KB per call) on every per-tick refresh.
+	// Hoist loop-invariant values: EffectiveRunnerMode, DisplayTarget, and the
+	// container-image layout revision return the same result for every
+	// instance of a given RunnerConfig (ContainerImageLayoutRevision only
+	// depends on m.GhSrVersion + m.containerImageBaseImage() +
+	// m.containerImageExtraApt(), which are static during one Status() call).
+	// Computing them once outside the loop saves N-1 repeat calls; for a
+	// Count=10 RunnerConfig that is 9 wasted sha256-hashes-of-the-embedded-
+	// container-image (~30µs and 150KB per call) on every per-tick refresh.
+	//
+	// The labels join is deliberately NOT hoisted: since issue #640,
+	// EffectiveLabelsForInstance appends per-instance `<label>-<N>` aliases
+	// when Count > 1, so the joined string differs per instance and must be
+	// computed inside the loop (a handful of small-string allocs, irrelevant
+	// next to the layout-revision hash the hoist targets).
 	mode := rc.EffectiveRunnerMode()
 	repo := rc.DisplayTarget()
-	labels := strings.Join(rc.EffectiveLabelsForInstance(h.OS, h.Arch, 0), ", ")
 	host := rc.Host
 	isContainer := rc.IsContainerMode()
 
@@ -398,7 +400,7 @@ func (m *Manager) Status(h *host.Host, rc config.RunnerConfig) ([]RunnerStatus, 
 				Instance: name,
 				Host:     host,
 				Repo:     repo,
-				Labels:   labels,
+				Labels:   strings.Join(rc.EffectiveLabelsForInstance(h.OS, h.Arch, i), ", "),
 				Mode:     mode,
 			}
 			if isContainer {
@@ -421,12 +423,12 @@ func (m *Manager) Status(h *host.Host, rc config.RunnerConfig) ([]RunnerStatus, 
 		return statuses, nil
 	}
 
-	for _, name := range names {
+	for i, name := range names {
 		s := RunnerStatus{
 			Instance: name,
 			Host:     host,
 			Repo:     repo,
-			Labels:   labels,
+			Labels:   strings.Join(rc.EffectiveLabelsForInstance(h.OS, h.Arch, i), ", "),
 			Mode:     mode,
 		}
 

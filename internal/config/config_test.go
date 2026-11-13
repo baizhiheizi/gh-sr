@@ -248,6 +248,64 @@ func TestEffectiveLabels(t *testing.T) {
 	}
 }
 
+// TestEffectiveLabelsForInstance pins the issue #640 per-instance aliasing:
+// with Count > 1 every core label gets an additional `<label>-<N>` alias
+// (1-based, matching InstanceNames), so workflows can pin or shard onto one
+// instance via `runs-on: [self-hosted, ci-2]`. With Count <= 1 the alias would
+// carry no information, so the labels stay exactly the core set.
+func TestEffectiveLabelsForInstance(t *testing.T) {
+	t.Parallel()
+
+	// Count > 1: core labels first, aliases after, differing per instance.
+	rc := RunnerConfig{Name: "r", Count: 2, Labels: []string{"ci"}}
+	if got := rc.EffectiveLabelsForInstance("linux", "amd64", 0); !equalStrings(got, []string{"ci", "ci-1"}) {
+		t.Errorf("instance 0 labels: got %v", got)
+	}
+	if got := rc.EffectiveLabelsForInstance("linux", "amd64", 1); !equalStrings(got, []string{"ci", "ci-2"}) {
+		t.Errorf("instance 1 labels: got %v", got)
+	}
+
+	// The aliasing also covers the auto-generated defaults and the agentic
+	// label appended by the agentic profile — every registered label is
+	// addressable per instance.
+	ra := RunnerConfig{Name: "r", Count: 3, Profile: "agentic"}
+	got := ra.EffectiveLabelsForInstance("linux", "amd64", 2)
+	want := []string{"self-hosted", "Linux", "X64", "agentic", "self-hosted-3", "Linux-3", "X64-3", "agentic-3"}
+	if !equalStrings(got, want) {
+		t.Errorf("agentic instance 2 labels: got %v want %v", got, want)
+	}
+
+	// Count <= 1: no aliases — byte-for-byte the historical core set.
+	rc1 := RunnerConfig{Name: "r", Labels: []string{"custom"}}
+	if got := rc1.EffectiveLabelsForInstance("linux", "amd64", 0); !equalStrings(got, []string{"custom"}) {
+		t.Errorf("Count=1 must not alias: got %v", got)
+	}
+	rc0 := RunnerConfig{Name: "r", Count: 0, Labels: []string{"custom"}}
+	if got := rc0.EffectiveLabelsForInstance("linux", "amd64", 0); !equalStrings(got, []string{"custom"}) {
+		t.Errorf("Count unset (=1) must not alias: got %v", got)
+	}
+
+	// Repeated calls must not leak aliases into each other (the returned slice
+	// wraps the fresh core slice effectiveLabelsCore builds per call).
+	a := rc.EffectiveLabelsForInstance("linux", "amd64", 0)
+	b := rc.EffectiveLabelsForInstance("linux", "amd64", 1)
+	if !equalStrings(a, []string{"ci", "ci-1"}) || !equalStrings(b, []string{"ci", "ci-2"}) {
+		t.Errorf("repeated calls must be independent: a=%v b=%v", a, b)
+	}
+}
+
+func equalStrings(got, want []string) bool {
+	if len(got) != len(want) {
+		return false
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			return false
+		}
+	}
+	return true
+}
+
 func TestValidate_emptyOSArchRemoteHost(t *testing.T) {
 	t.Parallel()
 	cfg := Config{
@@ -727,6 +785,57 @@ func TestValidate_agenticImpliesContainer(t *testing.T) {
 	}
 	if err := cfg.Validate(); err != nil {
 		t.Fatalf("agentic without runner_mode should validate: %v", err)
+	}
+}
+
+// TestValidate_resourceLimits pins the runners[].cpus / runners[].memory
+// validation (issue #640): docker-accepted numeric shapes pass; anything else
+// — including shell metacharacters — is rejected at load, before the value is
+// ever interpolated into the SSH-run `docker create` command. Empty values
+// (the default) mean Docker's unlimited default and skip validation.
+func TestValidate_resourceLimits(t *testing.T) {
+	t.Parallel()
+
+	valid := func(cfg Config) error {
+		t.Helper()
+		return cfg.Validate()
+	}
+	base := func(runner RunnerConfig) Config {
+		return Config{
+			Hosts:   map[string]HostConfig{"h": {Addr: "local", OS: "linux", Arch: "amd64"}},
+			Runners: []RunnerConfig{runner},
+		}
+	}
+
+	for _, cpus := range []string{"4", "1.5", "0.5"} {
+		if err := valid(base(RunnerConfig{Name: "r", Repo: "o/r", Host: "h", CPUs: cpus})); err != nil {
+			t.Errorf("cpus %q should validate: %v", cpus, err)
+		}
+	}
+	for _, memory := range []string{"12g", "512m", "1073741824", "1G", "4M"} {
+		if err := valid(base(RunnerConfig{Name: "r", Repo: "o/r", Host: "h", Memory: memory})); err != nil {
+			t.Errorf("memory %q should validate: %v", memory, err)
+		}
+	}
+	// Both set together is the common case from the issue.
+	if err := valid(base(RunnerConfig{Name: "r", Repo: "o/r", Host: "h", CPUs: "8", Memory: "12g"})); err != nil {
+		t.Errorf("cpus+memory should validate: %v", err)
+	}
+
+	for _, cpus := range []string{"0", "abc", "8; rm -rf /", "4 cores", "-2", "8 ", ""} {
+		if cpus == "" {
+			continue // empty = unset default, must stay valid
+		}
+		err := valid(base(RunnerConfig{Name: "r", Repo: "o/r", Host: "h", CPUs: cpus}))
+		if err == nil || !strings.Contains(err.Error(), "cpus") {
+			t.Errorf("cpus %q should be rejected with a cpus message, got %v", cpus, err)
+		}
+	}
+	for _, memory := range []string{"0", "12x", "1.5g", "rm -rf /", "12 g", "-4g"} {
+		err := valid(base(RunnerConfig{Name: "r", Repo: "o/r", Host: "h", Memory: memory}))
+		if err == nil || !strings.Contains(err.Error(), "memory") {
+			t.Errorf("memory %q should be rejected with a memory message, got %v", memory, err)
+		}
 	}
 }
 

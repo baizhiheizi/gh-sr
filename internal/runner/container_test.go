@@ -106,6 +106,125 @@ func TestDockerRunArgShape(t *testing.T) {
 	}
 }
 
+// TestDockerCreateArgShape_resourceLimits pins the runners.yml cpus / memory
+// passthrough (issue #640): when set, the docker create command carries
+// `--cpus` / `--memory`; when unset the command contains neither, staying
+// Docker's unlimited default (no behaviour change for existing pools).
+// Runs the real createContainerInstance over a mock executor so the assertion
+// covers the actual emitted command, not a hand-built copy of it.
+func TestDockerCreateArgShape_resourceLimits(t *testing.T) {
+	t.Parallel()
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/repos/o/r/actions/runners/registration-token" {
+			http.NotFound(w, r)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(tokenResponse{Token: "regtok"})
+	}))
+	defer ts.Close()
+
+	newManager := func(createCmd *string) (*Manager, *host.Host) {
+		mock := &testutil.MockExecutor{RunFn: func(cmd string) (string, error) {
+			switch {
+			case strings.Contains(cmd, "echo $HOME"):
+				return "/home/runner\n", nil
+			case strings.Contains(cmd, "docker create"):
+				*createCmd = cmd
+				return "", nil
+			}
+			return "", nil
+		}}
+		h := host.NewHost("h", config.HostConfig{Addr: "runner@vps", OS: "linux", Arch: "amd64"})
+		h.SetConn(mock)
+		return &Manager{GitHub: NewGitHubClientWithHTTP("pat", ts.Client(), ts.URL)}, h
+	}
+
+	// Set: both flags must appear, quoted, in the emitted create command.
+	var setCmd string
+	m, h := newManager(&setCmd)
+	rc := config.RunnerConfig{
+		Name:       "aw-runner",
+		Repo:       "o/r",
+		Host:       "h",
+		Profile:    "agentic",
+		RunnerMode: config.RunnerModeContainer,
+		CPUs:       "8",
+		Memory:     "12g",
+	}
+	if err := m.createContainerInstance(h, rc, 0, "aw-runner-1", AgenticRunnerImageTag+":2.999.0"); err != nil {
+		t.Fatalf("createContainerInstance (limits set): %v", err)
+	}
+	if !strings.Contains(setCmd, "--cpus '8'") {
+		t.Errorf("docker create must pass --cpus when runners.yml sets it; got:\n%s", setCmd)
+	}
+	if !strings.Contains(setCmd, "--memory '12g'") {
+		t.Errorf("docker create must pass --memory when runners.yml sets it; got:\n%s", setCmd)
+	}
+
+	// Unset: neither flag may appear (unlimited default preserved).
+	var unsetCmd string
+	m2, h2 := newManager(&unsetCmd)
+	rc.CPUs, rc.Memory = "", ""
+	if err := m2.createContainerInstance(h2, rc, 0, "aw-runner-1", AgenticRunnerImageTag+":2.999.0"); err != nil {
+		t.Fatalf("createContainerInstance (limits unset): %v", err)
+	}
+	if strings.Contains(unsetCmd, "--cpus") || strings.Contains(unsetCmd, "--memory") {
+		t.Errorf("docker create must not carry --cpus/--memory when runners.yml leaves them unset; got:\n%s", unsetCmd)
+	}
+}
+
+// TestDockerCreateArgShape_perInstanceLabels pins the issue #640 label
+// aliasing end to end: with Count > 1 the registered GH_SR_RUNNER_LABELS must
+// carry the `<label>-<N>` alias for THIS instance (instance 2 → `ci-2`), so
+// workflows can pin or shard onto a specific instance with
+// `runs-on: [self-hosted, ci-2]`.
+func TestDockerCreateArgShape_perInstanceLabels(t *testing.T) {
+	t.Parallel()
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/repos/o/r/actions/runners/registration-token" {
+			http.NotFound(w, r)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(tokenResponse{Token: "regtok"})
+	}))
+	defer ts.Close()
+
+	var createCmd string
+	mock := &testutil.MockExecutor{RunFn: func(cmd string) (string, error) {
+		switch {
+		case strings.Contains(cmd, "echo $HOME"):
+			return "/home/runner\n", nil
+		case strings.Contains(cmd, "docker create"):
+			createCmd = cmd
+			return "", nil
+		}
+		return "", nil
+	}}
+	h := host.NewHost("h", config.HostConfig{Addr: "runner@vps", OS: "linux", Arch: "amd64"})
+	h.SetConn(mock)
+	m := &Manager{GitHub: NewGitHubClientWithHTTP("pat", ts.Client(), ts.URL)}
+
+	rc := config.RunnerConfig{
+		Name:       "aw-runner",
+		Repo:       "o/r",
+		Host:       "h",
+		Profile:    "agentic",
+		RunnerMode: config.RunnerModeContainer,
+		Count:      2,
+		Labels:     []string{"ci"},
+	}
+	if err := m.createContainerInstance(h, rc, 1, "aw-runner-2", AgenticRunnerImageTag+":2.999.0"); err != nil {
+		t.Fatalf("createContainerInstance: %v", err)
+	}
+
+	// The agentic profile appends `agentic` to the core set, so instance 2
+	// registers both core labels plus their -2 aliases.
+	wantEnv := "GH_SR_RUNNER_LABELS=" + hostshell.PosixSingleQuote("ci,agentic,ci-2,agentic-2")
+	if !strings.Contains(createCmd, wantEnv) {
+		t.Errorf("instance 2 must register labels %q; got:\n%s", wantEnv, createCmd)
+	}
+}
+
 // TestAgenticRunnerImageTag verifies the image tag format used by container mode.
 func TestAgenticRunnerImageTag(t *testing.T) {
 	t.Parallel()
@@ -701,25 +820,51 @@ func TestAgenticRunnerEntrypointPID1ReapsOrphans(t *testing.T) {
 }
 
 // TestAgenticRunnerJobCompletedHookSweepsLeftoverProcesses pins the per-job
-// process hygiene (issue #605 hardening): workflow steps run directly in the
-// outer container, and daemons they spawn (Chrome + its crashpad handler +
-// chromedriver from browser suites, the Dart analysis server) routinely
-// outlive the step that started them. job-completed must kill them by exact
-// comm name so PID 1 (tini) reaps them, without ever touching the runner
-// itself or the inner dockerd/containerd tree (whose lifecycle belongs to the
-// daemon — killing a shim would corrupt its container's state). Dart's VM
-// names its processes `dart:<component>` (comm truncated to 15 chars — e.g.
-// `dart:dartdev_ao`, `dart:build_runn`), so it needs a comm-prefix match, not
-// the exact `dart` that would never hit any of them.
+// process hygiene (issue #605 hardening, extended by issue #640): workflow
+// steps run directly in the outer container, and daemons they spawn (Chrome +
+// its crashpad handler + chromedriver from browser suites, the Dart analysis
+// server, and the Ruby toolchain — gh-sr's own Ruby suite left 19 orphaned
+// `ruby` workers alive for ~24.5h on x1) routinely outlive the step that
+// started them. job-completed must kill them by exact comm name so PID 1
+// (tini) reaps them, without ever touching the runner itself or the inner
+// dockerd/containerd tree (whose lifecycle belongs to the daemon — killing a
+// shim would corrupt its container's state). Dart's VM names its processes
+// `dart:<component>` (comm truncated to 15 chars — e.g. `dart:dartdev_ao`,
+// `dart:build_runn`), so it needs a comm-prefix match, not the exact `dart`
+// that would never hit any of them.
 func TestAgenticRunnerJobCompletedHookSweepsLeftoverProcesses(t *testing.T) {
 	t.Parallel()
 	for _, want := range []string{
-		"for proc in chrome chrome_crashpad chromedriver; do",
+		"for proc in chrome chrome_crashpad chromedriver ruby rspec rake bundle; do",
 		`pkill -x "$proc"`,
 		`pkill '^dart'`,
 	} {
 		if !strings.Contains(agenticRunnerJobCompletedHook, want) {
 			t.Fatalf("job-completed hook should sweep leftover job processes, missing %q, got:\n%s", want, agenticRunnerJobCompletedHook)
+		}
+	}
+}
+
+// TestAgenticRunnerEntrypointPeriodicOrphanSweep pins the entrypoint's safety
+// net for jobs that crash past their completed hook (issue #640): a hung or
+// OOM-killed runner skips ACTIONS_RUNNER_HOOK_JOB_COMPLETED entirely, and the
+// leftover processes then hold memory for the rest of the container's life.
+// The background sweep must (a) re-run every few minutes, (b) kill ONLY
+// processes reparented to PID 1 (`-P 1` — a live job's Runner.Worker → bash →
+// tool chain keeps its parents, so an in-flight long test suite is never
+// swept mid-run), and (c) cover the same allow-list family as the hook.
+func TestAgenticRunnerEntrypointPeriodicOrphanSweep(t *testing.T) {
+	t.Parallel()
+	for _, want := range []string{
+		"while sleep 300; do",
+		"pgrep -P 1 -x \"$proc\"",
+		"pkill -P 1 -x \"$proc\"",
+		"pgrep -P 1 '^dart'",
+		"pkill -P 1 '^dart'",
+		"for proc in chrome chrome_crashpad chromedriver ruby rspec rake bundle; do",
+	} {
+		if !strings.Contains(agenticRunnerEntrypoint, want) {
+			t.Fatalf("entrypoint should carry the periodic orphan sweep, missing %q, got:\n%s", want, agenticRunnerEntrypoint)
 		}
 	}
 }
