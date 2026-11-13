@@ -98,8 +98,8 @@ runners:
     host: my-vps
     count: 3           # 3 concurrent agentic jobs, each isolated
     profile: agentic   # always runs in container (DinD) mode
-    cpus: "8"          # optional per-instance host caps (docker --cpus/--memory)
-    memory: "12g"      # so one heavy job can't starve the rest of the machine
+    cpus: "8"          # optional per-instance CPU/RAM caps (docker --cpus/--memory)
+    memory: "12g"      # bound swap pressure from one runaway job (disk I/O not capped)
 ```
 
 `profile: agentic` always runs in **container mode**: each runner instance is a privileged Docker-in-Docker container with its own inner `dockerd`, network namespace, and `/tmp/gh-aw`, and every job runs from a pristine inner state (via the runner's job hooks). This is what makes multiple concurrent agentic runners stable on one machine.

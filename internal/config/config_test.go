@@ -789,10 +789,13 @@ func TestValidate_agenticImpliesContainer(t *testing.T) {
 }
 
 // TestValidate_resourceLimits pins the runners[].cpus / runners[].memory
-// validation (issue #640): docker-accepted numeric shapes pass; anything else
-// — including shell metacharacters — is rejected at load, before the value is
-// ever interpolated into the SSH-run `docker create` command. Empty values
-// (the default) mean Docker's unlimited default and skip validation.
+// validation (issue #640): docker-accepted numeric shapes pass on container
+// runners; anything else — including shell metacharacters and zero-valued
+// spellings docker would parse as "unlimited" ("00", "00g") — is rejected at
+// load, before the value is ever interpolated into the SSH-run `docker create`
+// command. Empty values (the default) mean Docker's unlimited default and skip
+// validation. Native runners reject the fields outright: the caps are
+// docker-create flags and would be silently ignored there (PR #641 review).
 func TestValidate_resourceLimits(t *testing.T) {
 	t.Parallel()
 
@@ -806,35 +809,93 @@ func TestValidate_resourceLimits(t *testing.T) {
 			Runners: []RunnerConfig{runner},
 		}
 	}
+	container := func(extra ...func(*RunnerConfig)) RunnerConfig {
+		rc := RunnerConfig{Name: "r", Repo: "o/r", Host: "h", RunnerMode: RunnerModeContainer}
+		for _, f := range extra {
+			f(&rc)
+		}
+		return rc
+	}
 
 	for _, cpus := range []string{"4", "1.5", "0.5"} {
-		if err := valid(base(RunnerConfig{Name: "r", Repo: "o/r", Host: "h", CPUs: cpus})); err != nil {
+		if err := valid(base(container(func(rc *RunnerConfig) { rc.CPUs = cpus }))); err != nil {
 			t.Errorf("cpus %q should validate: %v", cpus, err)
 		}
 	}
 	for _, memory := range []string{"12g", "512m", "1073741824", "1G", "4M"} {
-		if err := valid(base(RunnerConfig{Name: "r", Repo: "o/r", Host: "h", Memory: memory})); err != nil {
+		if err := valid(base(container(func(rc *RunnerConfig) { rc.Memory = memory }))); err != nil {
 			t.Errorf("memory %q should validate: %v", memory, err)
 		}
 	}
 	// Both set together is the common case from the issue.
-	if err := valid(base(RunnerConfig{Name: "r", Repo: "o/r", Host: "h", CPUs: "8", Memory: "12g"})); err != nil {
+	if err := valid(base(container(func(rc *RunnerConfig) { rc.CPUs = "8"; rc.Memory = "12g" }))); err != nil {
 		t.Errorf("cpus+memory should validate: %v", err)
 	}
+	// profile: agentic implies container mode, so the caps are valid there too.
+	if err := valid(base(container(func(rc *RunnerConfig) {
+		rc.RunnerMode = ""
+		rc.Profile = "agentic"
+		rc.CPUs = "8"
+	}))); err != nil {
+		t.Errorf("cpus with profile: agentic should validate (implies container): %v", err)
+	}
 
-	for _, cpus := range []string{"0", "abc", "8; rm -rf /", "4 cores", "-2", "8 ", ""} {
-		if cpus == "" {
-			continue // empty = unset default, must stay valid
-		}
-		err := valid(base(RunnerConfig{Name: "r", Repo: "o/r", Host: "h", CPUs: cpus}))
+	for _, cpus := range []string{"0", "abc", "8; rm -rf /", "4 cores", "-2", "8 "} {
+		err := valid(base(container(func(rc *RunnerConfig) { rc.CPUs = cpus })))
 		if err == nil || !strings.Contains(err.Error(), "cpus") {
 			t.Errorf("cpus %q should be rejected with a cpus message, got %v", cpus, err)
 		}
 	}
-	for _, memory := range []string{"0", "12x", "1.5g", "rm -rf /", "12 g", "-4g"} {
-		err := valid(base(RunnerConfig{Name: "r", Repo: "o/r", Host: "h", Memory: memory}))
+	// Zero must be rejected in every spelling — docker parses "00"/"00g" as
+	// 0 bytes and --memory 0 means unlimited, i.e. the cap silently vanishes.
+	for _, memory := range []string{"0", "00", "000", "0g", "00g", "12x", "1.5g", "rm -rf /", "12 g", "-4g"} {
+		err := valid(base(container(func(rc *RunnerConfig) { rc.Memory = memory })))
 		if err == nil || !strings.Contains(err.Error(), "memory") {
 			t.Errorf("memory %q should be rejected with a memory message, got %v", memory, err)
+		}
+	}
+
+	// Native runners reject the fields outright — accepting them would let the
+	// operator believe a cap is active while the native path ignores it.
+	err := valid(base(RunnerConfig{Name: "r", Repo: "o/r", Host: "h", CPUs: "8", Memory: "12g"}))
+	if err == nil || !strings.Contains(err.Error(), "require runner_mode: container") {
+		t.Errorf("cpus/memory on a native runner should be rejected, got %v", err)
+	}
+	err = valid(base(RunnerConfig{Name: "r", Repo: "o/r", Host: "h", RunnerMode: RunnerModeNative, CPUs: "4"}))
+	if err == nil || !strings.Contains(err.Error(), "require runner_mode: container") {
+		t.Errorf("explicit native + cpus should be rejected, got %v", err)
+	}
+	// Container runner with no caps still validates (the common existing pool).
+	if err := valid(base(container())); err != nil {
+		t.Errorf("container runner without caps should validate: %v", err)
+	}
+}
+
+// TestAppendJoinedLabelsFromCoreMatchesEffectiveLabelsForInstance pins the
+// byte-level label renderer to the slice-level registration API: for every
+// profile/count/index combination the ", "-joined forms must be identical, so
+// the `<label>-<N>` alias rule cannot drift between what gets REGISTERED on
+// GitHub (EffectiveLabelsForInstance) and what Status() DISPLAYS
+// (AppendJoinedLabelsFromCore, the allocation-lean form used on the per-tick
+// hot path).
+func TestAppendJoinedLabelsFromCoreMatchesEffectiveLabelsForInstance(t *testing.T) {
+	t.Parallel()
+	cases := []RunnerConfig{
+		{Name: "r"},           // defaults, count unset (=1)
+		{Name: "r", Count: 1}, // explicit count 1
+		{Name: "r", Count: 2}, // defaults + aliases
+		{Name: "r", Count: 3, Labels: []string{"ci", "gpu"}}, // explicit labels + aliases
+		{Name: "r", Count: 2, Profile: "agentic"},            // agentic appended + aliases
+		{Name: "r", Count: 16},                               // two-digit suffix
+	}
+	for i, rc := range cases {
+		core := rc.CoreLabels("linux", "amd64")
+		for _, idx := range []int{0, 1, 2, 15} {
+			want := strings.Join(rc.EffectiveLabelsForInstance("linux", "amd64", idx), ", ")
+			got := string(AppendJoinedLabelsFromCore(nil, core, rc.Count, idx))
+			if got != want {
+				t.Errorf("case %d idx %d: AppendJoinedLabelsFromCore = %q, want EffectiveLabelsForInstance join %q", i, idx, got, want)
+			}
 		}
 	}
 }

@@ -191,8 +191,11 @@ func TestManagerRemove_propagatesRemoveContainerError(t *testing.T) {
 // TestManagerStatus_nativeIteratesAllInstances covers Manager.Status for
 // the native dispatch path: one RunnerStatus per InstanceNames() entry,
 // each with Local populated via statusNativeAndVersion. We pin the
-// hoist-invariant behaviour (Host/Repo/Labels/Mode match EffectiveRunnerMode
-// / DisplayTarget / EffectiveLabelsForInstance / Host).
+// hoist-invariant behaviour (Host/Repo/Mode match EffectiveRunnerMode /
+// DisplayTarget / Host) — Labels is deliberately NOT hoist-invariant: since
+// #640 Status renders labels per instance (`<label>-<N>` aliases when
+// count > 1), asserted at the bottom of this test so a future re-hoist of
+// the join cannot silently flatten every row to the same label set.
 func TestManagerStatus_nativeIteratesAllInstances(t *testing.T) {
 	t.Parallel()
 
@@ -236,6 +239,24 @@ func TestManagerStatus_nativeIteratesAllInstances(t *testing.T) {
 		if s.ContainerImage != "" {
 			t.Errorf("statuses[%d].ContainerImage = %q, want empty in native mode", i, s.ContainerImage)
 		}
+	}
+
+	// Per-instance label rendering (#640): Count=2 with default labels means
+	// each row carries the core set (self-hosted, Linux, X64) plus its own
+	// -N aliases. If the join ever gets re-hoisted out of the row loop (the
+	// exact optimization this deliberately gave up) or handed a wrong index,
+	// every row flattens to the same string and per-instance pinning
+	// (`runs-on: [self-hosted, ci-2]`) loses its display counterpart — keep
+	// that regression loud.
+	wantAliases := []string{"self-hosted-1", "self-hosted-2"}
+	sawDistinct := statuses[0].Labels != statuses[1].Labels
+	for i, want := range wantAliases {
+		if !strings.Contains(statuses[i].Labels, want) {
+			t.Errorf("statuses[%d].Labels = %q, want it to carry the per-instance alias %q", i, statuses[i].Labels, want)
+		}
+	}
+	if !sawDistinct {
+		t.Errorf("statuses[0].Labels and statuses[1].Labels must differ per instance, got %q twice", statuses[0].Labels)
 	}
 }
 

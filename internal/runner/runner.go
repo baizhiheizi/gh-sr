@@ -360,15 +360,36 @@ func (m *Manager) Status(h *host.Host, rc config.RunnerConfig) ([]RunnerStatus, 
 	// Count=10 RunnerConfig that is 9 wasted sha256-hashes-of-the-embedded-
 	// container-image (~30µs and 150KB per call) on every per-tick refresh.
 	//
-	// The labels join is deliberately NOT hoisted: since issue #640,
-	// EffectiveLabelsForInstance appends per-instance `<label>-<N>` aliases
-	// when Count > 1, so the joined string differs per instance and must be
-	// computed inside the loop (a handful of small-string allocs, irrelevant
-	// next to the layout-revision hash the hoist targets).
+	// Labels are the one value that legitimately differs per row since #640:
+	// with Count > 1 every instance carries `<label>-<N>` aliases, so the
+	// joined string cannot be hoisted. Rendering it is still allocation-lean:
+	// the core set (CoreLabels) and a scratch buffer are materialized once
+	// below, and each row pays exactly ONE allocation — the final string copy
+	// out of the shared buffer (config.AppendJoinedLabelsFromCore writes into
+	// lblBuf[:0]). Building the row strings via EffectiveLabelsForInstance +
+	// strings.Join instead cost ~8 allocs per row and tripled Status's
+	// allocs/op on the Count=16 bench (75 → 200), tripping bench-compare's
+	// fail gate; this form stays inside it. With Count <= 1 the rows are
+	// identical again and we hoist a single string exactly like the pre-#640
+	// layout (strings.Join(core, ", ") is the same two allocs the hoisted
+	// EffectiveLabelsForInstance call used to cost).
 	mode := rc.EffectiveRunnerMode()
 	repo := rc.DisplayTarget()
 	host := rc.Host
 	isContainer := rc.IsContainerMode()
+
+	core := rc.CoreLabels(h.OS, h.Arch)
+	labelsIdentical := rc.Count <= 1
+	baseLabels := ""
+	var lblBuf []byte
+	if labelsIdentical {
+		baseLabels = strings.Join(core, ", ")
+	} else {
+		lblBuf = make([]byte, 0, 256)
+	}
+	// No closure here on purpose: a func literal capturing these locals would
+	// heap-allocate the captured set (a measurable alloc/op on the Status
+	// benchmarks); the two row loops inline the two-line branch instead.
 
 	var expectedLayoutRev string
 	if isContainer {
@@ -396,11 +417,15 @@ func (m *Manager) Status(h *host.Host, rc config.RunnerConfig) ([]RunnerStatus, 
 
 	if batchOK {
 		for i, name := range names {
+			labels := baseLabels
+			if !labelsIdentical {
+				labels = string(config.AppendJoinedLabelsFromCore(lblBuf[:0], core, rc.Count, i))
+			}
 			s := RunnerStatus{
 				Instance: name,
 				Host:     host,
 				Repo:     repo,
-				Labels:   strings.Join(rc.EffectiveLabelsForInstance(h.OS, h.Arch, i), ", "),
+				Labels:   labels,
 				Mode:     mode,
 			}
 			if isContainer {
@@ -424,11 +449,15 @@ func (m *Manager) Status(h *host.Host, rc config.RunnerConfig) ([]RunnerStatus, 
 	}
 
 	for i, name := range names {
+		labels := baseLabels
+		if !labelsIdentical {
+			labels = string(config.AppendJoinedLabelsFromCore(lblBuf[:0], core, rc.Count, i))
+		}
 		s := RunnerStatus{
 			Instance: name,
 			Host:     host,
 			Repo:     repo,
-			Labels:   strings.Join(rc.EffectiveLabelsForInstance(h.OS, h.Arch, i), ", "),
+			Labels:   labels,
 			Mode:     mode,
 		}
 

@@ -849,14 +849,21 @@ func TestAgenticRunnerJobCompletedHookSweepsLeftoverProcesses(t *testing.T) {
 // net for jobs that crash past their completed hook (issue #640): a hung or
 // OOM-killed runner skips ACTIONS_RUNNER_HOOK_JOB_COMPLETED entirely, and the
 // leftover processes then hold memory for the rest of the container's life.
-// The background sweep must (a) re-run every few minutes, (b) kill ONLY
-// processes reparented to PID 1 (`-P 1` — a live job's Runner.Worker → bash →
-// tool chain keeps its parents, so an in-flight long test suite is never
-// swept mid-run), and (c) cover the same allow-list family as the hook.
+// The sweep is only safe with BOTH guards in place:
+//   - a job-in-flight gate skipping the round while Runner.Worker runs — a
+//     step that backgrounded a process (`rake server &`) and exited hands it
+//     to PID 1 just like a crashed job's leftover, so "PPID 1" alone cannot
+//     tell live from leaked (review finding on PR #641);
+//   - PPID-1 narrowing (`-P 1`) so the runner's own tree and the inner
+//     dockerd/containerd tree are never matched;
+//
+// plus the same allow-list family as the hook.
 func TestAgenticRunnerEntrypointPeriodicOrphanSweep(t *testing.T) {
 	t.Parallel()
 	for _, want := range []string{
 		"while sleep 300; do",
+		"if pgrep -x 'Runner.Worker' >/dev/null 2>&1; then",
+		"continue",
 		"pgrep -P 1 -x \"$proc\"",
 		"pkill -P 1 -x \"$proc\"",
 		"pgrep -P 1 '^dart'",
@@ -866,6 +873,15 @@ func TestAgenticRunnerEntrypointPeriodicOrphanSweep(t *testing.T) {
 		if !strings.Contains(agenticRunnerEntrypoint, want) {
 			t.Fatalf("entrypoint should carry the periodic orphan sweep, missing %q, got:\n%s", want, agenticRunnerEntrypoint)
 		}
+	}
+	// The gate must precede the kills within the loop body: if a regression
+	// ever moves the kills before the Worker check, a job's backgrounded
+	// processes become killable again. The gate and the first family probe
+	// must appear in that order in the emitted script.
+	gate := strings.Index(agenticRunnerEntrypoint, "if pgrep -x 'Runner.Worker'")
+	firstKill := strings.Index(agenticRunnerEntrypoint, "pkill -P 1 -x \"$proc\"")
+	if gate < 0 || firstKill < 0 || gate > firstKill {
+		t.Fatalf("Runner.Worker gate must precede every pkill in the sweep loop; gate=%d firstKill=%d", gate, firstKill)
 	}
 }
 

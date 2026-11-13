@@ -858,8 +858,9 @@ func (m *Manager) createContainerInstance(h *host.Host, rc config.RunnerConfig, 
 	// the container instead of looping forever. `--privileged` is required
 	// for DinD (inner dockerd needs full capabilities). Large `/dev/shm`
 	// avoids Chromium/Selenium flakiness. `--cpus` / `--memory` (when
-	// configured) cap the instance's share of the host so a single I/O-heavy
-	// job cannot starve interactive sessions (issue #640).
+	// configured) cap the instance's CPU bandwidth and RAM — bounding the
+	// swap pressure a runaway job can put on the host (issue #640). They do
+	// NOT cap block-device I/O; Docker's `docker create` has no flag for it.
 	cmd := fmt.Sprintf(`
 mkdir -p %s
 docker create \

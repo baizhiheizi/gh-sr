@@ -312,10 +312,6 @@ var runnerCPUsPattern = regexp.MustCompile(`^[0-9]+(\.[0-9]+)?$`)
 // "512m", "1073741824").
 var runnerMemoryPattern = regexp.MustCompile(`^([0-9]+)([bBkKmMgG]?)$`)
 
-// runnerMemorySuffixFactor maps a docker --memory suffix to its byte
-// multiplier (docker's units.RAMInBytes semantics: bare numbers are bytes).
-var runnerMemorySuffixFactor = map[byte]int{'b': 1, 'k': 1 << 10, 'm': 1 << 20, 'g': 1 << 30}
-
 // validateRunnerResourceLimits checks runners[].cpus / runners[].memory (issue
 // #640). Both empty = Docker's unlimited default and skips the check entirely.
 func validateRunnerResourceLimits(name, cpus, memory string) error {
@@ -332,13 +328,13 @@ func validateRunnerResourceLimits(name, cpus, memory string) error {
 		if m == nil {
 			return fmt.Errorf("runner %q: memory must be a positive size with optional b/k/m/g suffix, e.g. \"12g\" or \"512m\" (got %q)", name, memory)
 		}
-		if m[1] == "0" {
+		// Compare numerically, not lexically: docker parses "00" / "00g" as
+		// 0 bytes, and --memory 0 means UNLIMITED — accepting those would
+		// silently drop the cap the operator believes is active (the exact
+		// misconfiguration #640 root cause A exists to prevent).
+		qty, err := strconv.ParseInt(m[1], 10, 64)
+		if err != nil || qty <= 0 {
 			return fmt.Errorf("runner %q: memory must be > 0 (got %q)", name, memory)
-		}
-		// The pattern guarantees m[2] is "" or a single ASCII letter, so the
-		// lowercase map lookup cannot miss when non-empty.
-		if m[2] != "" && runnerMemorySuffixFactor[m[2][0]|0x20] == 0 {
-			return fmt.Errorf("runner %q: unknown memory suffix %q", name, m[2])
 		}
 	}
 	return nil
@@ -761,19 +757,26 @@ type RunnerConfig struct {
 	// profile: agentic.
 	AWFServiceBridge bool `yaml:"awf_service_bridge"`
 	// CPUs / Memory optionally cap a container-mode runner instance's share of
-	// the host (docker create `--cpus` / `--memory`), so one I/O- or CPU-heavy
-	// job cannot starve interactive sessions on a machine that also serves as
-	// the developer's desktop (issue #640: two concurrent Flutter jobs each ran
-	// an unconstrained frontend_server + flutter_tester fleet and drove the
-	// host's PSI IO full to ~26% with 19.5 GiB of swap in use). Both are
-	// optional and empty by default = Docker's unlimited default (no behaviour
-	// change for existing pools); they are interpolated into the SSH-run
-	// `docker create` command, so Validate enforces a strict numeric shape
-	// (docker's own parser also rejects anything else, but failing in `gh sr
-	// setup` beats debugging a rejected create remotely). Container mode only —
-	// native runners would need a systemd slice/cgroup override, which is a
-	// different mechanism. Values take effect at container-create time, so
-	// changing them on an existing pool needs `gh sr rebuild <name>`.
+	// the host (docker create `--cpus` / `--memory`), so one CPU-saturating or
+	// RAM-hoarding job cannot starve interactive sessions on a machine that
+	// also serves as the developer's desktop (issue #640: two concurrent
+	// Flutter jobs each ran an unconstrained frontend_server + flutter_tester
+	// fleet and drove the host into 19.5 GiB of swap). Scope note: these cap
+	// CPU bandwidth and RAM (and with it swap pressure) only — Docker has no
+	// equivalent flag on `docker create` for block-device I/O, and the
+	// dominant measured symptom in #640 was disk I/O (PSI IO full ~26%). A
+	// heavy job can therefore still saturate the disk; capping that needs
+	// --device-write-iops-class tooling that is out of scope here. Both fields
+	// are optional and empty by default = Docker's unlimited default (no
+	// behaviour change for existing pools); they are interpolated into the
+	// SSH-run `docker create` command, so Validate enforces a strict numeric
+	// shape (docker's own parser also rejects anything else, but failing in
+	// `gh sr setup` beats debugging a rejected create remotely). Container
+	// mode only — native runners would need a systemd slice/cgroup override,
+	// which is a different mechanism, and Validate rejects the fields there
+	// rather than silently ignoring a cap the operator believes is active.
+	// Values take effect at container-create time, so changing them on an
+	// existing pool needs `gh sr rebuild <name>`.
 	CPUs   string `yaml:"cpus,omitempty"`
 	Memory string `yaml:"memory,omitempty"`
 	// Deprecated: the per-instance MCP port-label scheme was removed. agentic runners
@@ -921,6 +924,10 @@ func (rc *RunnerConfig) EffectiveLabels(hostOS, arch string) []string {
 // The suffixed form never collides across instances (the suffix differs), and
 // appending to the core slice is safe because effectiveLabelsCore always
 // returns a freshly-built slice.
+//
+// The byte-level twin of this function's ", "-joined form is
+// AppendJoinedLabelsFromCore; a config_test consistency test pins the two
+// equal, so the alias rule cannot drift between them.
 func (rc *RunnerConfig) EffectiveLabelsForInstance(hostOS, arch string, instanceIndex int) []string {
 	labels := rc.effectiveLabelsCore(hostOS, arch)
 	if rc.Count <= 1 {
@@ -932,6 +939,53 @@ func (rc *RunnerConfig) EffectiveLabelsForInstance(hostOS, arch string, instance
 		aliases = append(aliases, l+"-"+suffix)
 	}
 	return append(labels, aliases...)
+}
+
+// CoreLabels returns the effective core label set: the configured labels, or
+// DefaultLabels(hostOS, arch) when unset, plus `agentic` appended when the
+// runner is agentic. Every instance registers exactly these (see
+// EffectiveLabelsForInstance). Callers that render labels for EVERY instance
+// of a pool — Manager.Status on its per-tick refresh — call CoreLabels once
+// and then build each row's string with AppendJoinedLabelsFromCore, instead
+// of paying EffectiveLabelsForInstance's fresh core slice + alias slice per
+// row (that per-row cost regressed the Status allocs/op benchmarks ~3x when
+// per-instance labels landed in #640).
+func (rc *RunnerConfig) CoreLabels(hostOS, arch string) []string {
+	return rc.effectiveLabelsCore(hostOS, arch)
+}
+
+// AppendJoinedLabelsFromCore appends the ", "-joined effective label set for
+// instance instanceIndex (0-based) to buf and returns the extended slice:
+// the core labels, then — when count > 1 — the per-instance `<label>-<N>`
+// aliases (N = instanceIndex+1, 1-based, matching InstanceNames).
+//
+// It is the allocation-lean twin of
+//
+//	strings.Join(rc.EffectiveLabelsForInstance(hostOS, arch, instanceIndex), ", ")
+//
+// for callers that already hold the core set (CoreLabels) and a reusable
+// buffer: hoist buf across the row loop (reset with buf[:0]) and each row
+// costs exactly one allocation, the final string(...) copy. A config_test
+// consistency test pins this form equal to the EffectiveLabelsForInstance
+// join, so the alias rule cannot drift between the registration path (which
+// uses the slice form) and the display path (which uses this one).
+func AppendJoinedLabelsFromCore(buf []byte, core []string, count, instanceIndex int) []byte {
+	for j, l := range core {
+		if j > 0 {
+			buf = append(buf, ", "...)
+		}
+		buf = append(buf, l...)
+	}
+	if count > 1 {
+		n := strconv.Itoa(instanceIndex + 1)
+		for _, l := range core {
+			buf = append(buf, ", "...)
+			buf = append(buf, l...)
+			buf = append(buf, '-')
+			buf = append(buf, n...)
+		}
+	}
+	return buf
 }
 
 func hasLabel(labels []string, target string) bool {
@@ -1190,6 +1244,15 @@ func (c *Config) Validate() error {
 		}
 		if err := validateRunnerResourceLimits(r.Name, r.CPUs, r.Memory); err != nil {
 			return err
+		}
+		// cpus / memory are docker-create flags; they only bind in container
+		// mode, where each instance IS a container. Native runners have no
+		// equivalent mechanism (a systemd slice would mean gh-sr-managed unit
+		// edits), so accepting them there would silently drop the cap the
+		// operator believes is active — reject instead, mirroring the
+		// awf_service_bridge / profile precedent.
+		if (r.CPUs != "" || r.Memory != "") && r.EffectiveRunnerMode() != RunnerModeContainer {
+			return fmt.Errorf("runner %q: cpus/memory require runner_mode: container (the caps are docker create --cpus/--memory flags on the per-instance container; native runners would silently ignore them)", r.Name)
 		}
 		// Inline the `name-N` construction instead of calling r.InstanceNames(): the
 		// per-call slice+fmt.Sprintf allocs are the dominant cost on large configs.
