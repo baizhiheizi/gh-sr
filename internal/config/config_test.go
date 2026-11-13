@@ -248,6 +248,64 @@ func TestEffectiveLabels(t *testing.T) {
 	}
 }
 
+// TestEffectiveLabelsForInstance pins the issue #640 per-instance aliasing:
+// with Count > 1 every core label gets an additional `<label>-<N>` alias
+// (1-based, matching InstanceNames), so workflows can pin or shard onto one
+// instance via `runs-on: [self-hosted, ci-2]`. With Count <= 1 the alias would
+// carry no information, so the labels stay exactly the core set.
+func TestEffectiveLabelsForInstance(t *testing.T) {
+	t.Parallel()
+
+	// Count > 1: core labels first, aliases after, differing per instance.
+	rc := RunnerConfig{Name: "r", Count: 2, Labels: []string{"ci"}}
+	if got := rc.EffectiveLabelsForInstance("linux", "amd64", 0); !equalStrings(got, []string{"ci", "ci-1"}) {
+		t.Errorf("instance 0 labels: got %v", got)
+	}
+	if got := rc.EffectiveLabelsForInstance("linux", "amd64", 1); !equalStrings(got, []string{"ci", "ci-2"}) {
+		t.Errorf("instance 1 labels: got %v", got)
+	}
+
+	// The aliasing also covers the auto-generated defaults and the agentic
+	// label appended by the agentic profile — every registered label is
+	// addressable per instance.
+	ra := RunnerConfig{Name: "r", Count: 3, Profile: "agentic"}
+	got := ra.EffectiveLabelsForInstance("linux", "amd64", 2)
+	want := []string{"self-hosted", "Linux", "X64", "agentic", "self-hosted-3", "Linux-3", "X64-3", "agentic-3"}
+	if !equalStrings(got, want) {
+		t.Errorf("agentic instance 2 labels: got %v want %v", got, want)
+	}
+
+	// Count <= 1: no aliases — byte-for-byte the historical core set.
+	rc1 := RunnerConfig{Name: "r", Labels: []string{"custom"}}
+	if got := rc1.EffectiveLabelsForInstance("linux", "amd64", 0); !equalStrings(got, []string{"custom"}) {
+		t.Errorf("Count=1 must not alias: got %v", got)
+	}
+	rc0 := RunnerConfig{Name: "r", Count: 0, Labels: []string{"custom"}}
+	if got := rc0.EffectiveLabelsForInstance("linux", "amd64", 0); !equalStrings(got, []string{"custom"}) {
+		t.Errorf("Count unset (=1) must not alias: got %v", got)
+	}
+
+	// Repeated calls must not leak aliases into each other (the returned slice
+	// wraps the fresh core slice effectiveLabelsCore builds per call).
+	a := rc.EffectiveLabelsForInstance("linux", "amd64", 0)
+	b := rc.EffectiveLabelsForInstance("linux", "amd64", 1)
+	if !equalStrings(a, []string{"ci", "ci-1"}) || !equalStrings(b, []string{"ci", "ci-2"}) {
+		t.Errorf("repeated calls must be independent: a=%v b=%v", a, b)
+	}
+}
+
+func equalStrings(got, want []string) bool {
+	if len(got) != len(want) {
+		return false
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			return false
+		}
+	}
+	return true
+}
+
 func TestValidate_emptyOSArchRemoteHost(t *testing.T) {
 	t.Parallel()
 	cfg := Config{
@@ -727,6 +785,125 @@ func TestValidate_agenticImpliesContainer(t *testing.T) {
 	}
 	if err := cfg.Validate(); err != nil {
 		t.Fatalf("agentic without runner_mode should validate: %v", err)
+	}
+}
+
+// TestValidate_resourceLimits pins the runners[].cpus / runners[].memory
+// validation (issue #640): docker-accepted numeric shapes pass on container
+// runners; anything else — including shell metacharacters and zero-valued
+// spellings docker would parse as "unlimited" ("00", "00g") — is rejected at
+// load, before the value is ever interpolated into the SSH-run `docker create`
+// command. Empty values (the default) mean Docker's unlimited default and skip
+// validation. Native runners reject the fields outright: the caps are
+// docker-create flags and would be silently ignored there (PR #641 review).
+func TestValidate_resourceLimits(t *testing.T) {
+	t.Parallel()
+
+	valid := func(cfg Config) error {
+		t.Helper()
+		return cfg.Validate()
+	}
+	base := func(runner RunnerConfig) Config {
+		return Config{
+			Hosts:   map[string]HostConfig{"h": {Addr: "local", OS: "linux", Arch: "amd64"}},
+			Runners: []RunnerConfig{runner},
+		}
+	}
+	container := func(extra ...func(*RunnerConfig)) RunnerConfig {
+		rc := RunnerConfig{Name: "r", Repo: "o/r", Host: "h", RunnerMode: RunnerModeContainer}
+		for _, f := range extra {
+			f(&rc)
+		}
+		return rc
+	}
+
+	for _, cpus := range []string{"4", "1.5", "0.5"} {
+		if err := valid(base(container(func(rc *RunnerConfig) { rc.CPUs = cpus }))); err != nil {
+			t.Errorf("cpus %q should validate: %v", cpus, err)
+		}
+	}
+	// The accept set mirrors docker's RAMInBytes grammar exactly (decimal
+	// mantissa, k/m/g/t/p suffix case-insensitive, optional i/b, optional
+	// space) at or above docker's 6MiB per-container floor.
+	for _, memory := range []string{"12g", "512m", "1073741824", "1G", "1.5g", "1t", "12 g", "512Mi", "6m"} {
+		if err := valid(base(container(func(rc *RunnerConfig) { rc.Memory = memory }))); err != nil {
+			t.Errorf("memory %q should validate: %v", memory, err)
+		}
+	}
+	// Both set together is the common case from the issue.
+	if err := valid(base(container(func(rc *RunnerConfig) { rc.CPUs = "8"; rc.Memory = "12g" }))); err != nil {
+		t.Errorf("cpus+memory should validate: %v", err)
+	}
+	// profile: agentic implies container mode, so the caps are valid there too.
+	if err := valid(base(container(func(rc *RunnerConfig) {
+		rc.RunnerMode = ""
+		rc.Profile = "agentic"
+		rc.CPUs = "8"
+	}))); err != nil {
+		t.Errorf("cpus with profile: agentic should validate (implies container): %v", err)
+	}
+
+	for _, cpus := range []string{"0", "abc", "8; rm -rf /", "4 cores", "-2", "8 "} {
+		err := valid(base(container(func(rc *RunnerConfig) { rc.CPUs = cpus })))
+		if err == nil || !strings.Contains(err.Error(), "cpus") {
+			t.Errorf("cpus %q should be rejected with a cpus message, got %v", cpus, err)
+		}
+	}
+	// Zero must be rejected in every spelling — docker parses "00"/"00g" as
+	// 0 bytes and --memory 0 means unlimited, i.e. the cap silently vanishes.
+	// Anything below 6MiB is likewise rejected: docker's daemon refuses such
+	// containers at create ("Minimum memory limit allowed is 6MB"), so
+	// accepting "4m"/"1b" here would just move the failure to `gh sr setup`
+	// on the remote host. Non-sizes (docker would reject) round out the set.
+	for _, memory := range []string{"0", "00", "000", "0g", "00g", "4m", "1b", "500k", "12x", "1.5x", "rm -rf /", "-4g"} {
+		err := valid(base(container(func(rc *RunnerConfig) { rc.Memory = memory })))
+		if err == nil || !strings.Contains(err.Error(), "memory") {
+			t.Errorf("memory %q should be rejected with a memory message, got %v", memory, err)
+		}
+	}
+
+	// Native runners reject the fields outright — accepting them would let the
+	// operator believe a cap is active while the native path ignores it.
+	err := valid(base(RunnerConfig{Name: "r", Repo: "o/r", Host: "h", CPUs: "8", Memory: "12g"}))
+	if err == nil || !strings.Contains(err.Error(), "require runner_mode: container") {
+		t.Errorf("cpus/memory on a native runner should be rejected, got %v", err)
+	}
+	err = valid(base(RunnerConfig{Name: "r", Repo: "o/r", Host: "h", RunnerMode: RunnerModeNative, CPUs: "4"}))
+	if err == nil || !strings.Contains(err.Error(), "require runner_mode: container") {
+		t.Errorf("explicit native + cpus should be rejected, got %v", err)
+	}
+	// Container runner with no caps still validates (the common existing pool).
+	if err := valid(base(container())); err != nil {
+		t.Errorf("container runner without caps should validate: %v", err)
+	}
+}
+
+// TestAppendJoinedLabelsFromCoreMatchesEffectiveLabelsForInstance pins the
+// byte-level label renderer to the slice-level registration API: for every
+// profile/count/index combination the ", "-joined forms must be identical, so
+// the `<label>-<N>` alias rule cannot drift between what gets REGISTERED on
+// GitHub (EffectiveLabelsForInstance) and what Status() DISPLAYS
+// (AppendJoinedLabelsFromCore, the allocation-lean form used on the per-tick
+// hot path).
+func TestAppendJoinedLabelsFromCoreMatchesEffectiveLabelsForInstance(t *testing.T) {
+	t.Parallel()
+	cases := []RunnerConfig{
+		{Name: "r"},           // defaults, count unset (=1)
+		{Name: "r", Count: 1}, // explicit count 1
+		{Name: "r", Count: 2}, // defaults + aliases
+		{Name: "r", Count: 3, Labels: []string{"ci", "gpu"}}, // explicit labels + aliases
+		{Name: "r", Count: 2, Profile: "agentic"},            // agentic appended + aliases
+		{Name: "r", Count: 16},                               // two-digit suffix
+	}
+	for i, rc := range cases {
+		core := rc.CoreLabels("linux", "amd64")
+		for _, idx := range []int{0, 1, 2, 15} {
+			want := strings.Join(rc.EffectiveLabelsForInstance("linux", "amd64", idx), ", ")
+			got := string(AppendJoinedLabelsFromCore(nil, core, rc.Count, idx))
+			if got != want {
+				t.Errorf("case %d idx %d: AppendJoinedLabelsFromCore = %q, want EffectiveLabelsForInstance join %q", i, idx, got, want)
+			}
+		}
 	}
 }
 
