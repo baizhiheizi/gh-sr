@@ -9,15 +9,27 @@
   "checks": [
     {
       "area": "repo_assist_prs",
-      "checked_at": "2026-11-13",
+      "checked_at": "2026-11-14",
       "result": "acted",
-      "follow_up": "2026-11-12 trio fully merged: #635 standalone; #634's merge collapsed the stacked pair (both commit messages in 5551a66), so the superseded-probes branch never became its own PR. New draft test-agent-sock-short-path opened 2026-11-13."
+      "follow_up": "#639 (test-agent socket) merged 2026-11-14 as 0ab990f. New draft: CLAUDE.md corrections (branch repo-assist/basics-fix-claude-md). Open repo PRs from other agents: test-improver #642."
+    },
+    {
+      "area": "performance",
+      "checked_at": "2026-11-14",
+      "result": "no_actionable",
+      "follow_up": "Re-swept after #641: new runner code was bench-optimized in-PR (alloc-lean Status labels under bench-compare gate); hot paths remain one-round-trip (2026-11-06 sweep: dashboard sub-ms vs 5s tick, metrics combined per host, probes pinned)."
+    },
+    {
+      "area": "docs",
+      "checked_at": "2026-11-14",
+      "result": "acted",
+      "follow_up": "CLAUDE.md corrections drafted: config/runner.go nonexistent (real: internal/config/config.go), phantom EphemeralRunner env var (real: runners.yml ephemeral:true -> --ephemeral / GH_SR_RUNNER_EPHEMERAL), gh run testing claim wrong (tests use testut..."
     },
     {
       "area": "tests",
       "checked_at": "2026-11-13",
       "result": "acted",
-      "follow_up": "Fixed env-dependent AF_UNIX path-length failure in startTestAgent (branch repo-assist/test-agent-sock-short-path, draft PR 2026-11-13; race suite green). Thin spots left: integration-heavy paths; small untested helpers hasLabel (config) and Settings.ContainerNames (registry)."
+      "follow_up": "#639 merged. Thin spots: integration-heavy paths; small untested helpers hasLabel (config), Settings.ContainerNames (registry)."
     },
     {
       "area": "ci",
@@ -35,19 +47,7 @@
       "area": "hygiene",
       "checked_at": "2026-11-13",
       "result": "no_actionable",
-      "follow_up": "Workspace saga fully resolved: #591 root-cause fix covers every workflow incl. generated ones; maintainer's aw upgrade (8329f58, 2026-11-12) regenerated all lock files. broken-git guard stays in ci.yml/bench-compare.yml only, by design."
-    },
-    {
-      "area": "docs",
-      "checked_at": "2026-11-11",
-      "result": "acted",
-      "follow_up": "Changelog verified: rolling [Unreleased] is the convention. No release warranted: commits since v0.9.1 are internal (tests/refactors/docs) plus the dead-code sweeps. Docs cross-check merged as #624."
-    },
-    {
-      "area": "performance",
-      "checked_at": "2026-11-06",
-      "result": "no_actionable",
-      "follow_up": "Dashboard render sub-ms vs 5s tick, CollectHostMetrics one combined script per host in parallel, probes pinned one-round-trip. No measurable opportunity left."
+      "follow_up": "Task 5 sweep: helpers clean, zero TODO/FIXME, no dead code. Workspace saga resolved via #591 + maintainer aw upgrade regen. broken-git guard stays in ci.yml/bench-compare.yml by design."
     }
   ],
   "completed_actions": [],
