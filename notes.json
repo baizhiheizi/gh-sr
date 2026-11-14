@@ -11,7 +11,25 @@
       "area": "repo_assist_prs",
       "checked_at": "2026-11-14",
       "result": "acted",
-      "follow_up": "#639 (test-agent socket) merged 2026-11-14 as 0ab990f. New draft: CLAUDE.md corrections (branch repo-assist/basics-fix-claude-md). Open repo PRs from other agents: test-improver #642."
+      "follow_up": "#643 (CLAUDE.md corrections) merged 2026-11-14. New draft: test(registry) ContainerNames fallback/order (branch repo-assist/test-container-names). Other agents' PRs: test-improver #642 (SSH host tests, open draft)."
+    },
+    {
+      "area": "tests",
+      "checked_at": "2026-11-14",
+      "result": "acted",
+      "follow_up": "ContainerNames (registry) was the last genuine helper gap -> covered by new draft. hasLabel (config) assessed: indirectly covered via TestEffectiveLabels* agentic paths, dedicated test not warranted. Remaining thin spots: integration-heavy paths (host connection lifecycle, cmd wiring)."
+    },
+    {
+      "area": "dependencies",
+      "checked_at": "2026-11-14",
+      "result": "no_actionable",
+      "follow_up": "Zero open Dependabot alerts; no Dependabot PRs. go.mod current (cobra 1.10.2, x/term 0.48, go 1.26.7). Weekly gomod schedule covers the rest."
+    },
+    {
+      "area": "ci",
+      "checked_at": "2026-11-14",
+      "result": "no_actionable",
+      "follow_up": "Green on main through run 907 (post #643)."
     },
     {
       "area": "performance",
@@ -23,31 +41,13 @@
       "area": "docs",
       "checked_at": "2026-11-14",
       "result": "acted",
-      "follow_up": "CLAUDE.md corrections drafted: config/runner.go nonexistent (real: internal/config/config.go), phantom EphemeralRunner env var (real: runners.yml ephemeral:true -> --ephemeral / GH_SR_RUNNER_EPHEMERAL), gh run testing claim wrong (tests use testut..."
-    },
-    {
-      "area": "tests",
-      "checked_at": "2026-11-13",
-      "result": "acted",
-      "follow_up": "#639 merged. Thin spots: integration-heavy paths; small untested helpers hasLabel (config), Settings.ContainerNames (registry)."
-    },
-    {
-      "area": "ci",
-      "checked_at": "2026-11-13",
-      "result": "no_actionable",
-      "follow_up": "Green on main through runs 897/898 (post aw-upgrade 8329f58 + fix 1b8395b)."
-    },
-    {
-      "area": "dependencies",
-      "checked_at": "2026-11-13",
-      "result": "no_actionable",
-      "follow_up": "No open Dependabot alerts or PRs; #636 (x/term 0.48) and #637/#638 (gh-aw-actions 1.2.1) merged 2026-11-12. Weekly gomod schedule covers the rest."
+      "follow_up": "CLAUDE.md corrections merged as #643 (2026-11-14, run 907 green). Docs/CLI cross-check re-run due after next CLI surface change (full pass 2026-11-10, fixes merged as #624)."
     },
     {
       "area": "hygiene",
       "checked_at": "2026-11-13",
       "result": "no_actionable",
-      "follow_up": "Task 5 sweep: helpers clean, zero TODO/FIXME, no dead code. Workspace saga resolved via #591 + maintainer aw upgrade regen. broken-git guard stays in ci.yml/bench-compare.yml by design."
+      "follow_up": "Task 5 sweep: helpers clean, zero TODO/FIXME, no dead code (deadcode ./... false positives only). broken-git guard stays in ci.yml/bench-compare.yml by design."
     }
   ],
   "completed_actions": [],
