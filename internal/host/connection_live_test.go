@@ -2,6 +2,7 @@ package host
 
 import (
 	"bufio"
+	"bytes"
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/pem"
@@ -14,6 +15,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/knownhosts"
@@ -47,9 +49,14 @@ type testSSHServer struct {
 	rejectSessions bool
 	hostPub        ssh.PublicKey
 
-	mu       sync.Mutex
-	commands []string
-	uploads  []scpUpload
+	mu           sync.Mutex
+	commands     []string
+	uploads      []scpUpload
+	sessionOpens int
+	// sessionOpened is signalled every time a session channel is accepted,
+	// so a test can wait for the server to reach that point instead of
+	// racing on the sessionOpens counter.
+	sessionOpened chan struct{}
 }
 
 func startTestSSHServer(t *testing.T, handle func(cmd string, ch ssh.Channel) execOutcome) *testSSHServer {
@@ -71,11 +78,12 @@ func startTestSSHServer(t *testing.T, handle func(cmd string, ch ssh.Channel) ex
 		t.Fatal(err)
 	}
 	s := &testSSHServer{
-		t:       t,
-		ln:      ln,
-		cfg:     cfg,
-		handle:  handle,
-		hostPub: signer.PublicKey(),
+		t:             t,
+		ln:            ln,
+		cfg:           cfg,
+		handle:        handle,
+		hostPub:       signer.PublicKey(),
+		sessionOpened: make(chan struct{}, 4),
 	}
 	go s.serve()
 	t.Cleanup(func() { ln.Close() })
@@ -94,6 +102,39 @@ func (s *testSSHServer) servedUploads() []scpUpload {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return append([]scpUpload(nil), s.uploads...)
+}
+
+// sessionOpenCount reports how many session channels the server accepted.
+func (s *testSSHServer) sessionOpenCount() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.sessionOpens
+}
+
+// setRejectSessions makes the server reject session channels, so a client
+// NewSession call fails. It is safe to call before the client dials.
+func (s *testSSHServer) setRejectSessions(reject bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.rejectSessions = reject
+}
+
+// rejectSessionsEnabled reports whether session channels are rejected.
+func (s *testSSHServer) rejectSessionsEnabled() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.rejectSessions
+}
+
+// waitForSessionOpen blocks until the server has accepted a session channel,
+// so a test can assert on the counter without racing the server goroutine.
+func (s *testSSHServer) waitForSessionOpen(t *testing.T) {
+	t.Helper()
+	select {
+	case <-s.sessionOpened:
+	case <-time.After(5 * time.Second):
+		t.Fatal("server never accepted a session channel")
+	}
 }
 
 func (s *testSSHServer) serve() {
@@ -118,13 +159,20 @@ func (s *testSSHServer) handleConn(c net.Conn) {
 			newCh.Reject(ssh.UnknownChannelType, "only session channels are supported")
 			continue
 		}
-		if s.rejectSessions {
+		if s.rejectSessionsEnabled() {
 			newCh.Reject(ssh.Prohibited, "sessions disabled")
 			continue
 		}
 		ch, chReqs, err := newCh.Accept()
 		if err != nil {
 			continue
+		}
+		s.mu.Lock()
+		s.sessionOpens++
+		s.mu.Unlock()
+		select {
+		case s.sessionOpened <- struct{}{}:
+		default:
 		}
 		go s.handleSession(ch, chReqs)
 	}
@@ -168,37 +216,85 @@ func (s *testSSHServer) handleSession(ch ssh.Channel, reqs <-chan *ssh.Request) 
 	}
 }
 
+// scpSinkTimeout bounds how long the server waits for an scp frame before
+// giving up. Without it, a client regression that never sends a header (or
+// omits the trailing NUL) would block until the package test timeout instead
+// of failing the subtest.
+const scpSinkTimeout = 10 * time.Second
+
+// scpSinkResult carries the outcome of one scp sink read.
+type scpSinkResult struct {
+	upload scpUpload
+	err    error
+}
+
 // handleScpSink consumes the scp sink protocol Upload speaks: a
 // "C0644 <size> <name>\n" header, exactly <size> content bytes, and a
 // trailing NUL.
+//
+// A malformed frame is reported as a non-zero exit status rather than
+// panicking: the frame is produced by the code under test, so an index-out-of
+// range here would crash the whole test binary and take every other package's
+// results with it, instead of failing the one subtest that covers Upload.
 func (s *testSSHServer) handleScpSink(cmd string, ch ssh.Channel) {
+	done := make(chan scpSinkResult, 1)
+	go func() {
+		upload, err := readScpSink(ch)
+		done <- scpSinkResult{upload: upload, err: err}
+	}()
+
+	timer := time.NewTimer(scpSinkTimeout)
+	defer timer.Stop()
+
+	select {
+	case res := <-done:
+		if res.err != nil {
+			fmt.Fprintf(ch.Stderr(), "scp: %v\n", res.err)
+			ch.SendRequest("exit-status", false, ssh.Marshal(struct{ Status uint32 }{1}))
+			return
+		}
+		s.mu.Lock()
+		s.uploads = append(s.uploads, res.upload)
+		s.mu.Unlock()
+		ch.SendRequest("exit-status", false, ssh.Marshal(struct{ Status uint32 }{0}))
+	case <-timer.C:
+		fmt.Fprint(ch.Stderr(), "scp: timed out waiting for the transfer frame\n")
+		ch.SendRequest("exit-status", false, ssh.Marshal(struct{ Status uint32 }{1}))
+	}
+}
+
+// readScpSink reads one scp sink frame from ch and returns the parsed upload.
+// It records nothing: the caller decides what to do with the outcome.
+func readScpSink(ch ssh.Channel) (scpUpload, error) {
 	r := bufio.NewReader(ch)
 	header, err := r.ReadString('\n')
 	if err != nil {
-		fmt.Fprint(ch.Stderr(), "scp: reading header\n")
-		ch.SendRequest("exit-status", false, ssh.Marshal(struct{ Status uint32 }{1}))
-		return
+		return scpUpload{}, fmt.Errorf("reading header: %w", err)
 	}
 	fields := strings.Fields(header)
-	size, _ := strconv.ParseInt(fields[1], 10, 64)
+	if len(fields) < 3 {
+		return scpUpload{}, fmt.Errorf("malformed header %q: want %q", strings.TrimSpace(header), "C0644 <size> <name>")
+	}
+	size, err := strconv.ParseInt(fields[1], 10, 64)
+	if err != nil {
+		return scpUpload{}, fmt.Errorf("malformed size in header %q: %w", strings.TrimSpace(header), err)
+	}
+	if size < 0 {
+		return scpUpload{}, fmt.Errorf("negative size in header %q", strings.TrimSpace(header))
+	}
 	content := make([]byte, size)
 	if _, err := io.ReadFull(r, content); err != nil {
-		fmt.Fprint(ch.Stderr(), "scp: short read\n")
-		ch.SendRequest("exit-status", false, ssh.Marshal(struct{ Status uint32 }{1}))
-		return
+		return scpUpload{}, fmt.Errorf("short read: %w", err)
 	}
 	nul := make([]byte, 1)
 	_, readErr := io.ReadFull(r, nul)
-	s.mu.Lock()
-	s.uploads = append(s.uploads, scpUpload{
+	return scpUpload{
 		perms:       fields[0],
 		name:        fields[2],
 		size:        size,
 		content:     content,
 		trailingNUL: readErr == nil && nul[0] == 0,
-	})
-	s.mu.Unlock()
-	ch.SendRequest("exit-status", false, ssh.Marshal(struct{ Status uint32 }{0}))
+	}, nil
 }
 
 // installClientKey points HOME at a temp dir holding one usable ed25519 key
@@ -416,7 +512,7 @@ func TestConnectionRun(t *testing.T) {
 		srv := startTestSSHServer(t, func(cmd string, ch ssh.Channel) execOutcome {
 			return execOutcome{status: 0}
 		})
-		srv.rejectSessions = true
+		srv.setRejectSessions(true)
 		conn := dialTestServer(t, srv)
 		if _, err := conn.Run("true"); err == nil || !strings.Contains(err.Error(), "creating SSH session") {
 			t.Fatalf("Run with rejected sessions = %v, want creating-SSH-session error", err)
@@ -483,7 +579,7 @@ func TestConnectionUpload(t *testing.T) {
 		}
 	})
 
-	t.Run("missing local file fails without contacting the server", func(t *testing.T) {
+	t.Run("missing local file fails before running any remote command", func(t *testing.T) {
 		installClientKey(t)
 		srv := startTestSSHServer(t, func(cmd string, ch ssh.Channel) execOutcome {
 			return execOutcome{status: 0}
@@ -493,8 +589,28 @@ func TestConnectionUpload(t *testing.T) {
 		if err == nil || !strings.Contains(err.Error(), "opening local file") {
 			t.Fatalf("Upload(absent) = %v, want open-local-file error", err)
 		}
+		// Upload opens the SSH session before it opens the local file, so the
+		// server is contacted even though no transfer ever starts.
+		srv.waitForSessionOpen(t)
+		if opened := srv.sessionOpenCount(); opened != 1 {
+			t.Fatalf("server opened %d sessions, want 1", opened)
+		}
 		if served := srv.servedCommands(); len(served) != 0 {
 			t.Fatalf("server received commands %v, want none", served)
+		}
+	})
+
+	t.Run("session open failure surfaces as creating-SSH-session-for-upload", func(t *testing.T) {
+		installClientKey(t)
+		srv := startTestSSHServer(t, func(cmd string, ch ssh.Channel) execOutcome {
+			return execOutcome{status: 0}
+		})
+		srv.setRejectSessions(true)
+		conn := dialTestServer(t, srv)
+		src := writeSource(t, "x")
+		err := conn.Upload(src, "/remote/x")
+		if err == nil || !strings.Contains(err.Error(), "creating SSH session for upload") {
+			t.Fatalf("Upload with rejected sessions = %v, want creating-SSH-session-for-upload error", err)
 		}
 	})
 }
@@ -502,5 +618,65 @@ func TestConnectionUpload(t *testing.T) {
 func TestConnectionCloseWithoutClient(t *testing.T) {
 	if err := (&Connection{}).Close(); err != nil {
 		t.Fatalf("Close() on zero-value Connection = %v, want nil", err)
+	}
+}
+
+// fakeSSHChannel is an in-memory ssh.Channel used to drive readScpSink
+// directly, so malformed frames can be exercised without a live server.
+type fakeSSHChannel struct {
+	in     *bytes.Buffer
+	out    bytes.Buffer
+	stderr bytes.Buffer
+}
+
+func (c *fakeSSHChannel) Read(p []byte) (int, error)  { return c.in.Read(p) }
+func (c *fakeSSHChannel) Write(p []byte) (int, error) { return c.out.Write(p) }
+func (c *fakeSSHChannel) Close() error                { return nil }
+func (c *fakeSSHChannel) CloseWrite() error           { return nil }
+func (c *fakeSSHChannel) SendRequest(string, bool, []byte) (bool, error) {
+	return true, nil
+}
+func (c *fakeSSHChannel) Stderr() io.ReadWriter { return &c.stderr }
+
+func TestReadScpSink(t *testing.T) {
+	t.Run("parses a well-formed frame", func(t *testing.T) {
+		ch := &fakeSSHChannel{in: bytes.NewBufferString("C0644 5 hello\nabcde\x00")}
+		upload, err := readScpSink(ch)
+		if err != nil {
+			t.Fatalf("readScpSink: %v", err)
+		}
+		if upload.perms != "C0644" || upload.name != "hello" || upload.size != 5 {
+			t.Fatalf("upload = %+v, want C0644/hello/5", upload)
+		}
+		if string(upload.content) != "abcde" {
+			t.Fatalf("upload content = %q, want %q", upload.content, "abcde")
+		}
+		if !upload.trailingNUL {
+			t.Fatal("upload missing the trailing NUL sentinel")
+		}
+	})
+
+	// A malformed frame must surface as an error, not an index-out-of-range
+	// panic that would take the whole test binary down with it.
+	for _, tc := range []struct {
+		name    string
+		frame   string
+		wantErr string
+	}{
+		{name: "header with no size or name", frame: "C0644\n", wantErr: "malformed header"},
+		{name: "header with no name", frame: "C0644 5\n", wantErr: "malformed header"},
+		{name: "size is not a number", frame: "C0644 abc hello\n", wantErr: "malformed size"},
+		{name: "size is negative", frame: "C0644 -1 hello\n", wantErr: "negative size"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ch := &fakeSSHChannel{in: bytes.NewBufferString(tc.frame)}
+			upload, err := readScpSink(ch)
+			if err == nil {
+				t.Fatalf("readScpSink(%q) = %+v, want an error", tc.frame, upload)
+			}
+			if !strings.Contains(err.Error(), tc.wantErr) {
+				t.Fatalf("readScpSink(%q) error = %v, want it to mention %q", tc.frame, err, tc.wantErr)
+			}
+		})
 	}
 }
