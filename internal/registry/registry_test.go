@@ -88,6 +88,45 @@ func TestResolvedStoragePath(t *testing.T) {
 	}
 }
 
+// TestContainerNames pins the list doctor reconciles on-host gh-sr-registry*
+// containers against: index 0 always maps to the legacy ContainerName (existing
+// deployments, doctor output, and the disk-usage row depend on it), later
+// mirrors are ContainerNamePrefix + Name, and the order is deploy order. A
+// zero-value Settings (tests, disabled registry_mirror:) falls back to the
+// legacy single mirror instead of returning an empty list, which would make
+// doctor flag a healthy deployment as orphaned.
+func TestContainerNames(t *testing.T) {
+	t.Parallel()
+
+	s := Settings{}
+	got := s.ContainerNames()
+	if len(got) != 1 || got[0] != ContainerName {
+		t.Errorf("zero value: got %v, want [%s]", got, ContainerName)
+	}
+
+	s = Settings{Enabled: true, Mirrors: []MirrorSettings{{Name: "dockerhub", Port: DefaultPort}}}
+	got = s.ContainerNames()
+	if len(got) != 1 || got[0] != ContainerName {
+		t.Errorf("single mirror: got %v, want [%s]", got, ContainerName)
+	}
+
+	s = Settings{Enabled: true, Mirrors: []MirrorSettings{
+		{Name: "dockerhub", Port: DefaultPort},
+		{Name: "ghcr", Port: DefaultPort + 1},
+		{Name: "quay", Port: DefaultPort + 2},
+	}}
+	want := []string{ContainerName, ContainerNamePrefix + "ghcr", ContainerNamePrefix + "quay"}
+	got = s.ContainerNames()
+	if len(got) != len(want) {
+		t.Fatalf("multi mirror: got %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("name[%d]: got %q, want %q", i, got[i], want[i])
+		}
+	}
+}
+
 // TestMirrorStoragesQuotingPerPath guards the disk-usage measurement: every
 // mirror dir must reach du as its own argument. Quoting the joined list hands
 // du a single path containing spaces, which measures nothing and reports 0 for
