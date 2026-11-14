@@ -21,21 +21,20 @@ go build ./...       # Build all packages
 go test ./...        # Run tests
 go test -race ./... # Race-detector tests
 go vet ./...         # Vet
-gh run              # Use 'gh run' (not local binary) for testing
 ```
 
 ## Architecture
 
 - `cmd/gh-sr/`     — CLI entry point
-- `internal/`     — Core packages (agentic, autostart, config, doctor, editor, host, ops, runner, tui)
-- `config/`       — Configuration files and templates
+- `internal/`     — Core packages (agentic, autostart, cache, config, doctor, editor, host, hostshell, ops, registry, runner, tui; support packages: diskschedule, dockerutil, probe, table, testutil)
+- `config/`       — Sample `runners.yml` only; the configuration code lives in `internal/config/`
 - `scripts/`      — Helper scripts
 - `docs/`         — Hugo docs site
 
 ## Key Files
 
 - `go.mod` — module definition
-- `config/runner.go` — runner configuration
+- `internal/config/config.go` — runner/pool configuration types and validation
 - `internal/runner/` — runner management logic
 
 ## Build
@@ -47,10 +46,10 @@ go build -o gh-sr ./cmd/gh-sr
 
 ## Testing
 
-Tests interact with `gh run` (GitHub CLI), not the local `gh-sr` binary. Use the actual `gh` binary for integration testing.
+Tests are Go unit tests; remote host commands are faked with `testutil.MockExecutor` (implements `host.Executor`), so no `gh` or `gh-sr` binary is required. Use the real `gh` binary only for manual integration checks.
 
 ## Gotchas
 
-- The project uses `gh run` for all GitHub Actions runner interactions
-- `gh-sr` is a wrapper CLI, not a library
-- Self-hosted runner registration uses ephemeral runners with `os.Setenv("EphemeralRunner", "true")`
+- GitHub REST calls are plain `net/http` in `internal/runner/github.go`; the token is resolved from the `gh` CLI's auth (go-gh, see `internal/config/ghauth.go`) — gh-sr never shells out to `gh`
+- `gh-sr` is a gh CLI extension binary (`gh sr`), not a library
+- Ephemeral runners are opt-in per pool: runners.yml `ephemeral: true` becomes `--ephemeral` on `config.sh` (native mode) / the `GH_SR_RUNNER_EPHEMERAL` env var read by the container entrypoint
