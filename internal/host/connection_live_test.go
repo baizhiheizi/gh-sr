@@ -222,6 +222,13 @@ func (s *testSSHServer) handleSession(ch ssh.Channel, reqs <-chan *ssh.Request) 
 // of failing the subtest.
 const scpSinkTimeout = 10 * time.Second
 
+// maxScpFrameSize bounds how many bytes the harness allocates for one
+// transfer. A corrupt header claiming an enormous size would otherwise
+// exhaust memory and kill the test binary — the same class of failure as the
+// index-out-of-range panic this guard exists to prevent. Real transfers are
+// orders of magnitude smaller than this.
+const maxScpFrameSize = 64 << 20 // 64 MiB
+
 // scpSinkResult carries the outcome of one scp sink read.
 type scpSinkResult struct {
 	upload scpUpload
@@ -281,6 +288,9 @@ func readScpSink(ch ssh.Channel) (scpUpload, error) {
 	}
 	if size < 0 {
 		return scpUpload{}, fmt.Errorf("negative size in header %q", strings.TrimSpace(header))
+	}
+	if size > maxScpFrameSize {
+		return scpUpload{}, fmt.Errorf("size %d in header %q exceeds the %d byte limit", size, strings.TrimSpace(header), maxScpFrameSize)
 	}
 	content := make([]byte, size)
 	if _, err := io.ReadFull(r, content); err != nil {
@@ -667,6 +677,7 @@ func TestReadScpSink(t *testing.T) {
 		{name: "header with no name", frame: "C0644 5\n", wantErr: "malformed header"},
 		{name: "size is not a number", frame: "C0644 abc hello\n", wantErr: "malformed size"},
 		{name: "size is negative", frame: "C0644 -1 hello\n", wantErr: "negative size"},
+		{name: "size exceeds the frame limit", frame: "C0644 134217729 hello\n", wantErr: "exceeds the"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			ch := &fakeSSHChannel{in: bytes.NewBufferString(tc.frame)}
