@@ -30,10 +30,15 @@ const statusScenarioVersion = "2.320.0"
 
 // nativeStatusMock answers the per-instance probe shape for a healthy native
 // Linux runner: svc.sh present, a user-level systemd unit installed, and a
-// .runner-version file. The per-instance path costs two probes per instance —
-// the combined marker probe and the systemctl state probe — which is the
-// shape of a real svc.sh-managed runner.
+// .runner-version file. The per-instance path costs one probe per instance —
+// the one-shot script, answered with the same probe-tagged line the batch
+// emits — which is the shape of a real svc.sh-managed runner. The marker /
+// is-active routes below serve the Go-orchestrated fallback path (one-shot
+// SSH error) and predate the fragment unification.
 func nativeStatusMock(cmd string) (string, error) {
+	if strings.Contains(cmd, nativeStatusBatchTag) {
+		return nativeStatusBatchTag + "1|running|" + statusScenarioVersion + "\n", nil
+	}
 	if strings.Contains(cmd, "systemctl is-active") {
 		return "active\n", nil
 	}
@@ -92,10 +97,13 @@ func batchScriptRowCount(cmd string) int {
 // statusBatchRunFn routes a mock executor by probe shape: the batch script
 // gets its composed per-instance answer, everything else falls to fallbackFn
 // (the per-instance probes). batchErr != nil simulates a failing batch
-// transport so the benchmark can measure the fallback path.
+// transport so the benchmark can measure the fallback path. The batch script
+// is the only command carrying the remote heredoc loop — the per-instance
+// one-shot shares the script header (and, for native, the probe tag), so
+// routing on the header alone would sentinel the one-shots too.
 func statusBatchRunFn(batchErr error, batchOut func(cmd string) (string, error), fallbackFn func(cmd string) (string, error)) func(string) (string, error) {
 	return func(cmd string) (string, error) {
-		if strings.Contains(cmd, statusBatchScriptHeader) {
+		if strings.Contains(cmd, "<<'"+statusBatchRowsDelim+"'") {
 			if batchErr != nil {
 				return "", batchErr
 			}
@@ -115,9 +123,9 @@ func statusBatchRunFn(batchErr error, batchOut func(cmd string) (string, error),
 // The batch scripts (internal/runner/status_batch.go) answer every instance
 // of the host in ONE round trip — 1.000 regardless of instance count. The
 // Fallback benchmark forces the per-instance path (batch transport error) to
-// document the degraded shape it must stay at least as good as: two probes
-// per native instance (marker probe + systemctl state probe), one per
-// container instance.
+// document the degraded shape it must stay at least as good as: one one-shot
+// probe per instance (native and container alike — the native one-shot runs
+// the same fragment the batch embeds).
 func BenchmarkManagerStatusRoundTripsNative1(b *testing.B) {
 	benchmarkManagerStatusRoundTrips(b, config.RunnerModeNative, 1, false)
 }
