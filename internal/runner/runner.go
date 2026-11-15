@@ -13,6 +13,7 @@ import (
 	"github.com/an-lee/gh-sr/internal/config"
 	"github.com/an-lee/gh-sr/internal/host"
 	"github.com/an-lee/gh-sr/internal/registry"
+	"github.com/an-lee/gh-sr/internal/sharedcache"
 )
 
 type Manager struct {
@@ -51,30 +52,15 @@ type Manager struct {
 	// alternative registry (runners.yml npm_registry; e.g. a mirror reachable
 	// without the WAN proxy). Empty = npm's default registry.
 	NPMRegistry string
-	// SharedNPMCache mounts the host-wide gh-sr-npm-cache named volume at
-	// /home/runner/.npm in every container-mode runner (runners.yml
-	// shared_caches.npm), so cold npm installs are paid once per host.
-	SharedNPMCache bool
-	// SharedRunnerCache mounts gh-sr-runner-cache at /home/runner/.cache
-	// (runners.yml shared_caches.home_cache) for job-time download caches
-	// (pinned Chrome-for-Testing builds, pip, …).
-	SharedRunnerCache bool
-	// SharedGradleCache mounts gh-sr-gradle-cache at /home/runner/.gradle
-	// (runners.yml shared_caches.gradle), so Gradle dependency and wrapper
-	// caches are paid once per host and survive rebuilds.
-	SharedGradleCache bool
-	// SharedPubCache mounts gh-sr-pub-cache at /home/runner/.pub-cache
-	// (runners.yml shared_caches.pub) — one Dart/Flutter package cache
-	// per host.
-	SharedPubCache bool
-	// SharedMiseData mounts gh-sr-mise-data at /home/runner/.local/share/mise
-	// (runners.yml shared_caches.mise), so mise tool installs are shared per
-	// host instead of re-downloaded per container.
-	SharedMiseData bool
-	// SharedAndroidSDK mounts gh-sr-android-sdk at /opt/android-sdk and
-	// exports ANDROID_SDK_ROOT to jobs (runners.yml shared_caches.android_sdk,
-	// opt-in). One Android SDK per host survives rebuilds.
-	SharedAndroidSDK bool
+	// SharedCaches lists the shared cache volumes to mount into every
+	// container-mode runner instance (runners.yml shared_caches). The single
+	// per-cache definition — volume name, container mount path, env export,
+	// default — lives in the sharedcache module; this is just the resolved
+	// enabled set, in table order. Empty = no shared volumes. Baked at
+	// `docker create`: containers predating an enablement keep the old
+	// mounts until recreated (doctor's checkContainerExtras guards that
+	// drift).
+	SharedCaches []sharedcache.Cache
 	// ContainerMTU, when > 0, forces the inner/outer Docker MTU for container-mode runners
 	// (overriding host egress MTU auto-detection). From runners.yml
 	// container_runner_image.mtu; set by ops before container setup. 0 = auto-detect.
