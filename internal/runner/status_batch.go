@@ -366,6 +366,13 @@ func nativeStatusBatchPrefix(h *host.Host) string {
 // separate from the h.Run call so tests can compare the emitted shell against
 // the batch script's copy of the fragment.
 //
+// It deliberately does NOT open with statusBatchScriptHeader: that constant
+// is the "this is a batch script" identity for header-based discriminators
+// (tests, mocks, gateways — see its doc), and the one-shot must not claim
+// it. The shapes stay distinguishable on the wire: only the batch script
+// carries the header and the remote heredoc loop, only the one-shot carries
+// the literal instance name.
+//
 // The rendered script is a pure function of (RunnerBaseDir, instance name),
 // and Status is the per-tick hot path — the TUI rebuilds the same ~2.5KB
 // script per instance on every refresh, which shows up as B/op churn on the
@@ -386,7 +393,6 @@ func nativeLocalStatusOneShotScript(h *host.Host, instanceName string) (string, 
 	base := autostart.ServiceBasename(san)
 	var b strings.Builder
 	b.Grow(4096)
-	b.WriteString(statusBatchScriptHeader + "\n")
 	b.WriteString(nativeStatusElevationGate())
 	b.WriteString("set -f\n")
 	fmt.Fprintf(&b, "dir=\"%s/%s\"\n", h.RunnerBaseDir(), instanceName)
