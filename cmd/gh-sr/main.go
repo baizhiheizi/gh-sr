@@ -216,10 +216,9 @@ auto-detects everything else, and writes a working config ready for gh sr up.`,
 			if err != nil {
 				return err
 			}
-			if _, err := os.Stat(envPath); os.IsNotExist(err) {
-				if err := os.WriteFile(envPath, []byte(config.EnvFileTemplate), 0o600); err != nil {
-					return err
-				}
+			if created, err := config.EnsureEnvFile(envPath); err != nil {
+				return err
+			} else if created {
 				fmt.Printf("Wrote %s\n", envPath)
 			}
 
@@ -301,21 +300,11 @@ func runQuickInit(runnersPath string, force bool) error {
 	}
 
 	profileStr := prompt(`Runner profile ("agentic" for GitHub Agentic Workflows, or empty)`, "")
-	profileLine := ""
-	if profileStr == "agentic" {
-		profileLine = "    profile: agentic\n"
-	}
 
-	seed := fmt.Sprintf(`github: {}
-hosts:
-  %s:
-    addr: %s
-runners:
-  - name: %s
-    repo: %s
-    host: %s
-    count: %d
-%s`, hostName, addr, runnerName, repo, hostName, count, profileLine)
+	seedProfile := ""
+	if profileStr == "agentic" {
+		seedProfile = "agentic"
+	}
 
 	if _, err := os.Stat(runnersPath); err == nil && !force {
 		fmt.Printf("\n%s already exists. Overwrite? [y/N]: ", runnersPath)
@@ -327,15 +316,19 @@ runners:
 		}
 	}
 
-	if err := os.WriteFile(runnersPath, []byte(seed), 0o600); err != nil {
+	// The seed goes through the same AddHost/AddRunnerFull mutation
+	// interface every other config edit uses, and is validated with Load
+	// before QuickInitSeed returns.
+	if err := config.QuickInitSeed(runnersPath, hostName, addr, config.AddRunnerOpts{
+		Name:    runnerName,
+		Repo:    repo,
+		Host:    hostName,
+		Count:   count,
+		Profile: seedProfile,
+	}); err != nil {
 		return err
 	}
 	fmt.Printf("\nWrote %s\n", runnersPath)
-
-	// Validate the generated config loads.
-	if _, err := config.Load(runnersPath); err != nil {
-		return fmt.Errorf("generated config is invalid: %w", err)
-	}
 
 	fmt.Println()
 	fmt.Println("Config generated! Summary:")
@@ -580,21 +573,12 @@ func configEditEnvCmd() *cobra.Command {
 		Use:   "edit-env",
 		Short: "Open ~/.gh-sr/env in $VISUAL or $EDITOR",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			dir, err := config.SrDir()
-			if err != nil {
-				return err
-			}
-			if err := os.MkdirAll(dir, 0o700); err != nil {
-				return err
-			}
 			envPath, err := config.EnvFilePath()
 			if err != nil {
 				return err
 			}
-			if _, err := os.Stat(envPath); os.IsNotExist(err) {
-				if err := os.WriteFile(envPath, []byte(config.EnvFileTemplate), 0o600); err != nil {
-					return err
-				}
+			if _, err := config.EnsureEnvFile(envPath); err != nil {
+				return err
 			}
 			if err := editor.Open(envPath); err != nil {
 				return err

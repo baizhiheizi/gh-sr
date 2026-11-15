@@ -58,3 +58,21 @@ func BootstrapEnv() error {
 	}
 	return ApplyEnvFile(p)
 }
+
+// EnsureEnvFile creates the env file at path from EnvFileTemplate when it is
+// missing (parent directory included), and reports whether it created one.
+// It is the one implementation behind `gh sr init`, `gh sr config edit-env`,
+// and the dashboard's edit-env action — previously three copies of
+// mkdir + stat + write that could drift. An existing file is never touched.
+func EnsureEnvFile(path string) (created bool, err error) {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return false, err
+	}
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		if err := os.WriteFile(path, []byte(EnvFileTemplate), 0o600); err != nil {
+			return false, err
+		}
+		return true, nil
+	}
+	return false, nil
+}

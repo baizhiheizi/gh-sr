@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -608,7 +607,7 @@ func (m *dashboardModel) updateGlobalMenu(key string) tea.Cmd {
 			})
 		case 6:
 			m.panel = panelMain
-			if err := ensureEnvFile(m.opts.EnvPath); err != nil {
+			if _, err := config.EnsureEnvFile(m.opts.EnvPath); err != nil {
 				m.lastErr = err.Error()
 				return nil
 			}
@@ -790,17 +789,6 @@ func (m *dashboardModel) sortedRepoNames() []string {
 	}
 	sort.Strings(out)
 	return out
-}
-
-func ensureEnvFile(path string) error {
-	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return err
-	}
-	if _, err := os.Stat(path); os.IsNotExist(err) {
-		return os.WriteFile(path, []byte(config.EnvFileTemplate), 0o600)
-	}
-	return nil
 }
 
 func tickEvery(d time.Duration) tea.Cmd {
