@@ -1086,33 +1086,16 @@ func checkOrphanRunners(w io.Writer, hostName string, h *host.Host, runners []co
 
 func checkRunnerDiskUsage(w io.Writer, hostName string, h *host.Host, runners []config.RunnerConfig, r *Result) {
 	threshold := runner.DiskWarnThresholdBytes()
-	rcByInstance := make(map[string]*config.RunnerConfig)
-	for i := range runners {
-		rc := &runners[i]
-		if rc.Host != hostName {
-			continue
-		}
-		for _, inst := range rc.InstanceNames() {
-			rcByInstance[inst] = rc
-		}
+	inv := runner.HostInventoryFor(h, runners, hostName, true)
+	if inv.ListErr != nil {
+		// Degradation policy: still report the configured instances, but say
+		// why the on-disk half (and any orphans) is missing instead of
+		// silently dropping them.
+		printLine(w, sevWarn, hostName, fmt.Sprintf("disk: could not list on-disk runner directories: %v", inv.ListErr))
+		r.Warn++
 	}
-
-	seen := make(map[string]struct{})
-	instances := make([]string, 0, len(rcByInstance))
-	for inst := range rcByInstance {
-		instances = append(instances, inst)
-		seen[inst] = struct{}{}
-	}
-	if diskDirs, err := runner.ListRunnerInstanceDirs(h); err == nil {
-		for _, inst := range diskDirs {
-			if _, ok := seen[inst]; ok {
-				continue
-			}
-			seen[inst] = struct{}{}
-			instances = append(instances, inst)
-		}
-	}
-	sort.Strings(instances)
+	instances := inv.Names()
+	rcByInstance := inv.ConfigByInstance()
 
 	// One batched SSH round-trip per host replaces the prior per-instance
 	// MeasureDiskUsage loop (N+1 fold; matches the win-class of PRs

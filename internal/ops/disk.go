@@ -69,30 +69,6 @@ func diskStatusMapsFrom(statuses []runner.RunnerStatus) diskStatusMaps {
 	return m
 }
 
-func rcByInstanceForHost(runners []config.RunnerConfig, hostName string) map[string]*config.RunnerConfig {
-	out := make(map[string]*config.RunnerConfig)
-	for i := range runners {
-		rc := &runners[i]
-		if rc.Host != hostName {
-			continue
-		}
-		for _, inst := range rc.InstanceNames() {
-			out[inst] = rc
-		}
-	}
-	return out
-}
-
-func configuredInstancesOnHost(runners []config.RunnerConfig) map[string]struct{} {
-	out := make(map[string]struct{})
-	for _, rc := range runners {
-		for _, inst := range rc.InstanceNames() {
-			out[inst] = struct{}{}
-		}
-	}
-	return out
-}
-
 // CollectDiskUsage gathers disk usage for configured and orphan runner directories.
 func CollectDiskUsage(w io.Writer, cfg *config.Config, mgr *runner.Manager, filterHost, filterRepo string, nameArgs []string) ([]runner.DiskUsageEntry, error) {
 	runners, err := resolveAndFilter(w, cfg, filterHost, filterRepo, nameArgs)
@@ -112,31 +88,17 @@ func CollectDiskUsage(w io.Writer, cfg *config.Config, mgr *runner.Manager, filt
 
 	results := fanOutHosts(w, cfg, groups, func(w io.Writer, h *host.Host, g hostGroup) ([]runner.DiskUsageEntry, error) {
 		hcfg := cfg.Hosts[g.name]
-		seen := make(map[string]struct{})
-		configured := configuredInstancesOnHost(g.runners)
-		rcByInstance := rcByInstanceForHost(g.runners, g.name)
-
-		// Build the full set of instance names to measure (configured +
-		// orphan). One batched SSH round-trip per host — replaces the
-		// 1 ListRunnerInstanceDirs + len(instances) MeasureDiskUsage
-		// pattern that previously paid N+1 SSH round-trips per host.
-		instances := make([]string, 0, len(rcByInstance)+4)
-		for inst := range configured {
-			seen[inst] = struct{}{}
-			instances = append(instances, inst)
+		// Configured ∪ on-disk instances with their owning config, from the
+		// shared inventory module (one batched SSH round-trip per host
+		// replaces the 1 ListRunnerInstanceDirs + len(instances)
+		// MeasureDiskUsage pattern that previously paid N+1 SSH
+		// round-trips per host).
+		inv := runner.HostInventoryFor(h, g.runners, g.name, true)
+		if inv.ListErr != nil {
+			return nil, inv.ListErr
 		}
-
-		diskDirs, err := runner.ListRunnerInstanceDirs(h)
-		if err != nil {
-			return nil, err
-		}
-		for _, inst := range diskDirs {
-			if _, ok := seen[inst]; ok {
-				continue
-			}
-			seen[inst] = struct{}{}
-			instances = append(instances, inst)
-		}
+		instances := inv.Names()
+		rcByInstance := inv.ConfigByInstance()
 
 		entries := runner.MeasureDiskUsageBatch(h, g.name, instances, rcByInstance)
 		var out []runner.DiskUsageEntry
@@ -246,25 +208,22 @@ func PruneDisk(w io.Writer, cfg *config.Config, mgr *runner.Manager, filterHost,
 	}
 
 	results := fanOutHosts(w, cfg, groups, func(w io.Writer, h *host.Host, g hostGroup) ([]runner.PruneResult, error) {
-		configured := configuredInstancesOnHost(g.runners)
-		rcByInstance := rcByInstanceForHost(g.runners, g.name)
+		// The orphan-inclusion flag decides whether the inventory pays the
+		// dir-listing round trip: without it the targets are the configured
+		// set alone. Inventory order is sorted.
+		inv := runner.HostInventoryFor(h, g.runners, g.name, opts.IncludeOrphans)
+		if inv.ListErr != nil {
+			return nil, inv.ListErr
+		}
+		rcByInstance := inv.ConfigByInstance()
 
 		var targets []string
-		for inst := range configured {
-			targets = append(targets, inst)
-		}
-		if opts.IncludeOrphans {
-			diskDirs, err := runner.ListRunnerInstanceDirs(h)
-			if err != nil {
-				return nil, err
+		for _, inst := range inv.Instances {
+			if inst.Config == nil && !opts.IncludeOrphans {
+				continue
 			}
-			for _, inst := range diskDirs {
-				if _, ok := configured[inst]; !ok {
-					targets = append(targets, inst)
-				}
-			}
+			targets = append(targets, inst.Name)
 		}
-		sort.Strings(targets)
 
 		var out []runner.PruneResult
 		for _, inst := range targets {
