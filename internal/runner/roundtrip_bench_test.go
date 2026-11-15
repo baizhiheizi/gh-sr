@@ -30,10 +30,15 @@ const statusScenarioVersion = "2.320.0"
 
 // nativeStatusMock answers the per-instance probe shape for a healthy native
 // Linux runner: svc.sh present, a user-level systemd unit installed, and a
-// .runner-version file. The per-instance path costs two probes per instance —
-// the combined marker probe and the systemctl state probe — which is the
-// shape of a real svc.sh-managed runner.
+// .runner-version file. The per-instance path costs one probe per instance —
+// the one-shot script, answered with the same probe-tagged line the batch
+// emits — which is the shape of a real svc.sh-managed runner. The marker /
+// is-active routes below serve the Go-orchestrated fallback path (one-shot
+// SSH error) and predate the fragment unification.
 func nativeStatusMock(cmd string) (string, error) {
+	if strings.Contains(cmd, nativeStatusBatchTag) {
+		return nativeStatusBatchTag + "1|running|" + statusScenarioVersion + "\n", nil
+	}
 	if strings.Contains(cmd, "systemctl is-active") {
 		return "active\n", nil
 	}

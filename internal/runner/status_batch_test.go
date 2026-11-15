@@ -330,7 +330,9 @@ func TestManagerStatusBatchNativeVersionDash(t *testing.T) {
 func TestManagerStatusBatchFallback(t *testing.T) {
 	sentinel := errors.New("ssh down")
 	mock := &testutil.MockExecutor{RunFn: func(cmd string) (string, error) {
-		if strings.Contains(cmd, statusBatchScriptHeader) {
+		// The batch attempt is the only shape with the remote loop; the
+		// per-instance one-shot shares the script header and the probe tag.
+		if strings.Contains(cmd, "while IFS='|' read -r inst base") {
 			return "", sentinel
 		}
 		return nativeStatusMock(cmd)
@@ -342,9 +344,9 @@ func TestManagerStatusBatchFallback(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Fallback shape: 1 batch attempt + 2 probes per instance.
-	if len(mock.Calls) != 1+2*2 {
-		t.Errorf("%d round trips, want 5 (1 failed batch + 2 per instance)", len(mock.Calls))
+	// Fallback shape: 1 batch attempt + 1 one-shot per instance.
+	if len(mock.Calls) != 1+2*1 {
+		t.Errorf("%d round trips, want 3 (1 failed batch + 1 one-shot per instance)", len(mock.Calls))
 	}
 	for i, s := range statuses {
 		if s.Local != "running" || s.ContainerImageBuild != statusScenarioVersion {
@@ -358,7 +360,9 @@ func TestManagerStatusBatchFallback(t *testing.T) {
 // per-instance fallback rather than a silently guessed dashboard row.
 func TestManagerStatusBatchMalformedOutputFallsBack(t *testing.T) {
 	mock := &testutil.MockExecutor{RunFn: func(cmd string) (string, error) {
-		if strings.Contains(cmd, statusBatchScriptHeader) {
+		// Batch loop only (see TestManagerStatusBatchFallback): the duplicate
+		// index must reject the whole batch, not poison the one-shots.
+		if strings.Contains(cmd, "while IFS='|' read -r inst base") {
 			return nativeStatusBatchTag + "1|running|2.320.0\n" +
 				nativeStatusBatchTag + "2|stopped|\n" +
 				nativeStatusBatchTag + "1|stopped|\n", nil
@@ -372,8 +376,8 @@ func TestManagerStatusBatchMalformedOutputFallsBack(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(mock.Calls) != 1+2*2 {
-		t.Errorf("%d round trips, want 5 (1 rejected batch + 2 per instance)", len(mock.Calls))
+	if len(mock.Calls) != 1+2*1 {
+		t.Errorf("%d round trips, want 3 (1 rejected batch + 1 one-shot per instance)", len(mock.Calls))
 	}
 	for i, s := range statuses {
 		if s.Local != "running" {
@@ -454,6 +458,11 @@ func TestManagerStatusNonLinuxSkipsBatch(t *testing.T) {
 // POSIX shell with shimmed systemctl/sudo/id binaries and asserts the
 // emitted markers for every state-machine branch, including the
 // system-level systemd unit path reached through `sudo -n`.
+// TestNativeStatusBatchScriptShell executes the batch script under a real
+// POSIX shell with systemctl/sudo/id shims, asserting the per-scenario
+// payloads. TestNativeStatusOneShotScriptShell runs the identical scenario
+// table against the one-shot script, so batch vs per-instance agreement is
+// enforced by execution, not by comment.
 func TestNativeStatusBatchScriptShell(t *testing.T) {
 	if runtime.GOOS != "linux" {
 		t.Skip("POSIX-shell scenario test needs a Linux host")
@@ -469,91 +478,128 @@ func TestNativeStatusBatchScriptShell(t *testing.T) {
 		t.Fatal("row build failed")
 	}
 	prefix := nativeStatusBatchPrefix(h)
+	runNativeStatusScenarios(t, shPath, func() string {
+		return renderStatusBatchScript(prefix, rows)
+	})
+}
 
-	scenarios := []struct {
-		name       string
-		files      []string // paths relative to the instance dir; dirs created as needed
-		unit       string   // ".service" contents (svc.sh branch)
-		svcSh      bool
-		userUnit   bool
-		sysUnit    bool   // install a system-level unit (path injected into the script)
-		svcState   string // systemctl answer for the svc.sh branch
-		userState  string // systemctl --user answer
-		sysState   string // systemctl answer on the `$SUDO systemctl` path
-		sudoOK     string // "1" → passwordless sudo works
-		want       string // "<local>|<version>" tail
-		wantSudo   string // assert the sudo shim forwarded this exact command
-		wantNoSudo bool   // assert the sudo shim never forwarded a command
-	}{
-		{
-			name: "svc active", svcSh: true, unit: "ghsr-runner-ci-1.service", svcState: "active",
-			files: []string{".runner-version:2.320.0"}, want: "running|2.320.0",
-		},
-		{
-			name: "svc failed maps to stopped", svcSh: true, unit: "ghsr-runner-ci-1.service", svcState: "failed",
-			files: []string{".runner-version:2.320.0"}, want: "stopped|2.320.0",
-		},
-		{
-			name: "svc inactive maps to stopped", svcSh: true, unit: "ghsr-runner-ci-1.service", svcState: "inactive",
-			files: []string{".runner-version:2.320.0"}, want: "stopped|2.320.0",
-		},
-		{
-			name: "svc.sh without .service falls to pid file", svcSh: true,
-			files: []string{".runner", ".runner_pid:999999999"}, want: "stopped|",
-		},
-		{
-			name: "user unit failed maps to service error", userUnit: true, userState: "failed",
-			files: []string{".runner-version:2.320.0"}, want: "service error|2.320.0",
-		},
-		{
-			name: "user unit activating maps to service error", userUnit: true, userState: "activating",
-			files: []string{".runner-version:2.320.0"}, want: "service error|2.320.0",
-		},
-		{
-			name: "user unit inactive falls to live pid", userUnit: true, userState: "inactive",
-			files: []string{".runner", ".runner_pid:self", ".runner-version:2.320.0"}, want: "running|2.320.0",
-		},
-		{
-			name: "user unit inactive with dead pid", userUnit: true, userState: "inactive",
-			files: []string{".runner", ".runner_pid:999999999"}, want: "stopped|",
-		},
-		{
-			name: "empty pid file is stopped not unknown", userUnit: true, userState: "inactive",
-			files: []string{".runner", ".runner_pid:", ".runner-version:2.320.0"}, want: "stopped|2.320.0",
-		},
-		{
-			name: "no pid file is stopped", userUnit: true, userState: "inactive",
-			files: []string{".runner", ".runner-version:2.320.0"}, want: "stopped|2.320.0",
-		},
-		{
-			name: "nothing installed", want: "not installed|",
-		},
-		{
-			name: "multiline version collapses", userUnit: true, userState: "inactive",
-			files: []string{".runner", ".runner_pid:999999999", ".runner-version:a\nb"}, want: "stopped|a b",
-		},
-		{
-			name: "system unit active uses sudo -n", sysUnit: true, sudoOK: "1", sysState: "active",
-			files:      []string{".runner-version:2.320.0"},
-			want:       "running|2.320.0",
-			wantSudo:   "systemctl is-active ghsr-runner-ci-1.service",
-			wantNoSudo: false,
-		},
-		{
-			name: "system unit failed maps to service error via sudo -n", sysUnit: true, sudoOK: "1", sysState: "failed",
-			files:    []string{".runner-version:2.320.0"},
-			want:     "service error|2.320.0",
-			wantSudo: "systemctl is-active ghsr-runner-ci-1.service",
-		},
-		{
-			name: "system unit without elevation falls back to pid file", sysUnit: true, sudoOK: "",
-			files:      []string{".runner", ".runner_pid:999999999"},
-			want:       "stopped|",
-			wantNoSudo: true,
-		},
+// TestNativeStatusOneShotScriptShell runs the same scenario table as
+// TestNativeStatusBatchScriptShell against the per-instance one-shot script.
+// Both shapes embed nativeStatusProbeBody, so every scenario must answer
+// identically — the equivalence the old "mirrors statusNativeState" comment
+// claimed.
+func TestNativeStatusOneShotScriptShell(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("POSIX-shell scenario test needs a Linux host")
+	}
+	shPath := "/bin/sh"
+	if _, err := os.Stat(shPath); err != nil {
+		t.Skipf("no %s: %v", shPath, err)
 	}
 
-	for _, sc := range scenarios {
+	h := batchTestHost(&testutil.MockExecutor{})
+	script, err := nativeLocalStatusOneShotScript(h, "ci-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	runNativeStatusScenarios(t, shPath, func() string { return script })
+}
+
+// nativeStatusScenario is one fixture row of the shared table; see
+// runNativeStatusScenarios for the harness.
+type nativeStatusScenario struct {
+	name       string
+	files      []string // paths relative to the instance dir; dirs created as needed
+	unit       string   // ".service" contents (svc.sh branch)
+	svcSh      bool
+	userUnit   bool
+	sysUnit    bool   // install a system-level unit (path injected into the script)
+	svcState   string // systemctl answer for the svc.sh branch
+	userState  string // systemctl --user answer
+	sysState   string // systemctl answer on the `$SUDO systemctl` path
+	sudoOK     string // "1" → passwordless sudo works
+	want       string // "<local>|<version>" tail
+	wantSudo   string // assert the sudo shim forwarded this exact command
+	wantNoSudo bool   // assert the sudo shim never forwarded a command
+}
+
+var nativeStatusScenarios = []nativeStatusScenario{
+	{
+		name: "svc active", svcSh: true, unit: "ghsr-runner-ci-1.service", svcState: "active",
+		files: []string{".runner-version:2.320.0"}, want: "running|2.320.0",
+	},
+	{
+		name: "svc failed maps to stopped", svcSh: true, unit: "ghsr-runner-ci-1.service", svcState: "failed",
+		files: []string{".runner-version:2.320.0"}, want: "stopped|2.320.0",
+	},
+	{
+		name: "svc inactive maps to stopped", svcSh: true, unit: "ghsr-runner-ci-1.service", svcState: "inactive",
+		files: []string{".runner-version:2.320.0"}, want: "stopped|2.320.0",
+	},
+	{
+		name: "svc.sh without .service falls to pid file", svcSh: true,
+		files: []string{".runner", ".runner_pid:999999999"}, want: "stopped|",
+	},
+	{
+		name: "user unit failed maps to service error", userUnit: true, userState: "failed",
+		files: []string{".runner-version:2.320.0"}, want: "service error|2.320.0",
+	},
+	{
+		name: "user unit activating maps to service error", userUnit: true, userState: "activating",
+		files: []string{".runner-version:2.320.0"}, want: "service error|2.320.0",
+	},
+	{
+		name: "user unit inactive falls to live pid", userUnit: true, userState: "inactive",
+		files: []string{".runner", ".runner_pid:self", ".runner-version:2.320.0"}, want: "running|2.320.0",
+	},
+	{
+		name: "user unit inactive with dead pid", userUnit: true, userState: "inactive",
+		files: []string{".runner", ".runner_pid:999999999"}, want: "stopped|",
+	},
+	{
+		name: "empty pid file is stopped not unknown", userUnit: true, userState: "inactive",
+		files: []string{".runner", ".runner_pid:", ".runner-version:2.320.0"}, want: "stopped|2.320.0",
+	},
+	{
+		name: "no pid file is stopped", userUnit: true, userState: "inactive",
+		files: []string{".runner", ".runner-version:2.320.0"}, want: "stopped|2.320.0",
+	},
+	{
+		name: "nothing installed", want: "not installed|",
+	},
+	{
+		name: "multiline version collapses", userUnit: true, userState: "inactive",
+		files: []string{".runner", ".runner_pid:999999999", ".runner-version:a\nb"}, want: "stopped|a b",
+	},
+	{
+		name: "system unit active uses sudo -n", sysUnit: true, sudoOK: "1", sysState: "active",
+		files:      []string{".runner-version:2.320.0"},
+		want:       "running|2.320.0",
+		wantSudo:   "systemctl is-active ghsr-runner-ci-1.service",
+		wantNoSudo: false,
+	},
+	{
+		name: "system unit failed maps to service error via sudo -n", sysUnit: true, sudoOK: "1", sysState: "failed",
+		files:    []string{".runner-version:2.320.0"},
+		want:     "service error|2.320.0",
+		wantSudo: "systemctl is-active ghsr-runner-ci-1.service",
+	},
+	{
+		name: "system unit without elevation falls back to pid file", sysUnit: true, sudoOK: "",
+		files:      []string{".runner", ".runner_pid:999999999"},
+		want:       "stopped|",
+		wantNoSudo: true,
+	},
+}
+
+// runNativeStatusScenarios drives the shared native-status scenario table
+// against a script builder (batch render or one-shot render). Both shapes
+// emit the same probe tag at index 1 for the ci-1 row, so one assertion
+// covers both.
+func runNativeStatusScenarios(t *testing.T, shPath string, buildScript func() string) {
+	t.Helper()
+
+	for _, sc := range nativeStatusScenarios {
 		t.Run(sc.name, func(t *testing.T) {
 			home := t.TempDir()
 			dir := filepath.Join(home, ".gh-sr", "runners", "ci-1")
@@ -601,7 +647,7 @@ func TestNativeStatusBatchScriptShell(t *testing.T) {
 				}
 			}
 			script := strings.ReplaceAll(
-				renderStatusBatchScript(prefix, rows),
+				buildScript(),
 				"/etc/systemd/system/", sysDir+"/",
 			)
 
@@ -687,6 +733,37 @@ func TestContainerStatusProbeBody_IsSingleSourceOfTruth(t *testing.T) {
 	}
 	for name, script := range map[string]string{
 		"one-shot": containerLocalStatusOneShotScript("ci-1"),
+		"batch":    batch,
+	} {
+		if got := strings.Count(script, body); got != 1 {
+			t.Errorf("%s script embeds the probe body %d times, want 1\nscript:\n%s", name, got, script)
+		}
+	}
+}
+
+// TestNativeStatusProbeBody_IsSingleSourceOfTruth pins the shared shell state
+// machine: both the per-instance one-shot probe and the Status batch must
+// embed the exact nativeStatusProbeBody fragment, exactly once. This is what
+// stops a state-mapping or version-collapse change from drifting between the
+// two paths — the agreement the old "mirrors statusNativeState" comment had
+// to maintain by hand.
+func TestNativeStatusProbeBody_IsSingleSourceOfTruth(t *testing.T) {
+	body := nativeStatusProbeBody()
+	h := batchTestHost(&testutil.MockExecutor{})
+	rows, ok := nativeStatusBatchRows([]string{"ci-1"})
+	if !ok {
+		t.Fatal("row build failed")
+	}
+	batch, count := buildNativeStatusBatchScript(h, rows)
+	if count != 1 {
+		t.Fatalf("chunk carries %d rows, want 1", count)
+	}
+	oneShot, err := nativeLocalStatusOneShotScript(h, "ci-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, script := range map[string]string{
+		"one-shot": oneShot,
 		"batch":    batch,
 	} {
 		if got := strings.Count(script, body); got != 1 {

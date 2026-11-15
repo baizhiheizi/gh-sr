@@ -6,6 +6,7 @@ import (
 
 	"github.com/an-lee/gh-sr/internal/autostart"
 	"github.com/an-lee/gh-sr/internal/host"
+	"github.com/an-lee/gh-sr/internal/hostshell"
 	"github.com/an-lee/gh-sr/internal/probe"
 )
 
@@ -241,27 +242,55 @@ func parseContainerStatusTail(tail string, r *statusBatchResult) {
 	r.local, r.image, r.imageRev = parseContainerStatusInspectOutput(tail)
 }
 
-// nativeStatusBatchPrefix renders the one-time elevation gate and the single
-// copy of the native Linux status state machine, driven by a remote loop over
-// the instance rows. It mirrors linuxInstanceProbe + statusNativeState:
+// nativeStatusElevationGate is the one-time elevation check both native
+// status scripts open with: SUDO/ce reproduce what runActiveCheck's
+// KindSystemdSystem case observed (root or passwordless sudo → probe;
+// otherwise fall through to the PID-file check). One gate per script instead
+// of one hard prelude per probe: a failed gate skips to the same fallback the
+// per-instance hard prelude produced.
+func nativeStatusElevationGate() string {
+	return `SUDO=''
+ce=1
+if [ "$(id -u)" -ne 0 ]; then
+  if command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then SUDO='sudo -n'; else ce=0; fi
+fi
+`
+}
+
+// nativeStatusProbeBody is the single source of truth for the POSIX shell
+// state machine that computes the native Linux status payload `rstate` plus
+// the collapsed runner version `v`:
+//
+//	"running"|"stopped"|"service error"|"not installed"|"unknown" + "|"+version
+//
+// Both nativeLocalStatusOneShotScript (one instance, one round trip — the
+// per-instance Status path) and nativeStatusBatchPrefix (many instances, one
+// round trip) embed this exact fragment and only differ in how they bind
+// `dir` / `base` and how they index the emit. Keeping the state machine in
+// one function is what stops the two shapes from drifting: agreement is
+// enforced by construction and pinned by
+// TestNativeStatusProbeBody_IsSingleSourceOfTruth, not maintained by a
+// "mirrors statusNativeState" comment.
+//
+// The fragment reads `dir` (instance dir, $HOME unexpanded) and `base`
+// (sanitized systemd unit basename) from the surrounding shell and leaves its
+// answer in `rstate` and `v`.
+//
+// Branches:
 //
 //  1. Version: `cat $dir/.runner-version`, whitespace collapsed to single
 //     words (mirroring the space-join the V-marker parser applies to
 //     multi-line versions; runner versions are single-word in practice).
 //  2. svc.sh branch: when $dir/svc.sh and $dir/.service exist, the systemctl
 //     state probe answers verbatim — active → running, any other non-empty
-//     output → stopped, empty → fall through. This mirrors
-//     statusNativeState's hasSvc branch (its round trip #2).
+//     output → stopped, empty → fall through.
 //  3. Autostart branch: user unit → plain `systemctl --user is-active`,
-//     system unit → `$SUDO systemctl is-active` behind the same elevation
-//     gate LinuxElevatePrelude enforces. The old per-instance probe ran the
-//     hard prelude (exiting 1 without root/passwordless sudo, which made
-//     statusNativeState fall through to the PID-file check); here the gate is
-//     evaluated once per script and a failed gate skips to the same fallback.
+//     system unit → `$SUDO systemctl is-active` behind nativeStatusElevationGate.
 //     active → running; failed/activating → service error; anything else →
-//     fall through. IsServiceActive's second identical probe is folded away:
-//     it only re-read the state the first probe had already reported
-//     inactive, and one script reads one snapshot.
+//     fall through. (The Go-side statusNativeState — which this fragment
+//     mirrors for the non-Linux and transient-failure fallback paths — keeps
+//     IsServiceActive's second probe; one script reads one snapshot, so the
+//     fold is sound here.)
 //  4. PID-file fallback (statusNativePIDFile): no .runner → not installed,
 //     no .runner_pid → stopped, unreadable pid file → unknown, readable pid
 //     that is alive → running, everything else (dead PID, or a present but
@@ -274,20 +303,47 @@ func parseContainerStatusTail(tail string, r *statusBatchResult) {
 // The marker only ever carries a mapped state (running/stopped/service
 // error/not installed/unknown — no pipes or newlines), so multi-line raw
 // systemctl output like "inactive\ninactive" cannot split the marker line:
-// it maps to stopped before the emit, exactly as the Go TrimSpace+compare
-// does.
+// it maps to stopped before the emit.
+func nativeStatusProbeBody() string {
+	return `upath="$HOME/.config/systemd/user/$base.service"
+spath="/etc/systemd/system/$base.service"
+st=''; src=''
+v=$(cat "$dir/.runner-version" 2>/dev/null || true)
+v=$(printf '%s ' $v); v=${v%% }
+if [ -f "$dir/svc.sh" ] && svc_file="$dir/.service" && [ -f "$svc_file" ]; then
+  st=$(systemctl is-active "$(cat "$svc_file")" 2>/dev/null || echo inactive); src=svc
+fi
+if [ -z "$st" ] && [ -f "$upath" ]; then
+  st=$(systemctl --user is-active "$base.service" 2>/dev/null || echo inactive); src=kind
+elif [ -z "$st" ] && [ -f "$spath" ] && [ "$ce" = 1 ]; then
+  st=$($SUDO systemctl is-active "$base.service" 2>/dev/null || echo inactive); src=kind
+fi
+rstate=''
+if [ -n "$st" ]; then
+  if [ "$st" = active ]; then rstate=running
+  elif [ "$src" = svc ]; then rstate=stopped
+  elif [ "$st" = failed ] || [ "$st" = activating ]; then rstate='service error'
+  fi
+fi
+if [ -z "$rstate" ]; then
+  if [ ! -f "$dir/.runner" ]; then rstate='not installed'
+  elif [ ! -f "$dir/.runner_pid" ]; then rstate=stopped
+  elif pid=$(cat "$dir/.runner_pid" 2>/dev/null); then
+    if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then rstate=running; else rstate=stopped; fi
+  else rstate=unknown; fi
+fi
+`
+}
+
+// nativeStatusBatchPrefix renders the one-time elevation gate and the single
+// copy of the native Linux status state machine, driven by a remote loop over
+// the instance rows. The state machine itself is nativeStatusProbeBody — the
+// exact same fragment the per-instance one-shot probe runs — so the batch and
+// the per-instance path cannot drift.
 func nativeStatusBatchPrefix(h *host.Host) string {
 	var b strings.Builder
 	b.WriteString(statusBatchScriptHeader + "\n")
-	// One elevation check per script instead of one hard prelude per probe:
-	// SUDO/ce reproduce what runActiveCheck's KindSystemdSystem case observed
-	// (root or passwordless sudo → probe; otherwise fall through to the
-	// PID-file check).
-	b.WriteString("SUDO=''\n")
-	b.WriteString("ce=1\n")
-	b.WriteString("if [ \"$(id -u)\" -ne 0 ]; then\n")
-	b.WriteString("  if command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then SUDO='sudo -n'; else ce=0; fi\n")
-	b.WriteString("fi\n")
+	b.WriteString(nativeStatusElevationGate())
 	// noglob: the version collapse below word-splits $v unquoted, and a
 	// version containing glob metacharacters must not expand against cwd.
 	b.WriteString("set -f\n")
@@ -296,41 +352,52 @@ func nativeStatusBatchPrefix(h *host.Host) string {
 	b.WriteString("  [ -n \"$inst\" ] || continue\n")
 	b.WriteString("  n=$((n+1))\n")
 	fmt.Fprintf(&b, "  dir=\"%s/$inst\"\n", h.RunnerBaseDir())
-	b.WriteString("  upath=\"$HOME/.config/systemd/user/$base.service\"\n")
-	b.WriteString("  spath=\"/etc/systemd/system/$base.service\"\n")
-	b.WriteString("  st=''; src=''\n")
-	b.WriteString("  v=$(cat \"$dir/.runner-version\" 2>/dev/null || true)\n")
-	b.WriteString("  v=$(printf '%s ' $v); v=${v%% }\n")
-	b.WriteString("  if [ -f \"$dir/svc.sh\" ] && svc_file=\"$dir/.service\" && [ -f \"$svc_file\" ]; then\n")
-	b.WriteString("    st=$(systemctl is-active \"$(cat \"$svc_file\")\" 2>/dev/null || echo inactive); src=svc\n")
-	b.WriteString("  fi\n")
-	b.WriteString("  if [ -z \"$st\" ] && [ -f \"$upath\" ]; then\n")
-	b.WriteString("    st=$(systemctl --user is-active \"$base.service\" 2>/dev/null || echo inactive); src=kind\n")
-	b.WriteString("  elif [ -z \"$st\" ] && [ -f \"$spath\" ] && [ \"$ce\" = 1 ]; then\n")
-	b.WriteString("    st=$($SUDO systemctl is-active \"$base.service\" 2>/dev/null || echo inactive); src=kind\n")
-	b.WriteString("  fi\n")
-	b.WriteString("  rstate=''\n")
-	// The two branches map raw states differently, mirroring
-	// statusNativeState: the svc.sh branch turns any non-active state
-	// into stopped, while the autostart branch only recognises
-	// active/failed/activating and leaves everything else (inactive, …)
-	// empty so the PID-file fallback decides.
-	b.WriteString("  if [ -n \"$st\" ]; then\n")
-	b.WriteString("    if [ \"$st\" = active ]; then rstate=running\n")
-	b.WriteString("    elif [ \"$src\" = svc ]; then rstate=stopped\n")
-	b.WriteString("    elif [ \"$st\" = failed ] || [ \"$st\" = activating ]; then rstate='service error'\n")
-	b.WriteString("    fi\n")
-	b.WriteString("  fi\n")
-	b.WriteString("  if [ -z \"$rstate\" ]; then\n")
-	b.WriteString("    if [ ! -f \"$dir/.runner\" ]; then rstate='not installed'\n")
-	b.WriteString("    elif [ ! -f \"$dir/.runner_pid\" ]; then rstate=stopped\n")
-	b.WriteString("    elif pid=$(cat \"$dir/.runner_pid\" 2>/dev/null); then\n")
-	b.WriteString("      if [ -n \"$pid\" ] && kill -0 \"$pid\" 2>/dev/null; then rstate=running; else rstate=stopped; fi\n")
-	b.WriteString("    else rstate=unknown; fi\n")
-	b.WriteString("  fi\n")
+	b.WriteString(nativeStatusProbeBody())
 	probe.NewWriter(&b).Echo(nativeStatusBatchTag, "$n", "$rstate|$v")
 	b.WriteString("done <<'" + statusBatchRowsDelim + "'\n")
 	return b.String()
+}
+
+// nativeLocalStatusOneShotScript renders the per-instance one-shot probe: the
+// same elevation gate, the same nativeStatusProbeBody fragment the batch loop
+// embeds, and the same probe tag — emitted at index 1 so
+// parseStatusBatch (the batch parser) decodes the answer unchanged. It is
+// separate from the h.Run call so tests can compare the emitted shell against
+// the batch script's copy of the fragment.
+func nativeLocalStatusOneShotScript(h *host.Host, instanceName string) (string, error) {
+	san, err := autostart.SanitizeInstance(instanceName)
+	if err != nil {
+		return "", err
+	}
+	base := autostart.ServiceBasename(san)
+	var b strings.Builder
+	b.WriteString(statusBatchScriptHeader + "\n")
+	b.WriteString(nativeStatusElevationGate())
+	b.WriteString("set -f\n")
+	fmt.Fprintf(&b, "dir=\"%s/%s\"\n", h.RunnerBaseDir(), instanceName)
+	fmt.Fprintf(&b, "base=%s\n", hostshell.PosixSingleQuote(base))
+	b.WriteString(nativeStatusProbeBody())
+	probe.NewWriter(&b).Echo(nativeStatusBatchTag, "1", "$rstate|$v")
+	return b.String(), nil
+}
+
+// statusNativeOneShot runs the per-instance one-shot probe and decodes its
+// answer with the batch parser. ok=false (sanitization, SSH, or a malformed
+// stream) sends the caller to the Go-orchestrated fallback path.
+func statusNativeOneShot(h *host.Host, instanceName string) (local, version string, ok bool) {
+	script, err := nativeLocalStatusOneShotScript(h, instanceName)
+	if err != nil {
+		return "", "", false
+	}
+	out, err := h.Run(script)
+	if err != nil {
+		return "", "", false
+	}
+	results, ok := parseStatusBatch(out, nativeStatusBatchTag, 1, parseNativeStatusTail)
+	if !ok {
+		return "", "", false
+	}
+	return results[0].local, results[0].version, true
 }
 
 // buildNativeStatusBatchScript renders one bounded chunk of the native batch

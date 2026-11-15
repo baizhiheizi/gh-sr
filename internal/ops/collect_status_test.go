@@ -33,10 +33,13 @@ func newStatusNativeRunningMock() *testutil.MockExecutor {
 	return &testutil.MockExecutor{
 		RunFn: func(cmd string) (string, error) {
 			switch {
-			case strings.Contains(cmd, ".runner-version"):
-				return "V1.0.0\n", nil
-			case strings.Contains(cmd, "kill -0"):
-				return "running\n", nil
+			// The per-instance status probe is runner's one-shot script: it
+			// embeds svc.sh checks, .runner-version, and kill -0 in one
+			// command and answers with runner's probe-tagged wire line
+			// (the "@@ns:<index>|<local>|<version>" tag). Route on "svc.sh",
+			// which appears only in that script.
+			case strings.Contains(cmd, "svc.sh"):
+				return "@@ns:1|running|1.0.0\n", nil
 			default:
 				return "", nil
 			}

@@ -587,20 +587,23 @@ func statusNativeAndVersion(h *host.Host, instanceName string) (string, string) 
 	dir := h.RunnerDir(instanceName)
 
 	if h.OS == "linux" {
-		result, err := linuxInstanceProbe(h, instanceName, false)
-		if err == nil {
-			local := statusNativeFromProbe(h, instanceName, dir, result)
-			version := result.version
+		// Primary Linux path: the same shell fragment the Status batch runs,
+		// for one instance in one SSH round trip (local state + version).
+		// previously this was the linuxInstanceProbe marker probe plus the
+		// Go-orchestrated statusNativeState probes — 2–5 round trips that
+		// re-derived the same state machine the batch script already
+		// carried.
+		if local, version, ok := statusNativeOneShot(h, instanceName); ok {
 			if version == "" {
 				version = "-"
 			}
 			return local, version
 		}
-		// Probe error: fall through to the non-Linux two-probe path so a
+		// One-shot error: fall through to the non-Linux two-probe path so a
 		// transient probe failure does not blank the Status row.
 	}
 
-	// Non-Linux / Linux probe-error fallback: the
+	// Non-Linux / Linux one-shot-error fallback: the
 	// statusNativeOneshotNonLinux shape is unchanged from the previous
 	// statusNative + nativeRunnerVersion pair. Fold does not apply
 	// because the combined probe is Linux-only.
@@ -609,7 +612,7 @@ func statusNativeAndVersion(h *host.Host, instanceName string) (string, string) 
 
 // statusNativeOneshotNonLinux preserves the pre-fold statusNative state
 // machine verbatim for non-Linux hosts (macOS launchd, Windows
-// scheduled-task) and as the fallback when the Linux combined probe
+// scheduled-task) and as the fallback when the Linux one-shot probe
 // errors. Mirrors the original statusNative (svc.sh / autostart.Detect
 // + ServiceActiveState / IsServiceActive / PID-file branches) without
 // any of the new combined-probe machinery — same SSH round-trip count
@@ -618,13 +621,6 @@ func statusNativeAndVersion(h *host.Host, instanceName string) (string, string) 
 func statusNativeOneshotNonLinux(h *host.Host, instanceName, dir string) string {
 	hasSvc, kind, _ := linuxSvcAndAutostartProbe(h, instanceName)
 	return statusNativeState(h, instanceName, dir, hasSvc, kind)
-}
-
-// statusNativeFromProbe runs the same state machine as
-// statusNativeOneshotNonLinux over a pre-fetched linuxInstanceProbeResult,
-// avoiding a second combined probe when the caller already has one in hand.
-func statusNativeFromProbe(h *host.Host, instanceName, dir string, result linuxInstanceProbeResult) string {
-	return statusNativeState(h, instanceName, dir, result.svcSh, result.kind)
 }
 
 // statusNativeState is the single copy of the native status state machine:
