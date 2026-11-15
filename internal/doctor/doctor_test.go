@@ -388,7 +388,7 @@ func TestRun_ConfigErrorSkipsGitHub(t *testing.T) {
 	var buf strings.Builder
 	cfgPath := t.TempDir() + "/missing.yml"
 	envPath := t.TempDir() + "/env"
-	res := Run(&buf, cfgPath, envPath, nil, assertError(t, "no config"), nil, "", "", false, false)
+	res := Run(&buf, RunInput{ConfigPath: cfgPath, EnvPath: envPath, ConfigErr: assertError(t, "no config")})
 	if res.Fail < 1 {
 		t.Fatalf("expected at least one FAIL, got %+v", res)
 	}
@@ -447,7 +447,7 @@ func TestRun_GitHubListRunnersUsesAPI(t *testing.T) {
 	}
 
 	var buf strings.Builder
-	res := Run(&buf, cfgPath, envPath, cfg, nil, gh, "", "", false, false)
+	res := Run(&buf, RunInput{ConfigPath: cfgPath, EnvPath: envPath, Config: cfg, GitHub: gh})
 
 	out := buf.String()
 	if !strings.Contains(out, "list runners OK (0 registered)") {
@@ -517,7 +517,7 @@ func TestRun_GitHubOrgListRunnersUsesAPI(t *testing.T) {
 	}
 
 	var buf strings.Builder
-	res := Run(&buf, cfgPath, envPath, cfg, nil, gh, "", "", false, false)
+	res := Run(&buf, RunInput{ConfigPath: cfgPath, EnvPath: envPath, Config: cfg, GitHub: gh})
 
 	out := buf.String()
 	if !strings.Contains(out, "org my-org: list runners OK (0 registered)") {
@@ -559,7 +559,7 @@ func TestRun_GitHubOrgListRunners403ShowsHint(t *testing.T) {
 	}
 
 	var buf strings.Builder
-	res := Run(&buf, cfgPath, envPath, cfg, nil, gh, "", "", false, false)
+	res := Run(&buf, RunInput{ConfigPath: cfgPath, EnvPath: envPath, Config: cfg, GitHub: gh})
 
 	out := buf.String()
 	if !strings.Contains(out, "admin:org") {

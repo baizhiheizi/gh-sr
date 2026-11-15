@@ -18,6 +18,7 @@ import (
 	"github.com/an-lee/gh-sr/internal/host"
 	"github.com/an-lee/gh-sr/internal/ops"
 	"github.com/an-lee/gh-sr/internal/runner"
+	"github.com/an-lee/gh-sr/internal/session"
 )
 
 // NonTTYHint is printed when stdout is not a terminal and the dashboard cannot run.
@@ -50,8 +51,12 @@ const (
 type dashboardModel struct {
 	opts DashboardOpts
 
-	cfg *config.Config
-	mgr *runner.Manager
+	// sess is the process wiring (paths, config, token) the dashboard
+	// shares with every other entry point; replaced wholesale on reload.
+	// cfg / mgr below are the derived views the rest of the model reads.
+	sess *session.Session
+	cfg  *config.Config
+	mgr  *runner.Manager
 
 	tuiHostFilter string
 	tuiRepoFilter string
@@ -149,17 +154,15 @@ var (
 	filterMenuLabels = []string{"Filter by host…", "Filter by repo…", "Clear all filters"}
 )
 
-func RunDashboard(cfg *config.Config, opts DashboardOpts) error {
-	tok, err := config.ResolveToken(cfg)
+func RunDashboard(sess *session.Session, opts DashboardOpts) error {
+	mgr, err := sess.Manager(io.Discard)
 	if err != nil {
 		return err
 	}
-	mgr := runner.NewManagerFromConfig(tok, cfg)
-	mgr.Out = io.Discard
-	mgr.GhSrVersion = opts.GhSrVersion
 	m := &dashboardModel{
 		opts:          opts,
-		cfg:           cfg,
+		sess:          sess,
+		cfg:           sess.Config,
 		mgr:           mgr,
 		tuiHostFilter: opts.FilterHost,
 		tuiRepoFilter: opts.FilterRepo,
@@ -445,24 +448,22 @@ func (m *dashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.lastErr = fmt.Sprintf("editor: %v", msg.err)
 			return m, nil
 		}
-		if err := config.BootstrapEnv(); err != nil {
-			m.lastErr = err.Error()
-			return m, nil
-		}
-		cfg, err := config.LoadFromPath(m.opts.ConfigPath)
+		sess, err := session.Load(m.opts.ConfigPath, m.opts.GhSrVersion)
 		if err != nil {
 			m.lastErr = err.Error()
 			return m, nil
 		}
-		m.cfg = cfg
-		tok, tokErr := config.ResolveToken(cfg)
-		if tokErr != nil {
-			m.lastErr = tokErr.Error()
+		if sess.ConfigErr != nil {
+			m.lastErr = sess.ConfigErr.Error()
 			return m, nil
 		}
-		mgr := runner.NewManagerFromConfig(tok, cfg)
-		mgr.Out = io.Discard
-		mgr.GhSrVersion = m.opts.GhSrVersion
+		mgr, err := sess.Manager(io.Discard)
+		if err != nil {
+			m.lastErr = err.Error()
+			return m, nil
+		}
+		m.sess = sess
+		m.cfg = sess.Config
 		m.mgr = mgr
 		m.toast = "Config reloaded."
 		m.loading = true
@@ -562,21 +563,12 @@ func (m *dashboardModel) updateGlobalMenu(key string) tea.Cmd {
 			m.busy = true
 			m.busyOp = "doctor"
 			m.toast = ""
-			cfgPath := m.opts.ConfigPath
-			envPath := m.opts.EnvPath
-			cfg := m.cfg
+			sess := m.sess
 			hostF := m.tuiHostFilter
 			repoF := m.tuiRepoFilter
 			return func() tea.Msg {
 				var buf bytes.Buffer
-				var gh *runner.GitHubClient
-				if cfg != nil {
-					tok, tokErr := config.ResolveToken(cfg)
-					if tokErr == nil {
-						gh = runner.NewGitHubClient(tok)
-					}
-				}
-				doctor.Run(&buf, cfgPath, envPath, cfg, nil, gh, hostF, repoF, false, false)
+				doctor.Run(&buf, sess.DoctorInput(hostF, repoF, false, false))
 				return doctorDoneMsg{out: buf.String()}
 			}
 		case 1:
@@ -596,11 +588,11 @@ func (m *dashboardModel) updateGlobalMenu(key string) tea.Cmd {
 			m.toast = ""
 			path := m.opts.ConfigPath
 			return func() tea.Msg {
-				if err := config.BootstrapEnv(); err != nil {
+				sess, err := session.Load(path, m.opts.GhSrVersion)
+				if err != nil {
 					return validateDoneMsg{err: err}
 				}
-				_, err := config.LoadFromPath(path)
-				return validateDoneMsg{err: err}
+				return validateDoneMsg{err: sess.ConfigErr}
 			}
 		case 5:
 			m.panel = panelMain
