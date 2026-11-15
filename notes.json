@@ -9,15 +9,21 @@
   "checks": [
     {
       "area": "repo_assist_prs",
-      "checked_at": "2026-11-14",
+      "checked_at": "2026-11-15",
       "result": "acted",
-      "follow_up": "#643 (CLAUDE.md corrections) merged 2026-11-14. New draft: test(registry) ContainerNames fallback/order (branch repo-assist/test-container-names). Other agents' PRs: test-improver #642 (SSH host tests, open draft)."
+      "follow_up": "4 open [repo-assist] arch PRs #646-#649 all CI-green/clean, no conflicts (concurrent series agent maintains them - do not interfere; #645 merged 11-15). New this run: docs draft on branch repo-assist/basics-claude-md-sharedcache (CLAUDE...."
     },
     {
       "area": "tests",
-      "checked_at": "2026-11-14",
+      "checked_at": "2026-11-15",
+      "result": "no_actionable",
+      "follow_up": "Full sweep: per-package coverage 85-100%, vet+gofmt clean. table.PrintPlain 44% is a cross-package artifact (ops disk_printer tests cover render path). Remaining uncovered: fault-injection error branches (diskschedule systemd install/uni..."
+    },
+    {
+      "area": "docs",
+      "checked_at": "2026-11-15",
       "result": "acted",
-      "follow_up": "ContainerNames (registry) was the last genuine helper gap -> covered by new draft. hasLabel (config) assessed: indirectly covered via TestEffectiveLabels* agentic paths, dedicated test not warranted. Remaining thin spots: integration-heavy paths (host connection lifecycle, cmd wiring)."
+      "follow_up": "CLAUDE.md architecture list missing sharedcache after #645 merged (vigil flagged same class for #646 session) -> docs draft created. NEXT: add session to the list once #646 merges. docs/CLI cross-check still only due after next CLI surfa..."
     },
     {
       "area": "dependencies",
@@ -35,19 +41,13 @@
       "area": "performance",
       "checked_at": "2026-11-14",
       "result": "no_actionable",
-      "follow_up": "Re-swept after #641: new runner code was bench-optimized in-PR (alloc-lean Status labels under bench-compare gate); hot paths remain one-round-trip (2026-11-06 sweep: dashboard sub-ms vs 5s tick, metrics combined per host, probes pinned)."
-    },
-    {
-      "area": "docs",
-      "checked_at": "2026-11-14",
-      "result": "acted",
-      "follow_up": "CLAUDE.md corrections merged as #643 (2026-11-14, run 907 green). Docs/CLI cross-check re-run due after next CLI surface change (full pass 2026-11-10, fixes merged as #624)."
+      "follow_up": "Re-swept after #641: hot paths remain one-round-trip; bench-compare green on all open PRs 11-15; #645 loop over <=6 rows is trivial."
     },
     {
       "area": "hygiene",
       "checked_at": "2026-11-13",
       "result": "no_actionable",
-      "follow_up": "Task 5 sweep: helpers clean, zero TODO/FIXME, no dead code (deadcode ./... false positives only). broken-git guard stays in ci.yml/bench-compare.yml by design."
+      "follow_up": "Task 5 sweep: helpers clean, zero TODO/FIXME, no dead code. Re-run audit after next feature batch."
     }
   ],
   "completed_actions": [],
