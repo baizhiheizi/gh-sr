@@ -44,37 +44,56 @@ func ExitCode(res Result, strict bool) int {
 	return 0
 }
 
-// Run prints diagnostics to w. cfg and cfgErr come from config.LoadFromPath (or Load) after BootstrapEnv.
-// If cfg is nil (load error), GitHub and host checks are skipped after the configuration section.
-// checkLockfiles additionally scans compiled gh-aw workflows (*.lock.yml) in the
+// RunInput carries everything Run needs about the calling process's wiring:
+// where the config and env files live, what was loaded from them (Config +
+// ConfigErr, the config.LoadFromPath contract), the GitHub client for
+// API-backed checks, and the run's scoping flags. Callers assemble it once —
+// session.Session.DoctorInput is the production assembler — instead of
+// re-listing ten positional parameters per call site.
+type RunInput struct {
+	ConfigPath     string
+	EnvPath        string
+	Config         *config.Config
+	ConfigErr      error
+	GitHub         *runner.GitHubClient
+	FilterHost     string
+	FilterRepo     string
+	Strict         bool
+	CheckLockfiles bool
+}
+
+// Run prints diagnostics to w. Config and ConfigErr come from config.LoadFromPath
+// (or session.Load) after BootstrapEnv. If Config is nil (load error), GitHub and
+// host checks are skipped after the configuration section.
+// CheckLockfiles additionally scans compiled gh-aw workflows (*.lock.yml) in the
 // scoped repos for retired sudo/iptables-era artifacts (GitHub API reads).
-func Run(w io.Writer, cfgPath, envPath string, cfg *config.Config, cfgErr error, gh *runner.GitHubClient, filterHost, filterRepo string, strict, checkLockfiles bool) Result {
+func Run(w io.Writer, in RunInput) Result {
 	var r Result
 
 	fmt.Fprintln(w, "=== Local environment ===")
 
-	if _, err := os.Stat(cfgPath); err != nil {
+	if _, err := os.Stat(in.ConfigPath); err != nil {
 		printLine(w, sevFail, "local", fmt.Sprintf("config path: %v", err))
 		r.Fail++
 	} else {
-		printLine(w, sevOK, "local", fmt.Sprintf("config file exists: %s", cfgPath))
+		printLine(w, sevOK, "local", fmt.Sprintf("config file exists: %s", in.ConfigPath))
 	}
 
-	switch _, err := os.Stat(envPath); {
+	switch _, err := os.Stat(in.EnvPath); {
 	case os.IsNotExist(err):
-		printLine(w, sevWarn, "local", fmt.Sprintf("env file not found: %s (optional)", envPath))
+		printLine(w, sevWarn, "local", fmt.Sprintf("env file not found: %s (optional)", in.EnvPath))
 		r.Warn++
 	case err != nil:
 		printLine(w, sevWarn, "local", fmt.Sprintf("env file: %v", err))
 		r.Warn++
 	default:
-		printLine(w, sevOK, "local", fmt.Sprintf("env file present: %s", envPath))
+		printLine(w, sevOK, "local", fmt.Sprintf("env file present: %s", in.EnvPath))
 	}
 
-	needSSH := cfg == nil
-	if cfg != nil {
-		for _, rc := range config.FilterRunners(cfg, filterHost, filterRepo, nil) {
-			hc := cfg.Hosts[rc.Host]
+	needSSH := in.Config == nil
+	if in.Config != nil {
+		for _, rc := range config.FilterRunners(in.Config, in.FilterHost, in.FilterRepo, nil) {
+			hc := in.Config.Hosts[rc.Host]
 			if !config.IsLocalAddr(hc.Addr) {
 				needSSH = true
 				break
@@ -93,24 +112,24 @@ func Run(w io.Writer, cfgPath, envPath string, cfg *config.Config, cfgErr error,
 	}
 
 	fmt.Fprintln(w, "\n=== Configuration ===")
-	if cfgErr != nil {
-		printLine(w, sevFail, "config", cfgErr.Error())
+	if in.ConfigErr != nil {
+		printLine(w, sevFail, "config", in.ConfigErr.Error())
 		r.Fail++
-		printSummary(w, r, strict)
+		printSummary(w, r, in.Strict)
 		return r
 	}
 	printLine(w, sevOK, "config", "YAML valid and constraints satisfied")
 
-	runners := config.FilterRunners(cfg, filterHost, filterRepo, nil)
+	runners := config.FilterRunners(in.Config, in.FilterHost, in.FilterRepo, nil)
 	if len(runners) == 0 {
 		printLine(w, sevWarn, "config", "no runners match --host / --repo filters")
 		r.Warn++
-		printSummary(w, r, strict)
+		printSummary(w, r, in.Strict)
 		return r
 	}
 
 	fmt.Fprintln(w, "\n=== GitHub API ===")
-	if gh == nil {
+	if in.GitHub == nil {
 		printLine(w, sevFail, "github", "skipped: no GitHub token (run `gh auth login`)")
 		r.Fail++
 	} else {
@@ -121,11 +140,11 @@ func Run(w io.Writer, cfgPath, envPath string, cfg *config.Config, cfgErr error,
 		orgResults := make([]apiResult, len(orgs))
 
 		var apiWg sync.WaitGroup
-		checkRunnerScope(&apiWg, gh, "repo", repos, repoResults,
+		checkRunnerScope(&apiWg, in.GitHub, "repo", repos, repoResults,
 			func(name string, err error) string { return fmt.Sprintf("%s: %v", name, err) },
 			func(name string, n int) string { return fmt.Sprintf("%s: list runners OK (%d registered)", name, n) },
 		)
-		checkRunnerScope(&apiWg, gh, "org", orgs, orgResults,
+		checkRunnerScope(&apiWg, in.GitHub, "org", orgs, orgResults,
 			formatOrgAPIError,
 			func(name string, n int) string {
 				return fmt.Sprintf("org %s: list runners OK (%d registered)", name, n)
@@ -137,22 +156,22 @@ func Run(w io.Writer, cfgPath, envPath string, cfg *config.Config, cfgErr error,
 		printAPIFailures(w, &r, orgResults)
 	}
 
-	if checkLockfiles {
+	if in.CheckLockfiles {
 		fmt.Fprintln(w, "\n=== Compiled agentic workflows (--check-lockfiles) ===")
-		if gh == nil {
+		if in.GitHub == nil {
 			printLine(w, sevWarn, "lockfiles", "skipped: no GitHub token (run `gh auth login`)")
 			r.Warn++
 		} else {
 			repos := uniqueStringsBy(runners, func(rc config.RunnerConfig) string { return rc.Repo })
-			checkLockWorkflows(w, gh, repos, &r)
+			checkLockWorkflows(w, in.GitHub, repos, &r)
 		}
 	}
 
 	fmt.Fprintln(w, "\n=== Hosts ===")
 	hostOrder := uniqueStringsBy(runners, func(rc config.RunnerConfig) string { return rc.Host })
-	cacheSet := cache.SettingsFromConfig(cfg)
+	cacheSet := cache.SettingsFromConfig(in.Config)
 	cacheEnabled := cacheSet != nil
-	mirrorSet := registry.SettingsFromConfig(cfg)
+	mirrorSet := registry.SettingsFromConfig(in.Config)
 
 	type hostResult struct {
 		buf bytes.Buffer
@@ -166,7 +185,7 @@ func Run(w io.Writer, cfgPath, envPath string, cfg *config.Config, cfgErr error,
 		go func(idx int, hostName string) {
 			defer hostWg.Done()
 			hr := &hostResults[idx]
-			hcfg := cfg.Hosts[hostName]
+			hcfg := in.Config.Hosts[hostName]
 
 			h := host.NewHost(hostName, hcfg)
 			if err := h.Connect(); err != nil {
@@ -184,8 +203,8 @@ func Run(w io.Writer, cfgPath, envPath string, cfg *config.Config, cfgErr error,
 			defer h.Close()
 			printLine(&hr.buf, sevOK, hostName, fmt.Sprintf("connected (%s)", addrSummary(hcfg.Addr)))
 			runHostChecks(&hr.buf, hostName, h, runners, &hr.r, cacheSet, cacheEnabled, mirrorSet, containerExtras{
-				NPMRegistry:  cfg.NPMRegistry,
-				SharedCaches: sharedcache.Enabled(cfg.SharedCaches),
+				NPMRegistry:  in.Config.NPMRegistry,
+				SharedCaches: sharedcache.Enabled(in.Config.SharedCaches),
 			})
 		}(i, hostName)
 	}
@@ -198,7 +217,7 @@ func Run(w io.Writer, cfgPath, envPath string, cfg *config.Config, cfgErr error,
 		r.Warn += hr.r.Warn
 	}
 
-	printSummary(w, r, strict)
+	printSummary(w, r, in.Strict)
 	return r
 }
 

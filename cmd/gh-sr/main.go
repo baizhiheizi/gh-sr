@@ -13,10 +13,10 @@ import (
 
 	"github.com/an-lee/gh-sr/internal/config"
 	"github.com/an-lee/gh-sr/internal/diskschedule"
-	"github.com/an-lee/gh-sr/internal/doctor"
 	"github.com/an-lee/gh-sr/internal/editor"
 	"github.com/an-lee/gh-sr/internal/ops"
 	"github.com/an-lee/gh-sr/internal/runner"
+	"github.com/an-lee/gh-sr/internal/session"
 	"github.com/an-lee/gh-sr/internal/tui"
 )
 
@@ -105,47 +105,31 @@ func runDashboard() error {
 		fmt.Fprintln(os.Stderr, tui.NonTTYHint)
 		return nil
 	}
-	cfg, err := loadConfig()
+	s, err := loadSession()
 	if err != nil {
 		return err
 	}
-	cfgPath, err := config.ResolveConfigPath(cfgFile)
-	if err != nil {
-		return err
-	}
-	envPath, err := config.EnvFilePath()
-	if err != nil {
-		return err
-	}
-	return tui.RunDashboard(cfg, tui.DashboardOpts{
-		ConfigPath:  cfgPath,
-		EnvPath:     envPath,
+	return tui.RunDashboard(s, tui.DashboardOpts{
+		ConfigPath:  s.ConfigPath,
+		EnvPath:     s.EnvPath,
 		FilterHost:  filterHost,
 		FilterRepo:  filterRepo,
 		GhSrVersion: version,
 	})
 }
 
-func loadConfig() (*config.Config, error) {
-	if err := config.BootstrapEnv(); err != nil {
-		return nil, err
-	}
-	path, err := config.ResolveConfigPath(cfgFile)
+// loadSession resolves the process wiring (paths, config, token) with the
+// runner-command policy: a config-load failure is fatal here, unlike doctor
+// which degrades to reporting it as a FAIL row.
+func loadSession() (*session.Session, error) {
+	s, err := session.Load(cfgFile, version)
 	if err != nil {
 		return nil, err
 	}
-	return config.LoadFromPath(path)
-}
-
-func newManager(cfg *config.Config, w io.Writer) (*runner.Manager, error) {
-	tok, err := config.ResolveToken(cfg)
-	if err != nil {
-		return nil, err
+	if s.ConfigErr != nil {
+		return nil, s.ConfigErr
 	}
-	m := runner.NewManagerFromConfig(tok, cfg)
-	m.Out = w
-	m.GhSrVersion = version
-	return m, nil
+	return s, nil
 }
 
 // runnerCommandContext is the common preamble of most top-level gh sr
@@ -153,15 +137,15 @@ func newManager(cfg *config.Config, w io.Writer) (*runner.Manager, error) {
 // the command's stdout. Returns an error on either failure so callers can
 // bubble it up directly.
 func runnerCommandContext(cmd *cobra.Command) (*config.Config, *runner.Manager, error) {
-	cfg, err := loadConfig()
+	s, err := loadSession()
 	if err != nil {
 		return nil, nil, err
 	}
-	mgr, err := newManager(cfg, cmd.OutOrStdout())
+	mgr, err := s.Manager(cmd.OutOrStdout())
 	if err != nil {
 		return nil, nil, err
 	}
-	return cfg, mgr, nil
+	return s.Config, mgr, nil
 }
 
 // runRunnerCmd wraps an ops function with the standard
@@ -185,11 +169,11 @@ func runRunnerCmd(op func(io.Writer, *config.Config, *runner.Manager, string, st
 // cache remove --purge-data) wrap their ops call in a closure.
 func runCacheCmd(op func(io.Writer, *config.Config, string) error) func(*cobra.Command, []string) error {
 	return func(cmd *cobra.Command, _ []string) error {
-		cfg, err := loadConfig()
+		s, err := loadSession()
 		if err != nil {
 			return err
 		}
-		return op(cmd.OutOrStdout(), cfg, filterHost)
+		return op(cmd.OutOrStdout(), s.Config, filterHost)
 	}
 }
 
@@ -200,11 +184,11 @@ func runCacheCmd(op func(io.Writer, *config.Config, string) error) func(*cobra.C
 // call in a closure.
 func runServiceCmd(op func(io.Writer, *config.Config, string, string, []string) error) func(*cobra.Command, []string) error {
 	return func(cmd *cobra.Command, args []string) error {
-		cfg, err := loadConfig()
+		s, err := loadSession()
 		if err != nil {
 			return err
 		}
-		return op(cmd.OutOrStdout(), cfg, filterHost, filterRepo, args)
+		return op(cmd.OutOrStdout(), s.Config, filterHost, filterRepo, args)
 	}
 }
 
@@ -507,43 +491,16 @@ func doctorCmd() *cobra.Command {
 		Long:  "Validates local paths, configuration, GitHub API access, and SSH targets. For runner_mode: native, checks host runner dirs. profile: agentic always uses container mode: checks outer Docker and --privileged, each gh-sr-<instance> container, inner dockerd, .runner inside the container, agentic rootless-sandbox hygiene (orphan awmg-mcpg/awf containers, host-gateway alias, node/zstd, docker socket access), and the local Actions cache server when enabled. See README \"Host setup\" for steps gh sr cannot automate.",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := config.BootstrapEnv(); err != nil {
-				return err
-			}
-			cfgPath, err := config.ResolveConfigPath(cfgFile)
+			// Unlike the runner commands, doctor degrades gracefully: a
+			// config-load or token failure is reported as a FAIL row, not a
+			// cobra error. session.Load records both for exactly that.
+			s, err := session.Load(cfgFile, version)
 			if err != nil {
 				return err
 			}
-			envPath, err := config.EnvFilePath()
-			if err != nil {
-				return err
-			}
-
-			cfg, cfgErr := config.LoadFromPath(cfgPath)
-			var gh *runner.GitHubClient
-			if cfg != nil {
-				tok, tokErr := config.ResolveToken(cfg)
-				if tokErr == nil {
-					gh = runner.NewGitHubClient(tok)
-				}
-			}
-
 			w := cmd.OutOrStdout()
-			res := doctor.Run(w, cfgPath, envPath, cfg, cfgErr, gh, filterHost, filterRepo, strict, checkLockfiles)
-			if fix && res.Fail > 0 && cfg != nil && cfgErr == nil {
-				fmt.Fprintln(w, "\n--- Running `gh sr setup` to attempt fixes ---")
-				mgr, err := newManager(cfg, w)
-				if err != nil {
-					fmt.Fprintf(w, "\ncannot create runner manager: %v\n", err)
-				} else if err := ops.Setup(w, cfg, mgr, filterHost, filterRepo, nil); err != nil {
-					fmt.Fprintf(w, "\nfix attempt completed with errors: %v\n", err)
-				} else {
-					fmt.Fprintln(w, "\nfix attempt completed successfully.")
-				}
-				fmt.Fprintln(w, "\n--- Re-running doctor after fix ---")
-				res = doctor.Run(w, cfgPath, envPath, cfg, cfgErr, gh, filterHost, filterRepo, strict, checkLockfiles)
-			}
-			if code := doctor.ExitCode(res, strict); code != 0 {
+			code := session.DoctorFix(w, s, fix, filterHost, filterRepo, strict, checkLockfiles)
+			if code != 0 {
 				os.Exit(code)
 			}
 			return nil
@@ -584,11 +541,11 @@ func configShowCmd() *cobra.Command {
 		Use:   "show",
 		Short: "Print resolved configuration (token source summarized)",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, err := loadConfig()
+			s, err := loadSession()
 			if err != nil {
 				return err
 			}
-			tui.PrintConfig(cfg)
+			tui.PrintConfig(s.Config)
 			return nil
 		},
 	}
@@ -609,7 +566,7 @@ func configEditCmd() *cobra.Command {
 			if err := editor.Open(path); err != nil {
 				return err
 			}
-			if _, err := loadConfig(); err != nil {
+			if _, err := loadSession(); err != nil {
 				return fmt.Errorf("config invalid after edit: %w", err)
 			}
 			fmt.Println("Config is valid.")
@@ -642,7 +599,7 @@ func configEditEnvCmd() *cobra.Command {
 			if err := editor.Open(envPath); err != nil {
 				return err
 			}
-			if _, err := loadConfig(); err != nil {
+			if _, err := loadSession(); err != nil {
 				return fmt.Errorf("config invalid after editing env: %w", err)
 			}
 			fmt.Println("Config is valid.")
@@ -656,7 +613,7 @@ func configValidateCmd() *cobra.Command {
 		Use:   "validate",
 		Short: "Validate the resolved config file",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			_, err := loadConfig()
+			_, err := loadSession()
 			if err != nil {
 				return err
 			}
@@ -1153,11 +1110,11 @@ func hostsCmd() *cobra.Command {
 		Use:   "hosts",
 		Short: "Show host resource usage (CPU, memory, disk, load, uptime)",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, err := loadConfig()
+			s, err := loadSession()
 			if err != nil {
 				return err
 			}
-			metrics := ops.CollectHostMetrics(cmd.OutOrStdout(), cfg, filterHost)
+			metrics := ops.CollectHostMetrics(cmd.OutOrStdout(), s.Config, filterHost)
 			tui.PrintHostMetricsTable(metrics)
 			return nil
 		},
