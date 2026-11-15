@@ -3,6 +3,7 @@ package runner
 import (
 	"fmt"
 	"strings"
+	"sync"
 
 	"github.com/an-lee/gh-sr/internal/autostart"
 	"github.com/an-lee/gh-sr/internal/host"
@@ -364,13 +365,27 @@ func nativeStatusBatchPrefix(h *host.Host) string {
 // parseStatusBatch (the batch parser) decodes the answer unchanged. It is
 // separate from the h.Run call so tests can compare the emitted shell against
 // the batch script's copy of the fragment.
+//
+// The rendered script is a pure function of (RunnerBaseDir, instance name),
+// and Status is the per-tick hot path — the TUI rebuilds the same ~2.5KB
+// script per instance on every refresh, which shows up as B/op churn on the
+// batch-fallback shape. Memoize per (base dir, instance): same pattern as
+// config's tokenAvailableOnce — the value is process-stable (an instance
+// name's sanitized basename and the $HOME literal cannot change mid-process).
 func nativeLocalStatusOneShotScript(h *host.Host, instanceName string) (string, error) {
+	cacheKey := h.RunnerBaseDir() + "/" + instanceName
+	nativeOneShotMu.Lock()
+	defer nativeOneShotMu.Unlock()
+	if s, ok := nativeOneShotScripts[cacheKey]; ok {
+		return s, nil
+	}
 	san, err := autostart.SanitizeInstance(instanceName)
 	if err != nil {
 		return "", err
 	}
 	base := autostart.ServiceBasename(san)
 	var b strings.Builder
+	b.Grow(4096)
 	b.WriteString(statusBatchScriptHeader + "\n")
 	b.WriteString(nativeStatusElevationGate())
 	b.WriteString("set -f\n")
@@ -378,8 +393,15 @@ func nativeLocalStatusOneShotScript(h *host.Host, instanceName string) (string, 
 	fmt.Fprintf(&b, "base=%s\n", hostshell.PosixSingleQuote(base))
 	b.WriteString(nativeStatusProbeBody())
 	probe.NewWriter(&b).Echo(nativeStatusBatchTag, "1", "$rstate|$v")
-	return b.String(), nil
+	script := b.String()
+	nativeOneShotScripts[cacheKey] = script
+	return script, nil
 }
+
+var (
+	nativeOneShotMu      sync.Mutex
+	nativeOneShotScripts = map[string]string{}
+)
 
 // statusNativeOneShot runs the per-instance one-shot probe and decodes its
 // answer with the batch parser. ok=false (sanitization, SSH, or a malformed
