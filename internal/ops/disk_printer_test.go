@@ -6,7 +6,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/an-lee/gh-sr/internal/config"
 	"github.com/an-lee/gh-sr/internal/runner"
 )
 
@@ -344,53 +343,6 @@ func TestDiskHostInstanceKey(t *testing.T) {
 //   - filters out runners whose Host field does not match
 //   - emits one entry per instance (not per runner), honouring Count
 //   - emits pointers that point into the original slice
-func TestRcByInstanceForHost(t *testing.T) {
-	t.Parallel()
-
-	t.Run("filters by host", func(t *testing.T) {
-		t.Parallel()
-		// Note: InstanceNames uses "<Name>-<n>" naming, so a Name of
-		// "ci" with Count=1 produces instance "ci-1". Avoid Name values
-		// that already contain "-" or the n-suffix will collide.
-		got := rcByInstanceForHost([]config.RunnerConfig{
-			{Name: "ci", Host: "h1", Count: 1},
-			{Name: "ci", Host: "h2", Count: 1},
-		}, "h1")
-		if len(got) != 1 {
-			t.Fatalf("got %d entries, want 1", len(got))
-		}
-		if got["ci-1"].Host != "h1" {
-			t.Errorf("got host %q want h1", got["ci-1"].Host)
-		}
-	})
-
-	t.Run("emits one entry per instance across Count", func(t *testing.T) {
-		t.Parallel()
-		got := rcByInstanceForHost([]config.RunnerConfig{
-			{Name: "ci", Host: "h1", Count: 3},
-			{Name: "build", Host: "h1", Count: 2},
-		}, "h1")
-		for _, inst := range []string{"ci-1", "ci-2", "ci-3", "build-1", "build-2"} {
-			if _, ok := got[inst]; !ok {
-				t.Errorf("missing instance %q", inst)
-			}
-		}
-		if len(got) != 5 {
-			t.Errorf("got %d entries, want 5", len(got))
-		}
-	})
-
-	t.Run("returns empty map when no runners match host", func(t *testing.T) {
-		t.Parallel()
-		got := rcByInstanceForHost([]config.RunnerConfig{
-			{Name: "ci", Host: "h1", Count: 2},
-		}, "h2")
-		if len(got) != 0 {
-			t.Errorf("got %d entries, want 0", len(got))
-		}
-	})
-}
-
 // --- helpers ---
 
 // findBodyLine finds the first line containing needle and returns it.

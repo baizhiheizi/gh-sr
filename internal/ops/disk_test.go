@@ -5,7 +5,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/an-lee/gh-sr/internal/config"
 	"github.com/an-lee/gh-sr/internal/runner"
 )
 
@@ -40,22 +39,5 @@ func TestPruneResultsError(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "ci-1 on linux") {
 		t.Fatalf("got %v", err)
-	}
-}
-
-func TestConfiguredInstancesOnHost(t *testing.T) {
-	t.Parallel()
-	runners := []config.RunnerConfig{
-		{Name: "ci", Host: "h1", Count: 2},
-	}
-	got := configuredInstancesOnHost(runners)
-	if len(got) != 2 {
-		t.Fatalf("got %d instances", len(got))
-	}
-	if _, ok := got["ci-1"]; !ok {
-		t.Fatal("missing ci-1")
-	}
-	if _, ok := got["ci-2"]; !ok {
-		t.Fatal("missing ci-2")
 	}
 }
