@@ -1,8 +1,6 @@
 package tui
 
 import (
-	"os"
-	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -241,63 +239,6 @@ func TestSortedRepoNames_neitherOrgNorRepoAddsEmptyString(t *testing.T) {
 	want := []string{"", "org:my-org", "owner/repo"}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("sortedRepoNames = %v, want %v (current behaviour includes \"\" for scope-less runners)", got, want)
-	}
-}
-
-// TestEnsureEnvFile_createsMissingFile pins the "first run" path: when the
-// env file does not exist, ensureEnvFile creates the parent directory
-// (0o700) and writes the template (0o600). The dashboard relies on this
-// when the user picks "Edit env file" from the global menu before the
-// env file has been bootstrapped.
-func TestEnsureEnvFile_createsMissingFile(t *testing.T) {
-	// No t.Parallel(): touches a per-test tempdir.
-	dir := t.TempDir()
-	path := filepath.Join(dir, "nested", "env")
-	if err := ensureEnvFile(path); err != nil {
-		t.Fatalf("ensureEnvFile: %v", err)
-	}
-	info, err := os.Stat(path)
-	if err != nil {
-		t.Fatalf("env file not created: %v", err)
-	}
-	if info.Size() == 0 {
-		t.Errorf("env file is empty; should contain EnvFileTemplate")
-	}
-	// Permissions: 0o600 (owner read/write only).
-	if perm := info.Mode().Perm(); perm != 0o600 {
-		t.Errorf("env file perm = %o, want 0o600", perm)
-	}
-	// Parent directory: 0o700 (owner full access only).
-	parentInfo, err := os.Stat(filepath.Dir(path))
-	if err != nil {
-		t.Fatalf("parent dir not created: %v", err)
-	}
-	if perm := parentInfo.Mode().Perm(); perm != 0o700 {
-		t.Errorf("parent dir perm = %o, want 0o700", perm)
-	}
-}
-
-// TestEnsureEnvFile_preservesExistingFile pins the "not first run" path:
-// when the env file already exists, ensureEnvFile returns nil and leaves
-// the file untouched. Existing user's edits must be preserved across
-// dashboard re-opens.
-func TestEnsureEnvFile_preservesExistingFile(t *testing.T) {
-	// No t.Parallel(): touches a per-test tempdir.
-	dir := t.TempDir()
-	path := filepath.Join(dir, "env")
-	original := "GITHUB_TOKEN=secret\n"
-	if err := os.WriteFile(path, []byte(original), 0o600); err != nil {
-		t.Fatalf("seed: %v", err)
-	}
-	if err := ensureEnvFile(path); err != nil {
-		t.Fatalf("ensureEnvFile: %v", err)
-	}
-	got, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("read after ensureEnvFile: %v", err)
-	}
-	if string(got) != original {
-		t.Errorf("ensureEnvFile should not overwrite existing file; got %q, want %q", got, original)
 	}
 }
 

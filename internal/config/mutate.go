@@ -53,6 +53,17 @@ func AddHost(cfgPath, name, addr, hostOS, arch string) error {
 		return fmt.Errorf("host %q already exists in config", name)
 	}
 
+	hostsNode.Content = append(hostsNode.Content,
+		&yaml.Node{Kind: yaml.ScalarNode, Value: name},
+		newHostEntry(addr, hostOS, arch),
+	)
+
+	return writeYAMLBack(cfgPath, top)
+}
+
+// newHostEntry builds the host-entry node shape AddHost appends and
+// QuickInitSeed composes — one definition so the two writers cannot drift.
+func newHostEntry(addr, hostOS, arch string) *yaml.Node {
 	hostEntry := &yaml.Node{Kind: yaml.MappingNode}
 	hostEntry.Content = append(hostEntry.Content,
 		&yaml.Node{Kind: yaml.ScalarNode, Value: "addr"},
@@ -70,13 +81,7 @@ func AddHost(cfgPath, name, addr, hostOS, arch string) error {
 			&yaml.Node{Kind: yaml.ScalarNode, Value: arch},
 		)
 	}
-
-	hostsNode.Content = append(hostsNode.Content,
-		&yaml.Node{Kind: yaml.ScalarNode, Value: name},
-		hostEntry,
-	)
-
-	return writeYAMLBack(cfgPath, top)
+	return hostEntry
 }
 
 // AddRunnerOpts holds parameters for AddRunner.
@@ -109,6 +114,14 @@ func AddRunnerFull(cfgPath string, opts AddRunnerOpts) error {
 		return fmt.Errorf("runners is not a sequence")
 	}
 
+	runnersNode.Content = append(runnersNode.Content, newRunnerEntry(opts))
+
+	return writeYAMLBack(cfgPath, top)
+}
+
+// newRunnerEntry builds the runner-entry node shape AddRunnerFull appends and
+// QuickInitSeed composes — one definition so the two writers cannot drift.
+func newRunnerEntry(opts AddRunnerOpts) *yaml.Node {
 	entry := &yaml.Node{Kind: yaml.MappingNode}
 	entry.Content = append(entry.Content,
 		&yaml.Node{Kind: yaml.ScalarNode, Value: "name"},
@@ -172,10 +185,7 @@ func AddRunnerFull(cfgPath string, opts AddRunnerOpts) error {
 			&yaml.Node{Kind: yaml.ScalarNode, Value: opts.Profile},
 		)
 	}
-
-	runnersNode.Content = append(runnersNode.Content, entry)
-
-	return writeYAMLBack(cfgPath, top)
+	return entry
 }
 
 // RemoveRunner removes a runner entry from the config file at cfgPath by runner name.
