@@ -18,6 +18,7 @@ import (
 	"github.com/an-lee/gh-sr/internal/config"
 	"github.com/an-lee/gh-sr/internal/host"
 	"github.com/an-lee/gh-sr/internal/runner"
+	"github.com/an-lee/gh-sr/internal/sharedcache"
 	"github.com/an-lee/gh-sr/internal/testutil"
 )
 
@@ -738,12 +739,7 @@ func TestCheckContainerExtras(t *testing.T) {
 		{Name: "aw", Host: "h1", Repo: "o/r", Profile: "agentic", Count: 1},
 	}
 	allExtras := containerExtras{
-		SharedNPMCache:    true,
-		SharedRunnerCache: true,
-		SharedGradleCache: true,
-		SharedPubCache:    true,
-		SharedMiseData:    true,
-		SharedAndroidSDK:  true,
+		SharedCaches: sharedcache.All(),
 	}
 
 	t.Run("all mounts present is OK", func(t *testing.T) {

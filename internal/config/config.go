@@ -550,69 +550,6 @@ func (c *Config) RegistryMirrorEnabled() bool {
 	return *c.RegistryMirror.Enabled
 }
 
-// SharedCachesEnabled reports whether shared runner cache volumes should be
-// mounted at container create time. Defaults to true.
-func (c *Config) SharedCachesEnabled() bool {
-	if c == nil || c.SharedCaches.Enabled == nil {
-		return true
-	}
-	return *c.SharedCaches.Enabled
-}
-
-// SharedNPMCacheEnabled reports whether the shared npm cache volume should be
-// mounted at /home/runner/.npm. Defaults to true while shared caches are on.
-func (c *Config) SharedNPMCacheEnabled() bool {
-	return c.SharedCachesEnabled() && boolPtrOrTrue(c.SharedCaches.NPM)
-}
-
-// SharedHomeCacheEnabled reports whether the shared runner cache volume should
-// be mounted at /home/runner/.cache. Defaults to true while shared caches are on.
-func (c *Config) SharedHomeCacheEnabled() bool {
-	return c.SharedCachesEnabled() && boolPtrOrTrue(c.SharedCaches.HomeCache)
-}
-
-// SharedGradleCacheEnabled reports whether the shared Gradle cache volume
-// should be mounted at /home/runner/.gradle. Defaults to true while shared
-// caches are on.
-func (c *Config) SharedGradleCacheEnabled() bool {
-	return c.SharedCachesEnabled() && boolPtrOrTrue(c.SharedCaches.Gradle)
-}
-
-// SharedPubCacheEnabled reports whether the shared pub cache volume should be
-// mounted at /home/runner/.pub-cache. Defaults to true while shared caches are on.
-func (c *Config) SharedPubCacheEnabled() bool {
-	return c.SharedCachesEnabled() && boolPtrOrTrue(c.SharedCaches.Pub)
-}
-
-// SharedMiseDataEnabled reports whether the shared mise data volume should be
-// mounted at /home/runner/.local/share/mise. Defaults to true while shared
-// caches are on.
-func (c *Config) SharedMiseDataEnabled() bool {
-	return c.SharedCachesEnabled() && boolPtrOrTrue(c.SharedCaches.Mise)
-}
-
-// SharedAndroidSDKEnabled reports whether the shared Android SDK volume should
-// be mounted at /opt/android-sdk (with ANDROID_SDK_ROOT exported to jobs).
-// Defaults to false — the sub-flag is opt-in, unlike its siblings.
-func (c *Config) SharedAndroidSDKEnabled() bool {
-	return c.SharedCachesEnabled() && boolPtrOrFalse(c.SharedCaches.AndroidSDK)
-}
-
-// boolPtrOrTrue resolves a *bool defaulting to true (the shared-caches
-// sub-flags are opt-out, like their parent section).
-func boolPtrOrTrue(b *bool) bool {
-	if b == nil {
-		return true
-	}
-	return *b
-}
-
-// boolPtrOrFalse resolves a *bool defaulting to false (the opt-in
-// shared-caches sub-flags).
-func boolPtrOrFalse(b *bool) bool {
-	return b != nil && *b
-}
-
 // validateToolcacheDir enforces a relative, normalized, traversal-free path
 // under the tool cache root: no leading '/', no '.' or '..' segments, no
 // backslashes or whitespace, and already in canonical form (path.Clean(id) == id).

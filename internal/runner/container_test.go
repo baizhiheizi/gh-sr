@@ -16,6 +16,7 @@ import (
 	"github.com/an-lee/gh-sr/internal/host"
 	"github.com/an-lee/gh-sr/internal/hostshell"
 	"github.com/an-lee/gh-sr/internal/registry"
+	"github.com/an-lee/gh-sr/internal/sharedcache"
 	"github.com/an-lee/gh-sr/internal/testutil"
 )
 
@@ -1236,21 +1237,32 @@ func TestNPMRegistryDockerCreateArg(t *testing.T) {
 }
 
 // TestSharedCacheDockerCreateArgs pins the shared-caches volume wiring: each
-// enabled cache becomes a -v <volume>:<mount> line with the canonical names,
-// a nil Manager emits nothing, and each cache is independently switchable.
+// enabled cache becomes a -v <volume>:<mount> line (volume and mount come
+// from the sharedcache table, so the canonical names are pinned there, not
+// here), a row carrying an Env export also emits its -e line, a nil Manager
+// emits nothing, and each cache is independently switchable.
 func TestSharedCacheDockerCreateArgs(t *testing.T) {
 	t.Parallel()
+	row := func(key string) sharedcache.Cache {
+		for _, c := range sharedcache.All() {
+			if c.Key == key {
+				return c
+			}
+		}
+		t.Fatalf("unknown cache key %q", key)
+		return sharedcache.Cache{}
+	}
 	if got := (*Manager)(nil).sharedCacheDockerCreateArgs(); got != "" {
 		t.Fatalf("nil manager should emit nothing, got %q", got)
 	}
 	if got := (&Manager{}).sharedCacheDockerCreateArgs(); got != "" {
 		t.Fatalf("nothing enabled should emit nothing, got %q", got)
 	}
-	got := (&Manager{SharedNPMCache: true}).sharedCacheDockerCreateArgs()
+	got := (&Manager{SharedCaches: []sharedcache.Cache{row("npm")}}).sharedCacheDockerCreateArgs()
 	if !strings.Contains(got, "-v gh-sr-npm-cache:/home/runner/.npm") || strings.Contains(got, "gh-sr-runner-cache") {
 		t.Fatalf("npm-only should emit exactly the npm volume, got %q", got)
 	}
-	got = (&Manager{SharedNPMCache: true, SharedRunnerCache: true}).sharedCacheDockerCreateArgs()
+	got = (&Manager{SharedCaches: []sharedcache.Cache{row("npm"), row("home_cache")}}).sharedCacheDockerCreateArgs()
 	if !strings.Contains(got, "-v gh-sr-npm-cache:/home/runner/.npm") || !strings.Contains(got, "-v gh-sr-runner-cache:/home/runner/.cache") {
 		t.Fatalf("both enabled should emit both volumes, got %q", got)
 	}
@@ -1258,7 +1270,7 @@ func TestSharedCacheDockerCreateArgs(t *testing.T) {
 	// The gradle/pub/mise volumes mount at the tools' own default cache
 	// locations (GRADLE_USER_HOME / PUB_CACHE / MISE_DATA_DIR), so no env
 	// var accompanies them.
-	got = (&Manager{SharedGradleCache: true, SharedPubCache: true, SharedMiseData: true}).sharedCacheDockerCreateArgs()
+	got = (&Manager{SharedCaches: []sharedcache.Cache{row("gradle"), row("pub"), row("mise")}}).sharedCacheDockerCreateArgs()
 	for _, want := range []string{
 		"-v gh-sr-gradle-cache:/home/runner/.gradle",
 		"-v gh-sr-pub-cache:/home/runner/.pub-cache",
@@ -1272,24 +1284,15 @@ func TestSharedCacheDockerCreateArgs(t *testing.T) {
 		t.Fatalf("gradle/pub/mise must not mount unrelated volumes, got %q", got)
 	}
 
-	got = (&Manager{SharedAndroidSDK: true}).sharedCacheDockerCreateArgs()
+	// android_sdk's row carries the env export: the entrypoint propagates
+	// GH_SR_ANDROID_SDK_ROOT into the runner .env (ANDROID_SDK_ROOT /
+	// ANDROID_HOME) because `su -` wipes docker -e vars.
+	got = (&Manager{SharedCaches: []sharedcache.Cache{row("android_sdk")}}).sharedCacheDockerCreateArgs()
 	if !strings.Contains(got, "-v gh-sr-android-sdk:/opt/android-sdk") {
 		t.Fatalf("android sdk enabled should emit its volume, got %q", got)
 	}
-}
-
-// TestAndroidSDKDockerCreateArg pins the Android SDK env contract: enabling
-// the shared volume bakes GH_SR_ANDROID_SDK_ROOT=<mount> (the entrypoint
-// propagates it into the runner .env because `su -` wipes docker -e vars),
-// and a disabled volume emits nothing.
-func TestAndroidSDKDockerCreateArg(t *testing.T) {
-	t.Parallel()
-	if got := androidSDKDockerCreateArg(false); got != "" {
-		t.Fatalf("disabled android sdk should omit env, got %q", got)
-	}
-	got := androidSDKDockerCreateArg(true)
 	if !strings.Contains(got, "-e GH_SR_ANDROID_SDK_ROOT=/opt/android-sdk") {
-		t.Fatalf("got %q", got)
+		t.Fatalf("android sdk enabled should emit its env export, got %q", got)
 	}
 }
 

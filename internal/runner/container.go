@@ -634,33 +634,6 @@ func registryMirrorEnvFor(h *host.Host, s *registry.Settings) string {
 	return registryMirrorDockerCreateArg(s.RunnerURL(h))
 }
 
-// Shared runner cache volumes (runners.yml shared_caches): one volume per
-// host daemon, mounted into every runner container. The first container that
-// downloads a package/tool warms the volume for every other container on the
-// host, and the volumes survive `gh sr rebuild` (only an explicit
-// `docker volume rm` drops them — see the rebuild flow, which removes
-// containers and images but never volumes).
-//
-// gradle / pub / mise mount at the tools' own default cache locations, so no
-// env var has to survive the entrypoint's `su -` login shell. The Android SDK
-// has no default location on the image, so its mount ships with an
-// ANDROID_SDK_ROOT export (GH_SR_ANDROID_SDK_ROOT, propagated by the
-// entrypoint into the runner .env).
-const (
-	sharedNPMCacheVolume    = "gh-sr-npm-cache"
-	sharedRunnerCacheVolume = "gh-sr-runner-cache"
-	sharedGradleCacheVolume = "gh-sr-gradle-cache"
-	sharedPubCacheVolume    = "gh-sr-pub-cache"
-	sharedMiseDataVolume    = "gh-sr-mise-data"
-	sharedAndroidSDKVolume  = "gh-sr-android-sdk"
-	sharedNPMCacheMount     = "/home/runner/.npm"
-	sharedRunnerCacheMount  = "/home/runner/.cache"
-	sharedGradleCacheMount  = "/home/runner/.gradle"
-	sharedPubCacheMount     = "/home/runner/.pub-cache"
-	sharedMiseDataMount     = "/home/runner/.local/share/mise"
-	sharedAndroidSDKMount   = "/opt/android-sdk"
-)
-
 // npmRegistryDockerCreateArg returns the `-e GH_SR_NPM_REGISTRY=<url>` line
 // for the `docker create` command when a registry override is configured, or
 // "" otherwise. The entrypoint writes a non-empty value into the runner
@@ -675,47 +648,23 @@ func npmRegistryDockerCreateArg(url string) string {
 
 // sharedCacheDockerCreateArgs returns the `docker create -v` continuation
 // lines for the shared runner cache volumes enabled on the Manager (""
-// when none are). The daemon auto-creates missing named volumes (local
-// driver); the entrypoint re-asserts runner-user ownership on every start
-// because a volume first mounted without a matching image path inits
-// root-owned.
+// when none are). A row carrying an Env export also emits its `-e` line
+// (currently only android_sdk). The daemon auto-creates missing named
+// volumes (local driver); the entrypoint re-asserts runner-user ownership
+// on every start because a volume first mounted without a matching image
+// path inits root-owned.
 func (m *Manager) sharedCacheDockerCreateArgs() string {
 	if m == nil {
 		return ""
 	}
 	var b strings.Builder
-	if m.SharedNPMCache {
-		fmt.Fprintf(&b, "  -v %s:%s \\\n", sharedNPMCacheVolume, sharedNPMCacheMount)
-	}
-	if m.SharedRunnerCache {
-		fmt.Fprintf(&b, "  -v %s:%s \\\n", sharedRunnerCacheVolume, sharedRunnerCacheMount)
-	}
-	if m.SharedGradleCache {
-		fmt.Fprintf(&b, "  -v %s:%s \\\n", sharedGradleCacheVolume, sharedGradleCacheMount)
-	}
-	if m.SharedPubCache {
-		fmt.Fprintf(&b, "  -v %s:%s \\\n", sharedPubCacheVolume, sharedPubCacheMount)
-	}
-	if m.SharedMiseData {
-		fmt.Fprintf(&b, "  -v %s:%s \\\n", sharedMiseDataVolume, sharedMiseDataMount)
-	}
-	if m.SharedAndroidSDK {
-		fmt.Fprintf(&b, "  -v %s:%s \\\n", sharedAndroidSDKVolume, sharedAndroidSDKMount)
+	for _, c := range m.SharedCaches {
+		fmt.Fprintf(&b, "  -v %s:%s \\\n", c.Volume, c.Mount)
+		if c.Env != "" {
+			fmt.Fprintf(&b, "  -e %s=%s \\\n", c.Env, c.Mount)
+		}
 	}
 	return b.String()
-}
-
-// androidSDKDockerCreateArg returns the `-e GH_SR_ANDROID_SDK_ROOT=<path>`
-// line for the `docker create` command when the shared Android SDK volume is
-// enabled, or "" otherwise. The entrypoint propagates the value into the
-// runner .env (ANDROID_SDK_ROOT / ANDROID_HOME) so job steps see it — the
-// docker -e var itself would not survive the entrypoint's `su -` login-shell
-// environment reset.
-func androidSDKDockerCreateArg(enabled bool) string {
-	if !enabled {
-		return ""
-	}
-	return "  -e GH_SR_ANDROID_SDK_ROOT=" + sharedAndroidSDKMount + " \\\n"
 }
 
 // containerRestartPolicy returns the Docker --restart policy used for every
@@ -840,7 +789,6 @@ func (m *Manager) createContainerInstance(h *host.Host, rc config.RunnerConfig, 
 	registryMirrorEnv := registryMirrorEnvFor(h, m.RegistryMirror)
 	awfBridgeEnv := awfServiceBridgeDockerCreateArg(rc)
 	npmRegistryEnv := npmRegistryDockerCreateArg(m.NPMRegistry)
-	androidSDKEnv := androidSDKDockerCreateArg(m.SharedAndroidSDK)
 	sharedCacheArgs := m.sharedCacheDockerCreateArgs()
 	restartPolicy := containerRestartPolicy()
 	// Optional host-resource caps (runners.yml cpus / memory, issue #640). ""
@@ -875,7 +823,7 @@ docker create \
   -e GH_SR_RUNNER_LABELS=%s \
   -e GH_SR_RUNNER_GROUP=%s \
   -e GH_SR_RUNNER_EPHEMERAL=%s \
-%s%s%s%s%s%s%s%s%s  %s`,
+%s%s%s%s%s%s%s%s  %s`,
 		hostshell.PosixSingleQuote(stateDir),
 		hostshell.PosixSingleQuote(containerName(instanceName)),
 		hostshell.PosixSingleQuote(restartPolicy),
@@ -895,7 +843,6 @@ docker create \
 		registryMirrorEnv,
 		awfBridgeEnv,
 		npmRegistryEnv,
-		androidSDKEnv,
 		sharedCacheArgs,
 		hostshell.PosixSingleQuote(imageTag),
 	)

@@ -4,6 +4,7 @@ import (
 	"github.com/an-lee/gh-sr/internal/cache"
 	"github.com/an-lee/gh-sr/internal/config"
 	"github.com/an-lee/gh-sr/internal/registry"
+	"github.com/an-lee/gh-sr/internal/sharedcache"
 )
 
 // NewManagerFromConfig builds a Manager fully wired from cfg: the GitHub
@@ -35,11 +36,6 @@ func NewManagerFromConfig(pat string, cfg *config.Config) *Manager {
 	m.Cache = cache.SettingsFromConfig(cfg)
 	m.RegistryMirror = registry.SettingsFromConfig(cfg)
 	m.NPMRegistry = cfg.NPMRegistry
-	m.SharedNPMCache = cfg.SharedNPMCacheEnabled()
-	m.SharedRunnerCache = cfg.SharedHomeCacheEnabled()
-	m.SharedGradleCache = cfg.SharedGradleCacheEnabled()
-	m.SharedPubCache = cfg.SharedPubCacheEnabled()
-	m.SharedMiseData = cfg.SharedMiseDataEnabled()
-	m.SharedAndroidSDK = cfg.SharedAndroidSDKEnabled()
+	m.SharedCaches = sharedcache.Enabled(cfg.SharedCaches)
 	return m
 }

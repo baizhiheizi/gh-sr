@@ -18,6 +18,7 @@ import (
 	"github.com/an-lee/gh-sr/internal/hostshell"
 	"github.com/an-lee/gh-sr/internal/registry"
 	"github.com/an-lee/gh-sr/internal/runner"
+	"github.com/an-lee/gh-sr/internal/sharedcache"
 )
 
 const (
@@ -183,13 +184,8 @@ func Run(w io.Writer, cfgPath, envPath string, cfg *config.Config, cfgErr error,
 			defer h.Close()
 			printLine(&hr.buf, sevOK, hostName, fmt.Sprintf("connected (%s)", addrSummary(hcfg.Addr)))
 			runHostChecks(&hr.buf, hostName, h, runners, &hr.r, cacheSet, cacheEnabled, mirrorSet, containerExtras{
-				NPMRegistry:       cfg.NPMRegistry,
-				SharedNPMCache:    cfg.SharedNPMCacheEnabled(),
-				SharedRunnerCache: cfg.SharedHomeCacheEnabled(),
-				SharedGradleCache: cfg.SharedGradleCacheEnabled(),
-				SharedPubCache:    cfg.SharedPubCacheEnabled(),
-				SharedMiseData:    cfg.SharedMiseDataEnabled(),
-				SharedAndroidSDK:  cfg.SharedAndroidSDKEnabled(),
+				NPMRegistry:  cfg.NPMRegistry,
+				SharedCaches: sharedcache.Enabled(cfg.SharedCaches),
 			})
 		}(i, hostName)
 	}
@@ -424,15 +420,13 @@ func runHostChecks(w io.Writer, hostName string, h *host.Host, runners []config.
 
 // containerExtras carries the container-create-time options doctor cannot
 // derive from the cache/registry settings: the npm registry override and the
-// shared cache volume switches (runners.yml npm_registry / shared_caches).
+// enabled shared-cache rows (runners.yml npm_registry / shared_caches). The
+// rows come from the sharedcache table, so the mount expectations checked
+// below are derived from the same definition the container module mounts
+// from.
 type containerExtras struct {
-	NPMRegistry       string
-	SharedNPMCache    bool
-	SharedRunnerCache bool
-	SharedGradleCache bool
-	SharedPubCache    bool
-	SharedMiseData    bool
-	SharedAndroidSDK  bool
+	NPMRegistry  string
+	SharedCaches []sharedcache.Cache
 }
 
 // checkContainerExtras verifies the first container-mode runner on the host
@@ -442,8 +436,7 @@ type containerExtras struct {
 // until recreated — the same drift class probeRegistryFromRunner guards
 // against for GH_SR_REGISTRY_MIRROR.
 func checkContainerExtras(w io.Writer, hostName string, h *host.Host, hostRunners []config.RunnerConfig, extras containerExtras, r *Result) {
-	if !extras.SharedNPMCache && !extras.SharedRunnerCache && !extras.SharedGradleCache &&
-		!extras.SharedPubCache && !extras.SharedMiseData && !extras.SharedAndroidSDK && extras.NPMRegistry == "" {
+	if len(extras.SharedCaches) == 0 && extras.NPMRegistry == "" {
 		return
 	}
 	inst := firstContainerInstance(hostRunners)
@@ -459,23 +452,8 @@ func checkContainerExtras(w io.Writer, hostName string, h *host.Host, hostRunner
 		}
 	}
 	var wantMounts []string
-	if extras.SharedNPMCache {
-		wantMounts = append(wantMounts, "gh-sr-npm-cache /home/runner/.npm")
-	}
-	if extras.SharedRunnerCache {
-		wantMounts = append(wantMounts, "gh-sr-runner-cache /home/runner/.cache")
-	}
-	if extras.SharedGradleCache {
-		wantMounts = append(wantMounts, "gh-sr-gradle-cache /home/runner/.gradle")
-	}
-	if extras.SharedPubCache {
-		wantMounts = append(wantMounts, "gh-sr-pub-cache /home/runner/.pub-cache")
-	}
-	if extras.SharedMiseData {
-		wantMounts = append(wantMounts, "gh-sr-mise-data /home/runner/.local/share/mise")
-	}
-	if extras.SharedAndroidSDK {
-		wantMounts = append(wantMounts, "gh-sr-android-sdk /opt/android-sdk")
+	for _, c := range extras.SharedCaches {
+		wantMounts = append(wantMounts, c.Volume+" "+c.Mount)
 	}
 	if len(wantMounts) > 0 {
 		mountOut, err := h.Run(fmt.Sprintf(

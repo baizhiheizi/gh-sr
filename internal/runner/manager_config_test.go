@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/an-lee/gh-sr/internal/config"
+	"github.com/an-lee/gh-sr/internal/sharedcache"
 )
 
 // TestNewManagerFromConfig pins the config-to-Manager mapping: the single
@@ -14,6 +15,22 @@ func TestNewManagerFromConfig(t *testing.T) {
 
 	boolPtr := func(b bool) *bool { return &b }
 
+	cacheKeys := func(caches []sharedcache.Cache) []string {
+		out := make([]string, 0, len(caches))
+		for _, c := range caches {
+			out = append(out, c.Key)
+		}
+		return out
+	}
+	hasCache := func(caches []sharedcache.Cache, key string) bool {
+		for _, k := range cacheKeys(caches) {
+			if k == key {
+				return true
+			}
+		}
+		return false
+	}
+
 	t.Run("nil config leaves derived fields at zero", func(t *testing.T) {
 		t.Parallel()
 		mgr := NewManagerFromConfig("pat", nil)
@@ -22,7 +39,7 @@ func TestNewManagerFromConfig(t *testing.T) {
 		}
 		if mgr.ContainerImageExtraApt != nil || mgr.ContainerImageBaseImage != "" ||
 			mgr.Cache != nil || mgr.RegistryMirror != nil || mgr.NPMRegistry != "" ||
-			mgr.SharedNPMCache || mgr.SharedAndroidSDK {
+			len(mgr.SharedCaches) != 0 {
 			t.Errorf("nil config should leave derived fields zeroed, got %+v", mgr)
 		}
 	})
@@ -57,11 +74,12 @@ func TestNewManagerFromConfig(t *testing.T) {
 		}
 		// Zero-value Config: shared caches default on, android_sdk stays
 		// opt-in off.
-		if !mgr.SharedNPMCache || !mgr.SharedRunnerCache || !mgr.SharedGradleCache ||
-			!mgr.SharedPubCache || !mgr.SharedMiseData {
-			t.Errorf("shared caches should default on, got %+v", mgr)
+		for _, key := range []string{"npm", "home_cache", "gradle", "pub", "mise"} {
+			if !hasCache(mgr.SharedCaches, key) {
+				t.Errorf("shared caches should default on, missing %s in %v", key, cacheKeys(mgr.SharedCaches))
+			}
 		}
-		if mgr.SharedAndroidSDK {
+		if hasCache(mgr.SharedCaches, "android_sdk") {
 			t.Error("android sdk must default off")
 		}
 	})
@@ -80,11 +98,12 @@ func TestNewManagerFromConfig(t *testing.T) {
 			},
 		}
 		mgr := NewManagerFromConfig("pat", cfg)
-		if mgr.SharedNPMCache || mgr.SharedRunnerCache || mgr.SharedGradleCache ||
-			mgr.SharedPubCache || mgr.SharedMiseData {
-			t.Errorf("opted-out caches must stay off, got %+v", mgr)
+		for _, key := range []string{"npm", "home_cache", "gradle", "pub", "mise"} {
+			if hasCache(mgr.SharedCaches, key) {
+				t.Errorf("opted-out cache %s must stay off, got %v", key, cacheKeys(mgr.SharedCaches))
+			}
 		}
-		if !mgr.SharedAndroidSDK {
+		if !hasCache(mgr.SharedCaches, "android_sdk") {
 			t.Error("android_sdk: true must reach the Manager")
 		}
 	})
