@@ -10,6 +10,17 @@ jobs:
   test:
     name: test
     runs-on: [self-hosted, linux]
+    # This host runs several runner registrations as the same uid, so every
+    # concurrent go command on it — test + bench in the same run on push, test
+    # + bench-compare.yml on PRs — defaults to one shared GOCACHE, where
+    # concurrent entry replacement/trim deletes a cache data file between
+    # path resolution and open and fails the linker mid-build:
+    #   link: cannot open file /home/runner/.cache/go-build/…-d: no such file
+    #   or directory
+    # (run 43777195751 on 2514ab5 failed exactly this way; the rerun of the
+    # same commit passed — a race, not a code failure.) Job-level env cannot
+    # use the runner context, so the Isolate GOCACHE step below exports a
+    # per-job GOCACHE via GITHUB_ENV before setup-go resolves its cache dir.
     steps:
       # Shared runner workspaces occasionally end up with a stale .git that
       # actions/checkout can neither reuse ("not a git repository") nor
@@ -24,6 +35,14 @@ jobs:
           fi
 
       - uses: actions/checkout@v7
+
+      # Per-job GOCACHE under RUNNER_TEMP (cleaned at the start and end of
+      # every job, so it never outlives one). setup-go resolves its cache
+      # paths with `go env GOCACHE`, so its restore untars into this private
+      # dir instead of into the shared one another job may be building from;
+      # every go step below inherits the export.
+      - name: Isolate GOCACHE
+        run: echo "GOCACHE=${RUNNER_TEMP}/go-build" >> "$GITHUB_ENV"
 
       - uses: actions/setup-go@v7
         with:
@@ -136,6 +155,9 @@ jobs:
     # main runs — running it on PRs too just doubles bench load on the one
     # self-hosted runner and adds the contention that makes timings flap.
     if: github.event_name == 'push'
+    # Same GOCACHE isolation as the test job above: on push this job runs
+    # concurrently with that job's `go test ./... -race`, and both defaulting
+    # to one shared cache dir races the linker.
     steps:
       # Same stale-workspace repair as the test job above.
       - name: Repair stale workspace
@@ -145,6 +167,10 @@ jobs:
           fi
 
       - uses: actions/checkout@v7
+
+      # Same GOCACHE isolation as the test job above.
+      - name: Isolate GOCACHE
+        run: echo "GOCACHE=${RUNNER_TEMP}/go-build" >> "$GITHUB_ENV"
 
       - uses: actions/setup-go@v7
         with:
