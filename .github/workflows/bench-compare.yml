@@ -50,6 +50,9 @@ jobs:
   compare:
     name: bench-compare
     runs-on: [self-hosted, linux]
+    # Same GOCACHE isolation as the test job in ci.yml: this job runs
+    # concurrently with a PR's `test` job on a host whose runner
+    # registrations share one GOCACHE by default, racing the linker.
     steps:
       # Same stale-workspace repair as the test job in ci.yml: move a .git
       # that is neither a usable repo nor deletable (EACCES) into RUNNER_TEMP
@@ -64,6 +67,10 @@ jobs:
         with:
           ref: refs/pull/${{ github.event.pull_request.number }}/head
           fetch-depth: 0
+
+      # Same GOCACHE isolation as the test job in ci.yml.
+      - name: Isolate GOCACHE
+        run: echo "GOCACHE=${RUNNER_TEMP}/go-build" >> "$GITHUB_ENV"
 
       - uses: actions/setup-go@v7
         with:
