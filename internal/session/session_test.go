@@ -2,6 +2,7 @@ package session
 
 import (
 	"bytes"
+	"io"
 	"os"
 	"path/filepath"
 	"testing"
@@ -9,15 +10,23 @@ import (
 	"github.com/an-lee/gh-sr/internal/doctor"
 )
 
+const validConfigYAML = "hosts:\n  h1:\n    addr: user@10.0.0.1\nrunners:\n  - name: r1\n    repo: o/r\n    host: h1\n"
+
+// writeValidConfig writes a minimal valid config and returns its path.
+func writeValidConfig(t *testing.T) string {
+	t.Helper()
+	p := filepath.Join(t.TempDir(), "runners.yml")
+	if err := os.WriteFile(p, []byte(validConfigYAML), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
+
 // TestLoad_resolvesPathsAndConfig pins the happy path: resolved paths, loaded
 // config, and the version stamp carried for the derived Manager.
 func TestLoad_resolvesPathsAndConfig(t *testing.T) {
 	t.Parallel()
-	dir := t.TempDir()
-	p := filepath.Join(dir, "runners.yml")
-	if err := os.WriteFile(p, []byte("hosts:\n  h1:\n    addr: user@10.0.0.1\nrunners:\n  - name: r1\n    repo: o/r\n    host: h1\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	p := writeValidConfig(t)
 	s, err := Load(p, "test-version")
 	if err != nil {
 		t.Fatal(err)
@@ -155,6 +164,177 @@ func TestDoctorFixLoop(t *testing.T) {
 		code, st, _ := run(t, true, true, true, warn, warn, nil)
 		if code != 1 || st.setupRuns != 0 {
 			t.Errorf("strict warn-only must exit 1 without setup: code=%d steps=%+v", code, st)
+		}
+	})
+}
+
+// TestLoad_bootstrapFailureIsFatal pins the fatal half of the error policy:
+// when the bootstrap (env-file) step cannot even resolve the home directory,
+// Load aborts instead of returning a degraded Session.
+func TestLoad_bootstrapFailureIsFatal(t *testing.T) {
+	t.Setenv("HOME", "")
+	if _, err := Load("", "test"); err == nil {
+		t.Fatal("bootstrap failure (no resolvable home dir) must abort Load")
+	}
+}
+
+const fakeToken = "fake-session-test-token"
+
+// noTokenEnv points the gh CLI resolution at an empty config dir with no
+// token env vars, so config.ResolveToken fails deterministically regardless
+// of how the host's real `gh` is authenticated. t.Setenv forbids parallel
+// tests, so every test using it runs serially.
+func noTokenEnv(t *testing.T) {
+	t.Helper()
+	t.Setenv("GH_TOKEN", "")
+	t.Setenv("GITHUB_TOKEN", "")
+	t.Setenv("GH_CONFIG_DIR", t.TempDir())
+}
+
+// TestToken_memoizesFirstOutcome pins the process-lifetime contract: the
+// second call returns exactly the first result — a mid-session `gh auth
+// logout` is not re-probed.
+func TestToken_memoizesFirstOutcome(t *testing.T) {
+	t.Setenv("GH_TOKEN", fakeToken)
+	s, err := Load(filepath.Join(t.TempDir(), "missing.yml"), "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tok1, err1 := s.Token()
+	tok2, err2 := s.Token()
+	if tok1 != fakeToken || tok2 != tok1 || err1 != nil || err1 != err2 {
+		t.Fatalf("Token must memoize the first outcome: first (%q, %v), second (%q, %v)", tok1, err1, tok2, err2)
+	}
+}
+
+// TestGitHubAndManager_errorWithoutToken pins the failure half of the
+// documented error split: GitHub() returns nil (doctor degrades) while
+// Manager() surfaces the error (runner operations are load-bearing).
+func TestGitHubAndManager_errorWithoutToken(t *testing.T) {
+	noTokenEnv(t)
+	s, err := Load(writeValidConfig(t), "test-version")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gh := s.GitHub(); gh != nil {
+		t.Error("GitHub() must return nil when no token can be resolved")
+	}
+	m, mgrErr := s.Manager(&bytes.Buffer{})
+	if m != nil || mgrErr == nil {
+		t.Errorf("Manager must fail with a nil client when no token resolves, got (%v, %v)", m, mgrErr)
+	}
+}
+
+// TestGitHubAndManager_wireFromToken pins the success half: both clients
+// build from a resolvable token, the Manager carries the session's writer
+// and version stamp, and a nil config still yields a Manager — the
+// native-only shape with zero config-derived fields.
+func TestGitHubAndManager_wireFromToken(t *testing.T) {
+	t.Setenv("GH_TOKEN", fakeToken)
+	s, err := Load(writeValidConfig(t), "test-version")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gh := s.GitHub(); gh == nil {
+		t.Fatal("GitHub() must build a client when a token resolves")
+	}
+
+	var buf bytes.Buffer
+	m, mgrErr := s.Manager(&buf)
+	if mgrErr != nil || m == nil {
+		t.Fatalf("Manager must build when the token resolves, got (%v, %v)", m, mgrErr)
+	}
+	if m.GhSrVersion != "test-version" {
+		t.Errorf("GhSrVersion = %q, want session stamp test-version", m.GhSrVersion)
+	}
+	var wantOut io.Writer = &buf
+	if m.Out != wantOut {
+		t.Error("Manager.Out must be the writer passed to Manager()")
+	}
+
+	// The nil-config shape: a session whose config failed to load must still
+	// produce a Manager, with no config-derived fields.
+	broken, err := Load(filepath.Join(t.TempDir(), "missing.yml"), "v2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	m2, m2Err := broken.Manager(io.Discard)
+	if m2Err != nil || m2 == nil {
+		t.Fatalf("Manager must build from a nil config, got (%v, %v)", m2, m2Err)
+	}
+	if m2.ContainerImageBaseImage != "" {
+		t.Errorf("nil config must yield zero derived fields, got image base %q", m2.ContainerImageBaseImage)
+	}
+	if m2.GhSrVersion != "v2" {
+		t.Errorf("GhSrVersion = %q, want session stamp v2", m2.GhSrVersion)
+	}
+}
+
+// TestDoctorInput_assemblesRunInput pins the single-assembly-point contract:
+// DoctorInput maps the session's fields and the caller's flags onto
+// doctor.RunInput verbatim, so no call site re-assembles it by hand.
+func TestDoctorInput_assemblesRunInput(t *testing.T) {
+	t.Setenv("GH_TOKEN", fakeToken)
+	s, err := Load(writeValidConfig(t), "test-version")
+	if err != nil {
+		t.Fatal(err)
+	}
+	in := s.DoctorInput("h1", "o/r", true, true)
+	if in.ConfigPath != s.ConfigPath || in.EnvPath != s.EnvPath {
+		t.Errorf("paths not carried: cfg=%q env=%q", in.ConfigPath, in.EnvPath)
+	}
+	if in.Config != s.Config || in.ConfigErr != s.ConfigErr {
+		t.Error("config (and its recorded error) must be carried by reference")
+	}
+	if in.FilterHost != "h1" || in.FilterRepo != "o/r" || !in.Strict || !in.CheckLockfiles {
+		t.Errorf("flags not carried: host=%q repo=%q strict=%v lockfiles=%v",
+			in.FilterHost, in.FilterRepo, in.Strict, in.CheckLockfiles)
+	}
+	if in.GitHub == nil {
+		t.Error("GitHub field must carry the built client")
+	}
+}
+
+// TestDoctorFix_wiring pins the untested shell around doctorFixLoop: the
+// closures hand doctor.Run the session's assembled input (filters included)
+// and the cfgReady gate is s.ConfigErr == nil. Both scenarios stay offline
+// on every machine: the filtered-out config warns out of doctor.Run before
+// the API section, and the broken config fails before it.
+func TestDoctorFix_wiring(t *testing.T) {
+	noTokenEnv(t)
+	t.Run("valid config with no matching filter: exit 0, setup untouched", func(t *testing.T) {
+		var buf bytes.Buffer
+		s, err := Load(writeValidConfig(t), "test-version")
+		if err != nil {
+			t.Fatal(err)
+		}
+		code := DoctorFix(&buf, s, false, "no-such-host", "", false, false)
+		if code != 0 {
+			t.Fatalf("warn-only doctor run must exit 0, got %d:\n%s", code, buf.String())
+		}
+		if !bytes.Contains(buf.Bytes(), []byte("no runners match")) {
+			t.Errorf("filters must flow through DoctorInput into doctor.Run:\n%s", buf.String())
+		}
+		if bytes.Contains(buf.Bytes(), []byte("gh sr setup")) {
+			t.Errorf("fix=false must never attempt setup:\n%s", buf.String())
+		}
+	})
+
+	t.Run("broken config with fix on: gate skips setup, config error drives exit 1", func(t *testing.T) {
+		var buf bytes.Buffer
+		s, err := Load(filepath.Join(t.TempDir(), "missing.yml"), "test")
+		if err != nil {
+			t.Fatal(err)
+		}
+		code := DoctorFix(&buf, s, true, "", "", false, false)
+		if code != 1 {
+			t.Fatalf("config failure must exit 1, got %d:\n%s", code, buf.String())
+		}
+		if !bytes.Contains(buf.Bytes(), []byte("config file not found")) {
+			t.Errorf("recorded ConfigErr must surface as a doctor FAIL row:\n%s", buf.String())
+		}
+		if bytes.Contains(buf.Bytes(), []byte("gh sr setup")) {
+			t.Errorf("a broken config must gate setup off even with fix=true:\n%s", buf.String())
 		}
 	})
 }
