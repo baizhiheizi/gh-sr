@@ -9,21 +9,21 @@
   "checks": [
     {
       "area": "repo_assist_prs",
-      "checked_at": "2026-11-15",
+      "checked_at": "2026-11-17",
       "result": "acted",
-      "follow_up": "4 open [repo-assist] arch PRs #646-#649 all CI-green/clean, no conflicts (concurrent series agent maintains them - do not interfere; #645 merged 11-15). New this run: docs draft on branch repo-assist/basics-claude-md-sharedcache (CLAUDE...."
+      "follow_up": "#646-#649 all merged. Sharedcache CLAUDE.md docs draft retired obsolete (CLAUDE.md lists session+sharedcache). New open draft: repo-assist/test-session-resolution-wiring (session tests, 47.6->85.7%)."
     },
     {
       "area": "tests",
-      "checked_at": "2026-11-15",
-      "result": "no_actionable",
-      "follow_up": "Full sweep: per-package coverage 85-100%, vet+gofmt clean. table.PrintPlain 44% is a cross-package artifact (ops disk_printer tests cover render path). Remaining uncovered: fault-injection error branches (diskschedule systemd install/uni..."
+      "checked_at": "2026-11-17",
+      "result": "acted",
+      "follow_up": "Post-#649 sweep: config 89.3/runner 88.8/ops 90.0/hostshell 94.3; session the gap (47.6%). Draft repo-assist/test-session-resolution-wiring pins resolution wiring at 85.7%; token branches forced via gh env vars. Rest unforceable; race suite OK."
     },
     {
       "area": "docs",
-      "checked_at": "2026-11-15",
+      "checked_at": "2026-11-17",
       "result": "acted",
-      "follow_up": "CLAUDE.md architecture list missing sharedcache after #645 merged (vigil flagged same class for #646 session) -> docs draft created. NEXT: add session to the list once #646 merges. docs/CLI cross-check still only due after next CLI surfa..."
+      "follow_up": "CLAUDE.md current post-#646-#649. v0.10.0 recorded under [Unreleased] (7d15ab7); no tag yet (48 commits since v0.9.1) -> flagged tag v0.10.0 in #595. Docs PR #652 is docs agent, untouched. NEXT: CLI cross-check after next surface change."
     },
     {
       "area": "dependencies",
@@ -35,7 +35,7 @@
       "area": "ci",
       "checked_at": "2026-11-14",
       "result": "no_actionable",
-      "follow_up": "Green on main through run 907 (post #643)."
+      "follow_up": "Green on main through run 907 (post #643); #651 (GOCACHE isolation) + changelog recording landed since, v0.10.0-prep."
     },
     {
       "area": "performance",
