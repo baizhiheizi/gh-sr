@@ -9,9 +9,15 @@
   "checks": [
     {
       "area": "repo_assist_prs",
-      "checked_at": "2026-11-17",
+      "checked_at": "2026-11-18",
       "result": "acted",
-      "follow_up": "#646-#649 all merged. Sharedcache CLAUDE.md docs draft retired obsolete (CLAUDE.md lists session+sharedcache). New open draft: repo-assist/test-session-resolution-wiring (session tests, 47.6->85.7%)."
+      "follow_up": "#653 (session tests draft) unchanged & base current (main 7d15ab7); its CI/bench show action_required = bot-branch approval gate, infra-only. New draft: deps(host) x/crypto 0.58->0.59."
+    },
+    {
+      "area": "dependencies",
+      "checked_at": "2026-11-18",
+      "result": "acted",
+      "follow_up": "x/crypto 0.58->0.59 was the only outdated direct dep (weekly dependabot hadn't picked it up by 11-18) -> manual bump draft PR. Zero open Dependabot alerts. cobra 1.10.2 / x-term 0.48 / bubbletea 2.1.1 / go-gh 2.17.0 / go 1.26.7 current."
     },
     {
       "area": "tests",
@@ -26,28 +32,22 @@
       "follow_up": "CLAUDE.md current post-#646-#649. v0.10.0 recorded under [Unreleased] (7d15ab7); no tag yet (48 commits since v0.9.1) -> flagged tag v0.10.0 in #595. Docs PR #652 is docs agent, untouched. NEXT: CLI cross-check after next surface change."
     },
     {
-      "area": "dependencies",
-      "checked_at": "2026-11-14",
-      "result": "no_actionable",
-      "follow_up": "Zero open Dependabot alerts; no Dependabot PRs. go.mod current (cobra 1.10.2, x/term 0.48, go 1.26.7). Weekly gomod schedule covers the rest."
-    },
-    {
       "area": "ci",
-      "checked_at": "2026-11-14",
+      "checked_at": "2026-11-18",
       "result": "no_actionable",
-      "follow_up": "Green on main through run 907 (post #643); #651 (GOCACHE isolation) + changelog recording landed since, v0.10.0-prep."
+      "follow_up": "Main green (only schedule runs since 11-17, all success). #653-branch CI/bench action_required = approval gate on automation branches, not a code failure."
     },
     {
       "area": "performance",
-      "checked_at": "2026-11-14",
+      "checked_at": "2026-11-18",
       "result": "no_actionable",
-      "follow_up": "Re-swept after #641: hot paths remain one-round-trip; bench-compare green on all open PRs 11-15; #645 loop over <=6 rows is trivial."
+      "follow_up": "Round-trip suite re-run post-#646-#649: ManagerStatus native 1/4/16 + container = 1.0, disk batch 1.0, cache inspect 1.0, registry pinned at designed 3, native fallback 5 by design. One-shot scripts memoized; #648 inventory adds zero extra round trips."
     },
     {
       "area": "hygiene",
-      "checked_at": "2026-11-13",
+      "checked_at": "2026-11-18",
       "result": "no_actionable",
-      "follow_up": "Task 5 sweep: helpers clean, zero TODO/FIXME, no dead code. Re-run audit after next feature batch."
+      "follow_up": "Task 5 sweep clean: zero TODO/FIXME, no dead code. Issue backlog 11-18: all 5 open issues are automation trackers (#654 aw no-op + 4 monthly); none bug/help wanted/good first issue; no fixable backlog since 11-03."
     }
   ],
   "completed_actions": [],
