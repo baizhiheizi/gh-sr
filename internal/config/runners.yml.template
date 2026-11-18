@@ -121,6 +121,13 @@ runners:
   #   host: vps-1
   #   count: 2
   #   labels: [self-hosted, Linux, X64]
+  #   # count > 1 also registers per-instance label aliases (Linux-1/X64-1 on
+  #   # instance 1, Linux-2/X64-2 on instance 2), so a workflow can pin one
+  #   # instance with runs-on: [self-hosted, X64-2] or shard jobs across the
+  #   # pool. Aliases are written at registration time: re-register with
+  #   # gh sr update <name> (remove + setup + start) to pick them up on an
+  #   # existing pool — gh sr remove would also drop the entry from your
+  #   # runners.yml, leaving gh sr up nothing to bring back.
   #
   # Runner on the local machine:
   #
@@ -173,3 +180,10 @@ runners:
   #   host: vps-1
   #   count: 2
   #   runner_mode: container
+  #   # Optional per-instance resource caps so one CPU- or RAM-heavy job cannot
+  #   # starve the host (container mode only; `gh sr rebuild <name>` applies
+  #   # changes to an existing pool):
+  #   cpus: "8"            # docker create --cpus: "8", "1.5"; empty = unlimited
+  #   memory: "12g"        # docker create --memory: "12g", "512Mi", "1073741824";
+  #                        # 6 MiB floor; keep >= "4g" — each instance also runs
+  #                        # an inner dockerd, so a tighter cap OOM-crash-loops it
