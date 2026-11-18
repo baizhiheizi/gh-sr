@@ -180,22 +180,48 @@ func TestLoad_bootstrapFailureIsFatal(t *testing.T) {
 
 const fakeToken = "fake-session-test-token"
 
-// noTokenEnv points the gh CLI resolution at an empty config dir with no
-// token env vars, so config.ResolveToken fails deterministically regardless
-// of how the host's real `gh` is authenticated. t.Setenv forbids parallel
-// tests, so every test using it runs serially.
+// isolateHostEnv points HOME at a temp dir so session.Load's BootstrapEnv
+// cannot apply the host's real ~/.gh-sr/env. ApplyEnvFile sets variables
+// unconditionally, so a host file carrying GH_TOKEN would override the
+// token a test set — and print the real token into the test log when an
+// assertion fails.
+func isolateHostEnv(t *testing.T) {
+	t.Helper()
+	t.Setenv("HOME", t.TempDir())
+}
+
+// fakeTokenEnv pins the resolved token to a fixed value and cuts the host's
+// env file out of the picture, so token resolution never depends on how the
+// host is authenticated: GH_TOKEN wins in go-gh's lookup order, and the
+// isolated HOME keeps ~/.gh-sr/env from overriding it.
+func fakeTokenEnv(t *testing.T) {
+	t.Helper()
+	t.Setenv("GH_TOKEN", fakeToken)
+	isolateHostEnv(t)
+}
+
+// noTokenEnv makes "no token is resolvable" a property of the test rather
+// than of the host. go-gh's TokenForHost tries three sources in order: the
+// token env vars, the gh config file, and — as a last resort — exec'ing the
+// real `gh auth token --secure-storage`, which reads the OS keyring and is
+// not covered by GH_CONFIG_DIR. The blanked vars and the empty config dir
+// cut off the first two; GH_PATH pointing at a missing binary cuts off the
+// third, so a host with a live `gh auth login` still resolves no token.
+// t.Setenv forbids parallel tests, so every test using it runs serially.
 func noTokenEnv(t *testing.T) {
 	t.Helper()
 	t.Setenv("GH_TOKEN", "")
 	t.Setenv("GITHUB_TOKEN", "")
 	t.Setenv("GH_CONFIG_DIR", t.TempDir())
+	t.Setenv("GH_PATH", filepath.Join(t.TempDir(), "missing-gh"))
+	isolateHostEnv(t)
 }
 
 // TestToken_memoizesFirstOutcome pins the process-lifetime contract: the
 // second call returns exactly the first result — a mid-session `gh auth
 // logout` is not re-probed.
 func TestToken_memoizesFirstOutcome(t *testing.T) {
-	t.Setenv("GH_TOKEN", fakeToken)
+	fakeTokenEnv(t)
 	s, err := Load(filepath.Join(t.TempDir(), "missing.yml"), "test")
 	if err != nil {
 		t.Fatal(err)
@@ -230,7 +256,7 @@ func TestGitHubAndManager_errorWithoutToken(t *testing.T) {
 // and version stamp, and a nil config still yields a Manager — the
 // native-only shape with zero config-derived fields.
 func TestGitHubAndManager_wireFromToken(t *testing.T) {
-	t.Setenv("GH_TOKEN", fakeToken)
+	fakeTokenEnv(t)
 	s, err := Load(writeValidConfig(t), "test-version")
 	if err != nil {
 		t.Fatal(err)
@@ -274,7 +300,7 @@ func TestGitHubAndManager_wireFromToken(t *testing.T) {
 // DoctorInput maps the session's fields and the caller's flags onto
 // doctor.RunInput verbatim, so no call site re-assembles it by hand.
 func TestDoctorInput_assemblesRunInput(t *testing.T) {
-	t.Setenv("GH_TOKEN", fakeToken)
+	fakeTokenEnv(t)
 	s, err := Load(writeValidConfig(t), "test-version")
 	if err != nil {
 		t.Fatal(err)
