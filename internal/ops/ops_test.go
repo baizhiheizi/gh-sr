@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"fmt"
 	"strings"
-	"sync"
 	"testing"
 
 	"github.com/an-lee/gh-sr/internal/config"
@@ -135,46 +134,8 @@ func TestGroupRunnersByHost(t *testing.T) {
 // and tested in the runner package. Orchestrators consume a pre-built Manager;
 // there is no late-wiring call left in this package to test.
 
-func TestLockedWriter_Sequential(t *testing.T) {
-	t.Parallel()
-	var buf bytes.Buffer
-	lw := &lockedWriter{w: &buf}
-	n, err := lw.Write([]byte("hello"))
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if n != 5 {
-		t.Errorf("wrote %d bytes, want 5", n)
-	}
-	if buf.String() != "hello" {
-		t.Errorf("buf = %q, want %q", buf.String(), "hello")
-	}
-}
-
-func TestLockedWriter_Concurrent(t *testing.T) {
-	t.Parallel()
-	var buf bytes.Buffer
-	lw := &lockedWriter{w: &buf}
-	const workers = 10
-	const writesPerWorker = 100
-	expected := workers * writesPerWorker
-
-	var wg sync.WaitGroup
-	for i := 0; i < workers; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for j := 0; j < writesPerWorker; j++ {
-				lw.Write([]byte("x"))
-			}
-		}()
-	}
-	wg.Wait()
-
-	if buf.Len() != expected {
-		t.Errorf("buf.Len() = %d, want %d", buf.Len(), expected)
-	}
-}
+// The serialised writer moved to internal/fanout (shared by the ops, doctor
+// and runner fan-outs); its tests live there.
 
 func TestResolveAndFilter(t *testing.T) {
 	t.Parallel()

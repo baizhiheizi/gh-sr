@@ -5,12 +5,12 @@ import (
 	"io"
 	"os"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/an-lee/gh-sr/internal/autostart"
 	"github.com/an-lee/gh-sr/internal/cache"
 	"github.com/an-lee/gh-sr/internal/config"
+	"github.com/an-lee/gh-sr/internal/fanout"
 	"github.com/an-lee/gh-sr/internal/host"
 	"github.com/an-lee/gh-sr/internal/registry"
 	"github.com/an-lee/gh-sr/internal/sharedcache"
@@ -496,23 +496,27 @@ func (m *Manager) EnrichWithGitHubStatus(statuses []RunnerStatus, cfg *config.Co
 		keys[scopeKey{r.Scope(), r.ScopeTarget()}] = true
 	}
 
-	scopeRunners := make(map[scopeKey][]GitHubRunner, len(keys))
-	var mu sync.Mutex
-	var wg sync.WaitGroup
+	// One goroutine per scope; the fetched runners land in their own result
+	// index and are folded into the map afterwards, so no lock is needed.
+	scopes := make([]scopeKey, 0, len(keys))
 	for key := range keys {
-		wg.Add(1)
-		go func(k scopeKey) {
-			defer wg.Done()
-			runners, err := m.GitHub.ListRunnersScoped(k.scope, k.target)
-			if err != nil {
-				return
-			}
-			mu.Lock()
-			scopeRunners[k] = runners
-			mu.Unlock()
-		}(key)
+		scopes = append(scopes, key)
 	}
-	wg.Wait()
+	fetched := fanout.Indexed(scopes, func(_ int, k scopeKey) []GitHubRunner {
+		runners, err := m.GitHub.ListRunnersScoped(k.scope, k.target)
+		if err != nil {
+			return nil
+		}
+		return runners
+	})
+
+	scopeRunners := make(map[scopeKey][]GitHubRunner, len(scopes))
+	for i, key := range scopes {
+		if fetched[i] == nil {
+			continue
+		}
+		scopeRunners[key] = fetched[i]
+	}
 
 	m.enrichFromScopeRunners(statuses, cfg, scopeRunners)
 }

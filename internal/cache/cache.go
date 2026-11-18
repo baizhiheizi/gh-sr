@@ -15,6 +15,7 @@ import (
 	"github.com/an-lee/gh-sr/internal/dockerutil"
 	"github.com/an-lee/gh-sr/internal/host"
 	"github.com/an-lee/gh-sr/internal/hostshell"
+	"github.com/an-lee/gh-sr/internal/hostsvc"
 	"github.com/an-lee/gh-sr/internal/probe"
 )
 
@@ -117,53 +118,25 @@ func (s Settings) RunnerURL(h *host.Host) string {
 // IP — let callers that already need the gateway (Inspect, deploy) avoid a
 // second SSH round-trip to resolve it again.
 func (s Settings) runnerURL(gatewayIP string) string {
-	if s.URLOverride != "" {
-		return WithTrailingSlash(s.URLOverride)
-	}
-	if s.BindAddr != "" && s.BindAddr != "0.0.0.0" {
-		return fmt.Sprintf("http://%s:%d/", s.BindAddr, s.port())
-	}
-	if gatewayIP == "" {
+	u := hostsvc.RunnerURL(s.URLOverride, s.BindAddr, gatewayIP, s.port())
+	if u == "" {
 		return ""
 	}
-	return fmt.Sprintf("http://%s:%d/", gatewayIP, s.port())
+	return WithTrailingSlash(u)
 }
 
 // localURL is the cache API base as seen from the host itself: an explicit
 // bind address wins; 0.0.0.0 / auto bind answers on the docker0 gateway (a
 // host-local address), falling back to loopback when no gateway was found.
 func (s Settings) localURL(gatewayIP string) string {
-	hostPort := s.BindAddr
-	if hostPort == "" || hostPort == "0.0.0.0" {
-		if gatewayIP != "" {
-			hostPort = gatewayIP
-		} else {
-			hostPort = "127.0.0.1"
-		}
-	}
-	return fmt.Sprintf("http://%s:%d", hostPort, s.port())
+	return hostsvc.LocalURL(s.BindAddr, gatewayIP, s.port())
 }
 
 // resolvedStoragePath expands the $HOME prefix (the default storage path is
 // expressed relative to the remote shell's home) into an absolute path —
 // Docker bind mounts and mkdir do not undergo shell expansion.
 func (s Settings) resolvedStoragePath(h *host.Host) (string, error) {
-	p := s.StoragePath
-	if p == "" {
-		p = DefaultStoragePath
-	}
-	if !strings.HasPrefix(p, "$HOME") {
-		return p, nil
-	}
-	out, err := h.Run("echo $HOME")
-	if err != nil {
-		return "", fmt.Errorf("resolving home dir: %w", err)
-	}
-	home := strings.TrimSpace(out)
-	if home == "" {
-		return "", fmt.Errorf("resolving home dir: empty $HOME")
-	}
-	return home + p[len("$HOME"):], nil
+	return hostsvc.ResolveStoragePath(h, s.StoragePath, DefaultStoragePath)
 }
 
 // Ensure deploys the cache server idempotently: a running container with the
@@ -327,18 +300,11 @@ func (s Settings) autoBind() bool {
 // container exists, mirroring the pre-fold Go-side skip.
 func inspectOneShotScript(s Settings) string {
 	var b strings.Builder
-	p := s.StoragePath
-	if p == "" {
-		p = DefaultStoragePath
-	}
 	// storage=$HOME'/rest' splices the remote shell's $HOME (unquoted, so it
 	// expands) with a literal single-quoted remainder; an absolute path is
-	// single-quoted verbatim.
-	if strings.HasPrefix(p, "$HOME") {
-		b.WriteString("storage=$HOME" + hostshell.PosixSingleQuote(p[len("$HOME"):]) + "\n")
-	} else {
-		b.WriteString("storage=" + hostshell.PosixSingleQuote(p) + "\n")
-	}
+	// single-quoted verbatim. The convention is shared with the Go-side
+	// parser (parseInspectOneShot) so both agree on the resolved path.
+	b.WriteString(hostsvc.StoragePathShell(s.StoragePath, DefaultStoragePath) + "\n")
 	w := probe.NewWriter(&b)
 	fmt.Fprintf(&b, "st=$(docker inspect --format '{{.State.Status}}|{{.Config.Image}}' %s 2>/dev/null) || st=\n", ContainerName)
 	w.Printf("S:", "%s", "$st")
@@ -397,15 +363,9 @@ func parseInspectOneShot(out string, s Settings) (StatusInfo, error) {
 		}
 	}
 
-	storage := s.StoragePath
-	if storage == "" {
-		storage = DefaultStoragePath
-	}
-	if strings.HasPrefix(storage, "$HOME") {
-		if home == "" {
-			return info, fmt.Errorf("resolving home dir: empty $HOME")
-		}
-		storage = home + storage[len("$HOME"):]
+	storage, err := hostsvc.ExpandHomePath(home, s.StoragePath, DefaultStoragePath)
+	if err != nil {
+		return info, err
 	}
 	info.StoragePath = storage
 
@@ -443,14 +403,7 @@ func MeasureStorage(h *host.Host, s Settings) (string, int64, error) {
 }
 
 // StatusInfo is the reported state of the per-host cache server.
-type StatusInfo struct {
-	State        string // Docker state ("running", "exited", ...) or "" when absent
-	Image        string
-	URL          string // runner-facing base URL ("" when not resolvable)
-	StoragePath  string
-	StorageBytes int64
-	Healthy      bool // GET /health answered "healthy"
-}
+type StatusInfo = hostsvc.StatusInfo
 
 // Prune deletes every cache entry via the management API; the server then
 // reclaims the orphaned storage. Best-effort by design: when the key is
@@ -485,20 +438,13 @@ func Prune(w io.Writer, h *host.Host, s Settings) error {
 // storage dir (every cached byte plus the generated management key). This is
 // the only uninstall path — `gh sr remove` never touches the cache.
 func Remove(w io.Writer, h *host.Host, s Settings, purgeData bool) error {
-	if _, err := h.Run("docker rm -f " + ContainerName); err != nil {
-		return fmt.Errorf("removing cache container: %w", err)
-	}
-	fmt.Fprintf(w, "  cache: removed %s\n", ContainerName)
-	if !purgeData {
-		return nil
-	}
-	storage, err := s.resolvedStoragePath(h)
-	if err != nil {
-		return err
-	}
-	if _, err := h.Run("rm -rf " + hostshell.PosixSingleQuote(storage)); err != nil {
-		return fmt.Errorf("removing cache storage: %w", err)
-	}
-	fmt.Fprintf(w, "  cache: purged %s\n", storage)
-	return nil
+	return hostsvc.RemoveContainer(w, h, hostsvc.RemoveOpts{
+		Container: ContainerName,
+		Noun:      "cache",
+		Label:     "cache",
+		PurgeData: purgeData,
+		StoragePath: func() (string, error) {
+			return s.resolvedStoragePath(h)
+		},
+	})
 }

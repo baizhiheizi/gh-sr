@@ -3,12 +3,10 @@ package ops
 import (
 	"fmt"
 	"io"
-	"sync"
 
-	"github.com/an-lee/gh-sr/internal/cache"
 	"github.com/an-lee/gh-sr/internal/config"
+	"github.com/an-lee/gh-sr/internal/fanout"
 	"github.com/an-lee/gh-sr/internal/host"
-	"github.com/an-lee/gh-sr/internal/registry"
 	"github.com/an-lee/gh-sr/internal/runner"
 )
 
@@ -27,18 +25,6 @@ func ConnectHost(hostName string, hcfg config.HostConfig) (*host.Host, error) {
 // an SSH server. Tests that override it must restore it via t.Cleanup so they
 // don't leak state into other tests.
 var connectHostFn = ConnectHost
-
-// lockedWriter serialises concurrent writes to an underlying io.Writer.
-type lockedWriter struct {
-	mu sync.Mutex
-	w  io.Writer
-}
-
-func (lw *lockedWriter) Write(p []byte) (int, error) {
-	lw.mu.Lock()
-	defer lw.mu.Unlock()
-	return lw.w.Write(p)
-}
 
 // writeHostBanner writes "<prefix> (local)..." or "<prefix> (<addr>)..." to w.
 // Callers compose `prefix` with whatever verb/object they need (e.g.
@@ -110,9 +96,10 @@ type fanoutResult[T any] struct {
 // that host, and records the outcome in results (in group order). A connect
 // failure records the error in ConnectErr without invoking fn; when
 // warnOnConnectErr is set it also emits the package-standard warning line to
-// w. Writes to w are serialised; pass nil to discard output. The connect
-// factory is captured before spawning so tests that swap connectHostFn see a
-// consistent view for the whole call.
+// w. Writes to w are serialised (the serialised writer lives in
+// internal/fanout, shared with the doctor and runner fan-outs); pass nil to
+// discard output. The connect factory is captured before spawning so tests
+// that swap connectHostFn see a consistent view for the whole call.
 func fanOutHostsCore[T any](
 	w io.Writer,
 	cfg *config.Config,
@@ -122,34 +109,27 @@ func fanOutHostsCore[T any](
 ) []fanoutResult[T] {
 	var out io.Writer = io.Discard
 	if w != nil {
-		out = &lockedWriter{w: w}
+		out = fanout.NewLockedWriter(w)
 	}
 
 	connect := connectHostFn
 
-	results := make([]fanoutResult[T], len(groups))
-	var wg sync.WaitGroup
-	for i, g := range groups {
-		wg.Add(1)
-		go func(i int, g hostGroup) {
-			defer wg.Done()
-			results[i].Name = g.name
-			h, err := connect(g.name, cfg.Hosts[g.name])
-			if err != nil {
-				results[i].ConnectErr = err
-				if warnOnConnectErr {
-					fmt.Fprintf(out, "Warning: cannot connect to %s: %v\n", g.name, err)
-				}
-				return
+	return fanout.Indexed(groups, func(_ int, g hostGroup) fanoutResult[T] {
+		res := fanoutResult[T]{Name: g.name}
+		h, err := connect(g.name, cfg.Hosts[g.name])
+		if err != nil {
+			res.ConnectErr = err
+			if warnOnConnectErr {
+				fmt.Fprintf(out, "Warning: cannot connect to %s: %v\n", g.name, err)
 			}
-			defer h.Close()
-			val, err := fn(out, h, g)
-			results[i].Val = val
-			results[i].Err = err
-		}(i, g)
-	}
-	wg.Wait()
-	return results
+			return res
+		}
+		defer h.Close()
+		val, err := fn(out, h, g)
+		res.Val = val
+		res.Err = err
+		return res
+	})
 }
 
 // fanOutHosts connects to every group's host concurrently (one goroutine per
@@ -238,13 +218,8 @@ func setupHost(w io.Writer, cfg *config.Config, mgr *runner.Manager, rc config.R
 		return err
 	}
 	defer h.Close()
-	if rc.IsContainerMode() {
-		if err := ensureServiceForHost(w, h, cacheSettings(cfg), cache.Ensure); err != nil {
-			return err
-		}
-		if err := ensureServiceForHost(w, h, registrySettings(cfg), registry.Ensure); err != nil {
-			return err
-		}
+	if err := ensureContainerServices(w, h, rc, cacheSettings(cfg), registrySettings(cfg)); err != nil {
+		return err
 	}
 	return mgr.Setup(h, rc)
 }
@@ -262,13 +237,8 @@ func Up(w io.Writer, cfg *config.Config, mgr *runner.Manager, filterHost, filter
 	cacheSet := cacheSettings(cfg)
 	registrySet := registrySettings(cfg)
 	err = runPerHostParallel(w, cfg, runners, func(w io.Writer, h *host.Host, rc config.RunnerConfig) error {
-		if rc.IsContainerMode() {
-			if err := ensureServiceForHost(w, h, cacheSet, cache.Ensure); err != nil {
-				return err
-			}
-			if err := ensureServiceForHost(w, h, registrySet, registry.Ensure); err != nil {
-				return err
-			}
+		if err := ensureContainerServices(w, h, rc, cacheSet, registrySet); err != nil {
+			return err
 		}
 		fmt.Fprintf(w, "Starting %s on %s...\n", rc.Name, rc.Host)
 		if err := mgr.EnsureSetup(h, rc); err != nil {
@@ -350,10 +320,10 @@ func RebuildImage(w io.Writer, cfg *config.Config, mgr *runner.Manager, filterHo
 	cacheSet := cacheSettings(cfg)
 	registrySet := registrySettings(cfg)
 	err = runPerHostParallel(w, cfg, containerRunners, func(w io.Writer, h *host.Host, rc config.RunnerConfig) error {
-		if err := ensureServiceForHost(w, h, cacheSet, cache.Ensure); err != nil {
-			return err
-		}
-		if err := ensureServiceForHost(w, h, registrySet, registry.Ensure); err != nil {
+		// Every runner here is container-mode (partitionRebuildTargets
+		// filtered the list), so the guard inside
+		// ensureContainerServices is a no-op here.
+		if err := ensureContainerServices(w, h, rc, cacheSet, registrySet); err != nil {
 			return err
 		}
 		fmt.Fprintf(w, "Rebuilding image for %s on %s...\n", rc.Name, rc.Host)
@@ -381,13 +351,8 @@ func Update(w io.Writer, cfg *config.Config, mgr *runner.Manager, filterHost, fi
 	cacheSet := cacheSettings(cfg)
 	registrySet := registrySettings(cfg)
 	if err := runPerHostParallel(w, cfg, runners, func(w io.Writer, h *host.Host, rc config.RunnerConfig) error {
-		if rc.IsContainerMode() {
-			if err := ensureServiceForHost(w, h, cacheSet, cache.Ensure); err != nil {
-				return err
-			}
-			if err := ensureServiceForHost(w, h, registrySet, registry.Ensure); err != nil {
-				return err
-			}
+		if err := ensureContainerServices(w, h, rc, cacheSet, registrySet); err != nil {
+			return err
 		}
 		fmt.Fprintf(w, "Updating %s on %s...\n", rc.Name, rc.Host)
 		_ = mgr.Remove(h, rc)

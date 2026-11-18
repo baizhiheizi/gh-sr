@@ -3,9 +3,9 @@ package ops
 import (
 	"fmt"
 	"io"
-	"sync"
 
 	"github.com/an-lee/gh-sr/internal/config"
+	"github.com/an-lee/gh-sr/internal/fanout"
 	"github.com/an-lee/gh-sr/internal/host"
 )
 
@@ -41,52 +41,44 @@ func ResolveHostInfo(w io.Writer, cfg *config.Config) error {
 		toDetect = append(toDetect, hostEntry{name, hcfg})
 	}
 
-	results := make([]detectionResult, len(toDetect))
-	var wg sync.WaitGroup
-	var wMu sync.Mutex // guards writes to w
-
-	for i, e := range toDetect {
-		wg.Add(1)
-		go func(i int, name string, hcfg config.HostConfig) {
-			defer wg.Done()
-			if w != nil {
-				wMu.Lock()
-				fmt.Fprintf(w, "Detecting OS/arch for host %s (%s)...\n", name, hcfg.Addr)
-				wMu.Unlock()
-			}
-			conn, err := connectHostFn(name, hcfg)
-			if err != nil {
-				results[i] = detectionResult{name: name, hcfg: hcfg, err: fmt.Errorf("auto-detect %s: %w", name, err)}
-				return
-			}
-			if hcfg.OS == "" {
-				detectedOS, err := host.DetectOS(conn)
-				if err != nil {
-					conn.Close()
-					results[i] = detectionResult{name: name, hcfg: hcfg, err: fmt.Errorf("auto-detect OS for %s: %w", name, err)}
-					return
-				}
-				hcfg.OS = detectedOS
-			}
-			if hcfg.Arch == "" {
-				detectedArch, err := host.DetectArch(conn)
-				if err != nil {
-					conn.Close()
-					results[i] = detectionResult{name: name, hcfg: hcfg, err: fmt.Errorf("auto-detect arch for %s: %w", name, err)}
-					return
-				}
-				hcfg.Arch = detectedArch
-			}
-			conn.Close()
-			if w != nil {
-				wMu.Lock()
-				fmt.Fprintf(w, "  %s: detected os=%s arch=%s\n", name, hcfg.OS, hcfg.Arch)
-				wMu.Unlock()
-			}
-			results[i] = detectionResult{name: name, hcfg: hcfg}
-		}(i, e.name, e.hcfg)
+	// The progress lines are interleaved across hosts, so they go through a
+	// serialised writer; the per-host results land in their own slice index.
+	var out io.Writer = io.Discard
+	if w != nil {
+		out = fanout.NewLockedWriter(w)
 	}
-	wg.Wait()
+
+	results := fanout.Indexed(toDetect, func(_ int, e hostEntry) detectionResult {
+		res := detectionResult{name: e.name, hcfg: e.hcfg}
+		fmt.Fprintf(out, "Detecting OS/arch for host %s (%s)...\n", e.name, e.hcfg.Addr)
+		conn, err := connectHostFn(e.name, e.hcfg)
+		if err != nil {
+			res.err = fmt.Errorf("auto-detect %s: %w", e.name, err)
+			return res
+		}
+		if e.hcfg.OS == "" {
+			detectedOS, err := host.DetectOS(conn)
+			if err != nil {
+				conn.Close()
+				res.err = fmt.Errorf("auto-detect OS for %s: %w", e.name, err)
+				return res
+			}
+			e.hcfg.OS = detectedOS
+		}
+		if e.hcfg.Arch == "" {
+			detectedArch, err := host.DetectArch(conn)
+			if err != nil {
+				conn.Close()
+				res.err = fmt.Errorf("auto-detect arch for %s: %w", e.name, err)
+				return res
+			}
+			e.hcfg.Arch = detectedArch
+		}
+		conn.Close()
+		fmt.Fprintf(out, "  %s: detected os=%s arch=%s\n", e.name, e.hcfg.OS, e.hcfg.Arch)
+		res.hcfg = e.hcfg
+		return res
+	})
 
 	for _, r := range results {
 		if r.err != nil {
