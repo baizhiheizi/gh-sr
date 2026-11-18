@@ -38,9 +38,11 @@ func cacheSettings(cfg *config.Config) *cache.Settings {
 }
 
 // cacheTargets returns the sorted host names a cache command should run on,
-// narrowed by serviceTargets' shared Linux-only/--host filtering.
+// narrowed by serviceTargets' shared Linux-only/--host filtering. The workload
+// wording comes from cacheDescriptor, so the skip note names the service
+// exactly as the descriptor's status/deploy/remove paths do.
 func cacheTargets(w io.Writer, cfg *config.Config, filterHost string) ([]string, error) {
-	return serviceTargets(w, cfg, filterHost, "the cache server")
+	return serviceTargets(w, cfg, filterHost, cacheDescriptor.workload)
 }
 
 // CacheDeploy ensures the per-host cache server container exists and runs.

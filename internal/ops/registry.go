@@ -31,9 +31,11 @@ func registrySettings(cfg *config.Config) *registry.Settings {
 }
 
 // registryTargets returns the sorted host names a registry command should run
-// on, narrowed by serviceTargets' shared Linux-only/--host filtering.
+// on, narrowed by serviceTargets' shared Linux-only/--host filtering. The
+// workload wording comes from registryDescriptor, so the skip note names the
+// service exactly as the descriptor's status/deploy/remove paths do.
 func registryTargets(w io.Writer, cfg *config.Config, filterHost string) ([]string, error) {
-	return serviceTargets(w, cfg, filterHost, "the registry mirror")
+	return serviceTargets(w, cfg, filterHost, registryDescriptor.workload)
 }
 
 // RegistryDeploy ensures the per-host registry mirror container exists and
