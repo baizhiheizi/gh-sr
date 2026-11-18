@@ -5,8 +5,10 @@ import (
 	"io"
 	"sort"
 
+	"github.com/an-lee/gh-sr/internal/cache"
 	"github.com/an-lee/gh-sr/internal/config"
 	"github.com/an-lee/gh-sr/internal/host"
+	"github.com/an-lee/gh-sr/internal/registry"
 )
 
 // serviceTargets returns the sorted host names a per-host Docker service
@@ -65,4 +67,23 @@ func ensureServiceForHost[T any](w io.Writer, h *host.Host, s *T, ensure func(io
 		return nil
 	}
 	return ensure(w, h, *s)
+}
+
+// ensureContainerServices deploys the per-host services a container-mode
+// runner needs — the Actions cache server and the registry pull-through
+// mirrors — before the runner's own work.
+//
+// The container-mode policy lives here, in exactly one place: native-mode
+// runners never need these services, and the guard used to be repeated at
+// every call site, where one copy had already drifted (the rebuild path
+// relies on its runner list being pre-filtered to container mode instead of
+// re-checking). A service disabled in runners.yml is skipped.
+func ensureContainerServices(w io.Writer, h *host.Host, rc config.RunnerConfig, cacheSet *cache.Settings, registrySet *registry.Settings) error {
+	if !rc.IsContainerMode() {
+		return nil
+	}
+	if err := ensureServiceForHost(w, h, cacheSet, cache.Ensure); err != nil {
+		return err
+	}
+	return ensureServiceForHost(w, h, registrySet, registry.Ensure)
 }

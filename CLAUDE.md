@@ -26,7 +26,7 @@ go vet ./...         # Vet
 ## Architecture
 
 - `cmd/gh-sr/`     — CLI entry point
-- `internal/`     — Core packages (agentic, autostart, cache, config, doctor, editor, host, hostshell, ops, registry, runner, session, tui; support packages: diskschedule, dockerutil, probe, sharedcache, table, testutil)
+- `internal/`     — Core packages (agentic, autostart, cache, config, doctor, editor, host, hostshell, ops, registry, runner, session, tui; support packages: diskschedule, dockerutil, fanout, hostsvc, probe, sharedcache, table, testutil)
     - `session` — the process-assembly layer every entry point wires through (config/token/Manager resolution and their error policies); do not call `config` token/loader helpers around it.
 - `config/`       — Sample `runners.yml` only; the configuration code lives in `internal/config/`
 - `scripts/`      — Helper scripts

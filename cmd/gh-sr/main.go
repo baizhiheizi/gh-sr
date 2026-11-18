@@ -163,11 +163,13 @@ func runRunnerCmd(op func(io.Writer, *config.Config, *runner.Manager, string, st
 	}
 }
 
-// runCacheCmd is the cache-subcommand analogue of runRunnerCmd: a cobra
+// runHostServiceCmd is the per-host service analogue of runRunnerCmd: a cobra
 // RunE that loads the config and forwards to an ops function taking the
-// package-level filterHost flag. Commands with extra flags (e.g.
-// cache remove --purge-data) wrap their ops call in a closure.
-func runCacheCmd(op func(io.Writer, *config.Config, string) error) func(*cobra.Command, []string) error {
+// package-level filterHost flag. It serves every command that acts on a
+// per-host service (the cache server, the registry mirrors, the image sync).
+// Commands with extra flags (e.g. cache remove --purge-data) wrap their ops
+// call in a closure.
+func runHostServiceCmd(op func(io.Writer, *config.Config, string) error) func(*cobra.Command, []string) error {
 	return func(cmd *cobra.Command, _ []string) error {
 		s, err := loadSession()
 		if err != nil {
@@ -642,14 +644,90 @@ func restartCmd() *cobra.Command {
 	}
 }
 
+// hostServiceCmdSpec describes one per-host service command group. The cache
+// server and the registry mirror expose the same status/deploy/remove
+// commands over the same --host filter, so both groups are built from this
+// one spec instead of being written out twice.
+type hostServiceCmdSpec struct {
+	use   string // "cache" / "registry"
+	short string
+	long  string
+
+	// statusShort and deployShort describe the two shared subcommands.
+	statusShort string
+	deployShort string
+
+	// removeShort, removeLong and purgeDesc describe the remove subcommand.
+	removeShort string
+	removeLong  string
+	purgeDesc   string
+
+	// pruneShort and prune wire the optional prune subcommand. Only the
+	// cache server has a management API, so the registry leaves them nil.
+	pruneShort string
+	prune      func(io.Writer, *config.Config, string) error
+
+	// The ops entry points behind the subcommands.
+	status func(io.Writer, *config.Config, string) error
+	deploy func(io.Writer, *config.Config, string) error
+	remove func(io.Writer, *config.Config, string, bool) error
+}
+
+// newHostServiceCmd builds a per-host service command group from spec.
+func newHostServiceCmd(spec hostServiceCmdSpec) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   spec.use,
+		Short: spec.short,
+		Long:  spec.long,
+	}
+	cmd.AddCommand(
+		&cobra.Command{
+			Use:   "status",
+			Short: spec.statusShort,
+			RunE:  runHostServiceCmd(spec.status),
+		},
+		&cobra.Command{
+			Use:   "deploy",
+			Short: spec.deployShort,
+			RunE:  runHostServiceCmd(spec.deploy),
+		},
+	)
+	if spec.prune != nil {
+		cmd.AddCommand(&cobra.Command{
+			Use:   "prune",
+			Short: spec.pruneShort,
+			RunE:  runHostServiceCmd(spec.prune),
+		})
+	}
+	cmd.AddCommand(newHostServiceRemoveCmd(spec))
+	return cmd
+}
+
+// newHostServiceRemoveCmd builds the remove subcommand shared by the
+// per-host service groups: the same --purge-data flag, wired to the
+// service's own removal.
+func newHostServiceRemoveCmd(spec hostServiceCmdSpec) *cobra.Command {
+	var purgeData bool
+	cmd := &cobra.Command{
+		Use:   "remove",
+		Short: spec.removeShort,
+		Long:  spec.removeLong,
+		RunE: runHostServiceCmd(func(w io.Writer, cfg *config.Config, filterHost string) error {
+			return spec.remove(w, cfg, filterHost, purgeData)
+		}),
+	}
+	cmd.Flags().BoolVar(&purgeData, "purge-data", false, spec.purgeDesc)
+	return cmd
+}
+
 // cacheCmd groups the per-host local Actions cache server management commands.
 // The server is deployed automatically before container runner setup/start
 // (when enabled); these commands inspect or uninstall it explicitly.
 func cacheCmd() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "cache",
-		Short: "Manage the per-host local Actions cache server",
-		Long: `Deploy and manage a local GitHub Actions cache server (falcondev-oss
+	return newHostServiceCmd(hostServiceCmdSpec{
+		use:   "cache",
+		short: "Manage the per-host local Actions cache server",
+		long: `Deploy and manage a local GitHub Actions cache server (falcondev-oss
 github-actions-cache-server, one gh-sr-cache container per Linux host) so
 container runners serve actions/cache traffic from the host instead of GitHub's
 cache service. Artifacts and other non-cache traffic still pass through to
@@ -659,49 +737,22 @@ The server is deployed automatically before container runner setup/start when
 cache.enabled is not false in runners.yml; use these commands to inspect it,
 prune stored entries, or uninstall it. gh sr remove never deletes the cache —
 gh sr cache remove is the only uninstall path.`,
-	}
-	cmd.AddCommand(cacheStatusCmd(), cacheDeployCmd(), cachePruneCmd(), cacheRemoveCmd())
-	return cmd
-}
 
-func cacheStatusCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:   "status",
-		Short: "Show cache server state, health, and storage per host",
-		RunE:  runCacheCmd(ops.CacheStatus),
-	}
-}
+		statusShort: "Show cache server state, health, and storage per host",
+		deployShort: "Deploy (or start) the cache server container on hosts",
+		pruneShort:  "Delete all cache entries via the management API (best-effort)",
 
-func cacheDeployCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:   "deploy",
-		Short: "Deploy (or start) the cache server container on hosts",
-		RunE:  runCacheCmd(ops.CacheDeploy),
-	}
-}
-
-func cachePruneCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:   "prune",
-		Short: "Delete all cache entries via the management API (best-effort)",
-		RunE:  runCacheCmd(ops.CachePrune),
-	}
-}
-
-func cacheRemoveCmd() *cobra.Command {
-	var purgeData bool
-	cmd := &cobra.Command{
-		Use:   "remove",
-		Short: "Stop and remove the cache server container",
-		Long: `Stops and removes the gh-sr-cache container. With --purge-data, also deletes
+		removeShort: "Stop and remove the cache server container",
+		removeLong: `Stops and removes the gh-sr-cache container. With --purge-data, also deletes
 the storage directory (all cached data plus the generated management key).
 Runner removal (gh sr remove) never touches the cache.`,
-		RunE: runCacheCmd(func(w io.Writer, cfg *config.Config, filterHost string) error {
-			return ops.CacheRemove(w, cfg, filterHost, purgeData)
-		}),
-	}
-	cmd.Flags().BoolVar(&purgeData, "purge-data", false, "also delete the cache storage directory (all cached data)")
-	return cmd
+		purgeDesc: "also delete the cache storage directory (all cached data)",
+
+		prune:  ops.CachePrune,
+		status: ops.CacheStatus,
+		deploy: ops.CacheDeploy,
+		remove: ops.CacheRemove,
+	})
 }
 
 // registryCmd groups the per-host Docker registry pull-through mirror
@@ -709,10 +760,10 @@ Runner removal (gh sr remove) never touches the cache.`,
 // runner setup/start (when enabled); these commands inspect or uninstall it
 // explicitly.
 func registryCmd() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "registry",
-		Short: "Manage the per-host Docker registry pull-through mirrors",
-		Long: `Deploy and manage Docker registry pull-through mirrors (registry:2, one
+	return newHostServiceCmd(hostServiceCmdSpec{
+		use:   "registry",
+		short: "Manage the per-host Docker registry pull-through mirrors",
+		long: `Deploy and manage Docker registry pull-through mirrors (registry:2, one
 gh-sr-registry container per Linux host plus one gh-sr-registry-<name> per
 extra registry_mirror.mirrors entry). Container runners' inner Docker pulls
 Docker Hub images through the first mirror, so every runner on the host
@@ -728,41 +779,20 @@ per-registry equivalent for ghcr.io (moby/moby#41456), so other registries
 are handled by registry_mirror.mirrors + registry_mirror.prefetch with
 ` + "`gh sr images sync`" + ` instead. gh sr remove never deletes the mirrors —
 gh sr registry remove is the only uninstall path.`,
-	}
-	cmd.AddCommand(registryStatusCmd(), registryDeployCmd(), registryRemoveCmd())
-	return cmd
-}
 
-func registryStatusCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:   "status",
-		Short: "Show registry mirror state, health, and storage per host",
-		RunE:  runCacheCmd(ops.RegistryStatus),
-	}
-}
+		statusShort: "Show registry mirror state, health, and storage per host",
+		deployShort: "Deploy (or start) the registry mirror container on hosts",
 
-func registryDeployCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:   "deploy",
-		Short: "Deploy (or start) the registry mirror container on hosts",
-		RunE:  runCacheCmd(ops.RegistryDeploy),
-	}
-}
-
-func registryRemoveCmd() *cobra.Command {
-	var purgeData bool
-	cmd := &cobra.Command{
-		Use:   "remove",
-		Short: "Stop and remove the registry mirror container",
-		Long: `Stops and removes the gh-sr-registry container. With --purge-data, also
+		removeShort: "Stop and remove the registry mirror container",
+		removeLong: `Stops and removes the gh-sr-registry container. With --purge-data, also
 deletes the storage directory (all mirrored image layers). Runner removal
 (gh sr remove) never touches the mirror.`,
-		RunE: runCacheCmd(func(w io.Writer, cfg *config.Config, filterHost string) error {
-			return ops.RegistryRemove(w, cfg, filterHost, purgeData)
-		}),
-	}
-	cmd.Flags().BoolVar(&purgeData, "purge-data", false, "also delete the mirror storage directory (all mirrored layers)")
-	return cmd
+		purgeDesc: "also delete the mirror storage directory (all mirrored layers)",
+
+		status: ops.RegistryStatus,
+		deploy: ops.RegistryDeploy,
+		remove: ops.RegistryRemove,
+	})
 }
 
 // imagesCmd groups image-management commands for container runners.
@@ -795,7 +825,7 @@ exists, else directly from the upstream — then loads it into every
 container-mode runner's inner dockerd (docker save | docker exec docker
 load), skipping runners that already have the exact image. Also runs
 automatically after gh sr up and gh sr rebuild.`,
-		RunE: runCacheCmd(ops.ImagesSync),
+		RunE: runHostServiceCmd(ops.ImagesSync),
 	}
 }
 

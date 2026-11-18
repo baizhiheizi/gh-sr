@@ -503,6 +503,54 @@ func TestRemove(t *testing.T) {
 	}
 }
 
+// The generated probe script and the parser that reads its output must agree
+// on the storage-path convention: the script splices the remote $HOME, the
+// parser splices the home the probe reported. They share the rule through
+// internal/hostsvc; this pins the two sides to the same result.
+func TestInspectOneShotScript_splicesHome(t *testing.T) {
+	t.Parallel()
+
+	script := inspectOneShotScript(Settings{StoragePath: "$HOME/cache"})
+	if !strings.Contains(script, "storage=$HOME'/cache'") {
+		t.Errorf("script does not splice $HOME: %q", script)
+	}
+
+	abs := inspectOneShotScript(Settings{StoragePath: "/srv/cache"})
+	if !strings.Contains(abs, "storage='/srv/cache'") {
+		t.Errorf("script does not quote the absolute path: %q", abs)
+	}
+}
+
+func TestInspect_reportsResolvedStoragePath(t *testing.T) {
+	t.Parallel()
+
+	mock := &testutil.MockExecutor{
+		Output: oneShotOutput("running|ghcr.io/falcondev/cache:latest", "/root", gwOutput, "healthy", "4096"),
+	}
+	info, err := Inspect(newCacheHost(t, mock), Settings{Enabled: true, StoragePath: "$HOME/cache"})
+	if err != nil {
+		t.Fatalf("Inspect: %v", err)
+	}
+	if info.State != "running" {
+		t.Errorf("state = %q, want running", info.State)
+	}
+	if info.Image != "ghcr.io/falcondev/cache:latest" {
+		t.Errorf("image = %q", info.Image)
+	}
+	if info.StoragePath != "/root/cache" {
+		t.Errorf("storage path = %q, want /root/cache", info.StoragePath)
+	}
+	if !info.Healthy {
+		t.Error("healthy = false, want true")
+	}
+	if info.StorageBytes != 4096 {
+		t.Errorf("storage bytes = %d, want 4096", info.StorageBytes)
+	}
+	if want := fmt.Sprintf("http://172.17.0.1:%d/", DefaultPort); info.URL != want {
+		t.Errorf("url = %q, want %q", info.URL, want)
+	}
+}
+
 func TestMeasureStorage(t *testing.T) {
 	t.Parallel()
 	mock := &testutil.MockExecutor{RunFn: func(cmd string) (string, error) {

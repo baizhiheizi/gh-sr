@@ -24,6 +24,7 @@ import (
 	"github.com/an-lee/gh-sr/internal/dockerutil"
 	"github.com/an-lee/gh-sr/internal/host"
 	"github.com/an-lee/gh-sr/internal/hostshell"
+	"github.com/an-lee/gh-sr/internal/hostsvc"
 	"github.com/an-lee/gh-sr/internal/probe"
 )
 
@@ -176,17 +177,11 @@ func (s Settings) RunnerURL(h *host.Host) string {
 // mirrorRunnerURL is the runner-facing URL of mirror i, using a pre-resolved
 // docker0 gateway IP (URLOverride applies to the first mirror only).
 func (s Settings) mirrorRunnerURL(i int, gatewayIP string) string {
-	if i == 0 && s.URLOverride != "" {
-		return s.URLOverride
+	override := ""
+	if i == 0 {
+		override = s.URLOverride
 	}
-	hostPart := gatewayIP
-	if s.BindAddr != "" && s.BindAddr != "0.0.0.0" {
-		hostPart = s.BindAddr
-	}
-	if hostPart == "" {
-		return ""
-	}
-	return fmt.Sprintf("http://%s:%d", hostPart, s.mirrorPort(i))
+	return hostsvc.RunnerURL(override, s.BindAddr, gatewayIP, s.mirrorPort(i))
 }
 
 // mirrorPort is the resolved port of mirror i (first mirror defaults to
@@ -230,13 +225,7 @@ func (s Settings) hostPullRefBase(i int) string {
 // gateway (a host-local address), falling back to loopback when no gateway
 // was found.
 func (s Settings) localURL(i int, gatewayIP string) string {
-	if s.BindAddr != "" && s.BindAddr != "0.0.0.0" {
-		return fmt.Sprintf("http://%s:%d", s.BindAddr, s.mirrorPort(i))
-	}
-	if gatewayIP != "" {
-		return fmt.Sprintf("http://%s:%d", gatewayIP, s.mirrorPort(i))
-	}
-	return fmt.Sprintf("http://127.0.0.1:%d", s.mirrorPort(i))
+	return hostsvc.LocalURL(s.BindAddr, gatewayIP, s.mirrorPort(i))
 }
 
 // mirrorStoragePath resolves the on-host storage dir of mirror i: the base
@@ -258,20 +247,9 @@ func (s Settings) mirrorStoragePath(i int, h *host.Host) (string, error) {
 // Docker bind mounts and mkdir do not undergo shell expansion. $HOME is
 // resolved once for the whole list rather than once per mirror.
 func (s Settings) mirrorStoragePaths(h *host.Host) ([]string, error) {
-	base := s.StoragePath
-	if base == "" {
-		base = DefaultStoragePath
-	}
-	if strings.HasPrefix(base, "$HOME") {
-		out, err := h.Run("echo $HOME")
-		if err != nil {
-			return nil, fmt.Errorf("resolving home dir: %w", err)
-		}
-		home := strings.TrimSpace(out)
-		if home == "" {
-			return nil, fmt.Errorf("resolving home dir: empty $HOME")
-		}
-		base = home + base[len("$HOME"):]
+	base, err := hostsvc.ResolveStoragePath(h, s.StoragePath, DefaultStoragePath)
+	if err != nil {
+		return nil, err
 	}
 	list := s.mirrorList()
 	paths := make([]string, len(list))
@@ -483,14 +461,7 @@ type MirrorStatus struct {
 }
 
 // StatusInfo is the reported state of one registry mirror.
-type StatusInfo struct {
-	State        string // Docker state ("running", "exited", ...) or "" when absent
-	Image        string
-	URL          string // runner-facing mirror URL ("" when not resolvable)
-	StoragePath  string
-	StorageBytes int64
-	Healthy      bool // GET /v2/ answered 200
-}
+type StatusInfo = hostsvc.StatusInfo
 
 // MirrorStorage is one mirror's storage directory and its apparent size on
 // disk (0 when the dir does not exist yet or is empty).
@@ -548,21 +519,17 @@ func MirrorStorages(h *host.Host, s Settings) ([]MirrorStorage, error) {
 func Remove(w io.Writer, h *host.Host, s Settings, purgeData bool) error {
 	for i := 0; i < len(s.mirrorList()); i++ {
 		cname := s.containerName(i)
-		if _, err := h.Run("docker rm -f " + cname); err != nil {
-			return fmt.Errorf("removing registry mirror container: %w", err)
-		}
-		fmt.Fprintf(w, "  registry: removed %s\n", cname)
-		if !purgeData {
-			continue
-		}
-		storage, err := s.mirrorStoragePath(i, h)
-		if err != nil {
+		if err := hostsvc.RemoveContainer(w, h, hostsvc.RemoveOpts{
+			Container: cname,
+			Noun:      "registry mirror",
+			Label:     "registry",
+			PurgeData: purgeData,
+			StoragePath: func() (string, error) {
+				return s.mirrorStoragePath(i, h)
+			},
+		}); err != nil {
 			return err
 		}
-		if _, err := h.Run("rm -rf " + hostshell.PosixSingleQuote(storage)); err != nil {
-			return fmt.Errorf("removing registry mirror storage: %w", err)
-		}
-		fmt.Fprintf(w, "  registry: purged %s\n", storage)
 	}
 	return nil
 }

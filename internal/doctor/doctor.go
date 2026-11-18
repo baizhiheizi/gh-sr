@@ -14,6 +14,7 @@ import (
 	"github.com/an-lee/gh-sr/internal/cache"
 	"github.com/an-lee/gh-sr/internal/config"
 	"github.com/an-lee/gh-sr/internal/dockerutil"
+	"github.com/an-lee/gh-sr/internal/fanout"
 	"github.com/an-lee/gh-sr/internal/host"
 	"github.com/an-lee/gh-sr/internal/hostshell"
 	"github.com/an-lee/gh-sr/internal/registry"
@@ -177,41 +178,36 @@ func Run(w io.Writer, in RunInput) Result {
 		buf bytes.Buffer
 		r   Result
 	}
-	hostResults := make([]hostResult, len(hostOrder))
+	// One goroutine per host; each writes into its own buffer, so the results
+	// need no synchronisation beyond the fan-out's own ordering.
+	hostResults := fanout.Indexed(hostOrder, func(_ int, hostName string) *hostResult {
+		hr := &hostResult{}
+		hcfg := in.Config.Hosts[hostName]
 
-	var hostWg sync.WaitGroup
-	for i, hostName := range hostOrder {
-		hostWg.Add(1)
-		go func(idx int, hostName string) {
-			defer hostWg.Done()
-			hr := &hostResults[idx]
-			hcfg := in.Config.Hosts[hostName]
+		h := host.NewHost(hostName, hcfg)
+		if err := h.Connect(); err != nil {
+			printLine(&hr.buf, sevFail, hostName, fmt.Sprintf("connect: %v", err))
+			hr.r.Fail++
+			return hr
+		}
+		if err := ensureDoctorHostOS(h, hcfg.Addr); err != nil {
+			printLine(&hr.buf, sevFail, hostName, fmt.Sprintf("detect os: %v", err))
+			hr.r.Fail++
+			_ = h.Close()
+			return hr
+		}
 
-			h := host.NewHost(hostName, hcfg)
-			if err := h.Connect(); err != nil {
-				printLine(&hr.buf, sevFail, hostName, fmt.Sprintf("connect: %v", err))
-				hr.r.Fail++
-				return
-			}
-			if err := ensureDoctorHostOS(h, hcfg.Addr); err != nil {
-				printLine(&hr.buf, sevFail, hostName, fmt.Sprintf("detect os: %v", err))
-				hr.r.Fail++
-				_ = h.Close()
-				return
-			}
-
-			defer h.Close()
-			printLine(&hr.buf, sevOK, hostName, fmt.Sprintf("connected (%s)", addrSummary(hcfg.Addr)))
-			runHostChecks(&hr.buf, hostName, h, runners, &hr.r, cacheSet, cacheEnabled, mirrorSet, containerExtras{
-				NPMRegistry:  in.Config.NPMRegistry,
-				SharedCaches: sharedcache.Enabled(in.Config.SharedCaches),
-			})
-		}(i, hostName)
-	}
-	hostWg.Wait()
+		defer h.Close()
+		printLine(&hr.buf, sevOK, hostName, fmt.Sprintf("connected (%s)", addrSummary(hcfg.Addr)))
+		runHostChecks(&hr.buf, hostName, h, runners, &hr.r, cacheSet, cacheEnabled, mirrorSet, containerExtras{
+			NPMRegistry:  in.Config.NPMRegistry,
+			SharedCaches: sharedcache.Enabled(in.Config.SharedCaches),
+		})
+		return hr
+	})
 
 	for i := range hostOrder {
-		hr := &hostResults[i]
+		hr := hostResults[i]
 		_, _ = io.Copy(w, &hr.buf)
 		r.Fail += hr.r.Fail
 		r.Warn += hr.r.Warn
