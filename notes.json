@@ -9,33 +9,33 @@
   "checks": [
     {
       "area": "repo_assist_prs",
-      "checked_at": "2026-11-18",
+      "checked_at": "2026-11-19",
       "result": "acted",
-      "follow_up": "#653 (session tests draft) unchanged & base current (main 7d15ab7); its CI/bench show action_required = bot-branch approval gate, infra-only. New draft: deps(host) x/crypto 0.58->0.59."
-    },
-    {
-      "area": "dependencies",
-      "checked_at": "2026-11-18",
-      "result": "acted",
-      "follow_up": "x/crypto 0.58->0.59 was the only outdated direct dep (weekly dependabot hadn't picked it up by 11-18) -> manual bump draft PR. Zero open Dependabot alerts. cobra 1.10.2 / x-term 0.48 / bubbletea 2.1.1 / go-gh 2.17.0 / go 1.26.7 current."
+      "follow_up": "#653 (session tests) merged as 672835d, #655 (x/crypto 0.59) merged as 398a01f; zero open repo-assist PRs before this run. New draft: docs(changelog) record #660 fan-out refactor, branch repo-assist/basics-changelog-fanout-refactor."
     },
     {
       "area": "tests",
-      "checked_at": "2026-11-17",
+      "checked_at": "2026-11-19",
       "result": "acted",
-      "follow_up": "Post-#649 sweep: config 89.3/runner 88.8/ops 90.0/hostshell 94.3; session the gap (47.6%). Draft repo-assist/test-session-resolution-wiring pins resolution wiring at 85.7%; token branches forced via gh env vars. Rest unforceable; race suite OK."
+      "follow_up": "#660 post-merge QA at HEAD 5337dd9: go build/vet clean, go test -race ./... green (24 pkgs). All four fan-out sites on fanout.Indexed/NewLockedWriter; only prod WaitGroup left is fanout.go itself. Session-gap tests merged (#653)."
     },
     {
       "area": "docs",
-      "checked_at": "2026-11-17",
+      "checked_at": "2026-11-19",
       "result": "acted",
-      "follow_up": "CLAUDE.md current post-#646-#649. v0.10.0 recorded under [Unreleased] (7d15ab7); no tag yet (48 commits since v0.9.1) -> flagged tag v0.10.0 in #595. Docs PR #652 is docs agent, untouched. NEXT: CLI cross-check after next surface change."
+      "follow_up": "v0.10.0 RELEASED 2026-11-16 (tag 7d15ab7 + GH Release). Rolling [Unreleased] convention re-confirmed (v0.9.1 tagged identically). Gap found+drafted: #660 had no Changed entry. NEXT: docs/CLI cross-check after next surface change."
+    },
+    {
+      "area": "hygiene",
+      "checked_at": "2026-11-19",
+      "result": "acted",
+      "follow_up": "6 open issues: 4 monthly trackers + #654 (aw no-op) + #659 (dup-code fan-out). #659 resolved by #660, verified at HEAD; close recommended via #595. No fixable bug/help-wanted backlog."
     },
     {
       "area": "ci",
       "checked_at": "2026-11-18",
       "result": "no_actionable",
-      "follow_up": "Main green (only schedule runs since 11-17, all success). #653-branch CI/bench action_required = approval gate on automation branches, not a code failure."
+      "follow_up": "Main green (only schedule runs since 11-17, all success). Bot-branch checks action_required = approval gate, infra-only."
     },
     {
       "area": "performance",
@@ -44,10 +44,10 @@
       "follow_up": "Round-trip suite re-run post-#646-#649: ManagerStatus native 1/4/16 + container = 1.0, disk batch 1.0, cache inspect 1.0, registry pinned at designed 3, native fallback 5 by design. One-shot scripts memoized; #648 inventory adds zero extra round trips."
     },
     {
-      "area": "hygiene",
+      "area": "dependencies",
       "checked_at": "2026-11-18",
-      "result": "no_actionable",
-      "follow_up": "Task 5 sweep clean: zero TODO/FIXME, no dead code. Issue backlog 11-18: all 5 open issues are automation trackers (#654 aw no-op + 4 monthly); none bug/help wanted/good first issue; no fixable backlog since 11-03."
+      "result": "acted",
+      "follow_up": "x/crypto 0.58->0.59 bump merged as #655 (398a01f). cobra 1.10.2 / x-term 0.48 / bubbletea 2.1.1 / go-gh 2.17.0 / go 1.26.7 current; zero open Dependabot alerts."
     }
   ],
   "completed_actions": [],
