@@ -7,110 +7,81 @@ metadata:
 
 ## Last Run
 
-- Date: 2026-11-12
-- Run ID: 43130118672
+- Date: 2026-11-19
+- Run ID: 44429533707
 - Workflow: efficiency-improver
-- Round-robin slot this run: **Tasks 2+3 (implement the top backlog item: Manager.Status batch)** + Task 4 verification + Task 7.
+- Round-robin slot this run: **Tasks 2+6 (post-#660 opportunity scan + doctor RT measurement fixture)** + Task 4 verification + mini Task 3 (sudo fold) + Task 7.
 
 ## Work This Run
 
-- **Manager.Status cross-instance batch (2-3N → 1 SSH round trip per host)** — the top backlog item. New `internal/runner/status_batch.go`: `buildNativeStatusBatchScript` (full `statusNativeState` machine per instance in one POSIX script: version cat → svc.sh systemctl branch → autostart user/system branch → PID-file fallback; elevation gate `id -u`+`sudo -n true` evaluated ONCE per script) and `buildContainerStatusBatchScript` (the containerLocalStatusOneShot shell verbatim + tagged emit). Both emit `@@ns:<i>|<local>|<version>` / `@@cs:<i>|<payload>` via the `internal/probe` Writer; shared `parseStatusBatch` decodes with `probe.Lines`; missing/duplicate/out-of-range index → whole batch fails → Status falls back to the per-instance probes verbatim. Non-Linux hosts skip the batch.
-- `Manager.Status` in internal/runner/runner.go: batch-first (container always; native only `h.OS == "linux"`), unchanged per-instance loop as fallback. Version "" → "-" mapping preserved.
-- Deliberate folds documented in code: double `ServiceActiveState` probe → one probe (second call only re-read an already-inactive state); `.runner-version` whitespace collapsed to single words (mirrors V-marker space-join).
-- **The real-shell scenario suite caught a genuine bug**: my first mapping used one `case` for both branches, but `statusNativeState` maps svc-branch "inactive" → stopped while the kind-branch leaves it EMPTY so the PID-file check decides. Fixed: `elif [ "$src" = svc ] → stopped` / `elif failed|activating → service error` / else fall through. The shell tests earn their keep — keep writing them for any new remote state machine.
-- Created draft PR on branch `efficiency/status-batch-one-shot` (number not visible during run).
-- Monthly Activity 2026-11 issue identified as **#602** (found via list_issues + labels:["efficiency"] — the filter-removal note reveals the number). Appended this run's entry (append-only; cannot read filtered bodies).
-- Task 4: **PR #601 (cache.Inspect 5→1 fold) was closed UNMERGED 2026-11-05** — do NOT re-propose it. The maintainer generalized the one-shot pattern into `internal/probe` during the #609 architecture refactor (probe module #613/#632, strfmt dissolved, ops fanout unified, Manager rewiring — those PRs were also closed unmerged with commits squashed onto main). No open `[efficiency-improver]` PRs remain.
+- **Task 4 verification**: PR **#633** (Manager.Status batch) closed unmerged and absorbed to main (status_batch.go present). Post-#660 metrics held: Status 1.000 RT native 1/4/16 + container 4; fallback benchmark now **5.000** RT (1 failed batch + 4 one-shot probes; absorbed code kept the double-probe fold — my branch measured 9). No open `[efficiency-improver]` PRs remain.
+- **#595 RESOLVED on main** (was open in backlog): benchstat now lazily captures sub-benchmark names whole (`benchRe` `(.+?)(?:-\d+)?`), `ParseFileWithStats` reports dropped lines, medians + package scope + ns noise floor all landed via repo-assist **#580** (absorbed per maintainer pattern). Verified end-to-end: sub-bench file → `Parent/case-small`/`Parent/case-big` parsed, `{2 0}` stats. Issue closed; benchstat `strings.Split` audit also effectively done (1 site left).
+- **Doctor RT fixture** (new `internal/doctor/roundtrip_bench_test.go`, fork-assisted): deterministic `TestDoctorHostRoundTripsExact` pins counts + integrity (every check reaches OK, Warn==0/Fail==0, silent-healthy stays silent). Baselines: **Mixed5 = 28.00 RT** (2 native + 2 container + 1 agentic, cache+mirror+extras auto-bind), **NativeOnly1 = 9.000 RT**. Command→reply table mined from existing per-check MockExecutors; route order matters (tagged `@@` batches before plain probes they embed).
+- **Sudo fold** (`checkLinuxSudo` doctor.go): `id -u` + `sudo -n true` → one one-shot `u=$(id -u); [ "$u" = "0" ] && echo root || { sudo -n true 2>/dev/null && echo ok || echo no; }`; token contract preserved (root silent / ok OK / no WARN / transport err → uid WARN; failing id falls through to sudo verdict = old behavior). Real-`sh` scenario test with shimmed id/sudo (4 cases). **28→27 / 9→8**, deterministic.
+- **Two draft PRs created (stacked)**: `efficiency/doctor-roundtrip-fixture` (fixture, test-only) → `efficiency/doctor-sudo-one-shot` (fold, base = fixture branch). Numbers not visible during run; reference by branch.
+- **Task 5**: no comments — only open efficiency-labeled issue is my own #602 (anti-spam).
 
 ## Measurements
 
-Manager.Status round trips (exact proxy metric, 0 % variance):
+| Benchmark | Before | After (this run) |
+| --------- | ------ | ---------------- |
+| DoctorHostRoundTripsMixed5 | 28.00 | **27.00** (sudo fold) |
+| DoctorHostRoundTripsNativeOnly1 | 9.000 | **8.000** |
+| ManagerStatusRoundTrips Native1/4/16, Container4 | — | 1.000 each (held post-#660) |
+| ManagerStatusRoundTripsNative4Fallback | 9.000 (my branch) | **5.000** (absorbed main) |
 
-| Benchmark | Before (main) | After (branch) |
-| --------- | ------------- | -------------- |
-| ManagerStatusRoundTripsNative1 | 2.000 | **1.000** |
-| ManagerStatusRoundTripsNative4 | 8.000 | **1.000** |
-| ManagerStatusRoundTripsNative16 | 32.00 | **1.000** |
-| ManagerStatusRoundTripsContainer4 | 4.000 | **1.000** |
-| ManagerStatusRoundTripsNative4Fallback | — | 9.000 (1 failed batch + 2×4) |
+Doctor RT anatomy of the 27: DNS 1, native tools 1, native install 2 (1/instance), sudo 1 (folded), prereqs 1, container install 1 (batched), inner hygiene 2 (MTU + batch), cache 4 (Inspect + RunnerURL gw + exec probe + EffectiveBind), registry 8 (Inspect 3 [gw+echo $HOME+batch], probe 3 [gw+env+exec], docker ps -a 1, EffectiveBind 1), extras 2 (env+mounts), orphans 2, disk 2.
 
-Mock-local ns/op regressed (~1.2→~2.4 µs N1, ~15→~28 µs N16; B/op 16.8→94.5 KB N16) — script-text build cost, same CPU-for-network trade-off as the cache fold. Real-host saving: ~31 RTs/tick for 16 instances.
+**KEY: docker0 gateway resolved 5× per mixed pass** (cache RunnerURL, cache EffectiveBind, registry Inspect, registry RunnerURL, registry EffectiveBind) → per-pass lazy hoist = **−4 RT** (27→23). Design notes: `dockerutil.EffectiveBind(h,bind)` only pays a RT when bind=="" (auto path); explicit-bind hosts must stay 0-RT → resolve lazily once per runHostChecks (small struct/closure: `gateway string; resolved bool`), pass into checks and the failMsg closures at doctor.go:919/:1040 too. RunnerURL helpers (cache.Settings.RunnerURL / registry Settings.RunnerURL) resolve the gateway internally — either add a gateway-parameterized variant or resolve before calling.
 
-Prior baselines: cache.Inspect 1 RT (PR #601 closed; pattern now in internal/probe), MeasureDiskUsageBatch 1 RT, agentic fanout 1 RT.
+## Tooling limits (unchanged, important)
 
-## Tooling limits (important for future runs)
-
-- **safeoutputs-created issues/PRs cannot be read** through the MCP GitHub tools — integrity policy filters them. `list_issues` DOES reveal their **numbers** in the filter-removal note; filtering by label narrows which number belongs to which issue (used to identify #602).
-  - Consequence: use `update_issue` with `operation: append` for monthly issues, never `replace`.
-  - PR/issue numbers created via safeoutputs are **not visible** during the run — reference by branch name / title.
-- `mcp__github__ui_get` denied; `list_label` works.
-- search_pull_requests `fields` enum: `head` and `merged` are NOT valid; use number/title/state/draft/html_url/updated_at/closed_at.
-- Maintainer pattern: agent PRs get closed unmerged with the changes squashed onto main themselves (e.g. #632 → commit df2eadb). Check `git log` before assuming a PR was rejected on merit.
+- safeoutputs-created issues/PRs cannot be read via MCP tools (integrity filter); `list_issues`/search reveal numbers via filter-removal notes. `update_issue` with `operation: append` only (cannot read body to replace). PR numbers not visible during run — reference by branch/title.
+- search_pull_requests fields: `head`/`merged` invalid (number/title/state/draft/html_url/updated_at/closed_at OK).
+- Maintainer pattern: agent PRs closed unmerged, changes squashed onto main themselves. Check git log/file presence before assuming rejection.
 
 ## Open Items
 
-- Draft PR on branch `efficiency/status-batch-one-shot` — Manager.Status batch (awaiting maintainer review; recommend a real-VPS spot-check of the elevation gate).
-- Open issue #595 (2026-10-21): benchstat drops sub-benchmark rows (noise hardening) — still awaiting maintainer input.
-- `[efficiency-improver] Monthly Activity 2026-11` = issue **#602** (open).
-- Other agent PRs (#570/#566/#610 etc.) — not ours to maintain.
+- Two stacked draft PRs awaiting review: `efficiency/doctor-roundtrip-fixture` + `efficiency/doctor-sudo-one-shot` (Task 4 next run: check closed/absorbed per pattern).
+- `[efficiency-improver] Monthly Activity 2026-11` = issue **#602** (open; appended this run's entry).
 
-## Discovered Commands (validated)
+## Discovered Commands (validated, unchanged)
 
 ```bash
-# Build / test / vet / format
-GOTOOLCHAIN=auto go build ./...
+GOTOOLCHAIN=auto go build ./... ; GOTOOLCHAIN=auto go vet ./... ; gofmt -l .   # all clean
 GOTOOLCHAIN=auto go test ./... -race -count=1
-GOTOOLCHAIN=auto go vet ./...
-gofmt -l .   # must be empty
-
-# Benchmarking via Makefile
-make bench          # go test ./... -run='^$' -bench=. -benchmem -count=3
-make bench-save     # writes bench-results/bench-<UTC-stamp>.txt
-make ci             # vet + fmt + test
-
-# Round-trip metric benchmarks only
-GOTOOLCHAIN=auto go test ./internal/runner/ ./internal/agentic/ ./internal/cache/ \
-  -run='^$' -bench='RoundTrips' -benchmem -count=3 -benchtime=500ms
-
-# Diff two snapshots
-go run scripts/benchstat/main.go -base base.txt -head head.txt -packages internal/runner -output out.md
+make bench / make bench-save / make ci
+GOTOOLCHAIN=auto go test ./internal/doctor/ -run='^$' -bench='DoctorHostRoundTrips' -benchmem -count=3 -benchtime=300ms
+GOTOOLCHAIN=auto go test ./internal/runner/ -run='^$' -bench='RoundTrips' -benchmem
 ```
 
-Notes:
-- `go.mod` requires go 1.26.0; local toolchain older → `GOTOOLCHAIN=auto` everywhere.
-- Full bench run ~4 min → run in background. `scripts/benchstat/main.go` has `//go:build ignore`; run via `go run`.
-- Benchmarks must be FLAT-named (benchstat regex drops `/` sub-benchmarks).
+## Validated Optimization Patterns (new this run marked ★)
 
-## Validated Optimization Patterns
+- ★ **Fork-assisted fixture building works well**: fork mines command→reply tables from existing per-check MockExecutors and iterates to green; coordinator reviews diff + verifies metrics independently. Route order in doctorRunFn: tagged batch scripts (`@@begin:`, `@@m:`, cache one-shot) MUST route before plain-probe substrings they embed.
+- ★ **Real-sh scenario test for any new remote state machine** (repo convention from status_batch; applied to sudo one-shot: shimmed id/sudo on PATH, GOOS gate, 4 outcome cases).
+- ★ One-shot token contract pattern: script emits distinct tokens per outcome; Go maps err→first-probe error message (connection failures must not surface as misleading check-specific warnings).
+- `internal/probe` wire format for batches (tags `@@tag:i|tail`, probe.Writer.Echo, probe.Lines parse) — unchanged.
+- Benchmarks FLAT-named; exact-count RT assertions double as regression gates ("down is progress" message in test failure).
+- `GOTOOLCHAIN=auto` everywhere; go.mod needs go 1.26.
 
-- **`internal/probe` is the standard wire format for one-shot batches** (post-#609): tags include the `@@` prefix (`@@ns:`, `@@cs:`); `probe.Writer.Echo(tag, index, tail)` writes `echo "@@tag:<i>|<tail>"` with tail verbatim (shell vars expand remotely); parse with `probe.Lines` (range-over-func, alloc-free). Precedents: registry buildInspectBatchScript, agentic inner_batch, cache.
-- **For any new remote state machine, commit a real-`sh` scenario test** (shimmed systemctl/sudo/id on PATH, `runtime.GOOS=="linux"` gate). It caught a real fall-through bug this run that substring tests would have missed. shim caveat: distinguish systemctl calls by state vars, not arg patterns (svc branch args contain `.service` too).
-- **`local` is a shell builtin keyword** — never use it as a variable name in generated scripts (dash errors outside functions). Used `rstate`.
-- In `fmt.Fprintf` format strings, `%%` renders one `%` in the shell (e.g. `printf '%%s '` → `printf '%s '`); `${v%% }` in a Fprintf format means shell `${v% }`.
-- Version collapse idiom: `v=$(printf '%s ' $v); v=${v% }` + `set -f` (noglob) — word-splits safely, `-`-leading values safe (printf arg not format).
-- Batch parse contract: first occurrence wins per index; any missing index → ok=false → caller falls back. Stray foreign-tag lines ignored.
-- Mirror Go parsing in shell with parameter expansion; multi-probe folds emit tag-prefixed single-line sections.
-- Measure SSH round trips (exact, via testutil.RoundTripCounter), not just CPU. Deterministic counts need no threshold; wall-clock needs % thresholds (ns noise up to +47 %).
-- `strings.SplitSeq` for line iteration (repo convention). Pre-size destinations for bounded captures.
+## Backlog (re-scanned 2026-11-19, verified against post-#660 code)
 
-## Backlog
-
-- **MEDIUM — Data:** `gh sr doctor` round trips per host not yet measured — needs a realistic mock fixture (count depends on check short-circuits).
-- **MEDIUM — Measurement:** benchstat sub-benchmark hole (#595) — unblocks gating table-driven benchmarks.
-- **LOW — Code-Level:** continue `strings.Split` audit (`scripts/benchstat/main.go:56`).
-- **LOW — Code-Level:** audit `dashboard.View()` / TUI rendering allocations (`viewScroll` sibling of PR #502).
-- **LOW — Data:** cache TTL / expiry policies in `internal/cache` and `internal/autostart`.
-- **LOW — Code-Level:** `internal/cache/cache.go` Prune — gateway resolve once per call (re-verify against post-#607 code first).
-- DONE: Manager.Status batch (draft PR this run, branch `efficiency/status-batch-one-shot`); cache.Inspect fold (PR #601, closed unmerged — pattern absorbed into internal/probe); agentic dedup (PR #545, merged); round-trips/op metric (PR #575, merged).
+- **HIGH-MEDIUM — Network/IO:** doctor gateway hoist, −4 RT (27→23) per mixed pass. Design notes above. Measurable via fixture.
+- **MEDIUM — Network/IO:** doctor native-install check batch (checkNativeRunnerInstall doctor.go:526, `NativeRunnerConfigPresent` 1 RT/instance → probe batch like ProbeContainersBatch; 2→1 here; same shape as ops items).
+- **MEDIUM — Network/IO:** doctor D1: checkOrphanRunners re-lists dirs already fetched by checkRunnerDiskUsage's inventory (doctor.go:1067/1085) — pass through, −1-2 RT. D3: runnerContainerHasEnv + curl probe fold per container (−2 RT).
+- **MEDIUM — Network/IO:** ops/service.go per-instance loops: ServiceStatus 2N RT (autostart.Status = Detect + active check), ServiceInstall ~3-4N (ConfigPresent + remoteHome host-invariant per instance + install), ServiceUninstall 2N. Batch via internal/probe; minimal first step: hoist remoteHome per host. Lower priority (admin ops, not hot loops).
+- **LOW-MEDIUM:** doctor full single-probe redesign (~27→~4 RT) — big refactor, needs the D-items first.
+- **LOW:** dashboard.View() TUI allocations; cache TTL/expiry policies; cache.go Prune gateway resolve re-verify.
+- RESOLVED: #595 benchstat sub-benchmarks (via absorbed #580); doctor RT measurement (fixture this run); Manager.Status batch (absorbed #633); cache.Inspect fold (absorbed); benchstat strings.Split audit (effectively done).
 
 ## Last-Run Task Rotation
 
 | Task | Last run | Status |
 | ---- | -------- | ------ |
-| 1 — discover/validate commands | 2026-10-14 | stable; re-validated build/test/vet/fmt this run |
-| 2 — identify opportunities | 2026-10-14 | done (backlog driven since) |
-| 3 — implement improvements | 2026-11-12 | done (Manager.Status batch, draft PR efficiency/status-batch-one-shot) |
-| 4 — maintain PRs | 2026-11-12 | #601 closed unmerged; no open efficiency PRs |
-| 5 — comment on efficiency issues | 2026-11-05 | open issues are agent-created/integrity-filtered — no human-authored efficiency issues; no comment by design |
-| 6 — measurement infrastructure | 2026-10-21 | done (round-trips/op metric, merged as #575) |
-| 7 — monthly activity summary | 2026-11-12 | done (appended run entry to #602) |
+| 1 — discover/validate commands | 2026-11-19 | re-validated post-#660 (build/vet/fmt/race/doctor+runner RT benches) |
+| 2 — identify opportunities | 2026-11-19 | done (fork scan; doctor anatomy; F1-F3 verified) |
+| 3 — implement improvements | 2026-11-19 | done (sudo fold, stacked draft PR) |
+| 4 — maintain PRs | 2026-11-19 | #633 confirmed absorbed; no open efficiency PRs at run start |
+| 5 — comment on efficiency issues | 2026-11-19 | no candidates (only own #602 open+efficiency) — no comment by design |
+| 6 — measurement infrastructure | 2026-11-19 | done (doctor RT fixture + exact-count gate) |
+| 7 — monthly activity summary | 2026-11-19 | done (appended run entry to #602) |
