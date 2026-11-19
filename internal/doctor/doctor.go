@@ -587,24 +587,27 @@ func checkNative(w io.Writer, hostName string, h *host.Host, r *Result) {
 	}
 }
 
+// checkLinuxSudo folds the uid gate and the sudo probe into one SSH round
+// trip: separately they cost two remote invocations for information one
+// remote shell can produce in a single pass. The output tokens preserve the
+// two-probe contract: "root" returns silently, "ok"/"no" map to the OK/WARN
+// lines, and a transport error still reports the uid-check failure rather
+// than a misleading missing-sudo warning.
 func checkLinuxSudo(w io.Writer, hostName string, h *host.Host, r *Result) {
-	uid, err := h.Run(`id -u`)
-	if err != nil {
+	out, err := h.Run(`u=$(id -u); [ "$u" = "0" ] && echo root || { sudo -n true 2>/dev/null && echo ok || echo no; }`)
+	out = strings.TrimSpace(out)
+	switch {
+	case err != nil:
 		printLine(w, sevWarn, hostName, fmt.Sprintf("linux: could not check uid: %v", err))
 		r.Warn++
+	case out == "root":
 		return
-	}
-	if strings.TrimSpace(uid) == "0" {
-		return
-	}
-	out, err := h.Run(`sudo -n true 2>/dev/null && echo ok || echo no`)
-	out = strings.TrimSpace(out)
-	if err != nil || out != "ok" {
+	case out != "ok":
 		printLine(w, sevWarn, hostName, "linux: passwordless sudo not available; gh sr setup/update may fail for package installs")
 		r.Warn++
-		return
+	default:
+		printLine(w, sevOK, hostName, "linux: non-root user has passwordless sudo")
 	}
-	printLine(w, sevOK, hostName, "linux: non-root user has passwordless sudo")
 }
 
 // hasContainerAgenticRunners returns true if any runner uses agentic profile in container mode.
