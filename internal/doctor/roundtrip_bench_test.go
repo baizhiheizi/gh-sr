@@ -19,6 +19,15 @@ import (
 // still pay one remote invocation per probe, so the per-host total is the
 // network/energy cost operators feel on every `gh sr doctor` run.
 //
+// Scope: what is measured is the runHostChecks host-check pass. It excludes
+// the pre-pass OS detection that ensureDoctorHostOS runs before the checks
+// (host.DetectOS issues one `uname -s` when runners.yml omits `os:` for a
+// remote host). The fixture pins OS on the host config, so that round trip
+// is not in the numbers below — a remote host configured without `os:` costs
+// one round trip more than the counts here (29 and 10 instead of 28 and 9).
+// The counts therefore measure the checks themselves, the part the folds
+// target, and are not a claim about the whole `gh sr doctor` cost for a host.
+//
 // The mock below answers every command the healthy path issues with the
 // reply its parser consumes — one-shot scripts get their tagged sections,
 // batch scripts get one row per instance, plain probes get their OK token.
@@ -32,11 +41,6 @@ import (
 // RunnerURL calls resolve the docker0 gateway over SSH — the shape of the
 // default runners.yml, and the shape future folds (resolving the gateway
 // once per pass) must beat.
-
-// doctorGwRawLine mimics `ip -4 -o addr show docker0` output: the line
-// ParseGatewayIPOutput and the cache one-shot's shell-side extraction both
-// consume.
-const doctorGwRawLine = "2: docker0    inet 172.17.0.1/16 brd 172.17.255.255 scope global docker0\\       valid_lft forever preferred_lft forever\n"
 
 // doctorHealthyBatchReply renders the registry mirror one-shot batch answer
 // for one healthy mirror.
@@ -53,7 +57,7 @@ func doctorHealthyBatchReply() string {
 func doctorCacheOneShotReply() string {
 	return "S:running|ghcr.io/example/gh-sr-cache:1\n" +
 		"H:/home/runner\n" +
-		"G:" + doctorGwRawLine +
+		"G:" + gatewayIP("172.17.0.1") +
 		"K:1\n" +
 		"D:1048576\n"
 }
@@ -142,7 +146,7 @@ func doctorRunFn(instances []string) func(cmd string) (string, error) {
 		case strings.Contains(cmd, "ip -o route get 1.1.1.1"):
 			return "1500\n", nil
 		case strings.Contains(cmd, "ip -4 -o addr show docker0"):
-			return doctorGwRawLine, nil
+			return gatewayIP("172.17.0.1"), nil
 		case strings.Contains(cmd, "getent hosts api.github.com"):
 			return "ok", nil
 		case strings.Contains(cmd, "curl -fsS"):
@@ -246,6 +250,9 @@ func nativeOnlyDoctorScenario() doctorRoundTripScenario {
 // mirror + extras on the auto-bind path): 28 round trips today, every one a
 // network hop plus a remote shell start. The companion test pins the count
 // and the healthy-output condition.
+//
+// The count covers the runHostChecks pass only — see the scope note at the
+// top of this file for the pre-pass OS detection it excludes.
 func BenchmarkDoctorHostRoundTripsMixed5(b *testing.B) {
 	sc := mixedDoctorScenario()
 	b.ReportAllocs()
@@ -262,7 +269,8 @@ func BenchmarkDoctorHostRoundTripsMixed5(b *testing.B) {
 }
 
 // BenchmarkDoctorHostRoundTripsNativeOnly1 measures one full doctor host
-// pass for a single native runner: 9 round trips today.
+// pass for a single native runner: 9 round trips today. The count covers the
+// runHostChecks pass only — see the scope note at the top of this file.
 func BenchmarkDoctorHostRoundTripsNativeOnly1(b *testing.B) {
 	sc := nativeOnlyDoctorScenario()
 	b.ReportAllocs()
