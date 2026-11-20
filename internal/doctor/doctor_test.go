@@ -8,8 +8,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -1069,8 +1071,8 @@ func TestCheckNative_UnknownOS(t *testing.T) {
 }
 
 // TestCheckLinuxSudo_Root covers the early-return path when the host user is
-// root (id -u returns "0"). No sudo probe is issued, no warning is emitted,
-// and the function returns silently after the trimSpace check.
+// root (the one-shot echoes "root"). No warning is emitted and the function
+// returns silently.
 func TestCheckLinuxSudo_Root(t *testing.T) {
 	t.Parallel()
 	h := host.NewHost("h1", config.HostConfig{OS: "linux", Addr: "local"})
@@ -1078,15 +1080,15 @@ func TestCheckLinuxSudo_Root(t *testing.T) {
 	h.SetConn(&testutil.MockExecutor{
 		RunFn: func(cmd string) (string, error) {
 			calls++
-			return "0\n", nil
+			return "root\n", nil
 		},
 	})
 	var buf bytes.Buffer
 	r := Result{}
 	checkLinuxSudo(&buf, "h1", h, &r)
-	// Root path must issue only id -u; no follow-up sudo probe.
+	// The uid gate and sudo probe share one round trip.
 	if calls != 1 {
-		t.Fatalf("root: expected exactly 1 SSH call (id -u), got %d", calls)
+		t.Fatalf("root: expected exactly 1 SSH call, got %d", calls)
 	}
 	if r.Fail != 0 || r.Warn != 0 {
 		t.Fatalf("root: expected no FAIL or WARN, got Fail=%d Warn=%d", r.Fail, r.Warn)
@@ -1107,10 +1109,7 @@ func TestCheckLinuxSudo_Passwordless(t *testing.T) {
 	h.SetConn(&testutil.MockExecutor{
 		RunFn: func(cmd string) (string, error) {
 			calls++
-			if calls == 1 {
-				return "1000\n", nil // id -u
-			}
-			return "ok\n", nil // sudo -n true → ok
+			return "ok\n", nil // non-root + sudo -n true → ok
 		},
 	})
 	var buf bytes.Buffer
@@ -1122,8 +1121,8 @@ func TestCheckLinuxSudo_Passwordless(t *testing.T) {
 	if !strings.Contains(buf.String(), "passwordless sudo") {
 		t.Fatalf("passwordless: expected OK line, got: %q", buf.String())
 	}
-	if calls != 2 {
-		t.Fatalf("passwordless: expected exactly 2 SSH calls (id -u + sudo), got %d", calls)
+	if calls != 1 {
+		t.Fatalf("passwordless: expected exactly 1 SSH call (folded uid+sudo probe), got %d", calls)
 	}
 }
 
@@ -1139,10 +1138,7 @@ func TestCheckLinuxSudo_Missing(t *testing.T) {
 	h.SetConn(&testutil.MockExecutor{
 		RunFn: func(cmd string) (string, error) {
 			calls++
-			if calls == 1 {
-				return "1000\n", nil // id -u
-			}
-			return "no\n", nil // sudo -n true → no
+			return "no\n", nil // non-root + sudo -n true → no
 		},
 	})
 	var buf bytes.Buffer
@@ -1162,11 +1158,157 @@ func TestCheckLinuxSudo_Missing(t *testing.T) {
 	}
 }
 
-// TestCheckLinuxSudo_UidError covers the error path when the id -u probe
-// itself fails (e.g. SSH handshake failed before the host shell could
-// respond). A WARN must be emitted and the function must return without
-// attempting the sudo probe — otherwise the operator sees a misleading
-// "passwordless sudo not available" instead of the real connectivity error.
+// TestCheckLinuxSudo_OneShotScript_RealShell runs the folded uid+sudo script
+// under a real /bin/sh with shimmed id/sudo on PATH, covering the outcomes
+// the mock-based tests above can only approximate: root short circuit, sudo
+// available, sudo unavailable, an id that succeeds with empty output, and an
+// id that fails with a non-zero exit code and its own stderr.
+//
+// It runs the production script (linuxSudoProbeScript), not a copy of it:
+// the shell semantics — the &&/|| chains, the brace grouping, the command
+// substitution and the `|| { … }` failure branch — are exactly what the
+// remote host executes, so a parse error or precedence mistake here would
+// silently flip verdicts on real hosts while every mock test stays green.
+//
+// stdout and stderr are captured separately because production does: the
+// folded script carries id's stderr inside the uiderr token on stdout, and a
+// combined capture would let a stray stderr line masquerade as a verdict.
+func TestCheckLinuxSudo_OneShotScript_RealShell(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("real-sh verification only applies to the linux target")
+	}
+	dir := t.TempDir()
+	writeShim := func(name, body string) {
+		t.Helper()
+		p := filepath.Join(dir, name)
+		if err := os.WriteFile(p, []byte(body), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// The id shim: with SHIM_ID_RC=0 it prints SHIM_UID_FILE and exits 0; any
+	// other code makes it write SHIM_ID_ERR to stderr and exit that code —
+	// what `id -u` looks like when the SSH account has no passwd entry.
+	writeShim("id", `#!/bin/sh
+if [ "${SHIM_ID_RC:-0}" != "0" ]; then
+  printf '%s\n' "${SHIM_ID_ERR:-id: no such user}" >&2
+  exit "${SHIM_ID_RC}"
+fi
+cat "$SHIM_UID_FILE"
+`)
+	writeShim("sudo", "#!/bin/sh\nexit $SHIM_SUDO_RC\n")
+
+	run := func(uidLine string, sudoRC, idRC int) (string, string) {
+		t.Helper()
+		uidFile := filepath.Join(dir, "uid")
+		if err := os.WriteFile(uidFile, []byte(uidLine), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		cmd := exec.Command("/bin/sh", "-c", linuxSudoProbeScript)
+		cmd.Env = append(os.Environ(),
+			"PATH="+dir+":"+os.Getenv("PATH"),
+			"SHIM_UID_FILE="+uidFile,
+			"SHIM_SUDO_RC="+strconv.Itoa(sudoRC),
+			"SHIM_ID_RC="+strconv.Itoa(idRC),
+			"SHIM_ID_ERR=id: 'runner': no such user")
+		var outBuf, errBuf bytes.Buffer
+		cmd.Stdout = &outBuf
+		cmd.Stderr = &errBuf
+		if err := cmd.Run(); err != nil {
+			t.Fatalf("script %q failed: %v (stderr: %s)", linuxSudoProbeScript, err, errBuf.String())
+		}
+		return strings.TrimSpace(outBuf.String()), errBuf.String()
+	}
+
+	for _, tc := range []struct {
+		name   string
+		uid    string
+		sudoRC int
+		idRC   int
+		want   string
+	}{
+		{"rootSkipsSudo", "0\n", 1, 0, "root"},
+		{"nonRootPasswordless", "1000\n", 0, 0, "ok"},
+		{"nonRootNoSudo", "1000\n", 1, 0, "no"},
+		// id succeeds but prints nothing: the uid is undecidable, and the
+		// sudo probe still decides the verdict.
+		{"idSucceedsWithEmptyOutput", "\n", 0, 0, "ok"},
+		// id fails with a non-zero exit and its own stderr: the script must
+		// surface the uiderr token instead of falling through to a sudo
+		// verdict.
+		{"idFailsNonZeroExit", "", 0, 1, "uiderr id: 'runner': no such user"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, stderr := run(tc.uid, tc.sudoRC, tc.idRC)
+			if got != tc.want {
+				t.Fatalf("uid=%q sudoRC=%d idRC=%d: got %q, want %q", tc.uid, tc.sudoRC, tc.idRC, got, tc.want)
+			}
+			// The script captures id's stderr into the token, so nothing
+			// leaks onto the caller's stderr.
+			if stderr != "" {
+				t.Errorf("expected empty stderr, got %q", stderr)
+			}
+		})
+	}
+}
+
+// TestCheckLinuxSudo_UidProbeFailure covers the folded probe's uiderr
+// token: a remote `id -u` that fails must still report the uid-check
+// failure — with id's own stderr — and must not be reported as a missing
+// passwordless sudo. Before the fold, the failing `id -u` produced exactly
+// this warning; the token is what keeps that diagnostic alive.
+func TestCheckLinuxSudo_UidProbeFailure(t *testing.T) {
+	t.Parallel()
+	h := host.NewHost("h1", config.HostConfig{OS: "linux", Addr: "local"})
+	h.SetConn(&testutil.MockExecutor{
+		RunFn: func(cmd string) (string, error) {
+			return "uiderr id: 'runner': no such user\n", nil
+		},
+	})
+	var buf bytes.Buffer
+	r := Result{}
+	checkLinuxSudo(&buf, "h1", h, &r)
+	out := buf.String()
+	if !strings.Contains(out, "could not check uid") {
+		t.Fatalf("expected the uid-check warning, got: %q", out)
+	}
+	if !strings.Contains(out, "no such user") {
+		t.Fatalf("expected id's own stderr in the warning, got: %q", out)
+	}
+	if strings.Contains(out, "passwordless sudo") {
+		t.Fatalf("must not report a missing sudo for an unresolvable uid, got: %q", out)
+	}
+	if r.Warn != 1 || r.Fail != 0 {
+		t.Fatalf("expected exactly one WARN, got %+v", r)
+	}
+}
+
+// TestCheckLinuxSudo_ProbeCommandIsShared pins that the command sent to the
+// host is the shared script constant the real-shell test runs. Without it,
+// the probe could drift away from the script the test verifies and the
+// test would keep passing against a copy that is no longer shipped.
+func TestCheckLinuxSudo_ProbeCommandIsShared(t *testing.T) {
+	t.Parallel()
+	h := host.NewHost("h1", config.HostConfig{OS: "linux", Addr: "local"})
+	var got string
+	h.SetConn(&testutil.MockExecutor{
+		RunFn: func(cmd string) (string, error) {
+			got = cmd
+			return "ok\n", nil
+		},
+	})
+	var buf bytes.Buffer
+	r := Result{}
+	checkLinuxSudo(&buf, "h1", h, &r)
+	if got != linuxSudoProbeScript {
+		t.Fatalf("probe command drifted from linuxSudoProbeScript:\n got: %s\nwant: %s", got, linuxSudoProbeScript)
+	}
+}
+
+// TestCheckLinuxSudo_UidError covers the transport-error path (e.g. SSH
+// handshake failed before the host shell could respond). A WARN must be
+// emitted naming the connectivity error — the operator must not see a
+// misleading "passwordless sudo not available" for what is a connection
+// failure.
 func TestCheckLinuxSudo_UidError(t *testing.T) {
 	t.Parallel()
 	h := host.NewHost("h1", config.HostConfig{OS: "linux", Addr: "local"})
@@ -1181,7 +1323,7 @@ func TestCheckLinuxSudo_UidError(t *testing.T) {
 	r := Result{}
 	checkLinuxSudo(&buf, "h1", h, &r)
 	if calls != 1 {
-		t.Fatalf("uid-error: expected only the id -u probe, got %d calls", calls)
+		t.Fatalf("uid-error: expected only the folded probe, got %d calls", calls)
 	}
 	if r.Warn != 1 {
 		t.Fatalf("uid-error: r.Warn should be 1, got %d", r.Warn)

@@ -159,9 +159,9 @@ func doctorRunFn(instances []string) func(cmd string) (string, error) {
 		case strings.Contains(cmd, "command -v curl"):
 			return "ok", nil
 		case strings.Contains(cmd, "sudo -n true"):
+			// checkLinuxSudo one-shot: uid gate + sudo probe in a single
+			// round trip; "ok" means non-root with passwordless sudo.
 			return "ok", nil
-		case strings.Contains(cmd, "id -u"):
-			return "1000", nil
 		case strings.Contains(cmd, "grep -c '^GH_SR_NPM_REGISTRY='"):
 			return "1", nil
 		case strings.Contains(cmd, "grep -c '^GH_SR_REGISTRY_MIRROR='"):
@@ -247,7 +247,7 @@ func nativeOnlyDoctorScenario() doctorRoundTripScenario {
 
 // BenchmarkDoctorHostRoundTripsMixed5 measures one full doctor host pass on
 // the busy-host shape (2 native + 2 container + 1 agentic instance, cache +
-// mirror + extras on the auto-bind path): 28 round trips today, every one a
+// mirror + extras on the auto-bind path): 27 round trips today, every one a
 // network hop plus a remote shell start. The companion test pins the count
 // and the healthy-output condition.
 //
@@ -269,7 +269,7 @@ func BenchmarkDoctorHostRoundTripsMixed5(b *testing.B) {
 }
 
 // BenchmarkDoctorHostRoundTripsNativeOnly1 measures one full doctor host
-// pass for a single native runner: 9 round trips today. The count covers the
+// pass for a single native runner: 8 round trips today. The count covers the
 // runHostChecks pass only — see the scope note at the top of this file.
 func BenchmarkDoctorHostRoundTripsNativeOnly1(b *testing.B) {
 	sc := nativeOnlyDoctorScenario()
@@ -332,8 +332,8 @@ func TestDoctorHostRoundTripsExact(t *testing.T) {
 				t.Errorf("unexpected %q in output:\n%s", unwanted, out)
 			}
 		}
-		if rt != 28 {
-			t.Errorf("round trips = %d, want 28 (update the benchmark comment and fold baselines when this moves — down is progress)", rt)
+		if rt != 27 {
+			t.Errorf("round trips = %d, want 27 (update the benchmark comment and fold baselines when this moves — down is progress)", rt)
 		}
 	})
 
@@ -363,8 +363,8 @@ func TestDoctorHostRoundTripsExact(t *testing.T) {
 				t.Errorf("unexpected %q in output:\n%s", unwanted, out)
 			}
 		}
-		if rt != 9 {
-			t.Errorf("round trips = %d, want 9 (update the benchmark comment and fold baselines when this moves — down is progress)", rt)
+		if rt != 8 {
+			t.Errorf("round trips = %d, want 8 (update the benchmark comment and fold baselines when this moves — down is progress)", rt)
 		}
 	})
 }

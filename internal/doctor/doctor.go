@@ -587,24 +587,67 @@ func checkNative(w io.Writer, hostName string, h *host.Host, r *Result) {
 	}
 }
 
+// linuxSudoUIDErrToken marks a failed `id -u` in the folded probe's output.
+const linuxSudoUIDErrToken = "uiderr"
+
+// linuxSudoProbeScript folds the uid gate and the sudo probe into one SSH
+// round trip: separately they cost two remote invocations for information one
+// remote shell can produce in a single pass.
+//
+// It writes exactly one token on stdout:
+//
+//	"root"   — the remote user is root, so no sudo probe is needed
+//	"ok"     — non-root with passwordless sudo
+//	"no"     — non-root without passwordless sudo
+//	"uiderr" — `id -u` itself failed; the rest of the line is id's stderr
+//
+// The uiderr token keeps the pre-fold diagnostic. The two-probe code ran
+// `id -u` on its own, so a failing id (exit 127 when id is not on PATH, exit
+// 1 when the SSH account has no passwd entry) surfaced as "could not check
+// uid" and the sudo probe never ran. Folding the probes into one script
+// would otherwise swallow that failure — `$( )` discards the command's exit
+// status — and report the misleading "passwordless sudo not available" for a
+// host whose real problem is an unresolvable account.
+const linuxSudoProbeScript = `u=$(id -u 2>&1) || { echo "uiderr $u"; exit 0; }; [ "$u" = "0" ] && echo root || { sudo -n true 2>/dev/null && echo ok || echo no; }`
+
+// checkLinuxSudo runs the folded uid+sudo probe (linuxSudoProbeScript) and
+// maps its tokens back to the two-probe contract this replaced: "root"
+// returns silently, "ok"/"no" map to the OK/WARN lines, "uiderr" maps to
+// the uid-check failure, and a transport error still reports the uid-check
+// failure rather than a misleading missing-sudo warning.
 func checkLinuxSudo(w io.Writer, hostName string, h *host.Host, r *Result) {
-	uid, err := h.Run(`id -u`)
-	if err != nil {
+	out, err := h.Run(linuxSudoProbeScript)
+	out = strings.TrimSpace(out)
+	switch {
+	case err != nil:
 		printLine(w, sevWarn, hostName, fmt.Sprintf("linux: could not check uid: %v", err))
 		r.Warn++
+	case strings.HasPrefix(out, linuxSudoUIDErrToken):
+		printLine(w, sevWarn, hostName, fmt.Sprintf("linux: could not check uid: %s", uidErrDetail(out)))
+		r.Warn++
+	case out == "root":
 		return
-	}
-	if strings.TrimSpace(uid) == "0" {
-		return
-	}
-	out, err := h.Run(`sudo -n true 2>/dev/null && echo ok || echo no`)
-	out = strings.TrimSpace(out)
-	if err != nil || out != "ok" {
+	case out != "ok":
 		printLine(w, sevWarn, hostName, "linux: passwordless sudo not available; gh sr setup/update may fail for package installs")
 		r.Warn++
-		return
+	default:
+		printLine(w, sevOK, hostName, "linux: non-root user has passwordless sudo")
 	}
-	printLine(w, sevOK, hostName, "linux: non-root user has passwordless sudo")
+}
+
+// uidErrDetail extracts id's own error text from the folded probe's
+// "uiderr <detail>" output. id writes one line of stderr, but a shell
+// "command not found" line carries its own prefix; only the first line is
+// reported so the warning stays a single line.
+func uidErrDetail(out string) string {
+	detail := strings.TrimSpace(strings.TrimPrefix(out, linuxSudoUIDErrToken))
+	if i := strings.IndexByte(detail, '\n'); i >= 0 {
+		detail = strings.TrimSpace(detail[:i])
+	}
+	if detail == "" {
+		return "id -u failed on the remote host"
+	}
+	return detail
 }
 
 // hasContainerAgenticRunners returns true if any runner uses agentic profile in container mode.
