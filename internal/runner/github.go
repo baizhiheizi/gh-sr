@@ -10,6 +10,8 @@ import (
 	"sort"
 	"strings"
 	"sync"
+
+	"github.com/an-lee/gh-sr/internal/fanout"
 )
 
 type GitHubClient struct {
@@ -205,8 +207,19 @@ type contentsFile struct {
 	Encoding string `json:"encoding"`
 }
 
+// fetchedLock pairs one decoded lock workflow with its per-file error so the
+// fan-out can collect both without sharing mutable state.
+type fetchedLock struct {
+	wf  LockWorkflow
+	err error
+}
+
 // ListLockWorkflows returns up to limit *.lock.yml files from the repo's
-// .github/workflows directory (alphabetical order, truncated at limit).
+// .github/workflows directory (alphabetical order, truncated at limit). File
+// contents are fetched concurrently — one round trip per file would otherwise
+// dominate the doctor's --check-lockfiles wall time — and returned in name
+// order. On failure the lowest-indexed file's error is reported, matching the
+// sequential fail-fast order this replaced.
 func (g *GitHubClient) ListLockWorkflows(repo string, limit int) ([]LockWorkflow, error) {
 	listURL := fmt.Sprintf("%s/repos/%s/contents/.github/workflows", g.apiBase, repo)
 	body, err := g.get(listURL)
@@ -227,28 +240,42 @@ func (g *GitHubClient) ListLockWorkflows(repo string, limit int) ([]LockWorkflow
 	if len(names) > limit {
 		names = names[:limit]
 	}
+
+	fetched := fanout.Indexed(names, func(_ int, name string) fetchedLock {
+		wf, err := g.fetchLockWorkflow(repo, name)
+		return fetchedLock{wf: wf, err: err}
+	})
 	out := make([]LockWorkflow, 0, len(names))
-	for _, name := range names {
-		fileURL := fmt.Sprintf("%s/repos/%s/contents/.github/workflows/%s", g.apiBase, repo, url.PathEscape(name))
-		fb, err := g.get(fileURL)
-		if err != nil {
-			return nil, fmt.Errorf("fetching %s in %s: %w", name, repo, err)
+	for _, f := range fetched {
+		if f.err != nil {
+			return nil, f.err
 		}
-		var f contentsFile
-		if err := json.Unmarshal(fb, &f); err != nil {
-			return nil, fmt.Errorf("parsing %s in %s: %w", name, repo, err)
-		}
-		content := f.Content
-		if f.Encoding == "base64" {
-			dec, derr := base64.StdEncoding.DecodeString(strings.ReplaceAll(content, "\n", ""))
-			if derr != nil {
-				return nil, fmt.Errorf("decoding %s in %s: %w", name, repo, derr)
-			}
-			content = string(dec)
-		}
-		out = append(out, LockWorkflow{Name: name, Content: content})
+		out = append(out, f.wf)
 	}
 	return out, nil
+}
+
+// fetchLockWorkflow fetches and decodes one .lock.yml file from the repo's
+// .github/workflows directory.
+func (g *GitHubClient) fetchLockWorkflow(repo, name string) (LockWorkflow, error) {
+	fileURL := fmt.Sprintf("%s/repos/%s/contents/.github/workflows/%s", g.apiBase, repo, url.PathEscape(name))
+	fb, err := g.get(fileURL)
+	if err != nil {
+		return LockWorkflow{}, fmt.Errorf("fetching %s in %s: %w", name, repo, err)
+	}
+	var f contentsFile
+	if err := json.Unmarshal(fb, &f); err != nil {
+		return LockWorkflow{}, fmt.Errorf("parsing %s in %s: %w", name, repo, err)
+	}
+	content := f.Content
+	if f.Encoding == "base64" {
+		dec, derr := base64.StdEncoding.DecodeString(strings.ReplaceAll(content, "\n", ""))
+		if derr != nil {
+			return LockWorkflow{}, fmt.Errorf("decoding %s in %s: %w", name, repo, derr)
+		}
+		content = string(dec)
+	}
+	return LockWorkflow{Name: name, Content: content}, nil
 }
 
 func (g *GitHubClient) GetLatestRunnerVersion() (string, error) {

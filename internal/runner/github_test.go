@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 )
 
@@ -667,4 +668,83 @@ func TestGitHubClient_ListLockWorkflows_edgeCases(t *testing.T) {
 			t.Fatalf("expected decode error, got: %v", err)
 		}
 	})
+
+	t.Run("earliest file error wins when several files fail", func(t *testing.T) {
+		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if strings.HasSuffix(r.URL.Path, "/a.lock.yml") {
+				http.Error(w, "boom-a", http.StatusInternalServerError)
+				return
+			}
+			if strings.HasSuffix(r.URL.Path, "/c.lock.yml") {
+				http.Error(w, "boom-c", http.StatusInternalServerError)
+				return
+			}
+			_ = json.NewEncoder(w).Encode([]contentsEntry{
+				{Name: "a.lock.yml", Type: "file"},
+				{Name: "b.lock.yml", Type: "file"},
+				{Name: "c.lock.yml", Type: "file"},
+			})
+		}))
+		defer ts.Close()
+
+		g := NewGitHubClientWithHTTP("pat", ts.Client(), ts.URL)
+		_, err := g.ListLockWorkflows("o/r", 5)
+		if err == nil || !strings.Contains(err.Error(), "fetching a.lock.yml in o/r") {
+			t.Fatalf("expected the lowest-indexed file's error, got: %v", err)
+		}
+	})
+}
+
+// TestGitHubClient_ListLockWorkflows_concurrentOrdering pins the visible
+// contract of the concurrent file fetch: results come back in name order and
+// every file's content is decoded, even though the fetches run in parallel.
+func TestGitHubClient_ListLockWorkflows_concurrentOrdering(t *testing.T) {
+	const n = 8
+	listing := make([]contentsEntry, 0, n)
+	rawFiles := make(map[string]string, n)
+	names := make([]string, 0, n)
+	for i := 0; i < n; i++ {
+		name := fmt.Sprintf("w%02d.lock.yml", i)
+		names = append(names, name)
+		listing = append(listing, contentsEntry{Name: name, Type: "file"})
+		rawFiles[name] = fmt.Sprintf("jobs: %s", name)
+	}
+
+	var fetches atomic.Int32
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/repos/o/r/contents/.github/workflows" {
+			_ = json.NewEncoder(w).Encode(listing)
+			return
+		}
+		fetches.Add(1)
+		name := strings.TrimPrefix(r.URL.Path, "/repos/o/r/contents/.github/workflows/")
+		body, ok := rawFiles[name]
+		if !ok {
+			http.NotFound(w, r)
+			return
+		}
+		enc := base64.StdEncoding.EncodeToString([]byte(body))
+		_ = json.NewEncoder(w).Encode(contentsFile{Name: name, Content: enc, Encoding: "base64"})
+	}))
+	defer ts.Close()
+
+	g := NewGitHubClientWithHTTP("pat", ts.Client(), ts.URL)
+	files, err := g.ListLockWorkflows("o/r", n)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(files) != n {
+		t.Fatalf("expected %d files, got %d", n, len(files))
+	}
+	for i, f := range files {
+		if f.Name != names[i] {
+			t.Errorf("file %d: got name %q, want %q", i, f.Name, names[i])
+		}
+		if f.Content != rawFiles[names[i]] {
+			t.Errorf("file %s: content %q, want %q", f.Name, f.Content, rawFiles[names[i]])
+		}
+	}
+	if got := fetches.Load(); got != int32(n) {
+		t.Errorf("expected %d file fetches, got %d", n, got)
+	}
 }
