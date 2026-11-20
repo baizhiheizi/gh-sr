@@ -777,7 +777,13 @@ func TestGitHubClient_ListLockWorkflows_fetchesConcurrently(t *testing.T) {
 	allArrived := make(chan struct{})
 	var releaseOnce sync.Once
 
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	// The deadline is a watchdog, not the thing being measured: it only fires
+	// when the implementation never gets all N requests in flight at once (a
+	// sequential fetch) or when the machine is pathologically slow. It is
+	// deliberately generous — the shared CI host also runs this repo's agentic
+	// workflow fleet — because a deadline that fires early would release the
+	// barrier and report a concurrent implementation as sequential.
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -817,7 +823,12 @@ func TestGitHubClient_ListLockWorkflows_fetchesConcurrently(t *testing.T) {
 		t.Fatalf("expected %d files, got %d", n, len(files))
 	}
 	if got := maxInFlight.Load(); got != int32(n) {
-		t.Errorf("expected all %d file fetches in flight at once, got %d — the fetch is sequential", n, got)
+		// Report what was observed rather than concluding a cause: the
+		// barrier deadline can also fire on a machine too slow to hold all N
+		// requests open, and that must not read as "the fetch is
+		// sequential".
+		t.Errorf("expected all %d file fetches in flight at once, got %d; %d of %d file requests reached the handler — the per-file fetches do not overlap",
+			n, got, fileCalls.Load(), n)
 	}
 	// One listing plus one request per file: the deterministic request count.
 	if got := listingCalls.Load(); got != 1 {
