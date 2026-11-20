@@ -1,6 +1,7 @@
 package runner
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -8,8 +9,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
 func TestGitHubClient_GetRegistrationToken(t *testing.T) {
@@ -746,5 +749,81 @@ func TestGitHubClient_ListLockWorkflows_concurrentOrdering(t *testing.T) {
 	}
 	if got := fetches.Load(); got != int32(n) {
 		t.Errorf("expected %d file fetches, got %d", n, got)
+	}
+}
+
+// TestGitHubClient_ListLockWorkflows_fetchesConcurrently pins the behaviour
+// this change exists for: the per-file fetches overlap. The handler holds
+// every file request at a barrier until all of them have arrived, so a
+// sequential implementation never gets past the first file — it falls
+// through the shared deadline instead, and the in-flight assertion below
+// fails. A concurrent implementation releases the barrier the moment the
+// last request arrives.
+//
+// The barrier deadline is shared (context.WithTimeout) rather than per
+// request, so a sequential run fails once after the deadline instead of
+// waiting one deadline per file, and the handler never blocks forever —
+// httptest.Server.Close() can always complete.
+func TestGitHubClient_ListLockWorkflows_fetchesConcurrently(t *testing.T) {
+	const n = 8
+
+	listing := make([]contentsEntry, 0, n)
+	for i := 0; i < n; i++ {
+		listing = append(listing, contentsEntry{Name: fmt.Sprintf("w%02d.lock.yml", i), Type: "file"})
+	}
+
+	var listingCalls, fileCalls atomic.Int32
+	var inFlight, maxInFlight atomic.Int32
+	allArrived := make(chan struct{})
+	var releaseOnce sync.Once
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/repos/o/r/contents/.github/workflows" {
+			listingCalls.Add(1)
+			_ = json.NewEncoder(w).Encode(listing)
+			return
+		}
+		fileCalls.Add(1)
+		cur := inFlight.Add(1)
+		defer inFlight.Add(-1)
+		for {
+			old := maxInFlight.Load()
+			if cur <= old || maxInFlight.CompareAndSwap(old, cur) {
+				break
+			}
+		}
+		if int(fileCalls.Load()) == n {
+			releaseOnce.Do(func() { close(allArrived) })
+		}
+		select {
+		case <-allArrived:
+		case <-ctx.Done():
+		}
+		name := strings.TrimPrefix(r.URL.Path, "/repos/o/r/contents/.github/workflows/")
+		enc := base64.StdEncoding.EncodeToString([]byte("jobs: " + name))
+		_ = json.NewEncoder(w).Encode(contentsFile{Name: name, Content: enc, Encoding: "base64"})
+	}))
+	defer ts.Close()
+
+	g := NewGitHubClientWithHTTP("pat", ts.Client(), ts.URL)
+	files, err := g.ListLockWorkflows("o/r", n)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(files) != n {
+		t.Fatalf("expected %d files, got %d", n, len(files))
+	}
+	if got := maxInFlight.Load(); got != int32(n) {
+		t.Errorf("expected all %d file fetches in flight at once, got %d — the fetch is sequential", n, got)
+	}
+	// One listing plus one request per file: the deterministic request count.
+	if got := listingCalls.Load(); got != 1 {
+		t.Errorf("expected 1 listing request, got %d", got)
+	}
+	if got := fileCalls.Load(); got != int32(n) {
+		t.Errorf("expected %d file requests, got %d", n, got)
 	}
 }
