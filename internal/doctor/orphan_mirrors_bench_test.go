@@ -11,8 +11,8 @@ import (
 	"github.com/an-lee/gh-sr/internal/testutil"
 )
 
-// BenchmarkCheckOrphanMirrors covers the docker ps -a output parse with a
-// 12-container fixture (2 configured mirrors, 8 orphans, 2 unrelated).
+// BenchmarkCheckOrphanMirrors covers the docker ps -a output parse with an
+// 11-container fixture (2 configured mirrors, 8 orphans, 1 unrelated).
 func BenchmarkCheckOrphanMirrors(b *testing.B) {
 	configured := &registry.Settings{
 		Enabled: true,
