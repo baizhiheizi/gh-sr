@@ -31,7 +31,7 @@ func measureSharedVolumes(h *host.Host, hostName string) []runner.DiskUsageEntry
 		return nil
 	}
 	var names []string
-	for _, l := range strings.Split(out, "\n") {
+	for l := range strings.SplitSeq(out, "\n") {
 		if n := strings.TrimSpace(l); n != "" {
 			names = append(names, n)
 		}
@@ -50,7 +50,7 @@ func measureSharedVolumes(h *host.Host, hostName string) []runner.DiskUsageEntry
 		"docker run --rm%s busybox du -sb /v/* 2>/dev/null | sed 's|/v/||'", mounts.String()))
 	sizes := make(map[int]int64)
 	if duErr == nil {
-		for _, l := range strings.Split(duOut, "\n") {
+		for l := range strings.SplitSeq(duOut, "\n") {
 			raw, path, ok := strings.Cut(strings.TrimSpace(l), "\t")
 			if !ok {
 				continue

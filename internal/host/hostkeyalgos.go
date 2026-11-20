@@ -65,7 +65,7 @@ func hostKeyAlgosForDial(path, addr string) []string {
 	hostname, port := splitDialTarget(addr)
 
 	var preferred []string
-	for _, line := range strings.Split(string(data), "\n") {
+	for line := range strings.SplitSeq(string(data), "\n") {
 		fields := strings.Fields(strings.TrimSpace(line))
 		if len(fields) < 3 {
 			continue
@@ -106,7 +106,7 @@ func hostPatternsMatch(field, hostname, port string) bool {
 	if port != "" && port != "22" {
 		bracketed = "[" + hostname + "]:" + port
 	}
-	for _, pattern := range strings.Split(field, ",") {
+	for pattern := range strings.SplitSeq(field, ",") {
 		if pattern == "" || strings.HasPrefix(pattern, "!") {
 			continue
 		}

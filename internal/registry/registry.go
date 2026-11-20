@@ -497,7 +497,7 @@ func MirrorStorages(h *host.Host, s Settings) ([]MirrorStorage, error) {
 		return out, err
 	}
 	byPath := make(map[string]int64, len(paths))
-	for _, line := range strings.Split(duOut, "\n") {
+	for line := range strings.SplitSeq(duOut, "\n") {
 		// du prints "<bytes>\t<path>" per argument.
 		tab := strings.Index(line, "\t")
 		if tab <= 0 {

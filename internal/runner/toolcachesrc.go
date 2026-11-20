@@ -110,8 +110,8 @@ fi
 		// Dockerfile's own curl fallback (the pre-cache behaviour).
 		return blobs
 	}
-	for _, line := range strings.Split(out, "\n") {
-		line = strings.TrimSpace(line)
+	for rawLine := range strings.SplitSeq(out, "\n") {
+		line := strings.TrimSpace(rawLine)
 		var verb, key string
 		if _, err := fmt.Sscanf(line, "%s %s", &verb, &key); err != nil {
 			continue

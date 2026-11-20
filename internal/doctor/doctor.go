@@ -994,7 +994,7 @@ func checkOrphanMirrors(w io.Writer, hostName string, h *host.Host, s *registry.
 		return // Best-effort: never turn an unreadable container list into a FAIL.
 	}
 	var orphans []string
-	for _, line := range strings.Split(out, "\n") {
+	for line := range strings.SplitSeq(out, "\n") {
 		name := strings.TrimSpace(line)
 		if name != registry.ContainerName && !strings.HasPrefix(name, registry.ContainerNamePrefix) {
 			continue
