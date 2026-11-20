@@ -9,27 +9,33 @@
   "checks": [
     {
       "area": "repo_assist_prs",
-      "checked_at": "2026-11-19",
+      "checked_at": "2026-11-20",
       "result": "acted",
-      "follow_up": "#653 (session tests) merged as 672835d, #655 (x/crypto 0.59) merged as 398a01f; zero open repo-assist PRs before this run. New draft: docs(changelog) record #660 fan-out refactor, branch repo-assist/basics-changelog-fanout-refactor."
+      "follow_up": "Two open RA PRs: #663 (changelog for #660, awaiting review) + new perf draft on repo-assist/perf-lockfiles-parallel-fetch (ListLockWorkflows fan-out, run 44652677016). Dependabot #664/#665 (gh-aw-actions 1.3.0) flagged merge-or-bundle in monthly issue."
+    },
+    {
+      "area": "performance",
+      "checked_at": "2026-11-20",
+      "result": "acted",
+      "follow_up": "Fixed one gap: ListLockWorkflows fetched .lock.yml files sequentially (21 round trips/repo in doctor --check-lockfiles); now fanout.Indexed, ~10x measured (840ms->83ms, 20 files @40ms/req). Error contract preserved. Other baselines unchanged from 11-18 sweep."
     },
     {
       "area": "tests",
-      "checked_at": "2026-11-19",
+      "checked_at": "2026-11-20",
       "result": "acted",
-      "follow_up": "#660 post-merge QA at HEAD 5337dd9: go build/vet clean, go test -race ./... green (24 pkgs). All four fan-out sites on fanout.Indexed/NewLockedWriter; only prod WaitGroup left is fanout.go itself. Session-gap tests merged (#653)."
+      "follow_up": "With perf change: +2 tests in github_test.go (8-file concurrent ordering incl. fetch count; earliest-file-error-wins determinism). Build/vet/gofmt clean, race suite green (runner+doctor), full ./... suite green (24 pkgs)."
     },
     {
       "area": "docs",
       "checked_at": "2026-11-19",
       "result": "acted",
-      "follow_up": "v0.10.0 RELEASED 2026-11-16 (tag 7d15ab7 + GH Release). Rolling [Unreleased] convention re-confirmed (v0.9.1 tagged identically). Gap found+drafted: #660 had no Changed entry. NEXT: docs/CLI cross-check after next surface change."
+      "follow_up": "v0.10.0 RELEASED 2026-11-16. Rolling [Unreleased] convention re-confirmed. #663 records the #660 changelog gap, awaiting review. NEXT: docs/CLI cross-check after next surface change."
     },
     {
       "area": "hygiene",
-      "checked_at": "2026-11-19",
+      "checked_at": "2026-11-20",
       "result": "acted",
-      "follow_up": "6 open issues: 4 monthly trackers + #654 (aw no-op) + #659 (dup-code fan-out). #659 resolved by #660, verified at HEAD; close recommended via #595. No fixable bug/help-wanted backlog."
+      "follow_up": "6 open issues verified: #654 bot-managed (no action ever); #659 resolved by #660, close pending maintainer; 4 monthly trackers fine. Code-quality sweep: zero TODO/FIXME, no dup helpers; deadcode false positives only (testutil fakes, scripts/benchstat, status_batch test seams)."
     },
     {
       "area": "ci",
@@ -38,16 +44,10 @@
       "follow_up": "Main green (only schedule runs since 11-17, all success). Bot-branch checks action_required = approval gate, infra-only."
     },
     {
-      "area": "performance",
-      "checked_at": "2026-11-18",
-      "result": "no_actionable",
-      "follow_up": "Round-trip suite re-run post-#646-#649: ManagerStatus native 1/4/16 + container = 1.0, disk batch 1.0, cache inspect 1.0, registry pinned at designed 3, native fallback 5 by design. One-shot scripts memoized; #648 inventory adds zero extra round trips."
-    },
-    {
       "area": "dependencies",
-      "checked_at": "2026-11-18",
+      "checked_at": "2026-11-20",
       "result": "acted",
-      "follow_up": "x/crypto 0.58->0.59 bump merged as #655 (398a01f). cobra 1.10.2 / x-term 0.48 / bubbletea 2.1.1 / go-gh 2.17.0 / go 1.26.7 current; zero open Dependabot alerts."
+      "follow_up": "Dependabot opened #664 + #665 (gh-aw-actions setup + setup-cli 1.2.2 -> 1.3.0) on 2026-11-19; suggested merge-or-bundle in monthly issue. Go deps unchanged from 11-18 (cobra 1.10.2 / x-term 0.48 / bubbletea 2.1.1 / go-gh 2.17.0 / go 1.26.7, x/crypto 0.59 merged)."
     }
   ],
   "completed_actions": [],
