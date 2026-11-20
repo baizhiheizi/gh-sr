@@ -93,14 +93,28 @@ Three weeks since run 7. Discovered run 7's "PR opened" was a phantom — no PR 
 - ✅ Task 6 (Measurement infra): none needed — bench-compare CI + parse benches for the new packages already exist; #575 added SSH round-trip energy proxy benches.
 - ✅ Task 7 (Monthly summary): #517 (October) was closed by maintainer 2026-11-01 (no comments). Creating `[perf-improver] Monthly Activity 2026-11` this run.
 
+## 2026-11-20 (run_id 44652882302) — Ninth perf-improver run
+
+SplitSeq sweep executed (the run-8 top pick). Also resolved the run-8 "unverified PR" question: the enrich PR merged as **#610** (branch got a `-b48e3d02665c7cbd` hash suffix from safeoutputs, which is why branch-name PR searches missed it — the branch suffix is now a known pattern).
+
+- ✅ Task 1 (Discover commands): `go build/vet/gofmt/test -race` all OK on go1.26.11 (24 packages — grown from 19; new: cache, session, hostsvc, probe, fanout, diskschedule, table, testutil, editor, scripts/benchstat). Commands in [[perf-improver-commands]] current.
+- ✅ Task 2 (Identify opportunities): re-grepped `strings.Split` on fresh main. Of run-8's 9 sites: `agentic/inner_batch.go` and `registry.go:453` are GONE (refactored away, #660-era consolidation); doctor moved 963→997; registry du parse moved 535→500. 7 sites remained → swept. Legit slice-index uses left alone: hostkeyalgos.go:130, lockfiles.go:98,99, main.go:287,295, tui/columns.go:353, autostart.go:183.
+- ✅ Task 3 (Implement improvements): draft PR #667 on branch `perf-assist/splitseq-sweep-run9` (commit `4ec0fb6`), create_pull_request returned success (output_id so_K0MwlMH-RuCm). 7 Split→SplitSeq conversions + one new benchmark per converted parser (5 bench files). Headline: `hostKeyAlgosForDial` (per-dial path) **-11% ns/op, -15/-16 allocs**; other parses -2% to -7.3% B/op; toolcache wash (script builder dominates, 72KB/op). See [[perf-improver-work]].
+- ✅ Task 4 (Maintain PRs): no open perf-improver PRs besides the new draft; #610 merged 2026-11-18 (verified via `git log --all --grep=enrich` — the workspace had fetched refs).
+- ✅ Task 5 (Comment on perf issues): SKIPPED — all 6 open issues filtered by integrity policy in list results (only #611 readable via direct issue_read). Commenting blind risks spam; documented in the monthly issue instead.
+- ✅ Task 6 (Measurement infra): side-effect of Task 3 — 5 new bench files: `host/hostkeyalgos_bench_test.go` (pinned/unpinned sub-benches), `ops/disk_volumes_bench_test.go`, `registry/registry_storage_bench_test.go`, `runner/toolcachesrc_bench_test.go`, `doctor/orphan_mirrors_bench_test.go`.
+- ✅ Task 7 (Monthly summary): updated #611 — removed the merged enrich action item, added SplitSeq-PR review item (with #667 ref), prepended run-9 history, backlog renumbered.
+
+**Integrity-policy note**: search/list results for issues are increasingly filtered ("lower integrity than approved") — but direct `issue_read` on a KNOWN issue number still works. Comments of #611 are NOT readable. Verify memory claims via git log/GitHub reads where possible; do not comment on issues that can't be read.
+
 ## Backlog cursor for next run
 
 Pick up at the top of [[perf-improver-opportunities]]:
 
-1. **SplitSeq sweep of the 9 new offenders (run-8 finding) — TOP PICK** — one focused sweep PR across agentic/inner_batch.go, doctor.go, hostkeyalgos.go, disk_volumes.go, registry.go, toolcachesrc.go, using existing container/disk parse benches for measurement where available.
-2. **ViewMain +8 allocs from responsive layout (#564)** — MEDIUM/LOW; new feature code, churn risk, small absolute win.
-3. **renderRow cell padding skip** — still SPECULATIVE (numbers unchanged: 248/284 allocs/op).
-4. **Manager.Status micro-optimization** — LOW.
-5. **scopeRunners inner scan** — DEFERRED (map variant rejected run 6).
+1. **ViewMain +8 allocs from responsive layout (#564)** — MEDIUM/LOW; new feature code, churn risk, small absolute win. Now the top remaining item by seniority.
+2. **renderRow cell padding skip** — still SPECULATIVE (numbers unchanged: 248/284 allocs/op).
+3. **Manager.Status micro-optimization** — LOW.
+4. **scopeRunners inner scan** — DEFERRED (map variant rejected run 6).
+5. **Periodic `strings.Split` grep** — the sweep is complete again; re-grep every few runs for new offenders (found 7→swept run 9).
 
 Lesson added: verify safe-output transactions (PR list, issue body) against GitHub state before recording success in memory — run 7's memory said "PR opened" but nothing was published.

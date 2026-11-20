@@ -7,11 +7,12 @@ metadata:
 
 # Optimization backlog (prioritized)
 
-Status as of 2026-11-06 (run 8). Module path is `github.com/an-lee/gh-sr` (GitHub repo remains `baizhiheizi/gh-sr`); repo grew since run 7 (new packages: registry, hostshell, strfmt, diskschedule, dockerutil, table, cache) and is still heavily optimized — most hot paths have dedicated benchmarks.
+Status as of 2026-11-20 (run 9). Module path is `github.com/an-lee/gh-sr` (GitHub repo remains `baizhiheizi/gh-sr`); repo is now 24 test packages and heavily optimized — most hot paths have dedicated benchmarks. Run-8's enrich draft PR merged as **#610** (2026-11-18; safeoutputs appended a branch-hash suffix, which hides branch-name PR searches — search by title/commit instead).
 
-## Recently completed (run 8, 2026-11-06)
+## Recently completed (run 9, 2026-11-20)
 
-- **[perf-improver] perf(runner): drop per-instance key build in enrichFromScopeRunners** — DRAFT PR on branch `perf-assist/enrich-rc-by-base-name` (commit `1636822`), created via create_pull_request THIS run (the run-7 attempt never produced a PR — see [[perf-improver-work]] correction). Map keyed on `rc.Name` (one entry per runner) instead of `name-N` (one entry per instance); per-status lookup extracts baseName via `strings.LastIndex(instName, "-")` + slice; `strconv` import dropped. Run-8 measurements (go1.26.10, -benchtime=1s -count=6, non-overlapping ranges): big fixture **43.1k → 29.8k ns/op (-31%)**, 117,528 → 102,456 B/op (-12.8%), 420 → 214 allocs/op (-49.0%); small fixture 2.1k → 1.5k ns/op (-28%), 6,488 → 5,872 B/op, 28 → 15 allocs/op. Stronger than run-7's noise-wash read — this time time improved cleanly too.
+- **[perf-improver] perf: SplitSeq sweep of 7 one-shot line parsers** — DRAFT PR, branch `perf-assist/splitseq-sweep-run9` (commit `4ec0fb6`). doctor.go:997, hostkeyalgos.go:68+109 (per-dial), disk_volumes.go:34+53, registry.go:500, toolcachesrc.go:113. Headline `hostKeyAlgosForDial`: -11% ns/op, -15/-16 allocs; other parses -2% to -7.3% B/op; +1 new benchmark per parser. Two run-8 sites (`agentic/inner_batch.go:179`, `registry.go:453`) were removed by intervening refactors before the sweep landed. See [[perf-improver-work]].
+- **[perf-improver] perf(runner): drop per-instance key build in enrichFromScopeRunners** — MERGED as **#610** (2026-11-18; created run 8, branch `perf-assist/enrich-rc-by-base-name-b48e3d02665c7cbd`). Big fixture -31% ns/op, -12.8% B/op, -49% allocs/op; small -28% ns/op, -46% allocs.
 
 ## Previously completed
 
@@ -24,13 +25,13 @@ Status as of 2026-11-06 (run 8). Module path is `github.com/an-lee/gh-sr` (GitHu
 
 ## Backlog cursor
 
-After the run-8 enrich PR, the next run should pick up:
+After the run-9 SplitSeq sweep, the next run should pick up:
 
-1. **SplitSeq sweep of NEW offenders (run-8 finding, TOP PICK for run 9)** — the recent feature PRs reintroduced 9 line-iteration `strings.Split` sites across 5 packages, all one-shot SSH-command-output parsers: `internal/agentic/inner_batch.go:179` (fanout parse, #593), `internal/doctor/doctor.go:963` (orphans list), `internal/host/hostkeyalgos.go:68` (line iter over data) + `:109` (comma field iter), `internal/ops/disk_volumes.go:34` + `:53` (volume ls + du parse, #563), `internal/registry/registry.go:453` (parseInspectBatchOutput, #594) + `:535` (du parse), `internal/runner/toolcachesrc.go:113` (#562). Legit slice-index uses to LEAVE: `hostkeyalgos.go:130` (len-checked parts), `internal/tui/columns.go:352` (rstripLines mutates in place), `cmd/gh-sr/main.go:302,310`, `internal/doctor/lockfiles.go:98,99`, `internal/autostart/autostart.go:183`. Repo convention accepts sweep PRs (see merged #458/#461/#463/#498); `internal/runner/container_parse_bench_test.go` + `internal/ops/disk_parse_bench_test.go` already exist for measurement.
-2. **View() alloc reduction — remaining lipgloss cost** — MEDIUM impact, MEDIUM risk. ~95% still inside `lipgloss.Style.Render`. Note: `BenchmarkViewMain/one_status` regressed slightly to 323 allocs/op / 10,139 B/op (from 315 / 9,451) with the responsive-layout feature (#564, merged 2026-10-18) — new width-responsive code adds ~8 allocs/op. Chasing that regression means touching fresh feature code; only if a run wants it.
-3. **renderRow / renderHighlightedRow cell padding** — MEDIUM impact, LOW risk. Still SPECULATIVE; run-8 re-check: `BenchmarkRenderRow` 248 allocs/op and `BenchmarkRenderHighlightedRow` 284 allocs/op unchanged from the backlog reference.
-4. **Manager.Status further per-instance optimization** — LOW priority. Marginal gains expected.
-5. **GitHub-runner scan inside scopeRunners[key]** — inner O(N×M) scan remains; map-lookup variant rejected (run 6). Only revisit with a different shape (caching across refresh ticks).
+1. **ViewMain +8 allocs from responsive layout (#564)** — now the top remaining item by seniority. `BenchmarkViewMain/one_status`: 323 allocs/op / 10,139 B/op (was 315 / 9,451). New width-responsive feature code — churn risk; only touch if the area is being modified anyway, or measure a targeted fix.
+2. **renderRow / renderHighlightedRow cell padding** — MEDIUM impact, LOW risk. Still SPECULATIVE; `BenchmarkRenderRow` 248 allocs/op and `BenchmarkRenderHighlightedRow` 284 allocs/op unchanged.
+3. **Manager.Status further per-instance optimization** — LOW priority. Marginal gains expected.
+4. **GitHub-runner scan inside scopeRunners[key]** — inner O(N×M) scan remains; map-lookup variant rejected (run 6). Only revisit with a different shape (caching across refresh ticks).
+5. **Periodic SplitSeq grep** — `git grep -nE 'strings\.Split\b' -- '*.go'` — keep checking for new offenders as code lands. Post-sweep production remainder (run 9): all legit slice-index uses (hostkeyalgos.go:130, lockfiles.go:98-99, main.go:287+295, tui/columns.go:353, autostart.go:183 one-shot install path).
 
 ## Identified opportunities (priority order)
 
@@ -62,7 +63,7 @@ After the run-8 enrich PR, the next run should pick up:
 
 ### 5. Periodic SplitSeq grep
 - `git grep -nE 'strings\.Split\b' -- '*.go'` — keep checking for new offenders as code lands.
-- Last grep (2026-10-15): remaining production `strings.Split` callers are all legitimate slice-index uses (`cmd/gh-sr/main.go:300,308` `parts[1]:[0]`; `internal/doctor/lockfiles.go:98,99` `strings.Split(a, ".")` / `strings.Split(b, ".")` for version compare; `internal/autostart/autostart.go:183` slice-index for id -un/-gn output). New low-priority finding: autostart.go:183 is on a one-shot install path; converting to `strings.Cut` would be a trivial follow-up.
+- Last grep (2026-11-20, run 9): post-sweep production remainder is all legitimate slice-index uses (`cmd/gh-sr/main.go:287,295`; `internal/doctor/lockfiles.go:98,99`; `internal/host/hostkeyalgos.go:130` len-checked parts; `internal/tui/columns.go:353` rstripLines; `internal/autostart/autostart.go:183` one-shot install path — `strings.Cut` trivial follow-up if ever touched).
 - Status: ONGOING. Worth a 30-second sweep every few runs.
 
 ## Cross-cutting notes

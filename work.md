@@ -9,6 +9,40 @@ metadata:
 
 ## In progress
 
+### 2026-11-20 (run 9) — SplitSeq sweep of 7 one-shot line parsers (DRAFT PR, branch `perf-assist/splitseq-sweep-run9`, commit `4ec0fb6`)
+
+**PR created** via create_pull_request, success (output_id `so_K0MwlMH-RuCm`, patch 12,718 B). Temporary ref `#667` used in the monthly issue body so the maintainer-facing number resolves automatically. Title: `perf: use SplitSeq for one-shot line parsers in doctor/host/ops/registry/runner`.
+
+**Change** — mechanical `for _, x := range strings.Split(s, sep)` → `for x := range strings.SplitSeq(s, sep)` at:
+- `internal/doctor/doctor.go:997` (orphan-mirror scan; moved from :963 since run 8)
+- `internal/host/hostkeyalgos.go:68` (known_hosts walk, PER-DIAL) + `:109` (comma host-pattern field)
+- `internal/ops/disk_volumes.go:34` (volume ls) + `:53` (busybox du)
+- `internal/registry/registry.go:500` (MirrorStorages du; moved from :535)
+- `internal/runner/toolcachesrc.go:113` (CACHED/FETCHED parse; loop var renamed rawLine→TrimSpace)
+
+**New bench files** (one per converted parser): `internal/host/hostkeyalgos_bench_test.go` (unpinned_scans_all_lines / pinned sub-benches, 15-line mixed known_hosts fixture), `internal/ops/disk_volumes_bench_test.go` (10 volumes), `internal/registry/registry_storage_bench_test.go` (8 mirrors, absolute StoragePath so no remote resolve), `internal/runner/toolcachesrc_bench_test.go` (10 entries), `internal/doctor/orphan_mirrors_bench_test.go` (12 containers).
+
+**Benchmark** (go1.26.11, AMD Ryzen AI 9 HX 370, -benchtime=1s -benchmem -count=6, same fixtures on main vs branch, medians):
+
+| Bench | main | branch | Δ |
+| --- | --- | --- | --- |
+| HostKeyAlgosForDial/unpinned | 4,915 ns · 4,536 B · 37 al | 4,368 ns · 3,800 B · 22 al | **-11% ns · -16.2% B · -15 al** |
+| HostKeyAlgosForDial/pinned | 5,433 ns · 5,080 B · 44 al | 4,826 ns · 4,328 B · 28 al | **-11% ns (non-overlap) · -14.8% B · -16 al** |
+| MeasureSharedVolumes (10 vol) | 2,252 ns · 4,401 B · 26 al | 2,179 ns · 4,092 B · 26 al | ~-3% ns (noisy) · **-7.0% B** · ±0 al |
+| MirrorStorages (8 mirrors) | 1,143 ns · 1,976 B · 28 al | 1,156 ns · 1,832 B · 27 al | ns wash · **-7.3% B** · -1 al |
+| SyncToolcacheSources (10) | 32,349 ns · 72,298 B · 622 al | 31,701 ns · 72,129 B · 621 al | wash · -169 B · -1 al |
+| CheckOrphanMirrors (12 ctr) | 3,688 ns · 6,916 B · 50 al | 3,636 ns · 6,766 B · 51 al | wash · **-2.2% B** · **+1 al** |
+
+**Insight**: on small outputs the SplitSeq iterator closure largely offsets the dropped `Split` slice in alloc COUNT (CheckOrphanMirrors went +1) — the byte savings are what remain; alloc-count-only dashboards can miss SplitSeq wins. On the known_hosts walk the win is large (line count scales the slice). `syncToolcacheSources` is dominated by its `fmt.Sprintf` script builder (72 KB/op) — parse changes are invisible there.
+
+**Verification**: `go build ./...` OK, `go vet ./...` OK, `gofmt -l .` clean, `go test ./... -race -count=1 -short` OK across all 24 packages.
+
+### A/B methodology note (run 9)
+
+Bench files exist only on the branch, so the main baseline was measured by: commit branch → `cp` the 5 new bench files to /tmp → `git checkout main` → copy back (untracked) → bench → rm + checkout branch. Deterministic-code alloc counts are identical across runs; time medians comparable.
+
+## Completed
+
 ### 2026-11-06 (run 8) — drop per-instance key build in enrichFromScopeRunners (DRAFT PR on `perf-assist/enrich-rc-by-base-name`, commit `1636822`)
 
 **CORRECTION of the run-7 record**: run 7 (2026-10-15) recorded "PR opened" but **no PR was ever created** — verified this run: the PR list has no `[perf-improver]` entry after #537, main still had the old `rcByInstance` shape, and October issue #517's body is missing the run-6/run-7 Run History entries. Run 7's safe-output transactions evidently failed silently while its memory writes succeeded. Lesson: always verify PR creation against the GitHub PR list before recording it; a successful-looking run summary is not proof of a published PR.
