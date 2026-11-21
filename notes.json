@@ -9,45 +9,45 @@
   "checks": [
     {
       "area": "repo_assist_prs",
-      "checked_at": "2026-11-20",
+      "checked_at": "2026-11-21",
       "result": "acted",
-      "follow_up": "Two open RA PRs: #663 (changelog for #660, awaiting review) + new perf draft on repo-assist/perf-lockfiles-parallel-fetch (ListLockWorkflows fan-out, run 44652677016). Dependabot #664/#665 (gh-aw-actions 1.3.0) flagged merge-or-bundle in monthly issue."
+      "follow_up": "Two drafts awaiting review: perf(ops) images-sync fan-out (repo-assist/perf-images-sync-fanout) + chore cleanup draft (repo-assist/chore-install-params-url-helper). #663/#666 and Dependabot #664/#665 merged; #659 closed."
     },
     {
       "area": "performance",
-      "checked_at": "2026-11-20",
+      "checked_at": "2026-11-21",
       "result": "acted",
-      "follow_up": "Fixed one gap: ListLockWorkflows fetched .lock.yml files sequentially (21 round trips/repo in doctor --check-lockfiles); now fanout.Indexed, ~10x measured (840ms->83ms, 20 files @40ms/req). Error contract preserved. Other baselines unchanged from 11-18 sweep."
+      "follow_up": "ImagesSync + syncPrefetchAfterStart per-host loops -> fanOutHostsCore (wall-clock sum -> slowest host); error selection + best-effort wording preserved; no-container hosts pre-filtered. forEachServiceHost stays sequential by design."
     },
     {
       "area": "tests",
-      "checked_at": "2026-11-20",
+      "checked_at": "2026-11-21",
       "result": "acted",
-      "follow_up": "With perf change: +2 tests in github_test.go (8-file concurrent ordering incl. fetch count; earliest-file-error-wins determinism). Build/vet/gofmt clean, race suite green (runner+doctor), full ./... suite green (24 pkgs)."
-    },
-    {
-      "area": "docs",
-      "checked_at": "2026-11-19",
-      "result": "acted",
-      "follow_up": "v0.10.0 RELEASED 2026-11-16. Rolling [Unreleased] convention re-confirmed. #663 records the #660 changelog gap, awaiting review. NEXT: docs/CLI cross-check after next surface change."
+      "follow_up": "With perf change: +3 multi-host tests (barrier concurrency proof, connect-failure-while-others-sync, multi-host best-effort warnings). Full suite + race green. Gotcha: containerRunnerContainers reads cfg.Runners, not the caller's runner slice."
     },
     {
       "area": "hygiene",
-      "checked_at": "2026-11-20",
+      "checked_at": "2026-11-21",
       "result": "acted",
-      "follow_up": "6 open issues verified: #654 bot-managed (no action ever); #659 resolved by #660, close pending maintainer; 4 monthly trackers fine. Code-quality sweep: zero TODO/FIXME, no dup helpers; deadcode false positives only (testutil fakes, scripts/benchstat, status_batch test seams)."
+      "follow_up": "5 open issues re-verified: all automation trackers, no human-filed issues. Code sweep: autostart unused install param (+ _ = san misuse), DeleteRunnerScoped URL vs actionsURL, 2 config doc typos -> chore draft; deadcode still clean."
+    },
+    {
+      "area": "docs",
+      "checked_at": "2026-11-21",
+      "result": "acted",
+      "follow_up": "CHANGELOG [Unreleased] Changed entry added inside the perf draft PR (images-sync fan-out). Rolling [Unreleased] convention unchanged; cleanup PR deliberately has no changelog entry (behavior-identical internal cleanup)."
     },
     {
       "area": "ci",
       "checked_at": "2026-11-18",
       "result": "no_actionable",
-      "follow_up": "Main green (only schedule runs since 11-17, all success). Bot-branch checks action_required = approval gate, infra-only."
+      "follow_up": "Main green as of 11-18 check; only schedule runs since. Bot-branch checks action_required = approval gate, infra-only."
     },
     {
       "area": "dependencies",
-      "checked_at": "2026-11-20",
+      "checked_at": "2026-11-21",
       "result": "acted",
-      "follow_up": "Dependabot opened #664 + #665 (gh-aw-actions setup + setup-cli 1.2.2 -> 1.3.0) on 2026-11-19; suggested merge-or-bundle in monthly issue. Go deps unchanged from 11-18 (cobra 1.10.2 / x-term 0.48 / bubbletea 2.1.1 / go-gh 2.17.0 / go 1.26.7, x/crypto 0.59 merged)."
+      "follow_up": "Dependabot #664/#665 (gh-aw-actions 1.3.0) merged 11-21 (9c967ae, cf11a3a). Go deps current per 11-18/11-20 checks (cobra 1.10.2 / x-term 0.48 / bubbletea 2.1.1 / go-gh 2.17.0 / go 1.26.7, x/crypto 0.59)."
     }
   ],
   "completed_actions": [],
