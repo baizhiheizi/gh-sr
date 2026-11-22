@@ -36,10 +36,14 @@ func ImagesSync(w io.Writer, cfg *config.Config, filterHost string) error {
 			fmt.Fprintf(w, "Skipping host %s (no container-mode runners)\n", name)
 			continue
 		}
+		// The banner prints in the selection loop, before the fan-out, so
+		// every host with container-mode runners gets one — including hosts
+		// whose connect later fails (fanOutHostsCore skips the callback on a
+		// connect error, which would otherwise drop the banner).
+		writeHostBanner(w, "Syncing images on "+name, cfg.Hosts[name].Addr)
 		groups = append(groups, hostGroup{name: name})
 	}
 	results := fanOutHostsCore(w, cfg, groups, false, func(w io.Writer, h *host.Host, g hostGroup) (struct{}, error) {
-		writeHostBanner(w, "Syncing images on "+g.name, cfg.Hosts[g.name].Addr)
 		if s != nil {
 			if err := registry.Ensure(w, h, *s); err != nil {
 				return struct{}{}, err

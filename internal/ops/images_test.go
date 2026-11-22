@@ -153,8 +153,58 @@ func TestImagesSyncConnectFailureDoesNotCancelOtherHosts(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "no mock registered for host h1") {
 		t.Fatalf("connect failure must fail the command; got %v", err)
 	}
+	// The banner prints in the selection loop before the fan-out, so even the
+	// connect-failing host gets its progress line (the old sequential behavior).
+	if out := buf.String(); !strings.Contains(out, "Syncing images on h1") {
+		t.Errorf("h1 must keep its banner despite failing to connect; got:\n%s", out)
+	}
 	if out := buf.String(); !strings.Contains(out, "Syncing images on h2") {
 		t.Errorf("h2's sync must still run despite h1's connect failure; got:\n%s", out)
+	}
+}
+
+// syncFailMock fails registry.Ensure with a host-specific message, so tests
+// can tell which host's sync error a reduction surfaced.
+func syncFailMock(name string) *testutil.MockExecutor {
+	return &testutil.MockExecutor{RunFn: func(cmd string) (string, error) {
+		if strings.Contains(cmd, ".State.Status") && !strings.Contains(cmd, "|{{.Config.Image}}") {
+			return "", errors.New("sync failed on " + name)
+		}
+		return "", nil
+	}}
+}
+
+// TestImagesSyncLastSyncErrorWins pins the multi-host sync-error reduction:
+// when every host's sync fails, the returned error is the LAST host's, in
+// group order — the same "last error wins" overwrite the old sequential loop
+// performed. A first-error-wins or results[len-1].Err shortcut breaks this
+// silently (the latter would return nil when the last host succeeds while an
+// earlier one failed).
+func TestImagesSyncLastSyncErrorWins(t *testing.T) {
+	t.Parallel()
+	installMockConnectHost(t, map[string]host.Executor{
+		"h1": syncFailMock("h1"),
+		"h2": syncFailMock("h2"),
+	})
+	var buf bytes.Buffer
+	err := ImagesSync(&buf, multiHostSyncCfg("h1", "h2"), "")
+	if err == nil || !strings.Contains(err.Error(), "sync failed on h2") {
+		t.Fatalf("last host's sync error must win; got %v", err)
+	}
+}
+
+// TestImagesSyncConnectErrorBeatsSyncError pins the reduction's priority:
+// connect errors are checked across all results before any sync error, so a
+// connect failure outranks another host's sync failure (same priority the
+// old sequential loop had: a connect error returned immediately).
+func TestImagesSyncConnectErrorBeatsSyncError(t *testing.T) {
+	t.Parallel()
+	// h1's sync fails; h2 has no mock, so its connect fails.
+	installMockConnectHost(t, map[string]host.Executor{"h1": syncFailMock("h1")})
+	var buf bytes.Buffer
+	err := ImagesSync(&buf, multiHostSyncCfg("h1", "h2"), "")
+	if err == nil || !strings.Contains(err.Error(), "no mock registered for host h2") {
+		t.Fatalf("connect error must outrank the sync error; got %v", err)
 	}
 }
 
@@ -202,5 +252,47 @@ func TestSyncPrefetchAfterStartMultiHostBestEffort(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Errorf("missing %q in:\n%s", want, out)
 		}
+	}
+}
+
+// TestSyncPrefetchAfterStartSyncsHostsConcurrently pins the post-start pass's
+// concurrency — the property the best-effort test above does not prove (its
+// assertions hold under a sequential loop too). With the barrier mock, both
+// healthy hosts' prefetch pulls must be in flight at once: a sequential
+// implementation hits the 5 s barrier timeout, the pulls error, and the
+// no-warning + summary-count assertions below fail.
+func TestSyncPrefetchAfterStartSyncsHostsConcurrently(t *testing.T) {
+	t.Parallel()
+	const N = 2
+	names := []string{"h1", "h2"}
+	arrival := make(chan string, N)
+	release := make(chan struct{})
+	mocks := make(map[string]host.Executor, N)
+	for _, name := range names {
+		mocks[name] = barrierSyncMock(name, arrival, release)
+	}
+	installMockConnectHost(t, mocks)
+	go func() {
+		for range N {
+			<-arrival
+		}
+		close(release)
+	}()
+	var runners []config.RunnerConfig
+	for _, h := range names {
+		runners = append(runners, config.RunnerConfig{
+			Name: "ci", Repo: "o/r", Host: h, Count: 1, RunnerMode: config.RunnerModeContainer,
+		})
+	}
+	var buf bytes.Buffer
+	if err := syncPrefetchAfterStart(&buf, multiHostSyncCfg(names...), runners); err != nil {
+		t.Fatalf("sync must stay best-effort; got %v", err)
+	}
+	out := buf.String()
+	if strings.Contains(out, "Warning:") {
+		t.Errorf("no host should warn when all connect and sync fine (a warning here means the barrier timed out and the pass went serial):\n%s", out)
+	}
+	if c := strings.Count(out, "images: 1 pulled, 1 loaded into runners (0 already cached there)"); c != N {
+		t.Errorf("expected %d summary lines, got %d in:\n%s", N, c, out)
 	}
 }
