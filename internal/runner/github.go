@@ -164,12 +164,7 @@ func (g *GitHubClient) ListRunnersScoped(scope, target string) ([]GitHubRunner, 
 }
 
 func (g *GitHubClient) DeleteRunnerScoped(scope, target string, runnerID int64) error {
-	var url string
-	if scope == "org" {
-		url = fmt.Sprintf("%s/orgs/%s/actions/runners/%d", g.apiBase, target, runnerID)
-	} else {
-		url = fmt.Sprintf("%s/repos/%s/actions/runners/%d", g.apiBase, target, runnerID)
-	}
+	url := g.actionsURL(scope, target, fmt.Sprintf("runners/%d", runnerID))
 	req, err := http.NewRequest("DELETE", url, nil)
 	if err != nil {
 		return err
