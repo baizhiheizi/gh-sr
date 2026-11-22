@@ -139,19 +139,19 @@ func Install(h *host.Host, instance string, opts InstallOpts) error {
 	switch h.OS {
 	case "linux":
 		if opts.System {
-			return installSystemdSystem(h, instance, san, home, runnerDir)
+			return installSystemdSystem(h, san, home, runnerDir)
 		}
-		return installSystemdUser(h, instance, san, home, runnerDir)
+		return installSystemdUser(h, san, home, runnerDir)
 	case "darwin":
-		return installLaunchd(h, instance, san, runnerDir, home)
+		return installLaunchd(h, san, runnerDir, home)
 	case "windows":
-		return installWindowsTask(h, instance, san, runnerDir)
+		return installWindowsTask(h, san, runnerDir)
 	default:
 		return fmt.Errorf("autostart install not supported on OS %q", h.OS)
 	}
 }
 
-func installSystemdUser(h *host.Host, instance, san, home, absRunnerDir string) error {
+func installSystemdUser(h *host.Host, san, home, absRunnerDir string) error {
 	unit := SystemdUserUnit(san, absRunnerDir)
 	base := ServiceBasename(san)
 	fullUnitPath := home + "/.config/systemd/user/" + base + ".service"
@@ -164,11 +164,10 @@ func installSystemdUser(h *host.Host, instance, san, home, absRunnerDir string) 
 	if _, err := h.Run(cmd); err != nil {
 		return fmt.Errorf("enabling systemd user unit: %w", err)
 	}
-	_ = instance
 	return nil
 }
 
-func installSystemdSystem(h *host.Host, instance, san, home, absRunnerDir string) error {
+func installSystemdSystem(h *host.Host, san, home, absRunnerDir string) error {
 	// Combine `id -un` and `id -gn` into a single SSH call. Both probes
 	// answer the same correlated question ("who am I, what group?") from the
 	// same host state, so they belong in one shell invocation. Saves 1 SSH
@@ -199,11 +198,10 @@ func installSystemdSystem(h *host.Host, instance, san, home, absRunnerDir string
 	if _, err := h.Run(script); err != nil {
 		return fmt.Errorf("installing system systemd unit: %w", err)
 	}
-	_ = instance
 	return nil
 }
 
-func installLaunchd(h *host.Host, instance, san, absRunnerDir, home string) error {
+func installLaunchd(h *host.Host, san, absRunnerDir, home string) error {
 	plist := LaunchdPlist(san, absRunnerDir)
 	label := LaunchdLabel(san)
 	plistName := label + ".plist"
@@ -221,11 +219,10 @@ func installLaunchd(h *host.Host, instance, san, absRunnerDir, home string) erro
 	if _, err := h.Run(cmd); err != nil {
 		return fmt.Errorf("loading LaunchAgent: %w", err)
 	}
-	_ = instance
 	return nil
 }
 
-func installWindowsTask(h *host.Host, instance, san, absRunnerDir string) error {
+func installWindowsTask(h *host.Host, san, absRunnerDir string) error {
 	taskName := WindowsTaskName(san)
 	// Use cmd.exe directly (no PowerShell profile) and S4U logon type so the
 	// process runs in Session 0 (non-interactive, no visible console window).
@@ -246,8 +243,6 @@ Start-ScheduledTask -TaskName $tn
 	if _, err := h.RunShell(strings.TrimSpace(ps)); err != nil {
 		return fmt.Errorf("registering scheduled task: %w", err)
 	}
-	_ = instance
-	_ = san
 	return nil
 }
 
