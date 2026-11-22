@@ -57,7 +57,13 @@ func TestConnectHostLive(t *testing.T) {
 		if h != nil {
 			t.Fatalf("ConnectHost error = %v but host = %+v, want nil host", err, h)
 		}
+		// "connecting to <host>" wraps every NewConnection failure, so only
+		// the SSH-dial marker proves the failure happened at dial time and
+		// not earlier (e.g. no auth methods available).
 		msg := err.Error()
+		if !strings.Contains(msg, "SSH dial root@"+addr) {
+			t.Fatalf("error %q missing SSH dial prefix", msg)
+		}
 		if !strings.Contains(msg, "connecting to deadhost") {
 			t.Fatalf("error %q missing host name", msg)
 		}

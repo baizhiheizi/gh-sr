@@ -354,7 +354,14 @@ func TestHostConnect(t *testing.T) {
 		if err == nil {
 			t.Fatal("Run on unreachable host = nil error, want connect failure")
 		}
+		// "connecting to <host>" wraps every NewConnection failure, so only
+		// the SSH-dial marker proves the failure happened at dial time and
+		// not earlier (e.g. no auth methods available) — same strength as
+		// the refused-dial subtests above.
 		msg := err.Error()
+		if !strings.Contains(msg, "SSH dial root@"+addr) {
+			t.Fatalf("error %q missing SSH dial prefix", msg)
+		}
 		if !strings.Contains(msg, "connecting to deadhost") {
 			t.Fatalf("error %q missing host name", msg)
 		}
