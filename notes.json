@@ -9,39 +9,39 @@
   "checks": [
     {
       "area": "repo_assist_prs",
-      "checked_at": "2026-11-22",
+      "checked_at": "2026-11-23",
       "result": "acted",
-      "follow_up": "Two drafts awaiting review: perf(ops) images-sync fan-out (repo-assist/perf-images-sync-fanout) + chore params/actionsURL (repo-assist/chore-install-params-url-helper). GOTCHA: the 11-21 run's PR transactions never reached GitHub; verify recorded PRs exist before trusting memory."
+      "follow_up": "Both 11-22 drafts confirmed merged: images-sync fan-out as #669, chore params/actionsURL as #670 (git log at main HEAD). New draft awaiting review: docs(changelog) perf entries on repo-assist/basics-changelog-perf-entries."
     },
     {
-      "area": "performance",
-      "checked_at": "2026-11-22",
+      "area": "docs",
+      "checked_at": "2026-11-23",
       "result": "acted",
-      "follow_up": "ImagesSync + syncPrefetchAfterStart -> fanOutHostsCore (perf draft). Connect errors reported after all hosts ran; last-sync-error + warning wordings preserved. Gotcha: barrier mock must gate ONLY the prefetch pull (Ensure's own pull deadlocks the barrier). forEachServiceHost stays sequential."
+      "follow_up": "Changelog gap closed via draft: [Unreleased] had no entries for merged perf #662/#666/#667 and the #669 entry lacked its PR ref (same gap type #663 fixed for #660). Added three Changed entries (newest-first) + backfilled (#669). Rolling [Unreleased] convention re-confirmed."
+    },
+    {
+      "area": "release",
+      "checked_at": "2026-11-23",
+      "result": "no_actionable",
+      "follow_up": "Commits since v0.10.0 (2026-11-16) remain internal (perf/test/chore/deps/docs); rolling [Unreleased] convention intact, releases are maintainer-tagged with auto-generated notes."
     },
     {
       "area": "tests",
       "checked_at": "2026-11-22",
       "result": "acted",
-      "follow_up": "+3 multi-host tests with perf draft (barrier proof, connect-failure isolation, best-effort warnings). gofmt/vet clean; full suite + race green (24 pkgs). Standing gotcha: containerRunnerContainers reads cfg.Runners, not the caller's slice."
+      "follow_up": "+3 multi-host tests with perf draft (barrier proof, connect-failure isolation, best-effort warnings). gofmt/vet clean; full suite + race green (24 pkgs). Re-verified suite green 11-23 on the changelog branch. Standing gotcha: containerRunnerContainers reads cfg.Runners, not the caller's slice."
+    },
+    {
+      "area": "performance",
+      "checked_at": "2026-11-22",
+      "result": "acted",
+      "follow_up": "ImagesSync + syncPrefetchAfterStart -> fanOutHostsCore (merged #669). Remaining hot paths batched; forEachServiceHost stays sequential by documented fail-fast design. Barrier-mock gotcha: gate ONLY the prefetch pull, not Ensure's own pull (deadlocks)."
     },
     {
       "area": "hygiene",
       "checked_at": "2026-11-22",
       "result": "acted",
-      "follow_up": "Landed in chore draft: unused instance param dropped from 4 autostart install helpers (+ bogus _ = san), DeleteRunnerScoped -> actionsURL. The 11-21 '2 config doc typos' not re-verifiable on current main; dropped."
-    },
-    {
-      "area": "docs",
-      "checked_at": "2026-11-22",
-      "result": "acted",
-      "follow_up": "CHANGELOG [Unreleased] Changed entry inside the perf draft (images-sync fan-out). Rolling [Unreleased] convention re-confirmed (no per-release sections; v0.10.0 tagged with entries left under Unreleased)."
-    },
-    {
-      "area": "release",
-      "checked_at": "2026-11-22",
-      "result": "no_actionable",
-      "follow_up": "v0.10.0 released 2026-11-16; 12 commits since all internal (perf/refactor/test/deps). No release PR warranted; releases are maintainer-tagged with auto-generated notes."
+      "follow_up": "Merged as #670: unused instance param dropped from 4 autostart install helpers (+ bogus _ = san), DeleteRunnerScoped -> actionsURL."
     },
     {
       "area": "ci",
