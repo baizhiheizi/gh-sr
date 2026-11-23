@@ -24,7 +24,7 @@ import (
 // (host.DetectOS issues one `uname -s` when runners.yml omits `os:` for a
 // remote host). The fixture pins OS on the host config, so that round trip
 // is not in the numbers below — a remote host configured without `os:` costs
-// one round trip more than the counts here (29 and 10 instead of 28 and 9).
+// one round trip more than the counts here (28 and 9 instead of 27 and 8).
 // The counts therefore measure the checks themselves, the part the folds
 // target, and are not a claim about the whole `gh sr doctor` cost for a host.
 //
