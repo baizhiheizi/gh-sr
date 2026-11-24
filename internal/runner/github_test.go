@@ -15,6 +15,13 @@ import (
 	"time"
 )
 
+func TestGitHubClient_DefaultTimeout(t *testing.T) {
+	g := NewGitHubClient("pat")
+	if g.client.Timeout != defaultRequestTimeout {
+		t.Fatalf("default client timeout = %v, want %v (stalled connections must not hang the command)", g.client.Timeout, defaultRequestTimeout)
+	}
+}
+
 func TestGitHubClient_GetRegistrationToken(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost || r.URL.Path != "/repos/o/r/actions/runners/registration-token" {
