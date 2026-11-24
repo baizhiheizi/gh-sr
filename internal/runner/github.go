@@ -10,9 +10,15 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/an-lee/gh-sr/internal/fanout"
 )
+
+// defaultRequestTimeout bounds every request on the default client. Without it
+// a stalled connection (WAN proxies and flaky links are the norm on the hosts
+// gh-sr manages) hangs the command — and the TUI refresh loop — forever.
+const defaultRequestTimeout = 30 * time.Second
 
 type GitHubClient struct {
 	pat     string
@@ -84,7 +90,7 @@ func NewGitHubClientWithHTTP(pat string, client *http.Client, apiBase string) *G
 		apiBase = "https://api.github.com"
 	}
 	if client == nil {
-		client = &http.Client{}
+		client = &http.Client{Timeout: defaultRequestTimeout}
 	}
 	return &GitHubClient{
 		pat:      pat,
