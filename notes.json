@@ -9,15 +9,15 @@
   "checks": [
     {
       "area": "repo_assist_prs",
-      "checked_at": "2026-11-23",
+      "checked_at": "2026-11-24",
       "result": "acted",
-      "follow_up": "Both 11-22 drafts confirmed merged: images-sync fan-out as #669, chore params/actionsURL as #670 (git log at main HEAD). New draft awaiting review: docs(changelog) perf entries on repo-assist/basics-changelog-perf-entries."
+      "follow_up": "#669/#670/#671 all merged (git log at main HEAD). New draft awaiting review: fix(runner) default GitHub client 30s timeout on repo-assist/improve-github-client-timeout."
     },
     {
       "area": "docs",
       "checked_at": "2026-11-23",
       "result": "acted",
-      "follow_up": "Changelog gap closed via draft: [Unreleased] had no entries for merged perf #662/#666/#667 and the #669 entry lacked its PR ref (same gap type #663 fixed for #660). Added three Changed entries (newest-first) + backfilled (#669). Rolling [Unreleased] convention re-confirmed."
+      "follow_up": "Changelog gap closed via #671 (merged). Re-verified 11-24: docs/content/configuration.md already documents runners[].cpus/memory and label aliases - no gap."
     },
     {
       "area": "release",
@@ -29,13 +29,13 @@
       "area": "tests",
       "checked_at": "2026-11-22",
       "result": "acted",
-      "follow_up": "+3 multi-host tests with perf draft (barrier proof, connect-failure isolation, best-effort warnings). gofmt/vet clean; full suite + race green (24 pkgs). Re-verified suite green 11-23 on the changelog branch. Standing gotcha: containerRunnerContainers reads cfg.Runners, not the caller's slice."
+      "follow_up": "+3 multi-host tests with perf draft (barrier proof, connect-failure isolation, best-effort warnings). gofmt/vet clean; full suite + race green (24 pkgs). Full suite re-run green 11-24 on the timeout branch. Standing gotcha: containerRunnerContainers reads cfg.Runners, not the caller's slice."
     },
     {
       "area": "performance",
       "checked_at": "2026-11-22",
       "result": "acted",
-      "follow_up": "ImagesSync + syncPrefetchAfterStart -> fanOutHostsCore (merged #669). Remaining hot paths batched; forEachServiceHost stays sequential by documented fail-fast design. Barrier-mock gotcha: gate ONLY the prefetch pull, not Ensure's own pull (deadlocks)."
+      "follow_up": "ImagesSync + syncPrefetchAfterStart -> fanOutHostsCore (merged #669). Remaining hot paths batched (doctor re-checked 11-24, post-#662 near-minimal). Barrier-mock gotcha: gate ONLY the prefetch pull, not Ensure's own pull (deadlocks)."
     },
     {
       "area": "hygiene",
