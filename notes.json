@@ -9,27 +9,27 @@
   "checks": [
     {
       "area": "repo_assist_prs",
-      "checked_at": "2026-11-24",
+      "checked_at": "2026-11-25",
       "result": "acted",
-      "follow_up": "#669/#670/#671 all merged (git log at main HEAD). New draft awaiting review: fix(runner) default GitHub client 30s timeout on repo-assist/improve-github-client-timeout."
+      "follow_up": "Timeout draft merged as #672 (confirmed at main HEAD). New draft: chore(deps) bubbletea v2.1.1 -> v2.1.2 on repo-assist/eng-bubbletea-v2-1-2. No other open repo-assist PRs."
     },
     {
       "area": "docs",
-      "checked_at": "2026-11-23",
-      "result": "acted",
-      "follow_up": "Changelog gap closed via #671 (merged). Re-verified 11-24: docs/content/configuration.md already documents runners[].cpus/memory and label aliases - no gap."
+      "checked_at": "2026-11-25",
+      "result": "no_actionable",
+      "follow_up": "Changelog re-verified current through #672 - its [Unreleased] Fixed entry shipped in the PR itself. Rolling [Unreleased] convention (no versioned sections) re-confirmed. Docs cross-check last full pass 11-10, spot-checks 11-23/24."
     },
     {
       "area": "release",
-      "checked_at": "2026-11-23",
-      "result": "no_actionable",
-      "follow_up": "Commits since v0.10.0 (2026-11-16) remain internal (perf/test/chore/deps/docs); rolling [Unreleased] convention intact, releases are maintainer-tagged with auto-generated notes."
+      "checked_at": "2026-11-25",
+      "result": "acted",
+      "follow_up": "#672 is the first user-facing fix since v0.10.0 (11-16), plus perf #662/#666/#667/#669 -> tag suggestion routed to monthly issue #595 suggested actions. Releases are maintainer-tagged with auto-generated notes."
     },
     {
       "area": "tests",
-      "checked_at": "2026-11-22",
+      "checked_at": "2026-11-25",
       "result": "acted",
-      "follow_up": "+3 multi-host tests with perf draft (barrier proof, connect-failure isolation, best-effort warnings). gofmt/vet clean; full suite + race green (24 pkgs). Full suite re-run green 11-24 on the timeout branch. Standing gotcha: containerRunnerContainers reads cfg.Runners, not the caller's slice."
+      "follow_up": "Full suite green on the bubbletea branch (24 pkgs) plus -race on tui/cmd. gofmt/vet clean. Standing gotcha: containerRunnerContainers reads cfg.Runners, not the caller's slice."
     },
     {
       "area": "performance",
@@ -38,22 +38,22 @@
       "follow_up": "ImagesSync + syncPrefetchAfterStart -> fanOutHostsCore (merged #669). Remaining hot paths batched (doctor re-checked 11-24, post-#662 near-minimal). Barrier-mock gotcha: gate ONLY the prefetch pull, not Ensure's own pull (deadlocks)."
     },
     {
+      "area": "ci",
+      "checked_at": "2026-11-25",
+      "result": "no_actionable",
+      "follow_up": "Main green through run 981 (post-#672). Bot-branch checks action_required = approval gate, infra-only."
+    },
+    {
+      "area": "dependencies",
+      "checked_at": "2026-11-25",
+      "result": "acted",
+      "follow_up": "charm.land/bubbletea/v2 v2.1.1 -> v2.1.2 (patch: stale-frame-on-resize, Kill/Run race, terminal restore, idle ticker) - only outdated direct dep, bump PR created. Rest current: cobra 1.10.2 / x-term 0.48 / go-gh 2.17.0 / go 1.26.7, x/crypto 0.59."
+    },
+    {
       "area": "hygiene",
       "checked_at": "2026-11-22",
       "result": "acted",
       "follow_up": "Merged as #670: unused instance param dropped from 4 autostart install helpers (+ bogus _ = san), DeleteRunnerScoped -> actionsURL."
-    },
-    {
-      "area": "ci",
-      "checked_at": "2026-11-18",
-      "result": "no_actionable",
-      "follow_up": "Main green as of 11-18 check; only schedule runs since. Bot-branch checks action_required = approval gate, infra-only."
-    },
-    {
-      "area": "dependencies",
-      "checked_at": "2026-11-21",
-      "result": "acted",
-      "follow_up": "Dependabot #664/#665 (gh-aw-actions 1.3.0) merged 11-21. Go deps current per 11-18/11-20 checks (cobra 1.10.2 / x-term 0.48 / go-gh 2.17.0 / go 1.26.7, x/crypto 0.59)."
     }
   ],
   "completed_actions": [],
