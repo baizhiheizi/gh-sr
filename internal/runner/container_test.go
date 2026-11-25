@@ -1175,6 +1175,42 @@ func TestBootstrapMaxRetriesDockerCreateArg(t *testing.T) {
 	}
 }
 
+// TestDockerCreateURLEnvLine pins the shared env-line formatting contract the
+// three URL builders now delegate to: the two-space indent, the -e NAME= prefix,
+// PosixSingleQuote quoting, the trailing shell continuation and the empty-value
+// contract. The delegation assertions keep the named builders as thin wrappers
+// so a future GH_SR_* env line cannot re-encode the format by hand.
+func TestDockerCreateURLEnvLine(t *testing.T) {
+	t.Parallel()
+	if got := dockerCreateURLEnvLine("GH_SR_CACHE_URL", ""); got != "" {
+		t.Fatalf("empty URL should omit env, got %q", got)
+	}
+	want := "  -e GH_SR_CACHE_URL='http://172.17.0.1:3000/' \\\n"
+	if got := dockerCreateURLEnvLine("GH_SR_CACHE_URL", "http://172.17.0.1:3000/"); got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+	// Single quotes and spaces in a URL must be quoted, not interpolated raw.
+	tricky := "http://host/a b?x='y'"
+	wantTricky := "  -e GH_SR_VAR=" + hostshell.PosixSingleQuote(tricky) + " \\\n"
+	if got := dockerCreateURLEnvLine("GH_SR_VAR", tricky); got != wantTricky {
+		t.Fatalf("got %q, want %q", got, wantTricky)
+	}
+	// The three named builders must stay thin delegations to this helper.
+	for _, tc := range []struct {
+		name string
+		got  string
+		want string
+	}{
+		{"cacheURLDockerCreateArg", cacheURLDockerCreateArg(tricky), dockerCreateURLEnvLine("GH_SR_CACHE_URL", tricky)},
+		{"registryMirrorDockerCreateArg", registryMirrorDockerCreateArg(tricky), dockerCreateURLEnvLine("GH_SR_REGISTRY_MIRROR", tricky)},
+		{"npmRegistryDockerCreateArg", npmRegistryDockerCreateArg(tricky), dockerCreateURLEnvLine("GH_SR_NPM_REGISTRY", tricky)},
+	} {
+		if tc.got != tc.want {
+			t.Errorf("%s = %q, want delegation %q", tc.name, tc.got, tc.want)
+		}
+	}
+}
+
 // TestCacheURLDockerCreateArg pins the local-cache injection contract: a
 // non-empty cache URL becomes a single-quoted -e GH_SR_CACHE_URL line (the
 // entrypoint forwards it to the runner as CUSTOM_ACTIONS_RESULTS_URL), and an

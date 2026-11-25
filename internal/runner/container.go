@@ -547,6 +547,18 @@ func dockerCreateEnvLineIf(name string, value int, emit bool) string {
 	return "  -e " + name + "=" + hostshell.PosixSingleQuote(strconv.Itoa(value)) + " \\\n"
 }
 
+// dockerCreateURLEnvLine returns the indented `  -e NAME='url' \\\n` continuation
+// line for a `docker create` command when url is non-empty, else "". It is the
+// string sibling of dockerCreateEnvLineIf: the quoting rule, the two-space
+// indent, the trailing shell continuation and the empty-value contract now live
+// in one place, so adding another GH_SR_* URL env line is a one-argument change.
+func dockerCreateURLEnvLine(envVar, url string) string {
+	if url == "" {
+		return ""
+	}
+	return "  -e " + envVar + "=" + hostshell.PosixSingleQuote(url) + " \\\n"
+}
+
 // mtuDockerCreateArg returns the `-e GH_SR_HOST_MTU=<n>` line for the `docker create`
 // command when mtu is a sub-1500 value worth pinning, or "" otherwise. The MTU is only
 // ever lowered: 1500 is Docker's default (no-op) and values outside [576, 1500) are
@@ -594,10 +606,7 @@ func awfServiceBridgeDockerCreateArg(rc config.RunnerConfig) string {
 // or "" when the runner should send cache traffic to GitHub as usual. The
 // entrypoint forwards a non-empty value to the runner as CUSTOM_ACTIONS_RESULTS_URL.
 func cacheURLDockerCreateArg(url string) string {
-	if url == "" {
-		return ""
-	}
-	return "  -e GH_SR_CACHE_URL=" + hostshell.PosixSingleQuote(url) + " \\\n"
+	return dockerCreateURLEnvLine("GH_SR_CACHE_URL", url)
 }
 
 // cacheURLEnvFor resolves the per-host cache URL and returns the docker-create
@@ -617,10 +626,7 @@ func cacheURLEnvFor(h *host.Host, s *cache.Settings) string {
 // directly. The entrypoint writes a non-empty value into the inner dockerd's
 // /etc/docker/daemon.json registry-mirrors before its single start.
 func registryMirrorDockerCreateArg(url string) string {
-	if url == "" {
-		return ""
-	}
-	return "  -e GH_SR_REGISTRY_MIRROR=" + hostshell.PosixSingleQuote(url) + " \\\n"
+	return dockerCreateURLEnvLine("GH_SR_REGISTRY_MIRROR", url)
 }
 
 // registryMirrorEnvFor resolves the per-host mirror URL and returns the
@@ -640,10 +646,7 @@ func registryMirrorEnvFor(h *host.Host, s *registry.Settings) string {
 // user's ~/.npmrc (npm, npx, pnpm and bun all read it) before dropping to the
 // runner user — env vars alone would not survive the `su -` login shell.
 func npmRegistryDockerCreateArg(url string) string {
-	if url == "" {
-		return ""
-	}
-	return "  -e GH_SR_NPM_REGISTRY=" + hostshell.PosixSingleQuote(url) + " \\\n"
+	return dockerCreateURLEnvLine("GH_SR_NPM_REGISTRY", url)
 }
 
 // sharedCacheDockerCreateArgs returns the `docker create -v` continuation
