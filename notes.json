@@ -8,52 +8,52 @@
   "fixes": [],
   "checks": [
     {
+      "area": "hygiene",
+      "checked_at": "2026-11-27",
+      "result": "acted",
+      "follow_up": "Sweep 2026-11-27: 596 unexported decls, zero dead (matches 11-21). Shipped: doctor warnf/failf consolidation (44 sites, -41 lines). Future: native.go Windows pid/log preamble x5; internal-only exports could be unexported - re-sweep when picked up."
+    },
+    {
       "area": "repo_assist_prs",
-      "checked_at": "2026-11-25",
+      "checked_at": "2026-11-27",
       "result": "acted",
-      "follow_up": "Timeout draft merged as #672 (confirmed at main HEAD). New draft: chore(deps) bubbletea v2.1.1 -> v2.1.2 on repo-assist/eng-bubbletea-v2-1-2. No other open repo-assist PRs."
+      "follow_up": "TWO open drafts: Dependabot Actions bundle #678-#681 on repo-assist/eng-deps-bundle-20261127; doctor warnf/failf on repo-assist/improve-doctor-warnf (44 pairs, -41 lines). Bubbletea draft #673 merged 11-25."
     },
     {
-      "area": "docs",
-      "checked_at": "2026-11-25",
-      "result": "no_actionable",
-      "follow_up": "Changelog re-verified current through #672 - its [Unreleased] Fixed entry shipped in the PR itself. Rolling [Unreleased] convention (no versioned sections) re-confirmed. Docs cross-check last full pass 11-10, spot-checks 11-23/24."
-    },
-    {
-      "area": "release",
-      "checked_at": "2026-11-25",
+      "area": "dependencies",
+      "checked_at": "2026-11-27",
       "result": "acted",
-      "follow_up": "#672 is the first user-facing fix since v0.10.0 (11-16), plus perf #662/#666/#667/#669 -> tag suggestion routed to monthly issue #595 suggested actions. Releases are maintainer-tagged with auto-generated notes."
+      "follow_up": "4 open Dependabot Actions PRs (#678 app-token 3.4.0, #679 setup-cli 1.3.1, #680 setup 1.3.1, #681 setup-go 7.1.0) bundled into one draft PR; refs-only edits. Go deps current: cobra/bubbletea/go-gh/x-crypto/x-term all latest."
     },
     {
       "area": "tests",
-      "checked_at": "2026-11-25",
-      "result": "acted",
-      "follow_up": "Full suite green on the bubbletea branch (24 pkgs) plus -race on tui/cmd. gofmt/vet clean. Standing gotcha: containerRunnerContainers reads cfg.Runners, not the caller's slice."
+      "checked_at": "2026-11-27",
+      "result": "no_actionable",
+      "follow_up": "Suite green (24 pkgs), -race green on tui/cmd/runner/ops, vet+gofmt clean. Coverage 85-100% except known artifacts (testutil fakes 73.7%, cmd 3.4%). Shell scripts content-pinned by Go tests - deliberate pattern."
+    },
+    {
+      "area": "docs",
+      "checked_at": "2026-11-27",
+      "result": "no_actionable",
+      "follow_up": "CHANGELOG re-verified: perf #660/#662/#666/#667/#669 + Fixed #672 present under [Unreleased]. #673 deps: no entry per convention. #676 refactor unrecorded by maintainer's own choice. Trivia: #672 entry lacks its (#672) ref."
+    },
+    {
+      "area": "ci",
+      "checked_at": "2026-11-27",
+      "result": "no_actionable",
+      "follow_up": "Main green at c8f7880. Bundle precedent #520 closed unmerged with no human explanation (benchstat noise only) - no evidence maintainer dislikes bundles; #673 merged."
     },
     {
       "area": "performance",
       "checked_at": "2026-11-22",
       "result": "acted",
-      "follow_up": "ImagesSync + syncPrefetchAfterStart -> fanOutHostsCore (merged #669). Remaining hot paths batched (doctor re-checked 11-24, post-#662 near-minimal). Barrier-mock gotcha: gate ONLY the prefetch pull, not Ensure's own pull (deadlocks)."
+      "follow_up": "ImagesSync + syncPrefetchAfterStart -> fanOutHostsCore (merged #669). Remaining hot paths batched (doctor re-checked 11-24, post-#662 near-minimal). Barrier-mock gotcha: gate ONLY the prefetch pull, not the Ensure pull itself (deadlocks)."
     },
     {
-      "area": "ci",
-      "checked_at": "2026-11-25",
-      "result": "no_actionable",
-      "follow_up": "Main green through run 981 (post-#672). Bot-branch checks action_required = approval gate, infra-only."
-    },
-    {
-      "area": "dependencies",
-      "checked_at": "2026-11-25",
-      "result": "acted",
-      "follow_up": "charm.land/bubbletea/v2 v2.1.1 -> v2.1.2 (patch: stale-frame-on-resize, Kill/Run race, terminal restore, idle ticker) - only outdated direct dep, bump PR created. Rest current: cobra 1.10.2 / x-term 0.48 / go-gh 2.17.0 / go 1.26.7, x/crypto 0.59."
-    },
-    {
-      "area": "hygiene",
-      "checked_at": "2026-11-22",
-      "result": "acted",
-      "follow_up": "Merged as #670: unused instance param dropped from 4 autostart install helpers (+ bogus _ = san), DeleteRunnerScoped -> actionsURL."
+      "area": "release",
+      "checked_at": "2026-11-27",
+      "result": "monitored",
+      "follow_up": "v0.10.0 (11-16) still latest; post-release commits internal except fix #672 (timeout) + perf #662/#666/#667/#669. Release suggestion kept in #595; releases are maintainer-tagged."
     }
   ],
   "completed_actions": [],
