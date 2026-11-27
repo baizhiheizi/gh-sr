@@ -7,12 +7,16 @@ metadata:
 
 # Optimization backlog (prioritized)
 
-Status as of 2026-11-20 (run 9). Module path is `github.com/an-lee/gh-sr` (GitHub repo remains `baizhiheizi/gh-sr`); repo is now 24 test packages and heavily optimized — most hot paths have dedicated benchmarks. Run-8's enrich draft PR merged as **#610** (2026-11-18; safeoutputs appended a branch-hash suffix, which hides branch-name PR searches — search by title/commit instead).
+Status as of 2026-11-27 (run 10). Module path is `github.com/an-lee/gh-sr` (GitHub repo remains `baizhiheizi/gh-sr`); repo is now 24 test packages and heavily optimized — most hot paths have dedicated benchmarks. Run-9's SplitSeq sweep merged as **#667** (2026-11-20, same day); run-8's enrich fix merged as **#610** (2026-11-18).
 
-## Recently completed (run 9, 2026-11-20)
+## Recently completed (run 10, 2026-11-27)
 
-- **[perf-improver] perf: SplitSeq sweep of 7 one-shot line parsers** — DRAFT PR, branch `perf-assist/splitseq-sweep-run9` (commit `4ec0fb6`). doctor.go:997, hostkeyalgos.go:68+109 (per-dial), disk_volumes.go:34+53, registry.go:500, toolcachesrc.go:113. Headline `hostKeyAlgosForDial`: -11% ns/op, -15/-16 allocs; other parses -2% to -7.3% B/op; +1 new benchmark per parser. Two run-8 sites (`agentic/inner_batch.go:179`, `registry.go:453`) were removed by intervening refactors before the sweep landed. See [[perf-improver-work]].
-- **[perf-improver] perf(runner): drop per-instance key build in enrichFromScopeRunners** — MERGED as **#610** (2026-11-18; created run 8, branch `perf-assist/enrich-rc-by-base-name-b48e3d02665c7cbd`). Big fixture -31% ns/op, -12.8% B/op, -49% allocs/op; small -28% ns/op, -46% allocs.
+- **[perf-improver] perf(tui): drop responsive-layout scaffolding allocations from viewMain** — DRAFT PR, branch `perf-assist/responsive-layout-alloc-trim` (commit `4d71f97`). Closes backlog item #1: one_status 323→313 allocs (back below pre-#564 315), -6.7% B; twelve_statuses -22 allocs, -1.8% B. Two measured rejections recorded (title builder variant: bytes-unpredictable; planColumns buffer reuse: makes are stack-allocated, zero effect). See [[perf-improver-work]].
+
+## Previously completed (run 9, 2026-11-20)
+
+- **[perf-improver] perf: SplitSeq sweep of 7 one-shot line parsers** — MERGED as **#667** (2026-11-20; branch `perf-assist/splitseq-sweep-run9-b64f7b551c9c9867` with hash suffix). doctor.go:997, hostkeyalgos.go:68+109 (per-dial), disk_volumes.go:34+53, registry.go:500, toolcachesrc.go:113. Headline `hostKeyAlgosForDial`: -11% ns/op, -15/-16 allocs; +1 new benchmark per parser.
+- **[perf-improver] perf(runner): drop per-instance key build in enrichFromScopeRunners** — MERGED as **#610** (2026-11-18). Big fixture -31% ns/op, -12.8% B/op, -49% allocs/op; small -28% ns/op, -46% allocs.
 
 ## Previously completed
 
@@ -25,19 +29,19 @@ Status as of 2026-11-20 (run 9). Module path is `github.com/an-lee/gh-sr` (GitHu
 
 ## Backlog cursor
 
-After the run-9 SplitSeq sweep, the next run should pick up:
+After run 10's viewMain trim, the next run should pick up:
 
-1. **ViewMain +8 allocs from responsive layout (#564)** — now the top remaining item by seniority. `BenchmarkViewMain/one_status`: 323 allocs/op / 10,139 B/op (was 315 / 9,451). New width-responsive feature code — churn risk; only touch if the area is being modified anyway, or measure a targeted fix.
-2. **renderRow / renderHighlightedRow cell padding** — MEDIUM impact, LOW risk. Still SPECULATIVE; `BenchmarkRenderRow` 248 allocs/op and `BenchmarkRenderHighlightedRow` 284 allocs/op unchanged.
-3. **Manager.Status further per-instance optimization** — LOW priority. Marginal gains expected.
-4. **GitHub-runner scan inside scopeRunners[key]** — inner O(N×M) scan remains; map-lookup variant rejected (run 6). Only revisit with a different shape (caching across refresh ticks).
-5. **Periodic SplitSeq grep** — `git grep -nE 'strings\.Split\b' -- '*.go'` — keep checking for new offenders as code lands. Post-sweep production remainder (run 9): all legit slice-index uses (hostkeyalgos.go:130, lockfiles.go:98-99, main.go:287+295, tui/columns.go:353, autostart.go:183 one-shot install path).
+1. **renderRow / renderHighlightedRow cell padding** — now the top remaining item by seniority. MEDIUM impact, LOW risk. Still SPECULATIVE; `BenchmarkRenderRow` 248 allocs/op and `BenchmarkRenderHighlightedRow` 284 allocs/op unchanged. ~32% from lipgloss line-wrapping splits; could skip cells already at column width (no padding needed) — must verify padding-skip renders byte-identical output.
+2. **Manager.Status further per-instance optimization** — LOW priority. Marginal gains expected.
+3. **scopeRunners inner scan** — DEFERRED (map variant rejected run 6). Only revisit with a different shape (caching across refresh ticks).
+4. **Periodic SplitSeq grep** — `git grep -nE 'strings\.Split\b' -- '*.go'` — keep checking for new offenders as code lands. Clean as of run 10: only legit slice-index uses remain (main.go:287+295, autostart.go:182, lockfiles.go:98-99, hostkeyalgos.go:130, columns.go rstripLines, benchstat script).
+5. **lipgloss-internal cost** — ~82% of viewMain alloc events remain inside lipgloss Render internals (genSplit, Buffer.grow, termenv styles). Only reachable via caching rendered cells keyed on content hash or a major library change — HIGH risk, don't start without maintainer interest.
 
 ## Identified opportunities (priority order)
 
 ### 1. View() alloc reduction — remaining lipgloss cost (MEDIUM impact, MEDIUM risk)
-- `BenchmarkViewMain/one_status` (current): 36,635 ns/op, 9,549 B/op, 315 allocs/op.
-- ~95% of allocations still come from `lipgloss.Style.Render` and downstream `strings.Split` / `strings.Builder.WriteString` inside lipgloss (line-wrapping `strings.Split`, ANSI byte-buffer growth).
+- `BenchmarkViewMain/one_status` (current, post-run-10): ~35,581 ns/op, 9,511 B/op, 313 allocs/op — caller-side scaffolding closed by run 10's PR.
+- ~82% of alloc events still come from `lipgloss.Style.Render` internals (`strings.genSplit` line-wrapping, `bytes.Buffer.grow`, `termenv.Style` per-call).
 - Options: cache rendered cells keyed on content hash; replace `Width()` chain; emit ANSI directly for static-color cells.
 - Risk: visual regression; lipgloss handles unicode/ANSI edge cases we don't want to reimplement.
 - Status: caller-side allocs now closed (PR #502); library-side still ANALYZED, not started.
@@ -68,6 +72,8 @@ After the run-9 SplitSeq sweep, the next run should pick up:
 
 ## Cross-cutting notes
 
+- **Escape analysis hides "obvious" allocation wins (run 10)**: before restructuring a hot path around a make, check whether the slice actually escapes. The per-iteration `nat/floor` makes in `fitKept` and the per-row `cells` makes in `viewHostMetrics` never escape, so Go stack-allocates them — "reuse the buffer" refactors there measured exactly zero on allocs/op AND B/op while adding plumbing.
+- **strings.Builder grow-sequence coupling (run 10)**: writing content into a big shared Builder in small pieces (per-byte gap padding, several small WriteStrings) vs building it separately and appending one chunk shifts the Builder's internal grow chain — measured -427 B/op in one panel and +620 B/op in another for the same change. Small-write Into-style refactors near a large Builder are bytes-unpredictable; bench both allocs AND bytes at every call site.
 - The `strings.SplitSeq` migration is complete across the repo (last offenders were `internal/runner/container.go` and `internal/runner/linux_instance_probe.go`, merged via PR #463 on 2026-09-27).
 - TUI render performance is dominated by lipgloss internals — measurable optimizations all live behind a major library change.
 - Benchmark infrastructure is comprehensive: `make bench` / `make bench-save` + bench-compare.yml CI workflow. New benchmarks fit the same shape (`b.ReportAllocs()` + `b.ResetTimer()` + `for i := 0; i < b.N; i++`).

@@ -93,6 +93,20 @@ Three weeks since run 7. Discovered run 7's "PR opened" was a phantom — no PR 
 - ✅ Task 6 (Measurement infra): none needed — bench-compare CI + parse benches for the new packages already exist; #575 added SSH round-trip energy proxy benches.
 - ✅ Task 7 (Monthly summary): #517 (October) was closed by maintainer 2026-11-01 (no comments). Creating `[perf-improver] Monthly Activity 2026-11` this run.
 
+## 2026-11-27 (run_id 45927469871) — Tenth perf-improver run
+
+Executed backlog item #1 (the ViewMain +8 allocs regression from #564) with profile-driven attribution; pruned two measured-zero changes before shipping.
+
+- ✅ Task 1 (Discover commands): re-validated `go build`, `go vet`, `gofmt -l .`, `go test ./... -count=1 -short` (24 packages, all OK). Commands in [[perf-improver-commands]] current.
+- ✅ Task 2 (Identify opportunities): full bench smoke pass — all packages at post-#667 expected values, doctor round-trips improved to 27/8 by #662's sudo fold, no regressions. SplitSeq grep clean (same legit slice-index remainder). pprof `-alloc_objects -list` on `BenchmarkViewMain/one_status` attributed the #564 +8 allocs to caller-side scaffolding (specs make, rows matrix, wrapWords concats) — lipgloss internals still ~82%.
+- ✅ Task 3 (Implement improvements): draft PR on `perf-assist/responsive-layout-alloc-trim` (commit `4d71f97`, temp ref `#684`, output_id `so_Skk0B0wTT8ql`). one_status 323→313 allocs (below pre-#564 315), -6.7% B; twelve_statuses -22 allocs. Two measured reverts (title builder variant: bytes-unpredictable via Builder grow-sequence coupling; planColumns buffer reuse + metrics flat trunc: makes are stack-allocated, zero effect). Added `BenchmarkViewHostMetrics`. See [[perf-improver-work]].
+- ✅ Task 4 (Maintain PRs): run-9's PR #667 MERGED 2026-11-20 (same day, by an-lee; benchstat comment confirmed no regressions). No open perf-improver PRs besides the new draft. Verified #667's SplitSeq code in local main via grep.
+- ✅ Task 5 (Comment on perf issues): SKIPPED — 5 open issues (#611 monthly, #619 test-improver monthly readable, #654/#602/#595 filtered by integrity policy). No performance-labelled user issues to engage.
+- ✅ Task 6 (Measurement infra): added `BenchmarkViewHostMetrics` (compositing bench for the metrics panel, mirrors BenchmarkViewMain). Also built a 67-fixture byte-identity harness (zz_output_verify_test.go, untracked) — reusable pattern for any render-path change; copy stored at repo-memory? No — pattern documented in work.md.
+- ✅ Task 7 (Monthly summary): updating #611 this run — removes the merged #667 action item, adds the new draft PR review item, prepends run-10 history.
+
+**Integrity policy**: issue LIST results fully filtered again (all 5 open issues unreadable in list form); direct `issue_read` works on known numbers (#611 body OK, its comments still filtered; #619 body OK).
+
 ## 2026-11-20 (run_id 44652882302) — Ninth perf-improver run
 
 SplitSeq sweep executed (the run-8 top pick). Also resolved the run-8 "unverified PR" question: the enrich PR merged as **#610** (branch got a `-b48e3d02665c7cbd` hash suffix from safeoutputs, which is why branch-name PR searches missed it — the branch suffix is now a known pattern).
@@ -111,10 +125,9 @@ SplitSeq sweep executed (the run-8 top pick). Also resolved the run-8 "unverifie
 
 Pick up at the top of [[perf-improver-opportunities]]:
 
-1. **ViewMain +8 allocs from responsive layout (#564)** — MEDIUM/LOW; new feature code, churn risk, small absolute win. Now the top remaining item by seniority.
-2. **renderRow cell padding skip** — still SPECULATIVE (numbers unchanged: 248/284 allocs/op).
-3. **Manager.Status micro-optimization** — LOW.
-4. **scopeRunners inner scan** — DEFERRED (map variant rejected run 6).
-5. **Periodic `strings.Split` grep** — the sweep is complete again; re-grep every few runs for new offenders (found 7→swept run 9).
+1. **renderRow cell padding skip** — top by seniority; still SPECULATIVE (248/284 allocs/op). If attempted, use the run-10 byte-identity harness pattern to prove output unchanged.
+2. **Manager.Status micro-optimization** — LOW.
+3. **scopeRunners inner scan** — DEFERRED (map variant rejected run 6).
+4. **Periodic `strings.Split` grep** — clean run 10; re-grep every few runs.
 
-Lesson added: verify safe-output transactions (PR list, issue body) against GitHub state before recording success in memory — run 7's memory said "PR opened" but nothing was published.
+Standing lessons: verify safe-output transactions against GitHub state (run 7 phantom); check escape analysis before buffer-reuse refactors (run 10); bench BOTH allocs and bytes for Builder-write-shape changes (run 10).

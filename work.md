@@ -9,6 +9,31 @@ metadata:
 
 ## In progress
 
+### 2026-11-27 (run 10) — viewMain responsive-layout alloc trim (DRAFT PR, branch `perf-assist/responsive-layout-alloc-trim`, commit `4d71f97`, temp ref `#684`, output_id `so_Skk0B0wTT8ql`)
+
+**PR created** via create_pull_request, success (patch 9,258 B). Title: `perf(tui): drop responsive-layout scaffolding allocations from viewMain`.
+
+**Change** — closes backlog item #1 (the #564 ViewMain +8 allocs regression):
+- `columns.go`: package-level `runnerStatusSpecs` via new `specsOf` helper (mirrors `hostMetricsSpecs`); `wrapWordsToWidth` single-line fast path (`strings.Join` when the whole line fits — replaces ~6 concats with 1 alloc); `splitOverlongWords` returns input unchanged when no word is overlong.
+- `dashboard_view.go`: viewMain extracts cells once into a flat `[]string` backing store feeding both the natural-width measurement and (via in-place truncation, safe because `kept` is ascending) the per-row render — no `rows [][]string`, no per-row make.
+- `metrics_bench_test.go`: new `BenchmarkViewHostMetrics` compositing bench (fixture: 3 healthy hosts incl. one long-name + 1 error host, default 80-col width).
+
+**Benchmark** (go1.26.11, -benchtime=1s -benchmem -count=6, medians; allocs exact):
+
+| Bench | main | branch | Δ |
+| --- | --- | --- | --- |
+| ViewMain/one_status | 10,195 B · 323 al | 9,511 B · 313 al | **-6.7% B · -10 al** |
+| ViewMain/twelve_statuses | 43,535 B · 1,655 al | 42,759 B · 1,633 al | **-1.8% B · -22 al** |
+| ViewHostMetrics | 15,057 B · 542 al | ~15,014 B · 542 al | neutral |
+
+one_status is back below its pre-#564 alloc count (313 vs 315). Time wash on one_status (ns noisy); twelve_statuses medians -14% but main's rep spread 206k–324k → suggestive only.
+
+**Measured rejections (implemented, benched, reverted)**:
+- `renderTitleLineInto` builder variant: -427 B in viewMain but **+620 B in viewHostMetrics** (net +193 B) — writing the title in small pieces into the shared `strings.Builder` shifts its grow sequence (grow(1) per WriteByte → different buffer chain than one big WriteString). Alloc win is real but bytes coupling is unpredictable → rejected.
+- `planColumns`/`fitKept` reused subset buffers + flat trunc store in viewHostMetrics: **zero** alloc/byte change — the per-iteration/per-row makes never escape, Go already stack-allocates them → rejected.
+
+**Verification**: build/vet/gofmt clean, `go test ./... -race -count=1 -short` OK (24 pkgs), render output byte-identical across 67 fixtures (0/1/3/12 statuses × widths 0–200 + filter/busy/toast/error/loading/help/metrics + wrap/truncate helper cases) diffed main vs branch via a throwaway `zz_output_verify_test.go` (ZZ_VERIFY_DIR env dump, untracked, not committed).
+
 ### 2026-11-20 (run 9) — SplitSeq sweep of 7 one-shot line parsers (DRAFT PR, branch `perf-assist/splitseq-sweep-run9`, commit `4ec0fb6`)
 
 **PR created** via create_pull_request, success (output_id `so_K0MwlMH-RuCm`, patch 12,718 B). Temporary ref `#667` used in the monthly issue body so the maintainer-facing number resolves automatically. Title: `perf: use SplitSeq for one-shot line parsers in doctor/host/ops/registry/runner`.
