@@ -124,31 +124,32 @@ func (m *dashboardModel) viewMain() tea.View {
 	// Responsive table: measure natural widths, then let planColumns drop
 	// / truncate columns so the row line fits the terminal. Cells are
 	// truncated as plain text (before colorizing) so ANSI sequences are
-	// never cut mid-escape.
-	specs := make([]columnSpec, len(runnerStatusColumns))
-	natural := make([]int, len(runnerStatusColumns))
+	// never cut mid-escape. All cells live in one flat backing store:
+	// width measurement and cell extraction share a single pass, and the
+	// post-planColumns truncation overwrites the store in place (kept is
+	// ascending, so each write lands at or below its still-intact source)
+	// instead of paying a fresh []string per row per render.
+	numCols := len(runnerStatusColumns)
+	raw := make([]string, len(m.statuses)*numCols)
+	natural := make([]int, numCols)
 	for i, c := range runnerStatusColumns {
-		specs[i] = c.columnSpec
 		natural[i] = len(c.header)
-		for _, s := range m.statuses {
-			if l := len(c.cell(s)); l > natural[i] {
+	}
+	for r, s := range m.statuses {
+		base := r * numCols
+		for i, c := range runnerStatusColumns {
+			cell := c.cell(s)
+			raw[base+i] = cell
+			if l := len(cell); l > natural[i] {
 				natural[i] = l
 			}
 		}
 	}
-	kept, widths := planColumns(specs, natural, avail)
+	kept, widths := planColumns(runnerStatusSpecs, natural, avail)
 
 	headers := make([]string, len(kept))
 	for k, i := range kept {
 		headers[k] = truncateCell(runnerStatusColumns[i].header, widths[k])
-	}
-	rows := make([][]string, len(m.statuses))
-	for r, s := range m.statuses {
-		row := make([]string, len(kept))
-		for k, i := range kept {
-			row[k] = truncateCell(runnerStatusColumns[i].cell(s), widths[k])
-		}
-		rows[r] = row
 	}
 	colorize := func(col int, cell string) string {
 		c := runnerStatusColumns[kept[col]]
@@ -161,8 +162,12 @@ func (m *dashboardModel) viewMain() tea.View {
 	b.WriteString(renderHeader(headers, widths))
 	b.WriteByte('\n')
 
-	for i, cells := range rows {
-		renderRowInto(&b, cells, widths, colorize, i == m.cursor)
+	for r := range m.statuses {
+		base := r * numCols
+		for k, i := range kept {
+			raw[base+k] = truncateCell(raw[base+i], widths[k])
+		}
+		renderRowInto(&b, raw[base:base+len(kept)], widths, colorize, r == m.cursor)
 		b.WriteByte('\n')
 	}
 
