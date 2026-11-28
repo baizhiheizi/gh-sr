@@ -234,18 +234,31 @@ func findMapValue(mapping *yaml.Node, key string) *yaml.Node {
 	return nil
 }
 
+// writeYAMLBack validates the marshalled document and only then replaces the
+// file at cfgPath.
+//
+// The order matters. Validating after the write — writing first, then
+// calling Load on the file — means a rejected modification still lands on
+// disk: `gh sr add runner` with a typo'd --host, a duplicate runner name, or
+// a --group without --org leaves a runners.yml that no longer loads, and
+// the user has to repair it by hand. Validating the candidate bytes first
+// keeps the previous, working config intact whenever the modification is
+// rejected, so a failed mutation is a no-op on disk.
+//
+// The validated bytes are exactly the bytes written, so the check and the
+// result cannot disagree.
 func writeYAMLBack(cfgPath string, root *yaml.Node) error {
 	out, err := yaml.Marshal(root)
 	if err != nil {
 		return fmt.Errorf("marshalling config: %w", err)
 	}
 
-	if err := os.WriteFile(cfgPath, out, 0o600); err != nil {
-		return fmt.Errorf("writing config: %w", err)
+	if _, loadErr := parseConfig(out); loadErr != nil {
+		return fmt.Errorf("config invalid after modification: %w", loadErr)
 	}
 
-	if _, loadErr := Load(cfgPath); loadErr != nil {
-		return fmt.Errorf("config invalid after modification: %w", loadErr)
+	if err := os.WriteFile(cfgPath, out, 0o600); err != nil {
+		return fmt.Errorf("writing config: %w", err)
 	}
 
 	return nil

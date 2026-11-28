@@ -96,8 +96,8 @@ func writeRunnersYAML(t *testing.T, content string) string {
 
 // runnersYAMLFor returns a runners.yml body with the given (host, runnerName)
 // pair plus a "spare" runner that the tests do NOT remove. This is needed
-// because config.RemoveRunner validates post-write state via config.Load,
-// which requires at least one runner to be defined.
+// because config.RemoveRunner validates the modified config, which requires
+// at least one runner to be defined.
 func runnersYAMLFor(hostName, runnerName string) string {
 	return fmt.Sprintf(`hosts:
   %s:
@@ -547,10 +547,12 @@ func TestRemove_GitHubTokenErrorWarnsButSucceeds(t *testing.T) {
 }
 
 // TestRemove_LastRunnerFailsConfigValidation documents a known contract:
-// the YAML validation in config.Load (called by writeYAMLBack) requires
-// at least one runner to be defined. If the user removes the last runner
-// in their config, the post-write validation rejects the empty config and
-// surfaces the error wrapped as "removing <name> from config: ...".
+// the YAML validation in config (called by writeYAMLBack) requires at least
+// one runner to be defined. If the user removes the last runner in their
+// config, the validation rejects the empty config and surfaces the error
+// wrapped as "removing <name> from config: ...". Because writeYAMLBack
+// validates before it replaces the file, the rejected removal leaves the
+// config on disk unchanged and still loadable.
 // Pin this so a future refactor of writeYAMLBack (or the validation
 // rule) is intentional, not silent.
 func TestRemove_LastRunnerFailsConfigValidation(t *testing.T) {
@@ -589,5 +591,18 @@ runners:
 	}
 	if !strings.Contains(err.Error(), "at least one runner must be defined") {
 		t.Errorf("expected underlying validation message, got %v", err)
+	}
+
+	// The rejected removal left the config on disk untouched, so it still
+	// loads and still lists the runner.
+	data, err := os.ReadFile(cfgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "name: ci") {
+		t.Errorf("rejected removal should leave the runner in the config; got:\n%s", data)
+	}
+	if _, err := config.Load(cfgPath); err != nil {
+		t.Errorf("config should still load after a rejected removal: %v", err)
 	}
 }

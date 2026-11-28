@@ -319,8 +319,8 @@ func runQuickInit(runnersPath string, force bool) error {
 	}
 
 	// The seed goes through the same AddHost/AddRunnerFull mutation
-	// interface every other config edit uses, and is validated with Load
-	// before QuickInitSeed returns.
+	// interface every other config edit uses, and is validated before
+	// QuickInitSeed writes it.
 	if err := config.QuickInitSeed(runnersPath, hostName, addr, config.AddRunnerOpts{
 		Name:    runnerName,
 		Repo:    repo,
