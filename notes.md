@@ -5,7 +5,7 @@ metadata:
   type: project
 ---
 
-## Build / test commands (validated 2026-11-13, re-run green 2026-11-21)
+## Build / test commands (validated 2026-11-13, re-run green 2026-11-21 and 2026-11-28)
 
 ```bash
 GOTOOLCHAIN=auto go build ./...                    # full-repo build
@@ -18,33 +18,32 @@ make ci                                            # vet + fmt + test
 make coverage                                      # coverage summary sorted asc + total
 ```
 
-## Coverage snapshot (2026-11-21, main @ 72e6082, before this run's PR)
+## Coverage snapshot (2026-11-28, main @ 9fa4853 + this run's PR branch)
 
 ```
 cmd/gh-sr            3.4%   (Cobra wiring only)
-internal/session    85.7%   (NEW low spot — process-assembly layer)
+internal/session    85.7%   (low spot — process-assembly layer)
 internal/diskschedule 88.4%
-internal/runner     88.8%   (was 89.1%)
-internal/doctor     88.7%   (efficiency-improver #661/#662 lifted it from 85.6%)
+internal/runner     88.8%
+internal/doctor     88.7%   (refactored by repo-assist #683 merged 2026-11-28 — re-measure before testing)
 internal/table      89.1%
-internal/config     89.3%   (was 87.2%)
-internal/runner+... (others ≥ 90%)
-internal/host       94.3%   (my #642 merged as commit ec2e22a)
-internal/ops        91.2%
+internal/config     92.9%   (this run's PR lifted it from 89.3%)
+internal/host       96.2%
+internal/ops        91.8%   (refactored by repo-assist #669 merged 2026-11-22 — re-measure before testing)
 ```
 
-Repo total: 86.4% on main. After this run's PR: 86.2% ledger (harness statements moved
-into internal/testutil; covered cross-package — Go per-package attribution artifact, not lost coverage).
+Repo total: 86.6% after this run's PR (2026-11-28).
 
-## Top low-covered functions (2026-11-21, after this run's PR)
+## Top low-covered functions (2026-11-21 numbers; re-measure — ops #669 and doctor #683 refactors may have shifted lines)
 
 - internal/ops/ops.go:307 RebuildImage 47.4% — whole happy path (lines 320-338) uncovered:
   container-mode partition → ensureContainerServices → mgr.RebuildImage → syncPrefetchAfterStart.
 - internal/doctor/doctor.go:976 checkRegistryMirror 43.3% — nearly all branches 0%.
 - internal/runner/runner.go:272 Stop 42.9%.
 - internal/table/table.go:35 PrintPlain 44.4%.
-- internal/config/mutate.go:101 AddRunnerFull 0.0%.
 - internal/hostshell: PowerShellExec, PowerShellCombinedOutput still 0% (windows os/exec wrappers).
+- internal/config mutate.go: DONE 2026-11-28 (AddRunnerFull 0→100, AddHost 92.9, node builders 100;
+  writeYAMLBack 75 — marshal-error branch unreachable; RemoveRunner 81.8 nil/non-seq branch left).
 - host.Connect and ops.ConnectHost: DONE 2026-11-21 (100% each).
 
 ## Reusable test patterns
@@ -80,7 +79,8 @@ into internal/testutil; covered cross-package — Go per-package attribution art
 
 ## Completed work
 
-- 2026-11-21: test(ops) ConnectHost over real SSH + harness promotion to internal/testutil — branch `test-assist/ssh-harness-testutil` (commit de2ed73); PR recorded via safeoutputs (temp id #668, output so_MinVNkFoTIGJ). ops.ConnectHost 0%→100%, host.Connect 53.8%→100%, internal/host 94.3%→96.2%, internal/ops 91.2%→91.8%.
+- 2026-11-28: test(config) AddRunnerFull + mutate.go writers — branch `test-assist/config-add-runner-full` (commit 0cf580a on top of 9fa4853); PR recorded via safeoutputs (output so_3K-QhSAhTCKm, no temp id used — linked in issue by branch-search URL). AddRunnerFull 0%→100%, newRunnerEntry/newHostEntry →100%, AddHost 64.3%→92.9%, internal/config 89.3%→92.9%, repo 86.6%. Learned: Load's applyAgenticDefaults (config.go:1107) auto-appends "agentic" label to agentic runners — assert the post-Load shape, not the raw write.
+- 2026-11-21: test(ops) ConnectHost over real SSH + harness promotion to internal/testutil — **merged as PR #668** (2026-11-22). ops.ConnectHost 0%→100%, host.Connect 53.8%→100%, internal/host 94.3%→96.2%, internal/ops 91.2%→91.8%.
 - 2026-11-13: test(host) real-SSH round-trip coverage — merged as **PR #642** (commit ec2e22a on main). internal/host 82.2%→94.3%.
 - 2026-11-06: ops registry/image band PR merged as **#618 (2026-11-07)** — internal/ops 79.0%→90.5%.
 - 2026-10-23: internal/host/connection.go coverage draft — superseded by repo-assist #604 (merged 2026-11-05).
@@ -93,6 +93,7 @@ into internal/testutil; covered cross-package — Go per-package attribution art
 
 ## Ops notes
 
-- Monthly issue: #619 ([test-improver] Monthly Activity 2026-11), open. The 2026-11-07 comment was integrity-filtered AGAIN on 2026-11-21 (2nd attempt). Do not keep retrying every run; if a future run sees a new human comment, try once more then.
-- My merged PRs now have real numbers: #642 (host SSH), plus #472/#486/#503/#518/#538/#558/#618. Note #642's title has no "[test-improver]" prefix in search results (prefix may not apply to older runs) — search by title keywords, not just the prefix.
-- GitHub MCP intermittently times out; retries after ~5 min usually recover. `issue_read` works even when `search_issues`/`get_comments` are integrity-filtered.
+- Monthly issue: #619 ([test-improver] Monthly Activity 2026-11), open; body replaced successfully 2026-11-28 via update_issue (target '*' works; output so_86_0Q9-nSJGh). `list_issues`/`search_issues` MCP reads are integrity-filtered for ALL issues in this repo, but `issue_read` (method: get) works. The 2026-11-07 comment (count still 1) stays unread — do not retry unless comment count grows.
+- Cross-run lesson: temporary_id refs (`#aw_*`) in the monthly-issue body are NOT replaced when the PR was created in a different run — the 2026-11-21 body kept a literal `#aw_sshharness`. Link PRs by branch-search URL instead: `https://github.com/baizhiheizi/gh-sr/pulls?q=is:pr+head:test-assist%2F<branch>`.
+- My merged PRs: #642 (host SSH), #668 (SSH harness), plus #472/#486/#503/#518/#538/#558/#618. Note older titles may lack the "[test-improver]" prefix in search — search by title keywords.
+- Sibling agents active: repo-assist (#669 ops fan-out, #670, #671-673, #683 doctor warnf/failf), perf-improver (#684 tui viewMain). Efficiency-improver did #661/#662 (doctor). Check fresh PRs/merges before picking any doctor/ops/tui target and re-measure coverage first.
