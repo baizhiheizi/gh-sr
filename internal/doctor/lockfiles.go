@@ -123,8 +123,7 @@ func checkLockWorkflows(w io.Writer, gh *runner.GitHubClient, repos []string, r 
 	for _, repo := range repos {
 		files, err := gh.ListLockWorkflows(repo, lockfilesLimit)
 		if err != nil {
-			printLine(w, sevWarn, "lockfiles", fmt.Sprintf("repo %s: fetch failed, skipping (%v)", repo, err))
-			r.Warn++
+			r.warnf(w, "lockfiles", "repo %s: fetch failed, skipping (%v)", repo, err)
 			continue
 		}
 		if len(files) == 0 {
@@ -141,12 +140,7 @@ func checkLockWorkflows(w io.Writer, gh *runner.GitHubClient, repos []string, r 
 				if finding.Sev == sevFail {
 					sev = sevFail
 				}
-				printLine(w, sev, "lockfiles", fmt.Sprintf("repo %s: %s: %s", repo, finding.Name, finding.Msg))
-				if sev == sevFail {
-					r.Fail++
-				} else {
-					r.Warn++
-				}
+				r.sevf(w, sev, "lockfiles", "repo %s: %s: %s", repo, finding.Name, finding.Msg)
 			}
 		}
 		if needsRecompile > 0 {

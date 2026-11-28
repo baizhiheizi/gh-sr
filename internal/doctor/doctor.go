@@ -178,13 +178,11 @@ func Run(w io.Writer, in RunInput) Result {
 
 		h := host.NewHost(hostName, hcfg)
 		if err := h.Connect(); err != nil {
-			printLine(&hr.buf, sevFail, hostName, fmt.Sprintf("connect: %v", err))
-			hr.r.Fail++
+			hr.r.failf(&hr.buf, hostName, "connect: %v", err)
 			return hr
 		}
 		if err := ensureDoctorHostOS(h, hcfg.Addr); err != nil {
-			printLine(&hr.buf, sevFail, hostName, fmt.Sprintf("detect os: %v", err))
-			hr.r.Fail++
+			hr.r.failf(&hr.buf, hostName, "detect os: %v", err)
 			_ = h.Close()
 			return hr
 		}
@@ -214,8 +212,17 @@ func printLine(w io.Writer, sev, scope, msg string) {
 }
 
 // warnf prints a WARN line for scope and counts it on r; failf is its FAIL
-// counterpart. Every non-OK line the doctor emits goes through one of these,
-// so a line and its counter cannot drift apart.
+// counterpart. sevf is the runtime-severity variant, for the sites whose
+// severity comes from the data rather than from the call site.
+//
+// Every WARN/FAIL line the doctor emits goes through one of these three, so a
+// line and its counter cannot drift apart. The invariant is greppable:
+//
+//	grep -rn 'printLine(w, sevWar[n]\|printLine(w, sevFai[l]' internal/doctor/
+//
+// must match only these three helpers. The bracket in the pattern keeps this
+// comment from matching itself. OK lines call printLine directly — they are
+// not counted.
 func (r *Result) warnf(w io.Writer, scope, format string, args ...any) {
 	printLine(w, sevWarn, scope, fmt.Sprintf(format, args...))
 	r.Warn++
@@ -224,6 +231,18 @@ func (r *Result) warnf(w io.Writer, scope, format string, args ...any) {
 func (r *Result) failf(w io.Writer, scope, format string, args ...any) {
 	printLine(w, sevFail, scope, fmt.Sprintf(format, args...))
 	r.Fail++
+}
+
+// sevf prints a line whose severity is decided at runtime and counts it in
+// the matching counter. An OK severity prints without counting.
+func (r *Result) sevf(w io.Writer, sev, scope, format string, args ...any) {
+	printLine(w, sev, scope, fmt.Sprintf(format, args...))
+	switch sev {
+	case sevFail:
+		r.Fail++
+	case sevWarn:
+		r.Warn++
+	}
 }
 
 func printSummary(w io.Writer, r Result, strict bool) {
@@ -327,10 +346,7 @@ func checkRunnerScope(wg *sync.WaitGroup, gh *runner.GitHubClient, scope string,
 // so the print + counter-update lives in one place.
 func printAPIFailures(w io.Writer, r *Result, results []apiResult) {
 	for _, res := range results {
-		printLine(w, res.sev, "github", res.msg)
-		if res.sev == sevFail {
-			r.Fail++
-		}
+		r.sevf(w, res.sev, "github", "%s", res.msg)
 	}
 }
 
@@ -666,18 +682,10 @@ func printAgenticFailures(w io.Writer, hostName string, r *Result, defaultSev, p
 		switch f.Severity {
 		case agentic.SeverityError:
 			sev = sevFail
-			r.Fail++
 		case agentic.SeverityWarning:
 			sev = sevWarn
-			r.Warn++
-		default:
-			if defaultSev == sevWarn {
-				r.Warn++
-			} else {
-				r.Fail++
-			}
 		}
-		printLine(w, sev, hostName, prefix+f.Message)
+		r.sevf(w, sev, hostName, "%s", prefix+f.Message)
 		if f.Remediation != "" {
 			for line := range strings.SplitSeq(f.Remediation, "\n") {
 				fmt.Fprintf(w, "       %s\n", line)
@@ -895,12 +903,7 @@ func probeFromRunnerContainer(
 	case err != nil:
 		r.warnf(w, hostName, "%s: could not probe from runner container %s: %v", label, cname, err)
 	case isFailed(strings.TrimSpace(out)):
-		printLine(w, failSev, hostName, failMsg())
-		if failSev == sevFail {
-			r.Fail++
-		} else {
-			r.Warn++
-		}
+		r.sevf(w, failSev, hostName, "%s", failMsg())
 	default:
 		printLine(w, sevOK, hostName, okMsg)
 	}
