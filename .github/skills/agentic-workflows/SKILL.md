@@ -31,6 +31,7 @@ If GitHub API, `gh api`, or GitHub MCP downloads return HTTP 403 (including a to
 - `.github/aw/action-container-substitutions.md`
 - `.github/aw/agent-runtime-instructions.md`
 - `.github/aw/agentic-chat.md`
+- `.github/aw/agentic-engine.md`
 - `.github/aw/agentic-workflows-mcp.md`
 - `.github/aw/analyzing-runs.md`
 - `.github/aw/asciicharts.md`
@@ -39,12 +40,15 @@ If GitHub API, `gh api`, or GitHub MCP downloads return HTTP 403 (including a to
 - `.github/aw/charts.md`
 - `.github/aw/cli-commands.md`
 - `.github/aw/compat.md`
-- `.github/aw/configure-agentic-engine.md`
 - `.github/aw/connectors.md`
 - `.github/aw/context.md`
+- `.github/aw/create-agentic-workflow-design.md`
+- `.github/aw/create-agentic-workflow-evaluation.md`
 - `.github/aw/create-agentic-workflow-trigger-details.md`
+- `.github/aw/create-agentic-workflow-validation.md`
 - `.github/aw/create-agentic-workflow.md`
 - `.github/aw/create-shared-agentic-workflow.md`
+- `.github/aw/custom-declarative-agentic-engine.md`
 - `.github/aw/debug-agentic-workflow.md`
 - `.github/aw/debug-bootstrap.md`
 - `.github/aw/debug-compilation.md`
@@ -92,9 +96,12 @@ If GitHub API, `gh api`, or GitHub MCP downloads return HTTP 403 (including a to
 - `.github/aw/otel.md`
 - `.github/aw/patterns.md`
 - `.github/aw/playwright.md`
+- `.github/aw/pr-finisher.md`
 - `.github/aw/pr-reviewer.md`
 - `.github/aw/release-workflow.md`
+- `.github/aw/repo-factory.md`
 - `.github/aw/report.md`
+- `.github/aw/responsible-ai.md`
 - `.github/aw/reuse.md`
 - `.github/aw/safe-outputs-automation.md`
 - `.github/aw/safe-outputs-content.md`

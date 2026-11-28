@@ -5,15 +5,15 @@
       "version": "v9.0.0",
       "sha": "3a2844b7e9c422d3c10d287c895573f7108da1b3"
     },
-    "github/gh-aw-actions/setup-cli@v1.3.0": {
+    "github/gh-aw-actions/setup-cli@v1.2.2": {
       "repo": "github/gh-aw-actions/setup-cli",
-      "version": "v1.3.0",
-      "sha": "8126d6cb07dea9221848de275af8a41474d839ca"
+      "version": "v1.2.2",
+      "sha": "53d0749e19424a918acd82b4d140264ce48f2f14"
     },
-    "github/gh-aw-actions/setup@v1.3.0": {
+    "github/gh-aw-actions/setup@v1.2.2": {
       "repo": "github/gh-aw-actions/setup",
-      "version": "v1.3.0",
-      "sha": "8126d6cb07dea9221848de275af8a41474d839ca"
+      "version": "v1.2.2",
+      "sha": "53d0749e19424a918acd82b4d140264ce48f2f14"
     }
   },
   "containers": {
@@ -99,8 +99,8 @@
     },
     "ghcr.io/github/gh-aw-node": {
       "image": "ghcr.io/github/gh-aw-node",
-      "digest": "sha256:8735428c2d4e602f90781ba0c571c400e8ff93c7ee1508a75d71f87e34e415cc",
-      "pinned_image": "ghcr.io/github/gh-aw-node@sha256:8735428c2d4e602f90781ba0c571c400e8ff93c7ee1508a75d71f87e34e415cc"
+      "digest": "sha256:7776b61a1c1858fa5c7d7e224c10f4a9c748bb121f59c3196a4fc2d5e869480e",
+      "pinned_image": "ghcr.io/github/gh-aw-node@sha256:7776b61a1c1858fa5c7d7e224c10f4a9c748bb121f59c3196a4fc2d5e869480e"
     },
     "ghcr.io/github/github-mcp-server:v2.1.0": {
       "image": "ghcr.io/github/github-mcp-server:v2.1.0",

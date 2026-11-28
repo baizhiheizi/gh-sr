@@ -48,7 +48,7 @@ tools:
 network:
   allowed:
     - defaults
-    - ghcr.io
+    - containers
 checkout:
   fetch-depth: 0
 ---
