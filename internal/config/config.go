@@ -995,6 +995,13 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("reading config: %w", err)
 	}
 
+	return parseConfig(data)
+}
+
+// parseConfig unmarshals, defaults and validates config bytes. It is the
+// validation half of Load, split out so a writer can check a candidate
+// document before it replaces the file on disk.
+func parseConfig(data []byte) (*Config, error) {
 	var cfg Config
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return nil, fmt.Errorf("parsing config: %w", err)

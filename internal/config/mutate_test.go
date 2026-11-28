@@ -318,13 +318,82 @@ runners:
 		if err := os.WriteFile(cfgPath, []byte(initial), 0o600); err != nil {
 			t.Fatal(err)
 		}
-		// Runner references a host missing from hosts: — writeYAMLBack's Load
-		// validation must reject it rather than silently leaving a broken config.
+		// The runner references a host that is missing from hosts:. The
+		// mutation is rejected, and because writeYAMLBack validates before
+		// it replaces the file, the config on disk is left exactly as it
+		// was — still loadable, still holding the original runner.
 		err := AddRunnerFull(cfgPath, AddRunnerOpts{Name: "r2", Repo: "o/r", Host: "nope"})
 		if err == nil || !strings.Contains(err.Error(), "config invalid after modification") {
 			t.Errorf("unexpected error: %v", err)
 		}
+		assertConfigUnchanged(t, cfgPath, initial)
 	})
+
+	t.Run("duplicate runner name", func(t *testing.T) {
+		cfgPath := filepath.Join(t.TempDir(), "runners.yml")
+		initial := `hosts:
+  h1:
+    addr: a@b
+runners:
+  - name: r1
+    repo: o/r
+    host: h1
+`
+		if err := os.WriteFile(cfgPath, []byte(initial), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		// A second runner with the same name on the same host collides on
+		// the derived instance name ("r1-1"). AddRunnerFull has no
+		// duplicate-name guard of its own — unlike AddHost — so the
+		// collision is caught by the same post-mutation validation.
+		err := AddRunnerFull(cfgPath, AddRunnerOpts{Name: "r1", Repo: "o/r", Host: "h1"})
+		if err == nil || !strings.Contains(err.Error(), "config invalid after modification") {
+			t.Errorf("unexpected error: %v", err)
+		}
+		assertConfigUnchanged(t, cfgPath, initial)
+	})
+
+	t.Run("group without org", func(t *testing.T) {
+		cfgPath := filepath.Join(t.TempDir(), "runners.yml")
+		initial := `hosts:
+  h1:
+    addr: a@b
+runners:
+  - name: r1
+    repo: o/r
+    host: h1
+`
+		if err := os.WriteFile(cfgPath, []byte(initial), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		// Runner groups are org-level, so a group without an org is
+		// rejected by config validation — the third way a plain
+		// `gh sr add runner` can fail.
+		err := AddRunnerFull(cfgPath, AddRunnerOpts{Name: "r2", Repo: "o/r", Group: "g", Host: "h1"})
+		if err == nil || !strings.Contains(err.Error(), "config invalid after modification") {
+			t.Errorf("unexpected error: %v", err)
+		}
+		assertConfigUnchanged(t, cfgPath, initial)
+	})
+}
+
+// assertConfigUnchanged asserts that a rejected mutation left the config
+// file byte-for-byte as it was and still loadable. It is the post-state
+// half of the "invalid after modification" cases: the error alone does not
+// prove the user's config survived.
+func assertConfigUnchanged(t *testing.T, cfgPath, want string) {
+	t.Helper()
+
+	data, err := os.ReadFile(cfgPath)
+	if err != nil {
+		t.Fatalf("reading config after rejected mutation: %v", err)
+	}
+	if string(data) != want {
+		t.Errorf("rejected mutation changed the config on disk:\ngot:\n%s\nwant:\n%s", data, want)
+	}
+	if _, err := Load(cfgPath); err != nil {
+		t.Errorf("config should still be loadable after a rejected mutation: %v", err)
+	}
 }
 
 func TestAddHost_createsSectionAndOSArch(t *testing.T) {

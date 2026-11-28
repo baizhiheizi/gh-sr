@@ -10,16 +10,16 @@ import "gopkg.in/yaml.v3"
 // interactively at the post-write Load check.
 //
 // It builds the whole document in memory and writes once — the mutate API
-// validates after every incremental write, and a fresh config has no runner
-// until the runner entry lands, so host-first or runner-first both fail the
+// validates every incremental write, and a fresh config has no runner until
+// the runner entry lands, so host-first or runner-first both fail the
 // intermediate check. The final writeYAMLBack validates the complete file
-// with Load: a returned error means the assembled file failed Load's parse
-// + semantic validation. Parse failures indicate a config-package bug (the
-// shared builders cannot emit unparseable YAML); semantic failures — e.g.
-// an invalid runner name derived from raw user input — surface caller-side
-// input problems, and by then the file is already on disk. The interactive
-// prompt loop and the host-name/runner-name derivation stay with the
-// caller.
+// before replacing it on disk: a returned error means the assembled file
+// failed Load's parse + semantic validation, and nothing was written. Parse
+// failures indicate a config-package bug (the shared builders cannot emit
+// unparseable YAML); semantic failures — e.g. an invalid runner name derived
+// from raw user input — surface caller-side input problems, and now leave
+// no file behind at all. The interactive prompt loop and the host-name/
+// runner-name derivation stay with the caller.
 func QuickInitSeed(path, hostName, addr string, runner AddRunnerOpts) error {
 	top := &yaml.Node{Kind: yaml.MappingNode}
 	hostsNode := &yaml.Node{Kind: yaml.MappingNode}
