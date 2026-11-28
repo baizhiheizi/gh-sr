@@ -35,14 +35,6 @@ func planFixture() []runner.RunnerStatus {
 	}
 }
 
-func runnerSpecs() []columnSpec {
-	specs := make([]columnSpec, len(runnerStatusColumns))
-	for i, c := range runnerStatusColumns {
-		specs[i] = c.columnSpec
-	}
-	return specs
-}
-
 func naturalWidths(statuses []runner.RunnerStatus) []int {
 	natural := make([]int, len(runnerStatusColumns))
 	for i, c := range runnerStatusColumns {
@@ -70,7 +62,7 @@ func TestPlanColumns_wideKeepsEverything(t *testing.T) {
 	t.Parallel()
 	statuses := planFixture()
 	natural := naturalWidths(statuses)
-	kept, widths := planColumns(runnerSpecs(), natural, 200)
+	kept, widths := planColumns(runnerStatusSpecs, natural, 200)
 	if len(kept) != len(runnerStatusColumns) {
 		t.Fatalf("wide terminal: kept %d columns, want all %d", len(kept), len(runnerStatusColumns))
 	}
@@ -89,7 +81,7 @@ func TestPlanColumns_mediumTruncatesBeforeDropping(t *testing.T) {
 	natural := naturalWidths(statuses)
 	// total natural = 8+13+11+9+29+5+7+6+20 + 9*2 = 126; avail 110 → the
 	// IMAGE column alone absorbs the 16-column deficit.
-	kept, widths := planColumns(runnerSpecs(), natural, 110)
+	kept, widths := planColumns(runnerStatusSpecs, natural, 110)
 	if len(kept) != len(runnerStatusColumns) {
 		t.Fatalf("avail 110: kept %d columns, want all %d (truncation beats dropping)", len(kept), len(runnerStatusColumns))
 	}
@@ -115,7 +107,7 @@ func TestPlanColumns_narrowDropsWidestFirst(t *testing.T) {
 	t.Parallel()
 	statuses := planFixture()
 	natural := naturalWidths(statuses)
-	kept, widths := planColumns(runnerSpecs(), natural, 60)
+	kept, widths := planColumns(runnerStatusSpecs, natural, 60)
 	want := []string{"INSTANCE", "HOST", "REPO", "MODE", "BUILD", "LOCAL", "GITHUB"}
 	if got := keptHeaders(kept); !reflect.DeepEqual(got, want) {
 		t.Errorf("avail 60 kept %v, want %v", got, want)
@@ -133,7 +125,7 @@ func TestPlanColumns_narrowTruncatesFlexCells(t *testing.T) {
 	t.Parallel()
 	statuses := planFixture()
 	natural := naturalWidths(statuses)
-	kept, widths := planColumns(runnerSpecs(), natural, 60)
+	kept, widths := planColumns(runnerStatusSpecs, natural, 60)
 	for _, i := range kept {
 		if runnerStatusColumns[i].header == "IMAGE" {
 			t.Fatalf("IMAGE should be dropped at avail 60")
@@ -162,7 +154,7 @@ func TestPlanColumns_narrowTruncatesFlexCells(t *testing.T) {
 func TestPlanColumns_degenerateAvailKeepsColumns(t *testing.T) {
 	t.Parallel()
 	natural := []int{8, 13, 11, 9, 29, 1, 7, 6, 20}
-	kept, widths := planColumns(runnerSpecs(), natural, 0)
+	kept, widths := planColumns(runnerStatusSpecs, natural, 0)
 	if len(kept) != 9 {
 		t.Fatalf("avail 0 kept %d columns, want all 9", len(kept))
 	}
@@ -188,6 +180,55 @@ func TestPlanColumns_metricsUptimeDroppedLast(t *testing.T) {
 	}
 	if total := tableTotal(widths); total > 74 {
 		t.Errorf("metrics table total %d exceeds avail 74 (widths %v)", total, widths)
+	}
+}
+
+// TestRunnerStatusSpecsMatchColumns pins the length contract between the
+// responsive-layout policy and the column table it governs. planColumns
+// sizes the table from the specs while viewMain fills it from the columns,
+// so a mismatch would shift every cell after the gap — and the rendered row
+// would still fit the terminal, so no width assertion would notice.
+func TestRunnerStatusSpecsMatchColumns(t *testing.T) {
+	t.Parallel()
+	if len(runnerStatusSpecs) != len(runnerStatusColumns) {
+		t.Fatalf("runnerStatusSpecs has %d entries, runnerStatusColumns has %d", len(runnerStatusSpecs), len(runnerStatusColumns))
+	}
+	for i, c := range runnerStatusColumns {
+		if runnerStatusSpecs[i] != c.columnSpec {
+			t.Errorf("runnerStatusSpecs[%d] = %+v, want %+v", i, runnerStatusSpecs[i], c.columnSpec)
+		}
+	}
+}
+
+// TestPlanColumns_keptIsStrictlyAscending pins the invariant viewMain's
+// in-place truncation depends on: planColumns returns the kept columns in
+// ascending source order, so writing the k-th kept cell into slot k never
+// overwrites a source cell that has not been read yet. An unordered kept
+// would render a shifted table — one whose rows still fit the terminal, so
+// the width guards would pass while the cells sat under the wrong headers.
+func TestPlanColumns_keptIsStrictlyAscending(t *testing.T) {
+	t.Parallel()
+	statuses := planFixture()
+	natural := naturalWidths(statuses)
+	for _, avail := range []int{0, 1, 2, 5, 10, 20, 30, 40, 60, 80, 110, 200} {
+		kept, widths := planColumns(runnerStatusSpecs, natural, avail)
+		if len(kept) != len(widths) {
+			t.Fatalf("avail %d: kept %d columns but %d widths", avail, len(kept), len(widths))
+		}
+		for k := 1; k < len(kept); k++ {
+			if kept[k] <= kept[k-1] {
+				t.Errorf("avail %d: kept %v is not strictly ascending", avail, kept)
+				break
+			}
+		}
+		for k, i := range kept {
+			if i < 0 || i >= len(runnerStatusColumns) {
+				t.Fatalf("avail %d: kept %v holds an out-of-range column", avail, kept)
+			}
+			if widths[k] <= 0 {
+				t.Errorf("avail %d: column %d got width %d", avail, i, widths[k])
+			}
+		}
 	}
 }
 

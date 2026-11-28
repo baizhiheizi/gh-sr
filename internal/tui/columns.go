@@ -111,6 +111,15 @@ func buildCell(s runner.RunnerStatus) string {
 // derived from runnerStatusColumns.
 var runnerStatusHeaders = headersOf(runnerStatusColumns)
 
+// runnerStatusSpecs is the responsive-layout policy for the runner-status
+// table, derived from runnerStatusColumns so the policy cannot drift from
+// the cells it governs. Like hostMetricsSpecs it is a package-level var, so
+// the policy is built once instead of on every render — but unlike
+// hostMetricsSpecs, which is a hand-written literal (hostMetricsHeaders is a
+// plain []string with no cell definitions to derive a policy from), this one
+// is derived.
+var runnerStatusSpecs = specsOf(runnerStatusColumns)
+
 // runnerStatusCells builds the nine CLI status cells, derived from
 // runnerStatusColumns so the CLI table and the dashboard cannot drift.
 func runnerStatusCells(s runner.RunnerStatus) []string {
@@ -137,6 +146,16 @@ func headersOf(cols []statusColumn) []string {
 	out := make([]string, len(cols))
 	for i, c := range cols {
 		out[i] = c.header
+	}
+	return out
+}
+
+// specsOf extracts the responsive-policy column from each entry, the shape
+// planColumns consumes.
+func specsOf(cols []statusColumn) []columnSpec {
+	out := make([]columnSpec, len(cols))
+	for i, c := range cols {
+		out[i] = c.columnSpec
 	}
 	return out
 }
@@ -302,6 +321,18 @@ func wrapWordsToWidth(s string, width int) []string {
 		// line would run past the terminal edge no matter how narrow the
 		// terminal is. Split those up front.
 		words = splitOverlongWords(words, width)
+		// Fast path: the whole line fits within width (the common case —
+		// filter hints, one-line errors). strings.Join packs it with one
+		// allocation instead of one concat per word, and collapses back to
+		// the single word when Fields found only one.
+		total := len(words) - 1 // separating spaces
+		for _, w := range words {
+			total += len(w)
+		}
+		if total <= width {
+			out = append(out, strings.Join(words, " "))
+			continue
+		}
 		cur := ""
 		for _, w := range words {
 			if cur == "" {
@@ -322,10 +353,22 @@ func wrapWordsToWidth(s string, width int) []string {
 // chunks of at most width bytes, preserving word order. Chunking is
 // byte-based (like truncateCell and table.ColumnWidths) and byte length is
 // always an upper bound on rendered columns for UTF-8, so a chunk can
-// never overflow.
+// never overflow. The input slice is returned unchanged when no word needs
+// splitting — the overwhelmingly common case for help and error text.
 func splitOverlongWords(words []string, width int) []string {
-	var out []string
-	for _, w := range words {
+	first := -1
+	for i, w := range words {
+		if len(w) > width {
+			first = i
+			break
+		}
+	}
+	if first < 0 {
+		return words
+	}
+	out := make([]string, 0, len(words)+len(words)/4)
+	out = append(out, words[:first]...)
+	for _, w := range words[first:] {
 		for len(w) > width {
 			cut := width
 			for cut > 0 && !utf8.RuneStart(w[cut]) {

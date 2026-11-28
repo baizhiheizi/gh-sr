@@ -112,3 +112,32 @@ func TestLoadStr(t *testing.T) {
 		})
 	}
 }
+
+// viewHostMetricsFixture wires a dashboardModel with a representative host
+// fleet for BenchmarkViewHostMetrics: three healthy hosts (one with a long
+// name so the responsive layout truncates at the default 80-col width) and
+// one error row. The terminal width is unset so the render runs at the same
+// default width BenchmarkViewMain uses.
+func viewHostMetricsFixture() *dashboardModel {
+	metrics := []host.HostMetrics{
+		{Name: "host1.example", CPUPercent: 12.3, MemUsedMiB: 4096, MemTotalMiB: 16384, DiskUsedGiB: 120, DiskTotalGiB: 500, Load1: 0.4, Load5: 0.3, Uptime: "up 3 days"},
+		{Name: "a-long-host-name-that-will-truncate.example.internal", CPUPercent: 95.5, MemUsedMiB: 15000, MemTotalMiB: 16384, DiskUsedGiB: 480, DiskTotalGiB: 500, Load1: 4.2, Load5: 3.9, Uptime: "up 100 days"},
+		{Name: "host3.example", CPUPercent: 55.0, MemUsedMiB: 8192, MemTotalMiB: 16384, DiskUsedGiB: 240, DiskTotalGiB: 500, Load1: 1.1, Load5: 1.0, Uptime: "up 12 days"},
+		{Name: "host4.example", Err: errSynthetic("connection refused")},
+	}
+	return &dashboardModel{hostMetrics: metrics}
+}
+
+// BenchmarkViewHostMetrics exercises the full host-metrics panel render
+// (title line + responsive column plan + per-row truncation + colored rows).
+// This is the compositing benchmark for the metrics panel, mirroring
+// BenchmarkViewMain for the runner panel, so caller-side changes to the
+// shared layout helpers show up in context.
+func BenchmarkViewHostMetrics(b *testing.B) {
+	m := viewHostMetricsFixture()
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = m.viewHostMetrics()
+	}
+}

@@ -320,3 +320,87 @@ func utf8ValidString(s string) bool {
 	}
 	return true
 }
+
+// columnMappingFixture gives every column a distinct leading character so a
+// shifted cell is visible, and keeps each value shorter than its header so
+// the natural width of a column is its header width.
+func columnMappingFixture() []runner.RunnerStatus {
+	return []runner.RunnerStatus{
+		{
+			Instance: "I0", Host: "H0", Repo: "R0", Mode: "M0",
+			ContainerImage: "G0", ContainerImageBuild: "B0",
+			Local: "L0", Remote: "O0", Labels: "Z0",
+		},
+		{
+			Instance: "I1", Host: "H1", Repo: "R1", Mode: "M1",
+			ContainerImage: "G1", ContainerImageBuild: "B1",
+			Local: "L1", Remote: "O1", Labels: "Z1",
+		},
+	}
+}
+
+// TestViewMain_columnsCorrespondAtNarrowWidths guards the responsive table's
+// cell-to-column mapping at the widths where columns are dropped. viewMain
+// truncates in place over one flat cell store, which is only correct while
+// the plan's kept columns are ascending; a mis-mapped cell would render a
+// table whose rows still fit the terminal, so the width guards would pass
+// while HOST showed the REPO value.
+func TestViewMain_columnsCorrespondAtNarrowWidths(t *testing.T) {
+	t.Parallel()
+	statuses := columnMappingFixture()
+	natural := naturalWidths(statuses)
+	for _, width := range []int{30, 40, 45, 60, 80, 120} {
+		m := &dashboardModel{statuses: statuses, width: width, height: 50, panel: panelMain}
+		avail := m.termWidth() - cellPad
+		kept, widths := planColumns(runnerStatusSpecs, natural, avail)
+		if len(kept) < 2 {
+			t.Fatalf("width %d: only %d column kept, nothing to compare", width, len(kept))
+		}
+		want := expectedMainTable(statuses, kept, widths)
+		got := mainTableLines(m.viewMain().Content, want[0], len(statuses))
+		if got == nil {
+			t.Fatalf("width %d: could not find the table in the rendered panel", width)
+		}
+		for i := range want {
+			if got[i] != want[i] {
+				t.Errorf("width %d: table line %d mismatch\n got: %q\nwant: %q", width, i, got[i], want[i])
+			}
+		}
+	}
+}
+
+// expectedMainTable renders the table viewMain must produce for a plan: the
+// truncated header of every kept column, then one row per status whose cell
+// k holds the source cell of kept[k]. The comparison runs on ANSI-stripped
+// text, so the colorizers do not matter here.
+func expectedMainTable(statuses []runner.RunnerStatus, kept []int, widths []int) []string {
+	headers := make([]string, len(kept))
+	for k, i := range kept {
+		headers[k] = truncateCell(runnerStatusColumns[i].header, widths[k])
+	}
+	lines := []string{visibleText(renderHeader(headers, widths))}
+	for _, s := range statuses {
+		cells := make([]string, len(kept))
+		for k, i := range kept {
+			cells[k] = truncateCell(runnerStatusColumns[i].cell(s), widths[k])
+		}
+		lines = append(lines, visibleText(renderRow(cells, widths, nil, false)))
+	}
+	return lines
+}
+
+// mainTableLines finds the rendered table in a main panel: the header line
+// followed by one line per status.
+func mainTableLines(content, header string, rows int) []string {
+	lines := strings.Split(visibleText(content), "\n")
+	for i, line := range lines {
+		if line != header {
+			continue
+		}
+		if i+rows > len(lines) {
+			return nil
+		}
+		return lines[i : i+1+rows]
+	}
+	return nil
+}
