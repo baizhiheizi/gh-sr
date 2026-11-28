@@ -74,19 +74,16 @@ func Run(w io.Writer, in RunInput) Result {
 	fmt.Fprintln(w, "=== Local environment ===")
 
 	if _, err := os.Stat(in.ConfigPath); err != nil {
-		printLine(w, sevFail, "local", fmt.Sprintf("config path: %v", err))
-		r.Fail++
+		r.failf(w, "local", "config path: %v", err)
 	} else {
 		printLine(w, sevOK, "local", fmt.Sprintf("config file exists: %s", in.ConfigPath))
 	}
 
 	switch _, err := os.Stat(in.EnvPath); {
 	case os.IsNotExist(err):
-		printLine(w, sevWarn, "local", fmt.Sprintf("env file not found: %s (optional)", in.EnvPath))
-		r.Warn++
+		r.warnf(w, "local", "env file not found: %s (optional)", in.EnvPath)
 	case err != nil:
-		printLine(w, sevWarn, "local", fmt.Sprintf("env file: %v", err))
-		r.Warn++
+		r.warnf(w, "local", "env file: %v", err)
 	default:
 		printLine(w, sevOK, "local", fmt.Sprintf("env file present: %s", in.EnvPath))
 	}
@@ -105,8 +102,7 @@ func Run(w io.Writer, in RunInput) Result {
 		if host.HasSSHAuth() {
 			printLine(w, sevOK, "local", "SSH client auth available (agent or default ~/.ssh keys)")
 		} else {
-			printLine(w, sevWarn, "local", "no SSH agent (SSH_AUTH_SOCK) or default ~/.ssh keys; required for remote hosts")
-			r.Warn++
+			r.warnf(w, "local", "no SSH agent (SSH_AUTH_SOCK) or default ~/.ssh keys; required for remote hosts")
 		}
 	} else {
 		printLine(w, sevOK, "local", "only local hosts in scope; SSH client keys not required")
@@ -114,8 +110,7 @@ func Run(w io.Writer, in RunInput) Result {
 
 	fmt.Fprintln(w, "\n=== Configuration ===")
 	if in.ConfigErr != nil {
-		printLine(w, sevFail, "config", in.ConfigErr.Error())
-		r.Fail++
+		r.failf(w, "config", "%s", in.ConfigErr.Error())
 		printSummary(w, r, in.Strict)
 		return r
 	}
@@ -123,16 +118,14 @@ func Run(w io.Writer, in RunInput) Result {
 
 	runners := config.FilterRunners(in.Config, in.FilterHost, in.FilterRepo, nil)
 	if len(runners) == 0 {
-		printLine(w, sevWarn, "config", "no runners match --host / --repo filters")
-		r.Warn++
+		r.warnf(w, "config", "no runners match --host / --repo filters")
 		printSummary(w, r, in.Strict)
 		return r
 	}
 
 	fmt.Fprintln(w, "\n=== GitHub API ===")
 	if in.GitHub == nil {
-		printLine(w, sevFail, "github", "skipped: no GitHub token (run `gh auth login`)")
-		r.Fail++
+		r.failf(w, "github", "skipped: no GitHub token (run `gh auth login`)")
 	} else {
 		repos := uniqueStringsBy(runners, func(rc config.RunnerConfig) string { return rc.Repo })
 		orgs := uniqueStringsBy(runners, func(rc config.RunnerConfig) string { return rc.Org })
@@ -160,8 +153,7 @@ func Run(w io.Writer, in RunInput) Result {
 	if in.CheckLockfiles {
 		fmt.Fprintln(w, "\n=== Compiled agentic workflows (--check-lockfiles) ===")
 		if in.GitHub == nil {
-			printLine(w, sevWarn, "lockfiles", "skipped: no GitHub token (run `gh auth login`)")
-			r.Warn++
+			r.warnf(w, "lockfiles", "skipped: no GitHub token (run `gh auth login`)")
 		} else {
 			repos := uniqueStringsBy(runners, func(rc config.RunnerConfig) string { return rc.Repo })
 			checkLockWorkflows(w, in.GitHub, repos, &r)
@@ -186,13 +178,11 @@ func Run(w io.Writer, in RunInput) Result {
 
 		h := host.NewHost(hostName, hcfg)
 		if err := h.Connect(); err != nil {
-			printLine(&hr.buf, sevFail, hostName, fmt.Sprintf("connect: %v", err))
-			hr.r.Fail++
+			hr.r.failf(&hr.buf, hostName, "connect: %v", err)
 			return hr
 		}
 		if err := ensureDoctorHostOS(h, hcfg.Addr); err != nil {
-			printLine(&hr.buf, sevFail, hostName, fmt.Sprintf("detect os: %v", err))
-			hr.r.Fail++
+			hr.r.failf(&hr.buf, hostName, "detect os: %v", err)
 			_ = h.Close()
 			return hr
 		}
@@ -219,6 +209,40 @@ func Run(w io.Writer, in RunInput) Result {
 
 func printLine(w io.Writer, sev, scope, msg string) {
 	fmt.Fprintf(w, "%-5s [%-12s] %s\n", sev, scope, msg)
+}
+
+// warnf prints a WARN line for scope and counts it on r; failf is its FAIL
+// counterpart. sevf is the runtime-severity variant, for the sites whose
+// severity comes from the data rather than from the call site.
+//
+// Every WARN/FAIL line the doctor emits goes through one of these three, so a
+// line and its counter cannot drift apart. The invariant is greppable:
+//
+//	grep -rn 'printLine(w, sevWar[n]\|printLine(w, sevFai[l]' internal/doctor/
+//
+// must match only these three helpers. The bracket in the pattern keeps this
+// comment from matching itself. OK lines call printLine directly — they are
+// not counted.
+func (r *Result) warnf(w io.Writer, scope, format string, args ...any) {
+	printLine(w, sevWarn, scope, fmt.Sprintf(format, args...))
+	r.Warn++
+}
+
+func (r *Result) failf(w io.Writer, scope, format string, args ...any) {
+	printLine(w, sevFail, scope, fmt.Sprintf(format, args...))
+	r.Fail++
+}
+
+// sevf prints a line whose severity is decided at runtime and counts it in
+// the matching counter. An OK severity prints without counting.
+func (r *Result) sevf(w io.Writer, sev, scope, format string, args ...any) {
+	printLine(w, sev, scope, fmt.Sprintf(format, args...))
+	switch sev {
+	case sevFail:
+		r.Fail++
+	case sevWarn:
+		r.Warn++
+	}
 }
 
 func printSummary(w io.Writer, r Result, strict bool) {
@@ -322,10 +346,7 @@ func checkRunnerScope(wg *sync.WaitGroup, gh *runner.GitHubClient, scope string,
 // so the print + counter-update lives in one place.
 func printAPIFailures(w io.Writer, r *Result, results []apiResult) {
 	for _, res := range results {
-		printLine(w, res.sev, "github", res.msg)
-		if res.sev == sevFail {
-			r.Fail++
-		}
+		r.sevf(w, res.sev, "github", "%s", res.msg)
 	}
 }
 
@@ -487,8 +508,7 @@ func checkContainerExtras(w io.Writer, hostName string, h *host.Host, hostRunner
 		return
 	}
 	for _, p := range problems {
-		printLine(w, sevWarn, hostName, fmt.Sprintf("extras: runner container %s predates the config (%s); recreate with: gh sr rebuild %s", cname, p, inst))
-		r.Warn++
+		r.warnf(w, hostName, "extras: runner container %s predates the config (%s); recreate with: gh sr rebuild %s", cname, p, inst)
 	}
 }
 
@@ -509,16 +529,14 @@ func checkContainerExtras(w io.Writer, hostName string, h *host.Host, hostRunner
 func checkHostDNS(w io.Writer, hostName string, h *host.Host, r *Result) {
 	out, err := h.Run(`r=$(timeout 5 getent hosts api.github.com 2>/dev/null); [ -n "$r" ] && echo ok || echo noresolve`)
 	if err != nil {
-		printLine(w, sevWarn, hostName, fmt.Sprintf("dns: could not check name resolution: %v", err))
-		r.Warn++
+		r.warnf(w, hostName, "dns: could not check name resolution: %v", err)
 		return
 	}
 	switch strings.TrimSpace(out) {
 	case "ok":
 		printLine(w, sevOK, hostName, "dns: resolves api.github.com")
 	default:
-		printLine(w, sevFail, hostName, "dns: host cannot resolve api.github.com; runner registration and job-time network access will fail until the host resolver is fixed (e.g. sudo systemctl restart systemd-resolved), then re-run: gh sr setup")
-		r.Fail++
+		r.failf(w, hostName, "dns: host cannot resolve api.github.com; runner registration and job-time network access will fail until the host resolver is fixed (e.g. sudo systemctl restart systemd-resolved), then re-run: gh sr setup")
 	}
 }
 
@@ -528,13 +546,11 @@ func checkNativeRunnerInstall(w io.Writer, hostName string, h *host.Host, runner
 		dir := h.RunnerDir(inst)
 		ok, err := runner.NativeRunnerConfigPresent(h, inst)
 		if err != nil {
-			printLine(w, sevFail, hostName, fmt.Sprintf("native: instance %s: %v", inst, err))
-			r.Fail++
+			r.failf(w, hostName, "native: instance %s: %v", inst, err)
 			continue
 		}
 		if !ok {
-			printLine(w, sevFail, hostName, fmt.Sprintf("native: instance %s not installed (missing .runner under %s); run: gh sr setup %s", inst, dir, runnerName))
-			r.Fail++
+			r.failf(w, hostName, "native: instance %s not installed (missing .runner under %s); run: gh sr setup %s", inst, dir, runnerName)
 			continue
 		}
 		printLine(w, sevOK, hostName, fmt.Sprintf("native: instance %s installed", inst))
@@ -550,8 +566,7 @@ func checkShellOK(w io.Writer, hostName string, h *host.Host, r *Result, cmd, wa
 	out, err := h.Run(cmd)
 	out = strings.TrimSpace(out)
 	if err != nil || out != want {
-		printLine(w, sevFail, hostName, fmt.Sprintf("%s (%v)", failMsg, err))
-		r.Fail++
+		r.failf(w, hostName, "%s (%v)", failMsg, err)
 		return false
 	}
 	printLine(w, sevOK, hostName, okMsg)
@@ -576,14 +591,12 @@ func checkNative(w io.Writer, hostName string, h *host.Host, r *Result) {
 		out, err := h.RunShell(`$PSVersionTable.PSVersion.ToString()`)
 		out = strings.TrimSpace(out)
 		if err != nil || out == "" {
-			printLine(w, sevFail, hostName, fmt.Sprintf("native: PowerShell check failed (%v)", err))
-			r.Fail++
+			r.failf(w, hostName, "native: PowerShell check failed (%v)", err)
 			return
 		}
 		printLine(w, sevOK, hostName, fmt.Sprintf("native: PowerShell %s", out))
 	default:
-		printLine(w, sevWarn, hostName, fmt.Sprintf("native: unknown os %q", h.OS))
-		r.Warn++
+		r.warnf(w, hostName, "native: unknown os %q", h.OS)
 	}
 }
 
@@ -620,16 +633,13 @@ func checkLinuxSudo(w io.Writer, hostName string, h *host.Host, r *Result) {
 	out = strings.TrimSpace(out)
 	switch {
 	case err != nil:
-		printLine(w, sevWarn, hostName, fmt.Sprintf("linux: could not check uid: %v", err))
-		r.Warn++
+		r.warnf(w, hostName, "linux: could not check uid: %v", err)
 	case strings.HasPrefix(out, linuxSudoUIDErrToken):
-		printLine(w, sevWarn, hostName, fmt.Sprintf("linux: could not check uid: %s", uidErrDetail(out)))
-		r.Warn++
+		r.warnf(w, hostName, "linux: could not check uid: %s", uidErrDetail(out))
 	case out == "root":
 		return
 	case out != "ok":
-		printLine(w, sevWarn, hostName, "linux: passwordless sudo not available; gh sr setup/update may fail for package installs")
-		r.Warn++
+		r.warnf(w, hostName, "linux: passwordless sudo not available; gh sr setup/update may fail for package installs")
 	default:
 		printLine(w, sevOK, hostName, "linux: non-root user has passwordless sudo")
 	}
@@ -672,18 +682,10 @@ func printAgenticFailures(w io.Writer, hostName string, r *Result, defaultSev, p
 		switch f.Severity {
 		case agentic.SeverityError:
 			sev = sevFail
-			r.Fail++
 		case agentic.SeverityWarning:
 			sev = sevWarn
-			r.Warn++
-		default:
-			if defaultSev == sevWarn {
-				r.Warn++
-			} else {
-				r.Fail++
-			}
 		}
-		printLine(w, sev, hostName, prefix+f.Message)
+		r.sevf(w, sev, hostName, "%s", prefix+f.Message)
 		if f.Remediation != "" {
 			for line := range strings.SplitSeq(f.Remediation, "\n") {
 				fmt.Fprintf(w, "       %s\n", line)
@@ -726,8 +728,7 @@ func checkContainerRunnerInstall(w io.Writer, hostName string, h *host.Host, run
 	// spent ~48 of them on this single check.
 	probes, err := runner.ProbeContainersBatch(h, instances)
 	if err != nil {
-		printLine(w, sevFail, hostName, fmt.Sprintf("container: probe failed: %v", err))
-		r.Fail++
+		r.failf(w, hostName, "container: probe failed: %v", err)
 		return
 	}
 	for _, pair := range targets {
@@ -739,33 +740,26 @@ func checkContainerRunnerInstall(w io.Writer, hostName string, h *host.Host, run
 			// The batched probe prints one line per instance, so a missing
 			// line means the remote script was cut short — report that
 			// instead of claiming the container is gone.
-			printLine(w, sevWarn, hostName, fmt.Sprintf("container: instance %s (%s) — no probe result returned; re-run: gh sr doctor %s", inst, runnerName, hostName))
-			r.Warn++
+			r.warnf(w, hostName, "container: instance %s (%s) — no probe result returned; re-run: gh sr doctor %s", inst, runnerName, hostName)
 			continue
 		}
 
 		if probe.BootstrapFailed {
-			printLine(w, sevFail, hostName, fmt.Sprintf(
-				"container: instance %s (%s) — bootstrap failed (inner dockerd did not start after repeated attempts); fix the host then run: gh sr up %s (or gh sr rebuild %s)",
-				inst, runnerName, runnerName, runnerName))
-			r.Fail++
+			r.failf(w, hostName, "container: instance %s (%s) — bootstrap failed (inner dockerd did not start after repeated attempts); fix the host then run: gh sr up %s (or gh sr rebuild %s)", inst, runnerName, runnerName, runnerName)
 			continue
 		}
 
 		if probe.State == "missing" || probe.State == "" {
-			printLine(w, sevFail, hostName, fmt.Sprintf("container: instance %s (%s) — Docker container %s not found; run: gh sr setup %s", inst, runnerName, cname, runnerName))
-			r.Fail++
+			r.failf(w, hostName, "container: instance %s (%s) — Docker container %s not found; run: gh sr setup %s", inst, runnerName, cname, runnerName)
 			continue
 		}
 		if !runner.IsContainerAcceptingJobs(probe.State) {
-			printLine(w, sevWarn, hostName, fmt.Sprintf("container: instance %s (%s) — %s state is %q (expected running); run: gh sr up %s", inst, runnerName, cname, probe.State, runnerName))
-			r.Warn++
+			r.warnf(w, hostName, "container: instance %s (%s) — %s state is %q (expected running); run: gh sr up %s", inst, runnerName, cname, probe.State, runnerName)
 			continue
 		}
 
 		if !probe.InnerDockerdOK {
-			printLine(w, sevWarn, hostName, fmt.Sprintf("container: instance %s — inner dockerd not responding inside %s", inst, cname))
-			r.Warn++
+			r.warnf(w, hostName, "container: instance %s — inner dockerd not responding inside %s", inst, cname)
 		} else {
 			printLine(w, sevOK, hostName, fmt.Sprintf("container: instance %s — inner dockerd healthy (%s)", inst, cname))
 		}
@@ -778,10 +772,7 @@ func checkContainerRunnerInstall(w io.Writer, hostName string, h *host.Host, run
 			// a host DNS outage left it crash-looping on config.sh), setup
 			// reports "already set up" and restarts the same stale token.
 			// Tearing the instance down first forces a fresh token.
-			printLine(w, sevFail, hostName, fmt.Sprintf(
-				"container: instance %s — actions runner not configured inside %s (missing .runner); run: gh sr down %s && gh sr setup %s (the registration token is baked in at container create and is single-use, so the container must be recreated)",
-				inst, cname, runnerName, runnerName))
-			r.Fail++
+			r.failf(w, hostName, "container: instance %s — actions runner not configured inside %s (missing .runner); run: gh sr down %s && gh sr setup %s (the registration token is baked in at container create and is single-use, so the container must be recreated)", inst, cname, runnerName, runnerName)
 			continue
 		}
 		printLine(w, sevOK, hostName, fmt.Sprintf("container: instance %s — registered (.runner present in %s)", inst, cname))
@@ -808,8 +799,7 @@ func checkContainerAgenticInnerHygiene(w io.Writer, hostName string, h *host.Hos
 	}
 	probes, err := agentic.ValidateAgenticInnerBatch(h, batch, hostEgressMTU, cacheEnabled)
 	if err != nil {
-		printLine(w, sevFail, hostName, fmt.Sprintf("container(agent): probe failed: %v", err))
-		r.Fail++
+		r.failf(w, hostName, "container(agent): probe failed: %v", err)
 		return
 	}
 	for i, pair := range targets {
@@ -822,8 +812,7 @@ func checkContainerAgenticInnerHygiene(w io.Writer, hostName string, h *host.Hos
 			// section means the remote script was cut short (or the instance
 			// name was rejected before probing) — report that instead of
 			// claiming the container is clean.
-			printLine(w, sevWarn, hostName, fmt.Sprintf("container(agent): instance %s (%s) — no probe result returned; re-run: gh sr doctor %s", inst, runnerName, hostName))
-			r.Warn++
+			r.warnf(w, hostName, "container(agent): instance %s (%s) — no probe result returned; re-run: gh sr doctor %s", inst, runnerName, hostName)
 			continue
 		}
 
@@ -859,13 +848,11 @@ func checkCacheReachability(w io.Writer, hostName string, h *host.Host, hostRunn
 	}
 	info, err := cache.Inspect(h, *s)
 	if err != nil {
-		printLine(w, sevWarn, hostName, fmt.Sprintf("cache: inspect failed: %v", err))
-		r.Warn++
+		r.warnf(w, hostName, "cache: inspect failed: %v", err)
 		return
 	}
 	if info.State == "" {
-		printLine(w, sevWarn, hostName, "cache: enabled but not deployed; run: gh sr cache deploy")
-		r.Warn++
+		r.warnf(w, hostName, "cache: enabled but not deployed; run: gh sr cache deploy")
 		return
 	}
 	if !info.Healthy {
@@ -873,8 +860,7 @@ func checkCacheReachability(w io.Writer, hostName string, h *host.Host, hostRunn
 		if url == "" {
 			url = "(no container-reachable URL resolved)"
 		}
-		printLine(w, sevFail, hostName, fmt.Sprintf("cache: server not healthy at %s; check the gh-sr-cache container logs: docker logs %s", url, cache.ContainerName))
-		r.Fail++
+		r.failf(w, hostName, "cache: server not healthy at %s; check the gh-sr-cache container logs: docker logs %s", url, cache.ContainerName)
 		return
 	}
 	printLine(w, sevOK, hostName, fmt.Sprintf("cache: healthy at %s (storage %s)", info.URL, info.StoragePath))
@@ -882,8 +868,7 @@ func checkCacheReachability(w io.Writer, hostName string, h *host.Host, hostRunn
 
 	// A 0.0.0.0 bind means the cache API answers on every host interface.
 	if dockerutil.EffectiveBind(h, s.BindAddr) == "0.0.0.0" {
-		printLine(w, sevWarn, hostName, "cache: bound to 0.0.0.0 — the cache API is reachable from your LAN; set cache.bind_addr (e.g. the docker0 gateway IP) in runners.yml")
-		r.Warn++
+		r.warnf(w, hostName, "cache: bound to 0.0.0.0 — the cache API is reachable from your LAN; set cache.bind_addr (e.g. the docker0 gateway IP) in runners.yml")
 	}
 }
 
@@ -916,15 +901,9 @@ func probeFromRunnerContainer(
 		runner.QuoteContainerName(cname), hostshell.PosixSingleQuote(script)))
 	switch {
 	case err != nil:
-		printLine(w, sevWarn, hostName, fmt.Sprintf("%s: could not probe from runner container %s: %v", label, cname, err))
-		r.Warn++
+		r.warnf(w, hostName, "%s: could not probe from runner container %s: %v", label, cname, err)
 	case isFailed(strings.TrimSpace(out)):
-		printLine(w, failSev, hostName, failMsg())
-		if failSev == sevFail {
-			r.Fail++
-		} else {
-			r.Warn++
-		}
+		r.sevf(w, failSev, hostName, "%s", failMsg())
 	default:
 		printLine(w, sevOK, hostName, okMsg)
 	}
@@ -979,8 +958,7 @@ func checkRegistryMirror(w io.Writer, hostName string, h *host.Host, hostRunners
 	}
 	mirrors, err := registry.Inspect(h, *s)
 	if err != nil {
-		printLine(w, sevWarn, hostName, fmt.Sprintf("registry: inspect failed: %v", err))
-		r.Warn++
+		r.warnf(w, hostName, "registry: inspect failed: %v", err)
 		return
 	}
 	for i, m := range mirrors {
@@ -991,8 +969,7 @@ func checkRegistryMirror(w io.Writer, hostName string, h *host.Host, hostRunners
 			label = "registry[" + m.Name + "]"
 		}
 		if m.Info.State == "" {
-			printLine(w, sevWarn, hostName, fmt.Sprintf("%s: enabled but not deployed; run: gh sr registry deploy", label))
-			r.Warn++
+			r.warnf(w, hostName, "%s: enabled but not deployed; run: gh sr registry deploy", label)
 			continue
 		}
 		if !m.Info.Healthy {
@@ -1000,8 +977,7 @@ func checkRegistryMirror(w io.Writer, hostName string, h *host.Host, hostRunners
 			if url == "" {
 				url = "(no container-reachable URL resolved)"
 			}
-			printLine(w, sevFail, hostName, fmt.Sprintf("%s: mirror not healthy at %s; check the mirror container logs: docker logs %s", label, url, m.Container))
-			r.Fail++
+			r.failf(w, hostName, "%s: mirror not healthy at %s; check the mirror container logs: docker logs %s", label, url, m.Container)
 			continue
 		}
 		printLine(w, sevOK, hostName, fmt.Sprintf("%s: mirror healthy at %s (storage %s)", label, m.Info.URL, m.Info.StoragePath))
@@ -1016,8 +992,7 @@ func checkRegistryMirror(w io.Writer, hostName string, h *host.Host, hostRunners
 
 	// A 0.0.0.0 bind means the mirror answers on every host interface.
 	if dockerutil.EffectiveBind(h, s.BindAddr) == "0.0.0.0" {
-		printLine(w, sevWarn, hostName, "registry: bound to 0.0.0.0 — the mirror is reachable from your LAN; set registry_mirror.bind_addr (e.g. the docker0 gateway IP) in runners.yml")
-		r.Warn++
+		r.warnf(w, hostName, "registry: bound to 0.0.0.0 — the mirror is reachable from your LAN; set registry_mirror.bind_addr (e.g. the docker0 gateway IP) in runners.yml")
 	}
 }
 
@@ -1048,10 +1023,7 @@ func checkOrphanMirrors(w io.Writer, hostName string, h *host.Host, s *registry.
 	}
 	sort.Strings(orphans)
 	for _, name := range orphans {
-		printLine(w, sevWarn, hostName, fmt.Sprintf(
-			"registry: %s runs on this host but is not in registry_mirror.mirrors; remove it with: docker rm -f %s (its storage dir keeps occupying disk)",
-			name, name))
-		r.Warn++
+		r.warnf(w, hostName, "registry: %s runs on this host but is not in registry_mirror.mirrors; remove it with: docker rm -f %s (its storage dir keeps occupying disk)", name, name)
 	}
 }
 
@@ -1072,10 +1044,7 @@ func probeRegistryFromRunner(w io.Writer, hostName string, h *host.Host, hostRun
 	}
 	cname := runner.ContainerDockerName(inst)
 	if hasEnv, err := runnerContainerHasEnv(h, cname, "GH_SR_REGISTRY_MIRROR"); err == nil && !hasEnv {
-		printLine(w, sevWarn, hostName, fmt.Sprintf(
-			"registry: runner container %s predates the mirror (no GH_SR_REGISTRY_MIRROR env); recreate with: gh sr rebuild %s",
-			cname, inst))
-		r.Warn++
+		r.warnf(w, hostName, "registry: runner container %s predates the mirror (no GH_SR_REGISTRY_MIRROR env); recreate with: gh sr rebuild %s", cname, inst)
 		return
 	}
 	script := fmt.Sprintf("curl -fsS -m 5 -o /dev/null -w %%{http_code} %s/v2/ || echo PROBE_FAIL", strings.TrimSuffix(url, "/"))
@@ -1111,16 +1080,13 @@ func checkOrphanRunners(w io.Writer, hostName string, h *host.Host, runners []co
 	configured := runner.ConfiguredInstanceSet(runners, hostName)
 	orphans, err := runner.OrphanInstances(h, configured)
 	if err != nil {
-		printLine(w, sevWarn, hostName, fmt.Sprintf("orphan runners: list: %v", err))
-		r.Warn++
+		r.warnf(w, hostName, "orphan runners: list: %v", err)
 		return
 	}
 	if len(orphans) == 0 {
 		return
 	}
-	printLine(w, sevWarn, hostName, fmt.Sprintf("orphan runners: %d instance(s) not in runners.yml (%s); run: gh sr service cleanup",
-		len(orphans), strings.Join(orphans, ", ")))
-	r.Warn++
+	r.warnf(w, hostName, "orphan runners: %d instance(s) not in runners.yml (%s); run: gh sr service cleanup", len(orphans), strings.Join(orphans, ", "))
 }
 
 func checkRunnerDiskUsage(w io.Writer, hostName string, h *host.Host, runners []config.RunnerConfig, r *Result) {
@@ -1130,8 +1096,7 @@ func checkRunnerDiskUsage(w io.Writer, hostName string, h *host.Host, runners []
 		// Degradation policy: still report the configured instances, but say
 		// why the on-disk half (and any orphans) is missing instead of
 		// silently dropping them.
-		printLine(w, sevWarn, hostName, fmt.Sprintf("disk: could not list on-disk runner directories: %v", inv.ListErr))
-		r.Warn++
+		r.warnf(w, hostName, "disk: could not list on-disk runner directories: %v", inv.ListErr)
 	}
 	instances := inv.Names()
 	rcByInstance := inv.ConfigByInstance()
@@ -1143,8 +1108,7 @@ func checkRunnerDiskUsage(w io.Writer, hostName string, h *host.Host, runners []
 	for _, inst := range instances {
 		entry := entries[inst]
 		if entry.Err != nil {
-			printLine(w, sevWarn, hostName, fmt.Sprintf("disk: instance %s: %v", inst, entry.Err))
-			r.Warn++
+			r.warnf(w, hostName, "disk: instance %s: %v", inst, entry.Err)
 			continue
 		}
 		if entry.TotalBytes >= threshold {
@@ -1152,9 +1116,7 @@ func checkRunnerDiskUsage(w io.Writer, hostName string, h *host.Host, runners []
 			if entry.Orphan {
 				label = inst + " (orphan)"
 			}
-			printLine(w, sevWarn, hostName, fmt.Sprintf("disk: instance %s uses %s under %s; run: gh sr disk prune --yes",
-				label, runner.FormatBytesHuman(entry.TotalBytes), entry.Path))
-			r.Warn++
+			r.warnf(w, hostName, "disk: instance %s uses %s under %s; run: gh sr disk prune --yes", label, runner.FormatBytesHuman(entry.TotalBytes), entry.Path)
 		}
 	}
 }
