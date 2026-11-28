@@ -114,6 +114,16 @@ func windowsRunnerDirAssignment(h *host.Host, instanceName string) string {
 	return "$runnerDir = " + h.RunnerDirPS(instanceName)
 }
 
+// The .runner_pid / runner.log file names are the contract between the
+// native Windows scripts (start, stop, status, stale probe, logs): the
+// start script writes the PID file the other four read. These statements
+// are stated once here instead of being repeated across five script
+// builders, so a rename or quoting fix is one edit.
+const (
+	windowsPidFileAssignment = "$pidFile = Join-Path $runnerDir '.runner_pid'"
+	windowsLogFileAssignment = "$logFile = Join-Path $runnerDir 'runner.log'"
+)
+
 func windowsNativeInstallScript(h *host.Host, instanceName, version, url string) string {
 	zipName := fmt.Sprintf("actions-runner-%s.zip", version)
 	return strings.Join([]string{
@@ -198,15 +208,15 @@ const staleRegistrationWarmup = 5 * time.Second
 func staleRegistrationScript(h *host.Host, instanceName string) string {
 	if h.OS == "windows" {
 		return fmt.Sprintf(
-			"%s; $pidFile = Join-Path $runnerDir '.runner_pid'; "+
-				"$logFile = Join-Path $runnerDir 'runner.log'; "+
-				"Start-Sleep -Seconds %d; "+
+			"%s; %s; %s; Start-Sleep -Seconds %d; "+
 				"$pid = Get-Content $pidFile -EA SilentlyContinue; "+
 				"$alive = $false; if ($pid) { try { Get-Process -Id $pid -EA Stop | Out-Null; $alive = $true } catch {} }; "+
 				"if ($alive) { Write-Host 'ok' } "+
 				"elseif ((Test-Path $logFile) -and (Select-String -Path $logFile -Pattern %s -Quiet)) { Write-Host 'stale' } "+
 				"else { Write-Host 'ok' }",
 			windowsRunnerDirAssignment(h, instanceName),
+			windowsPidFileAssignment,
+			windowsLogFileAssignment,
 			int(staleRegistrationWarmup.Seconds()),
 			hostshell.PowerShellSingleQuote(staleRegistrationMsg),
 		)
@@ -230,19 +240,19 @@ func windowsNativeStartScript(h *host.Host, instanceName string) string {
 	// validates CreateFlags against a small allow-list and rejects 0x08000000 with
 	// ERROR_INVALID_PARAMETER (21), which fails the whole start with no fallback.
 	parts := []string{
-		windowsRunnerDirAssignment(h, instanceName) + "; ",
-		`$pidFile = Join-Path $runnerDir '.runner_pid'; `,
-		`$logFile = Join-Path $runnerDir 'runner.log'; `,
-		`if (Test-Path $pidFile) { $existingPid = Get-Content $pidFile; try { Get-Process -Id $existingPid -EA Stop | Out-Null; Write-Host 'already running'; exit 0 } catch {} }; `,
-		`$cmdArg = 'cd /d "' + $runnerDir + '" && run.cmd > "' + $logFile + '" 2>&1'; `,
-		`$fullLine = 'cmd.exe /c ' + $cmdArg; `,
-		`$si = New-CimInstance -CimClass (Get-CimClass -ClassName Win32_ProcessStartup) -Property @{ShowWindow=0} -ClientOnly; `,
-		`$cim = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = $fullLine; CurrentDirectory = $runnerDir; ProcessStartupInformation = $si }; `,
-		`if ($cim.ReturnValue -ne 0) { Write-Host ('Win32_Process.Create failed: ' + $cim.ReturnValue); exit 1 }; `,
-		`$cim.ProcessId | Out-File -FilePath $pidFile -NoNewline; `,
+		windowsRunnerDirAssignment(h, instanceName),
+		windowsPidFileAssignment,
+		windowsLogFileAssignment,
+		`if (Test-Path $pidFile) { $existingPid = Get-Content $pidFile; try { Get-Process -Id $existingPid -EA Stop | Out-Null; Write-Host 'already running'; exit 0 } catch {} }`,
+		`$cmdArg = 'cd /d "' + $runnerDir + '" && run.cmd > "' + $logFile + '" 2>&1'`,
+		`$fullLine = 'cmd.exe /c ' + $cmdArg`,
+		`$si = New-CimInstance -CimClass (Get-CimClass -ClassName Win32_ProcessStartup) -Property @{ShowWindow=0} -ClientOnly`,
+		`$cim = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = $fullLine; CurrentDirectory = $runnerDir; ProcessStartupInformation = $si }`,
+		`if ($cim.ReturnValue -ne 0) { Write-Host ('Win32_Process.Create failed: ' + $cim.ReturnValue); exit 1 }`,
+		`$cim.ProcessId | Out-File -FilePath $pidFile -NoNewline`,
 		`Write-Host ('started PID ' + $cim.ProcessId)`,
 	}
-	return strings.Join(parts, "")
+	return strings.Join(parts, "; ")
 }
 
 // windowsDeleteRunnerConfig removes the .runner file so setupNative will re-configure.
@@ -467,13 +477,14 @@ func (m *Manager) stopNative(h *host.Host, instanceName string) error {
 
 	if h.OS == "windows" {
 		cmd := fmt.Sprintf(
-			"%s; $pidFile = Join-Path $runnerDir '.runner_pid'; "+
+			"%s; %s; "+
 				"if (-not (Test-Path $pidFile)) { Write-Host 'not running'; exit 0 }; "+
 				"$p = (Get-Content $pidFile | Select-Object -First 1).Trim(); "+
 				"$null = & taskkill.exe /PID $p /T /F 2>&1; "+
 				"if ($LASTEXITCODE -eq 0) { Write-Host 'stopped' } else { Write-Host 'not running' }; "+
 				"Remove-Item $pidFile -Force -EA SilentlyContinue",
 			windowsRunnerDirAssignment(h, instanceName),
+			windowsPidFileAssignment,
 		)
 		out, err := h.RunShell(cmd)
 		if err != nil {
@@ -688,11 +699,12 @@ func statusNativePIDFile(h *host.Host, instanceName, dir string) string {
 	if h.OS == "windows" {
 		cmd := fmt.Sprintf(
 			"%s; if (-not (Test-Path (Join-Path $runnerDir '.runner'))) { Write-Host 'not installed'; exit 0 }; "+
-				"$pidFile = Join-Path $runnerDir '.runner_pid'; "+
+				"%s; "+
 				"if (-not (Test-Path $pidFile)) { Write-Host 'stopped'; exit 0 }; "+
 				"$p = Get-Content $pidFile; "+
 				"try { Get-Process -Id $p -EA Stop | Out-Null; Write-Host 'running' } catch { Write-Host 'stopped' }",
 			windowsRunnerDirAssignment(h, instanceName),
+			windowsPidFileAssignment,
 		)
 		out, _ := h.RunShell(cmd)
 		return strings.TrimSpace(out)
@@ -740,7 +752,7 @@ func (m *Manager) logsNative(h *host.Host, instanceName string) (string, error) 
 
 	if h.OS == "windows" {
 		cmd := fmt.Sprintf(
-			"%s; $logFile = Join-Path $runnerDir 'runner.log'; "+
+			"%s; %s; "+
 				"$diagDir = Join-Path $runnerDir '_diag'; "+
 				"$tailMain = { if (Test-Path $logFile) { $lines = @(Get-Content -LiteralPath $logFile -Tail 50 -EA SilentlyContinue); "+
 				"$j = [string]::Join([Environment]::NewLine, $lines); "+
@@ -753,6 +765,7 @@ func (m *Manager) logsNative(h *host.Host, instanceName string) (string, error) 
 				"else { Write-Output 'no logs found' } } "+
 				"else { Write-Output 'no logs found' }",
 			windowsRunnerDirAssignment(h, instanceName),
+			windowsLogFileAssignment,
 		)
 		return h.RunShell(cmd)
 	}
