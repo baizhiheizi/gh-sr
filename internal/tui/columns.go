@@ -113,7 +113,11 @@ var runnerStatusHeaders = headersOf(runnerStatusColumns)
 
 // runnerStatusSpecs is the responsive-layout policy for the runner-status
 // table, derived from runnerStatusColumns so the policy cannot drift from
-// the cells it governs (same derivation pattern as hostMetricsSpecs).
+// the cells it governs. Like hostMetricsSpecs it is a package-level var, so
+// the policy is built once instead of on every render — but unlike
+// hostMetricsSpecs, which is a hand-written literal (hostMetricsHeaders is a
+// plain []string with no cell definitions to derive a policy from), this one
+// is derived.
 var runnerStatusSpecs = specsOf(runnerStatusColumns)
 
 // runnerStatusCells builds the nine CLI status cells, derived from
