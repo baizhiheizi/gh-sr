@@ -219,10 +219,36 @@ runners:
 	if err != nil {
 		t.Fatal(err)
 	}
-	content := string(data)
-	for _, key := range []string{"count:", "labels:", "ephemeral:", "profile:", "org:", "group:"} {
-		if strings.Contains(content, key) {
-			t.Errorf("default-valued key %q should not be written; config:\n%s", key, content)
+	// Inspect the newly written runner node's key set, not the whole file: a
+	// substring scan over the entire document also matches keys that belong
+	// to other sections (a fixture's existing runner carrying org:/labels:/,
+	// or a future writer emitting those keys elsewhere), which would fail
+	// this test for reasons unrelated to the omission contract under test.
+	var root yaml.Node
+	if err := yaml.Unmarshal(data, &root); err != nil {
+		t.Fatalf("parsing written config: %v", err)
+	}
+	runnersNode := findMapValue(root.Content[0], "runners")
+	if runnersNode == nil || runnersNode.Kind != yaml.SequenceNode || len(runnersNode.Content) != 2 {
+		t.Fatalf("expected 2 runners in the written config, got %+v", runnersNode)
+	}
+	added := runnersNode.Content[1]
+	if added.Kind != yaml.MappingNode {
+		t.Fatalf("expected the added runner to be a mapping, got kind %v", added.Kind)
+	}
+	written := make(map[string]bool, len(added.Content)/2)
+	for i := 0; i+1 < len(added.Content); i += 2 {
+		written[added.Content[i].Value] = true
+	}
+	for _, key := range []string{"count", "labels", "ephemeral", "profile", "org", "group"} {
+		if written[key] {
+			t.Errorf("default-valued key %q should not be written for the new runner; keys: %v", key, written)
+		}
+	}
+	// The keys that carry a value must still be written.
+	for _, key := range []string{"name", "repo", "host"} {
+		if !written[key] {
+			t.Errorf("key %q should be written for the new runner; keys: %v", key, written)
 		}
 	}
 }
